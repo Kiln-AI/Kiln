@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invalidate_eval_tags } from "$lib/stores/eval_tag_store"
   import PropertyList from "$lib/ui/property_list.svelte"
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
@@ -481,6 +482,7 @@
       }
       spec = data
       current_tags = spec.tags || []
+      invalidate_eval_tags(task_id)
       posthog.capture("update_spec_tags", {
         num_tags: tags.length,
       })
@@ -575,7 +577,7 @@
             properties={spec.properties}
           />
         </div>
-        <div class="flex flex-col gap-4">
+        <div class="w-full lg:w-72 2xl:w-96 flex flex-col gap-4">
           <PropertyList
             title="Properties"
             properties={[
@@ -695,7 +697,7 @@
           {/if}
           <TagPicker
             tags={current_tags}
-            tag_type="task_run"
+            tag_type="eval"
             {project_id}
             {task_id}
             on:tags_changed={(event) => {

@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from .lock import AsyncLockManager, shared_async_lock_manager
 
 
@@ -183,3 +185,70 @@ async def test_cancellation():
 
     # Wait for holder to finish
     await holder_task
+
+
+async def _assert_waiter_keeps_exclusion(locks: AsyncLockManager, holder_task) -> None:
+    """With `holder_task` holding "k" and failing, a waiter that takes over must still
+    exclude a later arrival. Before the fix the failing holder also undid its waiter
+    count, so the entry was deleted while the waiter held its lock, and the later
+    arrival got a new, free lock."""
+    waiter_holds = asyncio.Event()
+    waiter_may_release = asyncio.Event()
+    late_entered = asyncio.Event()
+
+    async def waiter():
+        async with locks.acquire("k"):
+            waiter_holds.set()
+            await waiter_may_release.wait()
+
+    async def late_arrival():
+        async with locks.acquire("k"):
+            late_entered.set()
+
+    waiter_task = asyncio.create_task(waiter())
+    await asyncio.sleep(0.01)
+    # asyncio.TimeoutError, not the builtin: they are one class only from Python 3.11.
+    with pytest.raises((asyncio.CancelledError, asyncio.TimeoutError)):
+        await holder_task
+    await asyncio.wait_for(waiter_holds.wait(), timeout=1)
+
+    late_task = asyncio.create_task(late_arrival())
+    await asyncio.sleep(0.01)
+    assert not late_entered.is_set(), "a second task entered while the waiter held k"
+
+    waiter_may_release.set()
+    await asyncio.wait_for(asyncio.gather(waiter_task, late_task), timeout=1)
+    assert late_entered.is_set()
+    assert await locks.snapshot() == {}
+
+
+async def test_cancelled_holder_keeps_waiters_exclusive():
+    locks = AsyncLockManager()
+    holding = asyncio.Event()
+
+    async def holder():
+        async with locks.acquire("k"):
+            holding.set()
+            await asyncio.sleep(10)
+
+    holder_task = asyncio.create_task(holder())
+    await holding.wait()
+    asyncio.get_running_loop().call_later(0.02, holder_task.cancel)
+    await _assert_waiter_keeps_exclusion(locks, holder_task)
+
+
+async def test_holder_raising_timeout_keeps_waiters_exclusive():
+    """A `TimeoutError` from inside the critical section, such as a model call that
+    timed out, is not a timeout of the acquire."""
+    locks = AsyncLockManager()
+    holding = asyncio.Event()
+
+    async def holder():
+        async with locks.acquire("k"):
+            holding.set()
+            await asyncio.sleep(0.02)
+            raise asyncio.TimeoutError()
+
+    holder_task = asyncio.create_task(holder())
+    await holding.wait()
+    await _assert_waiter_keeps_exclusion(locks, holder_task)

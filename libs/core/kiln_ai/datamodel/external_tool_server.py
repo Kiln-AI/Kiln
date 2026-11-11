@@ -307,7 +307,6 @@ class ExternalToolServer(KilnParentedModel):
 
         match type:
             case ToolServerType.remote_mcp:
-                # Validate headers
                 headers = properties.get("headers", None)
                 if headers is not None:
                     ExternalToolServer.check_headers(headers)
@@ -320,7 +319,6 @@ class ExternalToolServer(KilnParentedModel):
                     )
 
             case ToolServerType.local_mcp:
-                # Validate secret environment variable keys
                 env_vars = properties.get("env_vars", {})
                 if env_vars is not None:
                     ExternalToolServer.check_env_vars(env_vars)
@@ -404,14 +402,12 @@ class ExternalToolServer(KilnParentedModel):
         """
         secret_keys = self.get_secret_keys()
 
-        # No secrets to save
         if not secret_keys:
             return
 
         if self.id is None:
             raise ValueError("Server ID cannot be None when saving secrets")
 
-        # Check if secrets are already saved
         if not hasattr(self, "_unsaved_secrets") or not self._unsaved_secrets:
             return
 
@@ -425,7 +421,6 @@ class ExternalToolServer(KilnParentedModel):
 
         config.update_settings({MCP_SECRETS_KEY: mcp_secrets})
 
-        # Clear unsaved secrets after saving
         self._unsaved_secrets.clear()
 
     def delete_secrets(self) -> None:
@@ -443,22 +438,14 @@ class ExternalToolServer(KilnParentedModel):
             if secret_key in mcp_secrets:
                 del mcp_secrets[secret_key]
 
-        # Always call update_settings to maintain consistency with the old behavior
         config.update_settings({MCP_SECRETS_KEY: mcp_secrets})
 
     def save_to_file(self) -> None:
         """
-        Override save_to_file to automatically save any unsaved secrets before saving to file.
-
-        This ensures that secrets are always saved when the object is saved,
-        preventing the issue where secrets could be lost if save_to_file is called
-        without explicitly saving secrets first.
+        Save any unsaved secrets to the config, then save the server to file.
         """
-        # Save any unsaved secrets first
         if hasattr(self, "_unsaved_secrets") and self._unsaved_secrets:
             self._save_secrets()
-
-        # Call the parent save_to_file method
         super().save_to_file()
 
     #  Internal helpers

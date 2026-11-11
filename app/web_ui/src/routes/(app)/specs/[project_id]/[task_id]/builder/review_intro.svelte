@@ -23,7 +23,7 @@
      Intro's own 300px column would sit against the left edge. -->
 <div class="flex justify-center mt-[10vh]">
   <Intro
-    title="Validating the Judge"
+    title="Align the Judge"
     description_paragraphs={[
       "Let's confirm your judge is aligned to your expectations.",
       `We'll show a set of ${judged_noun}s, and you tell us if you agree with its judgement.`,

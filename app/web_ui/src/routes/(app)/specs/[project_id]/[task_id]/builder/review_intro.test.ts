@@ -31,7 +31,7 @@ describe("Step 5 entry screen", () => {
 
   it("keeps the reviewer's copy word for word", () => {
     const normalized = normalize(intro_source)
-    expect(normalized).toContain('title="Validating the Judge"')
+    expect(normalized).toContain('title="Align the Judge"')
     expect(normalized).toContain(
       "Let's confirm your judge is aligned to your expectations.",
     )

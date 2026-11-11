@@ -33,7 +33,6 @@ export class SynthDataGuidanceDataModel {
   public task: Task | null = null
   private unsubscribe_template: (() => void) | null = null
 
-  // Make these reactive using stores
   public loading: Writable<boolean> = writable(false)
   // Shared between all guidance types -- if they select a different template in one place, apply it to all by default
   // However if they edit one, keep those edits without changing others
@@ -52,15 +51,11 @@ export class SynthDataGuidanceDataModel {
   public loading_error: Writable<KilnError | null> = writable(null)
 
   constructor() {
-    // Subscribe to selected_template changes and call apply_selected_template
     this.unsubscribe_template = this.selected_template.subscribe((template) => {
       this.apply_selected_template(template)
     })
   }
 
-  /**
-   * Clean up subscriptions when the instance is no longer needed
-   */
   public destroy(): void {
     if (this.unsubscribe_template) {
       this.unsubscribe_template()
@@ -106,7 +101,6 @@ export class SynthDataGuidanceDataModel {
       return
     }
     try {
-      // Use the store's set method
       this.loading.set(true)
       const [project_id, task_id, eval_id] = full_eval_id.split("::")
       const { data, error } = await client.GET(

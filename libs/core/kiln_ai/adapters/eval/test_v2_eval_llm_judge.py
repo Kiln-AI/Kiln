@@ -22,8 +22,10 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalTaskInput,
     LlmJudgeProperties,
+    LlmJudgeRunConfig,
     SkippedReason,
 )
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import Usage
 
@@ -38,14 +40,18 @@ def _make_props(**overrides) -> LlmJudgeProperties:
     return LlmJudgeProperties(**defaults)
 
 
-def _judge_run(usage: Usage | None = None) -> Mock:
+def _judge_run(
+    usage: Usage | None = None, trace: list[dict[str, str]] | None = None
+) -> Mock:
     """The judge's own TaskRun, the first half of what the adapter returns.
 
-    Only `usage` is read from it — that is what becomes `V2EvalResult.usage`, and it must
-    be a real `Usage` or None because the result model validates it.
+    Only `usage` and `trace` are read from it. They become `V2EvalResult.usage` and
+    `V2EvalResult.judge_trace`, so each must be a real value or None: the result model
+    validates them.
     """
     run = Mock()
     run.usage = usage
+    run.trace = trace
     return run
 
 
@@ -134,6 +140,7 @@ class TestLlmJudgeEvalLlmAsJudge:
         assert result.skipped_reason is None
         assert result.skipped_detail is None
         assert result.usage is None
+        assert result.judge_trace is None
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -150,6 +157,26 @@ class TestLlmJudgeEvalLlmAsJudge:
         result = await LlmJudgeEval(_make_config()).evaluate(_inp())
 
         assert result.usage == judge_usage
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_judge_trace_is_reported(self, mock_adapter_for_task):
+        """The judge's conversation, so the rendered prompt can be inspected later."""
+        judge_trace = [
+            {"role": "system", "content": "Score the output."},
+            {"role": "user", "content": "rendered judge prompt"},
+            {"role": "assistant", "content": '{"quality": "4"}'},
+        ]
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(trace=judge_trace),
+            RunOutput(output={"quality": "4"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        result = await LlmJudgeEval(_make_config()).evaluate(_inp())
+
+        assert result.judge_trace == judge_trace
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -221,6 +248,43 @@ class TestLlmJudgeEvalLlmAsJudge:
         rendered = call_args[0][0]
         assert "Input: question" in rendered
         assert "Output: answer" in rendered
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "trace, expected",
+        [
+            (
+                [
+                    {"role": "system", "content": "Be terse."},
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "Hello world"},
+                ],
+                "System: [Be terse.]",
+            ),
+            ([{"role": "user", "content": "hi"}], "System: []"),
+            (None, "System: []"),
+        ],
+        ids=["system-message", "no-system-message", "no-trace"],
+    )
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_task_system_prompt_variable(
+        self, mock_adapter_for_task, trace, expected
+    ):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "3"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        props = _make_props(
+            prompt_template="System: [{{ task_system_prompt }}] Output: {{ final_message }}"
+        )
+        result = await LlmJudgeEval(_make_config(props)).evaluate(_inp(trace=trace))
+
+        assert result.skipped_reason is None
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert rendered.startswith(expected)
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -393,6 +457,38 @@ class TestLlmJudgeEvalGEval:
         mock_g_eval_score.assert_called_once()
         call_args = mock_g_eval_score.call_args[0]
         assert call_args[0] == mock_run_output
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_g_eval_judge_trace_is_reported(self, mock_adapter_for_task):
+        judge_trace = [
+            {"role": "system", "content": "Score the output."},
+            {"role": "user", "content": "rendered judge prompt"},
+            {"role": "assistant", "content": '{"quality": "5"}'},
+        ]
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(trace=judge_trace),
+            RunOutput(output={"quality": "5"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        with (
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.built_in_models_from_provider",
+                return_value=Mock(supports_logprobs=True),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score",
+                return_value={"quality": 4.3},
+            ),
+        ):
+            result = await LlmJudgeEval(
+                _make_config(_make_props(g_eval=True))
+            ).evaluate(_inp())
+
+        assert result.scores == {"quality": 4.3}
+        assert result.judge_trace == judge_trace
 
 
 class TestLlmJudgeEvalGEvalFailFast:
@@ -686,6 +782,10 @@ class TestBackendBakedReferenceAnswerJudge:
             _inp(
                 final_message="Herbert, 1965.",
                 task_input="Who wrote Dune?",
+                trace=[
+                    {"role": "user", "content": "Who wrote Dune?"},
+                    {"role": "assistant", "content": "Herbert, 1965."},
+                ],
                 reference_data={"reference_answer": "Frank Herbert."},
             )
         )
@@ -693,6 +793,59 @@ class TestBackendBakedReferenceAnswerJudge:
         assert result.skipped_reason is None
         rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
         assert "<reference_answer>\nFrank Herbert.\n</reference_answer>" in rendered
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_item_without_a_trace_is_judged_on_its_input_and_output(
+        self, mock_adapter_for_task
+    ):
+        """A run saved without a trace (e.g. a single-turn CSV import used as a
+        calibration golden set) is still judged, from its input and output."""
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "5"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+        cfg = _make_config(self._baked_props())
+
+        result = await LlmJudgeEval(cfg).evaluate(
+            _inp(
+                final_message="Herbert, 1965.",
+                task_input="Who wrote Dune?",
+                trace=None,
+                reference_data={"reference_answer": "Frank Herbert."},
+            )
+        )
+
+        assert result.skipped_reason is None
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert (
+            "<trace>\n"
+            "user:\n<user_message>\nWho wrote Dune?\n</user_message>\n\n"
+            "assistant:\n<assistant_message>\nHerbert, 1965.\n</assistant_message>\n"
+            "</trace>"
+        ) in rendered
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_item_without_a_trace_or_input_skips_before_the_model_call(
+        self, mock_adapter_for_task
+    ):
+        """With neither a trace nor an input there is no conversation to rebuild,
+        so the item is skipped rather than scored blind."""
+        cfg = _make_config(self._baked_props())
+
+        result = await LlmJudgeEval(cfg).evaluate(
+            _inp(
+                trace=None,
+                task_input=None,
+                reference_data={"reference_answer": "Frank Herbert."},
+            )
+        )
+
+        assert result.skipped_reason == SkippedReason.extraction_failed
+        mock_adapter_for_task.assert_not_called()
 
 
 class TestLlmJudgeEvalNoParentEval:
@@ -888,3 +1041,146 @@ class TestLlmJudgeE2EMessageConstruction:
 
         assert result.scores == {"quality": 4.0, "correctness": 1.0}
         assert result.skipped_reason is None
+
+
+class TestLlmJudgeRunConfig:
+    """The judge's optional run_config. Unset (or any unset field in it) must keep the
+    default, so older configs behave as before; a set field must reach the model call;
+    an unknown thinking level must fail rather than be sent or silently dropped."""
+
+    @staticmethod
+    def _mock_adapter(mock_adapter_for_task) -> None:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "4"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+    @staticmethod
+    def _run_config_properties(mock_adapter_for_task) -> KilnAgentRunConfigProperties:
+        return mock_adapter_for_task.call_args.kwargs["run_config_properties"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("run_config", [None, LlmJudgeRunConfig()])
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_unset_keeps_defaults(self, mock_adapter_for_task, run_config):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_5_6_terra",
+            model_provider="openrouter",
+            run_config=run_config,
+        )
+        await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+
+        rc = self._run_config_properties(mock_adapter_for_task)
+        for field in ("thinking_level", "temperature", "top_p"):
+            assert field not in rc.model_fields_set
+        assert rc.thinking_level is None
+        assert rc.temperature == 1.0
+        assert rc.top_p == 1.0
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_set_fields_reach_the_model_call(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_5_6_terra",
+            model_provider="openrouter",
+            run_config=LlmJudgeRunConfig(
+                thinking_level="medium", temperature=0.2, top_p=0.9
+            ),
+        )
+        await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+
+        rc = self._run_config_properties(mock_adapter_for_task)
+        assert {"thinking_level", "temperature", "top_p"} <= rc.model_fields_set
+        assert rc.thinking_level == "medium"
+        assert rc.temperature == 0.2
+        assert rc.top_p == 0.9
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_partial_run_config_keeps_other_defaults(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(run_config=LlmJudgeRunConfig(temperature=0.0))
+        await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+
+        rc = self._run_config_properties(mock_adapter_for_task)
+        assert rc.temperature == 0.0
+        assert "thinking_level" not in rc.model_fields_set
+        assert rc.top_p == 1.0
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_unknown_level_raises(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_5_6_terra",
+            model_provider="openrouter",
+            run_config=LlmJudgeRunConfig(thinking_level="ultra"),
+        )
+        with pytest.raises(ValueError, match="not available"):
+            await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+        mock_adapter_for_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_level_on_model_without_levels_raises(self, mock_adapter_for_task):
+        self._mock_adapter(mock_adapter_for_task)
+        props = _make_props(
+            model_name="gpt_4o",
+            model_provider="openai",
+            run_config=LlmJudgeRunConfig(thinking_level="low"),
+        )
+        with pytest.raises(ValueError, match="has no thinking levels"):
+            await LlmJudgeEval(_make_config(props)).evaluate(_inp())
+        mock_adapter_for_task.assert_not_called()
+
+    def test_run_config_validation(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            LlmJudgeRunConfig(thinking_level="  ")
+        assert LlmJudgeRunConfig(thinking_level=" low ").thinking_level == "low"
+        with pytest.raises(ValueError):
+            LlmJudgeRunConfig(temperature=2.5)
+        with pytest.raises(ValueError):
+            LlmJudgeRunConfig(top_p=-0.1)
+
+    def test_older_config_without_run_config_loads(self):
+        props = LlmJudgeProperties.model_validate(
+            {
+                "model_name": "gpt-4o",
+                "model_provider": "openai",
+                "prompt_template": "Rate this",
+            }
+        )
+        assert props.run_config is None
+
+    @staticmethod
+    def _materialize(**kwargs) -> LlmJudgeProperties:
+        with (
+            patch(
+                "kiln_ai.adapters.eval.base_eval.build_default_llm_judge_prompt",
+                return_value="prompt",
+            ),
+            patch(
+                "kiln_ai.adapters.eval.base_eval.derived_reference_keys",
+                return_value=[],
+            ),
+        ):
+            return materialize_llm_judge_properties(
+                eval=Mock(),
+                model_name="gpt_5_6_terra",
+                model_provider="openrouter",
+                g_eval=False,
+                **kwargs,
+            )
+
+    def test_materialize_carries_run_config(self):
+        run_config = LlmJudgeRunConfig(thinking_level="low", temperature=0.5)
+        assert self._materialize(run_config=run_config).run_config == run_config
+        assert self._materialize().run_config is None
+
+    def test_materialize_rejects_unknown_level(self):
+        with pytest.raises(ValueError, match="not available"):
+            self._materialize(run_config=LlmJudgeRunConfig(thinking_level="ultra"))

@@ -28,6 +28,7 @@ from kiln_ai.datamodel.json_schema import (
 )
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task_run import TaskRun
@@ -89,6 +90,7 @@ class TaskRunConfig(KilnParentedModel):
         default=False,
         description="Whether this run config is starred/favourited by the user.",
     )
+    provenance: KilnArtifactProvenance | None = provenance_field()
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
@@ -96,7 +98,7 @@ class TaskRunConfig(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
-    # Previously we didn't store structured_output_mode in the run_config_properties. Upgrade old models when loading from file.
+    # Older files may lack run_config_properties.type and structured_output_mode; default them (kiln_agent, unknown) on load.
     @model_validator(mode="before")
     def upgrade_old_entries(cls, data: dict, info: ValidationInfo) -> dict:
         if not info.context or not info.context.get("loading_from_file", False):

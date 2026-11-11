@@ -1429,6 +1429,7 @@ def test_backwards_compatibility_with_v0_19(tmp_path):
     test_script = f'''# /// script
 # dependencies = [
 #   "kiln-ai==0.19.0",
+#   "together<3",  # together 3.x removed together.types.files, which kiln-ai 0.19.0 imports
 #   "pandas",
 # ]
 # ///

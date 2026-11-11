@@ -598,6 +598,8 @@ def _make_target_invoker(
             allow_saving=False,
             skills=skills,
             task_run_config_id=task_run_config_id,
+            # Each turn re-sends the conversation so far: cache it (Anthropic needs the hint).
+            automatic_prompt_caching=True,
         ),
     )
     turn_index = 0

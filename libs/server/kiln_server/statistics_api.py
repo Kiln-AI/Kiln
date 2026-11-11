@@ -5,10 +5,10 @@ agent computes standard errors, confidence intervals, and significance reliably
 instead of doing the arithmetic in its own reasoning. The pure math lives in
 ``statistics_lib.py``; this module validates input and dispatches to it per operation.
 
-This used to be a built-in ``statistics`` tool. It was moved behind the Kiln API tool
-(``call_kiln_api``) so it stays out of the system prompt for the vast majority of
-queries that never need significance testing — it surfaces only inside eval/spec/compare
-workflows via the kiln-chat skill's api_docs.
+It is reached through the Kiln API tool (``call_kiln_api``) rather than a built-in tool,
+so it stays out of the system prompt for the many queries that never need significance
+testing; it surfaces only inside eval/spec/compare workflows via the kiln-chat skill's
+api_docs.
 
 Each operation takes one natural input form (no alternative encodings):
 - "proportion_ci": a proportion + n          -> Wilson CI + standard error

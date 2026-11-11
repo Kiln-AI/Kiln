@@ -15,6 +15,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     TypeAdapter,
     ValidationInfo,
+    field_validator,
     model_serializer,
     model_validator,
 )
@@ -40,9 +41,18 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.openenv import (
+    OpenEnvEpisode,
+    OpenEnvReset,
+)
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionMessageParam,
+    materialize_lazy_content,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.spec import Spec
@@ -100,6 +110,39 @@ class V2EvalType(str, Enum):
     code_eval = "code_eval"
 
 
+class LlmJudgeRunConfig(BaseModel):
+    """Optional settings for the judge model call. Every field is optional: an unset
+    field keeps the value the judge would use without it (the provider's default
+    thinking level, and the run config's default temperature and top_p)."""
+
+    thinking_level: str | None = Field(
+        default=None,
+        description="The judge model's thinking level (e.g. 'none', 'low', 'medium'). Must be one the model's provider offers. If unset, the provider's default applies, which for some models is 'none'.",
+    )
+    temperature: float | None = Field(
+        default=None,
+        ge=0,
+        le=2,
+        description="The judge model's temperature, between 0 and 2. If unset, the run config default applies.",
+    )
+    top_p: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="The judge model's top_p, between 0 and 1. If unset, the run config default applies.",
+    )
+
+    @field_validator("thinking_level")
+    @classmethod
+    def validate_thinking_level(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("thinking_level must be a non-empty string when provided")
+        return normalized
+
+
 class LlmJudgeProperties(BaseModel):
     type: Literal[V2EvalType.llm_judge] = V2EvalType.llm_judge
     model_name: str
@@ -113,6 +156,10 @@ class LlmJudgeProperties(BaseModel):
     # prompt template is rendered. Used by evals with no spec or template to
     # derive default steps from.
     judge_instructions: list[str] | None = None
+    # Optional settings for the judge model call (thinking level, temperature, ...).
+    # None, or any unset field inside it, keeps the default, so older configs behave
+    # as before.
+    run_config: LlmJudgeRunConfig | None = None
 
 
 class ExactMatchProperties(BaseModel):
@@ -447,13 +494,10 @@ def _eager_parse_code_eval_on_load(
     `V2EvalConfigProperties | dict | None` union would recover from the nested
     member's error by falling back to the dict branch, masking the real cause
     (e.g. a missing scorer.py or a bad score() function) behind a generic
-    "V2 config requires typed properties". See functional spec §2.2 / §4.
+    "V2 config requires typed properties".
 
     Only touches code_eval properties during a file load, gated explicitly on
-    `type == code_eval`; every other input passes through unchanged. Lifted
-    verbatim from EvalConfig.dispatch_properties_parsing so the code-eval load
-    path is a clearly-named, code-eval-local step rather than smeared into the
-    generic dispatcher.
+    `type == code_eval`; every other input passes through unchanged.
     """
     if not ctx.get("loading_from_file"):
         return data
@@ -540,6 +584,18 @@ class V2EvalResult(BaseModel):
         default=None,
         description="What the judgment itself cost, if it called a model. None for the deterministic eval types, which call none. Stored on the resulting EvalRun as eval_usage.",
     )
+    judge_trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. None for evals that call no model (e.g. code evals). Stored on the resulting EvalRun as judge_trace.",
+    )
+
+    @model_validator(mode="after")
+    def materialize_judge_trace_content(self) -> Self:
+        # Pydantic validates the trace's Iterable-typed `content` into a lazy, single-use
+        # iterator that serializes as [] and cannot be deepcopied.
+        if self.judge_trace is not None:
+            materialize_lazy_content(self.judge_trace)
+        return self
 
 
 class UserMessage(BaseModel):
@@ -663,6 +719,10 @@ class EvalInput(KilnParentedModel):
         default_factory=list,
         description="Tags for filtering eval inputs.",
     )
+    openenv_reset: OpenEnvReset | None = Field(
+        default=None,
+        description="Start a new episode on the OpenEnv server named by openenv_server_id before the run, by calling the environment's reset() with these keyword arguments. The trace records that episode. A run config that lists the OpenEnv server's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools.",
+    )
 
     @model_validator(mode="after")
     def validate_tags(self) -> Self:
@@ -705,6 +765,10 @@ class EvalTaskInput(BaseModel):
     task_input: str | None = Field(
         default=None,
         description="The original task input text.",
+    )
+    openenv_episode: OpenEnvEpisode | None = Field(
+        default=None,
+        description="The OpenEnv episode the trace's OpenEnv tools ran in, when the run used an OpenEnv server: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ openenv_episode.final_state }}); code scorers receive it as the `openenv_episode` argument.",
     )
 
     @classmethod
@@ -764,6 +828,7 @@ class EvalTaskInput(BaseModel):
             trace=trace_data,
             reference_data=reference_data,
             task_input=task_input,
+            openenv_episode=trace.openenv_episode,
         )
 
     @classmethod
@@ -786,6 +851,21 @@ class EvalTaskInput(BaseModel):
         return cls.from_trace(run_output, eval_input)
 
 
+class ScoreDirection(str, Enum):
+    """
+    The direction of improvement for an eval output score.
+
+    Tells consumers how to interpret a change in the score's value: 'higher_is_better'
+    means an increase is an improvement, 'lower_is_better' means a decrease is an
+    improvement, and 'informational' scores carry context only and should never drive
+    decisions in either direction.
+    """
+
+    higher_is_better = "higher_is_better"
+    lower_is_better = "lower_is_better"
+    informational = "informational"
+
+
 class EvalOutputScore(BaseModel):
     """
     A definition of a score that an evaluator will produce.
@@ -796,6 +876,11 @@ class EvalOutputScore(BaseModel):
     name: FilenameStringShort = Field(
         description="The name of the score. Will be provided to the model so use a descriptive name. Should align to the model's TaskRequirement name if you want to use human evals to evaluate the evaluator's performance."
     )
+    display_name: str | None = Field(
+        default=None,
+        max_length=32,
+        description="An optional, user-facing display name for the score, shown throughout the UI in place of 'name'. Purely cosmetic: it does not affect the JSON key, stored eval run scores, or the name provided to models. Falls back to 'name' when not set. Surrounding whitespace is stripped; blank values, or a value equal to 'name', are stored as None.",
+    )
     instruction: str | None = Field(
         default=None,
         description="A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.",
@@ -803,14 +888,40 @@ class EvalOutputScore(BaseModel):
     type: TaskOutputRatingType = Field(
         description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical').",
     )
+    direction: ScoreDirection = Field(
+        default=ScoreDirection.higher_is_better,
+        description="The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'. 'lower_is_better' is reserved for custom scores, which evaluators do not currently support.",
+    )
 
     def json_key(self) -> str:
         """
         The JSON key for the score, used when running the evaluator with a LLM and we need JSON output.
 
         For example, "Overall Rating" -> "overall_rating"
+
+        Always derived from 'name' (not 'display_name'), so renaming for display never changes the
+        key used by stored eval runs.
         """
         return string_to_json_key(self.name)
+
+    def resolved_display_name(self) -> str:
+        """The name to show users for this score: display_name when set, otherwise name."""
+        return self.display_name or self.name
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def normalize_display_name(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @model_validator(mode="after")
+    def clear_display_name_matching_name(self) -> Self:
+        # Keeps "no display name" distinct from "display name set to the name", so the
+        # score keeps following its name.
+        if self.display_name == self.name:
+            self.display_name = None
+        return self
 
     @model_validator(mode="after")
     def validate_type(self) -> Self:
@@ -818,6 +929,25 @@ class EvalOutputScore(BaseModel):
             raise ValueError(
                 f"Custom scores are not supported in evaluators. Score '{self.name}' was set to a custom score."
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_direction(self) -> Self:
+        match self.type:
+            case (
+                TaskOutputRatingType.five_star
+                | TaskOutputRatingType.pass_fail
+                | TaskOutputRatingType.pass_fail_critical
+            ):
+                if self.direction == ScoreDirection.lower_is_better:
+                    raise ValueError(
+                        f"Score '{self.name}' has type '{self.type.value}', which is higher-is-better by definition. 'lower_is_better' is reserved for custom scores, which evaluators do not currently support."
+                    )
+            case TaskOutputRatingType.custom:
+                # Any direction is valid for custom scores (unbounded numeric metrics).
+                pass
+            case _:
+                raise_exhaustive_enum_error(self.type)
         return self
 
 
@@ -843,6 +973,15 @@ Three ways to mark a pydantic field deprecated; these fields use two of them:
    permanent way to render a legacy record, so it would be a warning storm. Not used.
    Do not "fix" this to (3) without silencing that first; (2) already provides the
    tooling signal (3) would be reached for."""
+
+
+def validate_unique_display_names(output_scores: List[EvalOutputScore]) -> None:
+    """Display names stand in for names in the UI, so they must not collide (ignoring case)."""
+    resolved_names = [score.resolved_display_name() for score in output_scores]
+    if len({name.lower() for name in resolved_names}) != len(resolved_names):
+        raise ValueError(
+            f"output_scores must have unique display names. Got: [{', '.join(resolved_names)}]"
+        )
 
 
 class EvalRun(KilnParentedModel):
@@ -925,6 +1064,10 @@ class EvalRun(KilnParentedModel):
         default=None,
         description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
     )
+    judge_trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. Structured messages, unlike the deprecated JSON-string task_run_trace. None for V1 evals, for evals that call no model (e.g. code evals), and for records that predate this field. Distinct from the evaluated task run's trace.",
+    )
 
     eval_input_id: ID_TYPE | None = Field(
         default=None,
@@ -954,12 +1097,22 @@ class EvalRun(KilnParentedModel):
         return self
 
     @model_validator(mode="after")
+    def materialize_judge_trace_content(self) -> Self:
+        # Pydantic validates the trace's Iterable-typed `content` into a lazy, single-use
+        # iterator that serializes as [] and cannot be deepcopied.
+        if self.judge_trace is not None:
+            materialize_lazy_content(self.judge_trace)
+        return self
+
+    @model_validator(mode="after")
     def validate_record_mode(self) -> Self:
         """Keep the three record states (pointer / skipped / legacy inline) exclusive.
 
         The forbidding half of the pointer rule is the one that earns its keep: a record
         that points at a TaskRun must never also carry a second copy of what it scored,
-        which nothing would keep in sync.
+        which nothing would keep in sync. `judge_trace` is allowed alongside it: it is
+        the judge's own record of what it was sent, fixed at scoring time, not a copy of
+        the scored trace.
         """
         inline_set = [f for f in LEGACY_TRACE_FIELDS if getattr(self, f) is not None]
 
@@ -1120,6 +1273,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         default=None,
         description="Properties to be used to execute the eval config. Legacy configs use a dict; V2 configs use typed properties.",
     )
+    provenance: KilnArtifactProvenance | None = provenance_field()
 
     @model_validator(mode="before")
     @classmethod
@@ -1183,27 +1337,21 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
             raise ValueError(f"Invalid eval config type: {self.config_type}")
 
     @model_validator(mode="after")
-    def validate_v2_templates_and_expressions(self) -> Self:
+    def validate_v2_templates_and_expressions(self, info: ValidationInfo) -> Self:
         if self.config_type != EvalConfigType.v2 or not isinstance(
             self.properties, BaseModel
         ):
             return self
 
         from kiln_ai.utils.jinja_engine import (
+            checked_template_variables,
             compile_expression_or_raise,
-            compile_template_or_raise,
+            expression_variables,
         )
 
         props = self.properties
         if isinstance(props, LlmJudgeProperties):
-            compile_template_or_raise(props.prompt_template)
-            from jinja2 import meta
-
-            from kiln_ai.utils.jinja_engine import _template_env
-
-            referenced = meta.find_undeclared_variables(
-                _template_env.parse(props.prompt_template)
-            )
+            referenced = checked_template_variables(props.prompt_template)
             meaningful = {"final_message", "trace", "task_input"}
             if not (referenced & meaningful):
                 raise ValueError(
@@ -1224,6 +1372,25 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         ):
             if props.value_expression is not None:
                 compile_expression_or_raise(props.value_expression)
+                # Syntax alone isn't enough: a typo'd root variable resolves to
+                # Undefined at eval time, which scores every row a silent 0.0.
+                # Catch it while the author can still see what they typed.
+                #
+                # Authoring-time only. A config written before this check exists
+                # may name a variable we now reject, and refusing to load it would
+                # take the whole eval down rather than the one check that was
+                # already scoring zeros.
+                if not self.loading_from_file(info):
+                    allowed = set(EvalTaskInput.model_fields.keys())
+                    unknown = sorted(
+                        expression_variables(props.value_expression) - allowed
+                    )
+                    if unknown:
+                        raise ValueError(
+                            f"value_expression references unknown variable "
+                            f"'{unknown[0]}'. Available variables: "
+                            f"{', '.join(sorted(allowed))}."
+                        )
 
         return self
 
@@ -1411,6 +1578,40 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         # built by model_construct, where nothing did.
         self.__pydantic_fields_set__.add("splits")
 
+    def set_output_score_display_names(
+        self, display_names: Dict[str, str | None]
+    ) -> None:
+        """Set the display names of output scores, keyed by each score's JSON key.
+
+        Scores not in display_names keep their current display name; None or blank clears
+        it. Display names are cosmetic, so no score name, JSON key or stored eval run
+        changes. Raises ValueError for an unknown key, or a display name that is too long
+        or collides with another score's.
+        """
+        scores_by_key = {score.json_key(): score for score in self.output_scores}
+        unknown_keys = [key for key in display_names if key not in scores_by_key]
+        if unknown_keys:
+            raise ValueError(
+                f"Unknown output score keys: [{', '.join(unknown_keys)}]. Expected keys from: [{', '.join(scores_by_key)}]"
+            )
+
+        # Rebuilt and assigned (not mutated in place) so the readonly guard runs. Fully
+        # validated before assigning: a failed assignment validator would leave the new
+        # value in place.
+        updated_scores = [
+            EvalOutputScore.model_validate(
+                {
+                    **score.model_dump(),
+                    "display_name": display_names[score.json_key()],
+                }
+            )
+            if score.json_key() in display_names
+            else score
+            for score in self.output_scores
+        ]
+        validate_unique_display_names(updated_scores)
+        self.output_scores = updated_scores
+
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
         if self.parent is not None and self.parent.__class__.__name__ != "Task":
@@ -1537,6 +1738,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             raise ValueError(
                 f"output_scores must have unique names (once transformed to JSON keys). Got: [{', '.join(output_score_keys)}]"
             )
+
+        validate_unique_display_names(self.output_scores)
         return self
 
     @model_validator(mode="after")

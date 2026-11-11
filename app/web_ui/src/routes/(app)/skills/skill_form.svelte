@@ -71,7 +71,17 @@
         "/api/projects/{project_id}/skills",
         {
           params: { path: { project_id } },
-          body: { name, description, body },
+          body: {
+            name,
+            description,
+            body,
+            // Stamp lineage: a clone derives from its source; a fresh create is
+            // human-origin with no parent. origin is required whenever provenance is set.
+            provenance:
+              clone_mode && skill_id
+                ? { origin: "human", derived_from_ids: [skill_id] }
+                : { origin: "human" },
+          },
         },
       )
       if (api_error) {

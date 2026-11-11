@@ -341,7 +341,7 @@
     action: "initial" | "retry" | "regenerate",
   ) {
     if (row_indices.length === 0) return
-    // Still reported in analytics, but no longer sent to the API.
+    // Reported to analytics only; the API doesn't take gen_type.
     const gen_type = guidance_data.gen_type
     const prompts = row_indices.map((i) => rows[i].prompt)
 

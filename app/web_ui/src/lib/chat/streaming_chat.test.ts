@@ -3,6 +3,7 @@ import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 import {
   streamChat,
   chatExecuteToolsUrl,
+  isToolOutputError,
   traceIdForNextChatRequest,
   type ChatMessage,
 } from "./streaming_chat"
@@ -232,5 +233,55 @@ describe("streamChat", () => {
     expect(versionNudgeSpy).toHaveBeenCalledOnce()
     expect(versionNudgeSpy).toHaveBeenCalledWith("1.2.3")
     expect(errorSpy).not.toHaveBeenCalled()
+  })
+
+  it("stores tool-output-error as an error output on the tool part", async () => {
+    const lines = [
+      'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_api_call","input":{}}\n\n',
+      'data: {"type":"tool-output-error","toolCallId":"tc1","errorText":"Error: no tool named \'x\'."}\n\n',
+    ]
+    let i = 0
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: () => {
+            if (i >= lines.length) {
+              return Promise.resolve({ done: true, value: undefined })
+            }
+            const value = new TextEncoder().encode(lines[i])
+            i += 1
+            return Promise.resolve({ done: false, value })
+          },
+        }),
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const draft: ChatMessage = { id: "a1", role: "assistant" }
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: (update) => update(draft),
+      onFinish: () => {},
+      onError: () => {},
+    })
+
+    const toolPart = draft.parts?.find((p) => "toolCallId" in p)
+    const output = toolPart && "output" in toolPart ? toolPart.output : null
+    expect(isToolOutputError(output)).toBe(true)
+    expect(output).toEqual({ error: "Error: no tool named 'x'." })
+  })
+})
+
+describe("isToolOutputError", () => {
+  it.each([
+    [{ error: "boom" }, true],
+    [{ error: undefined }, true],
+    ["plain output", false],
+    [undefined, false],
+    [null, false],
+  ])("isToolOutputError(%j) is %s", (output, expected) => {
+    expect(isToolOutputError(output)).toBe(expected)
   })
 })

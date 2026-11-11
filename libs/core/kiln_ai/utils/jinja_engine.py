@@ -9,18 +9,21 @@ Both envs share trim_blocks=True and lstrip_blocks=True for prompt-friendly outp
 
 Public API:
   - compile_template_or_raise(template) -> None
+  - checked_template_variables(template) -> frozenset[str]
   - compile_expression_or_raise(expression) -> None
+  - expression_variables(expression) -> set[str]
   - render_input_transform(transform, task_input) -> str
   - extract(expression, data) -> Any
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import types
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined
+from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined, UndefinedError, meta
 from jinja2.sandbox import SandboxedEnvironment
 
 if TYPE_CHECKING:
@@ -28,10 +31,13 @@ if TYPE_CHECKING:
 
 
 class JinjaExtractionError(ValueError):
-    """Raised when a Jinja2 filter encounters invalid data during extraction.
+    """Raised when a Jinja2 expression encounters missing or invalid data during extraction.
 
-    For example, the ``fromjson`` filter raises this when the input string is
-    not valid JSON.
+    Covers both filters that reject their input (``fromjson`` on a non-JSON
+    string) and expressions that operate on a value that isn't there (reaching
+    into a missing nested field, indexing past the end of a list). Callers treat
+    it as "this input didn't have what the expression asked for" rather than an
+    unexpected crash.
     """
 
 
@@ -108,14 +114,33 @@ _expression_env.filters["fromjson"] = _fromjson
 _expression_env.filters["format_trace"] = _format_trace
 
 
+def _invalid_template_error(e: TemplateSyntaxError) -> ValueError:
+    return ValueError(f"Invalid Jinja2 template: {e.message} (line {e.lineno})")
+
+
 def compile_template_or_raise(template: str) -> None:
     """Validate that the template compiles. Raises ValueError on syntax error."""
     try:
         _template_env.from_string(template)
     except TemplateSyntaxError as e:
-        raise ValueError(
-            f"Invalid Jinja2 template: {e.message} (line {e.lineno})"
-        ) from e
+        raise _invalid_template_error(e) from e
+
+
+@functools.lru_cache(maxsize=256)
+def checked_template_variables(template: str) -> frozenset[str]:
+    """Compile the template and return the variables it reads, cached per template.
+
+    Raises ValueError on a syntax error, every time: a failure is not cached.
+    """
+    try:
+        ast = _template_env.parse(template)
+        # Read the variables first: compiling runs the optimizer, which can rewrite
+        # the tree in place.
+        variables = frozenset(meta.find_undeclared_variables(ast))
+        _template_env.compile(ast)
+    except TemplateSyntaxError as e:
+        raise _invalid_template_error(e) from e
+    return variables
 
 
 def compile_expression_or_raise(expression: str) -> None:
@@ -128,14 +153,27 @@ def compile_expression_or_raise(expression: str) -> None:
         ) from e
 
 
+def expression_variables(expression: str) -> set[str]:
+    """Return the namespace variables a Jinja2 expression reads.
+
+    An expression is not a template -- ``final_message.strip()`` parsed as a
+    template is just literal text with no variables -- so it is wrapped in an
+    output block before the AST walk. Raises ValueError on syntax error.
+    """
+    try:
+        ast = _expression_env.parse("{{ " + expression + " }}")
+    except TemplateSyntaxError as e:
+        raise ValueError(
+            f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
+        ) from e
+    return meta.find_undeclared_variables(ast)
+
+
 def render_input_transform(
     transform: InputTransform,
     task_input: Any,
 ) -> str:
-    """Render the transform against the task input, returning the first-user-message string.
-
-    See specs/projects/templates/functional_spec.md section 5 for the input-handling rules.
-    """
+    """Render the transform against the task input, returning the first-user-message string."""
     from kiln_ai.datamodel.input_transform import JinjaInputTransform
 
     if isinstance(transform, JinjaInputTransform):
@@ -151,6 +189,7 @@ def extract(expression: str, data: dict) -> Any:
     - Missing keys return Undefined (not None, not a raise).
     - Explicit null values return None.
     - Generators are auto-materialized to lists.
+    - Operating on a missing value raises JinjaExtractionError, never UndefinedError.
     """
     try:
         compiled = _expression_env.compile_expression(
@@ -160,14 +199,24 @@ def extract(expression: str, data: dict) -> Any:
         raise ValueError(
             f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
         ) from e
-    result = compiled(**data)
-    if isinstance(result, types.GeneratorType):
-        result = list(result)
+    try:
+        result = compiled(**data)
+        # Materializing inside the try is load-bearing: map/selectattr/groupby
+        # return lazy generators, so their per-item lookups don't run until
+        # list() does. A missing field there raises here, not above.
+        if isinstance(result, types.GeneratorType):
+            result = list(result)
+    except UndefinedError as e:
+        # A single missing lookup yields Undefined, but any further operation on
+        # it (attribute access, indexing, a filter) raises. That's still just
+        # missing data, so surface it as an extraction error callers handle --
+        # keeping Jinja's message, which names the field that wasn't there.
+        raise JinjaExtractionError(str(e)) from e
     return result
 
 
 def _build_namespace(task_input: Any) -> dict:
-    """Build the rendering namespace per functional_spec section 5.
+    """Build the rendering namespace.
 
     The template always sees a single variable ``input``.
     For plaintext (str) inputs, try json.loads(); fall back to the raw string.

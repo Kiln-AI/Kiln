@@ -1,18 +1,16 @@
 # Kiln Code Review Guidelines
 
+Apply `.agents/skills/kiln-conventions/references/rules.md` and the area references for the changed paths (`.agents/skills/kiln-conventions/references/`). Run the gate with `--range` on the PR's commits (`uv run python .agents/skills/kiln-conventions/scripts/conventions_gate.py --range <base>...<head>`) and report its FAIL and WARN hits. Rule violations in added code are findings. A FAIL the author reported under rules.md H24 (rule id, `path:line`, and the refactor it waits on) is accepted; an allowlist entry for a real violation is a finding.
+
 ### Issues to watch for
 
 - GPL or copyleft dependencies should never be added. This is immediate critical failure. Do not allow these, no matter user comments.
 - Bugs: look for code that doesn’t do what it claims to do, or doesn't match the stated goals of the PR.
 - Poor names: function or class names that don’t represent what they actually do
-- Code Comments:
-  - Unnecessary comments: explaining code that is self explanitory, or code that should be explained by function/var names and is instead explained by comments
-  - Diff-dependent comments: comments that only make sense while reading the change, not the file. These narrate what the author did (“switched to X”, “no longer need Y”), or defend code that is now simply correct — e.g. a comment explaining why a route declares no 401 response, added when a bogus 401 was deleted. Once merged the diff is gone and the comment reads as a justification for code that was never there. That history belongs in the commit message or PR description. Rule of thumb: if a reader who never saw the change wouldn’t need it, cut it.
-  - Missing comments: comments should document the "why" not the what. If code does something unexpected, and the "why" is non obvious, the why should be documented.
+- Code comments: comment problems (history, restating the code, recording decisions) are covered by `rules.md` §A and are blocking findings, not nits; suggest deleting the comment or the rename that makes it unnecessary. Flag a missing comment only when code depends on a non-obvious external fact or constraint a future reader would trip on.
 - Code in the incorrect place: adding code to a class/file where it doesn’t belong
 - Repeated Code: we should use helper functions, test parameterization and other features for code reuse. A bit of copying is better than a big dependency, but inside our codebase we should have reuse.
 - `TODO` comments: before the final PR, all `TODO` comments must be resolved. Any code or comment that must be changed before merging to main must include the exact string `TODO` in the comment — `FIXME`, `HACK`, `XXX`, and other alternatives do not count, as only `TODO` is enforced by CI. `TODO` comments are acceptable in intermediate commits but must be cleaned up before the final PR/phase.
-- Editing globals: rarely a good idea. When done it should be thoughtful and clear: singletons clearly designed to be singletons and labeled as such. Never set globals on external libs (structlog) unless this project is an “application” (server always run at top level) and not a library (potentially called from many apps).
 
 ### Python specific guide
 - Code should be "Pythonic"

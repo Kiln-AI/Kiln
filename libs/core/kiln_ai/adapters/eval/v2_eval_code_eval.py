@@ -72,11 +72,18 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
 
+        openenv_episode: dict[str, Any] | None = (
+            eval_input.openenv_episode.to_sandbox_dict()
+            if eval_input.openenv_episode is not None
+            else None
+        )
+
         inputs: dict[str, Any] = {
             "output": eval_input.final_message,
             "trace": eval_input.trace,
             "reference_data": eval_input.reference_data,
             "task_input": eval_input.task_input,
+            "openenv_episode": openenv_episode,
         }
 
         server = NestedToolServer(

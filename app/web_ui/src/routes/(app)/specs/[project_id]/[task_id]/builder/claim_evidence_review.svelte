@@ -95,9 +95,8 @@
   }
 
   // The two section sub-lines. The claims section carries the step's purpose,
-  // since the step no longer has a header of its own to carry it: answering
-  // the claims IS confirming the judge. The overview's says what the panel
-  // beside them holds.
+  // since the step has no header of its own: answering the claims IS
+  // confirming the judge. The overview's says what the panel beside them holds.
   const CLAIMS_DESCRIPTION =
     "Confirm the judge is aligned to your expectations."
   const OVERVIEW_DESCRIPTION = "A summary of this task's run."
@@ -506,7 +505,7 @@
 </div>
 
 <!-- One trace rendering for both arms: a single-turn run is a conversation of
-     one turn, so the modal no longer needs to be told which arm it is on. -->
+     one turn, so the modal doesn't need to know which arm it is on. -->
 <ClaimTraceModal bind:this={trace_modal} />
 
 <!-- One eval-level dialog, not one per conversation, so it lives outside the

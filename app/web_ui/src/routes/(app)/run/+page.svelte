@@ -143,25 +143,25 @@
         selected_run_config_id && selected_run_config_id !== "custom"
           ? selected_run_config_id
           : null
-      const {
-        data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.POST("/api/projects/{project_id}/tasks/{task_id}/run", {
-        params: {
-          path: {
-            project_id: project_id,
-            task_id: task_id,
+      const { data, error: fetch_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/run",
+        {
+          params: {
+            path: {
+              project_id: project_id,
+              task_id: task_id,
+            },
+          },
+          body: {
+            run_config_properties: run_config_properties,
+            plaintext_input: input_form.get_plaintext_input_data(),
+            // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
+            structured_input: input_form.get_structured_input_data(),
+            tags: ["manual_run"],
+            task_run_config_id: task_run_config_id,
           },
         },
-        body: {
-          run_config_properties: run_config_properties,
-          plaintext_input: input_form.get_plaintext_input_data(),
-          // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
-          structured_input: input_form.get_structured_input_data(),
-          tags: ["manual_run"],
-          task_run_config_id: task_run_config_id,
-        },
-      })
+      )
       if (fetch_error) {
         // openapi-fetch already parses the error body into fetch_error, so we
         // can inspect it directly to decide whether this is the new structured

@@ -149,14 +149,26 @@ class GitSyncManager:
 
     @asynccontextmanager
     async def write_lock(self):
-        acquired = await asyncio.to_thread(
-            self._write_lock.acquire, timeout=self._WRITE_LOCK_TIMEOUT
+        acquire_task = asyncio.create_task(
+            asyncio.to_thread(
+                self._write_lock.acquire, timeout=self._WRITE_LOCK_TIMEOUT
+            )
         )
+        try:
+            acquired = await asyncio.shield(acquire_task)
+        except asyncio.CancelledError:
+            # The worker thread can still take the lock after the waiter is cancelled.
+            acquire_task.add_done_callback(self._release_if_acquired)
+            raise
         if not acquired:
             raise WriteLockTimeoutError("Another save is in progress")
         try:
             yield
         finally:
+            self._write_lock.release()
+
+    def _release_if_acquired(self, acquire_task: asyncio.Task[bool]) -> None:
+        if not acquire_task.cancelled() and acquire_task.result():
             self._write_lock.release()
 
     @asynccontextmanager

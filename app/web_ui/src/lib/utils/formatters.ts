@@ -84,6 +84,25 @@ export function formatSize(byteSize: number | undefined | null): string {
   return `${displaySize} ${units[idx]}`
 }
 
+// The user-facing name for an eval output score: the optional display_name, falling back to the
+// persisted name. Always use this for display; use `name` (not display_name) for json_key lookups.
+export function score_display_name(score: {
+  name: string
+  display_name?: string | null
+}): string {
+  return score.display_name || score.name
+}
+
+// Escapes text for interpolation into an HTML string (e.g. ECharts tooltip formatters).
+export function escape_html(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 export function eval_config_to_ui_name(
   eval_config_type: EvalConfigType,
 ): string {

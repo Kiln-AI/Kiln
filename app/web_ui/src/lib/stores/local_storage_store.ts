@@ -4,7 +4,6 @@ import { writable } from "svelte/store"
 // persists values is never cleaned up, so callers must be module-level
 // singletons (not created inside components or loops).
 export function localStorageStore<T>(key: string, initialValue: T) {
-  // Check if localStorage is available
   const isBrowser = typeof window !== "undefined" && window.localStorage
 
   let storedValue: T | null = null

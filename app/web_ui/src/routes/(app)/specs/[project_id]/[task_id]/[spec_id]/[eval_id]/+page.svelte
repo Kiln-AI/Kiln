@@ -10,6 +10,7 @@
   import {
     eval_config_to_ui_name,
     eval_config_to_detailed_ui_name,
+    score_display_name,
   } from "$lib/utils/formatters"
   import {
     model_info,
@@ -290,12 +291,9 @@
       value: evaluator.id || "unknown",
     })
 
-    // Every dataset row renders whether or not the eval has that dataset. A dataset is
-    // only there if something explicitly wrote one (functional spec 3.2 — unconfigured
-    // splits stay unconfigured), so most pre-existing evals are missing several. Hiding a
-    // row would make "this eval has no val set" indistinguishable from "this page doesn't
-    // show val sets". With no dataset there is no filter to show, no items to count and
-    // nothing to link to, so the row says so instead.
+    // Every dataset row renders whether or not the eval has that dataset: unconfigured
+    // splits stay unconfigured, so many evals are missing several, and hiding a row would
+    // make "this eval has no val set" look like "this page doesn't show val sets".
     const NOT_CONFIGURED = "Not configured"
 
     const test_filter_id = eval_split_filter_id(evaluator, "test")
@@ -511,7 +509,7 @@
     // Goals are setup. Generate friendly names for them.
     goals = []
     for (const output of evaluator.output_scores) {
-      goals.push(output.name + " (" + output.type + ")")
+      goals.push(score_display_name(output) + " (" + output.type + ")")
     }
 
     if (has_default_eval_config && progress.dataset_size > 0) {

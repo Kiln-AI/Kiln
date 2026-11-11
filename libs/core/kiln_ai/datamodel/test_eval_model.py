@@ -29,6 +29,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     PatternMatchProperties,
+    ScoreDirection,
     SetCheckProperties,
     SingleTurnEvalInputData,
     SkippedReason,
@@ -580,6 +581,248 @@ def test_eval_output_score_name_validation():
         type=TaskOutputRatingType.five_star,
     )
     assert max_length_score.name == "a" * 32
+
+
+def _display_name_eval() -> Eval:
+    return Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="Tone Check", type=TaskOutputRatingType.pass_fail),
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.five_star),
+        ],
+    )
+
+
+def test_eval_output_score_display_name_defaults_to_none():
+    score = EvalOutputScore(name="accuracy", type=TaskOutputRatingType.five_star)
+    assert score.display_name is None
+    assert score.resolved_display_name() == "accuracy"
+
+
+@pytest.mark.parametrize(
+    "display_name, expected",
+    [
+        ("  Accuracy  ", "Accuracy"),
+        ("", None),
+        ("   ", None),
+        (None, None),
+        ("accuracy", None),
+        ("x" * 32, "x" * 32),
+    ],
+)
+def test_eval_output_score_display_name_normalized(display_name, expected):
+    score = EvalOutputScore(
+        name="accuracy",
+        display_name=display_name,
+        type=TaskOutputRatingType.five_star,
+    )
+    assert score.display_name == expected
+    assert score.resolved_display_name() == (expected or "accuracy")
+
+
+def test_eval_output_score_display_name_too_long():
+    with pytest.raises(ValidationError, match="at most 32 characters"):
+        EvalOutputScore(
+            name="accuracy",
+            display_name="x" * 33,
+            type=TaskOutputRatingType.five_star,
+        )
+
+
+def test_eval_output_score_display_name_does_not_change_json_key():
+    score = EvalOutputScore(
+        name="Tone Check",
+        display_name="Politeness",
+        type=TaskOutputRatingType.pass_fail,
+    )
+    assert score.json_key() == "tone_check"
+
+
+def test_eval_output_score_display_name_legacy_dict():
+    """Serialized scores that predate display_name must still parse."""
+    score = EvalOutputScore.model_validate({"name": "accuracy", "type": "five_star"})
+    assert score.display_name is None
+
+
+@pytest.mark.parametrize(
+    "display_names",
+    [
+        ["Quality", "quality"],
+        ["Accuracy", None],
+    ],
+)
+def test_eval_rejects_duplicate_display_names(display_names):
+    """Display names must be unique (case-insensitive), including against other scores' names."""
+    with pytest.raises(ValueError, match="unique display names"):
+        Eval(
+            name="Test Eval",
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(
+                    name="Tone Check",
+                    display_name=display_names[0],
+                    type=TaskOutputRatingType.pass_fail,
+                ),
+                EvalOutputScore(
+                    name="accuracy",
+                    display_name=display_names[1],
+                    type=TaskOutputRatingType.five_star,
+                ),
+            ],
+        )
+
+
+def test_eval_set_output_score_display_names():
+    eval = _display_name_eval()
+    eval.set_output_score_display_names({"tone_check": "  Politeness "})
+    assert eval.output_scores[0].display_name == "Politeness"
+    assert eval.output_scores[0].name == "Tone Check"
+    assert eval.output_scores[1].display_name is None
+
+    eval.set_output_score_display_names({"accuracy": "Correctness"})
+    assert eval.output_scores[0].display_name == "Politeness"
+    assert eval.output_scores[1].display_name == "Correctness"
+
+    eval.set_output_score_display_names({"tone_check": None})
+    assert eval.output_scores[0].display_name is None
+
+
+def test_eval_set_output_score_display_names_persists(mock_task, tmp_path):
+    mock_task.path = tmp_path / "task.kiln"
+    eval = _display_name_eval()
+    eval.parent = mock_task
+    eval.set_output_score_display_names({"tone_check": "Politeness"})
+    eval.save_to_file()
+
+    loaded = Eval.load_from_file(eval.path)
+    assert loaded.output_scores[0].display_name == "Politeness"
+    assert loaded.output_scores[0].json_key() == "tone_check"
+
+
+@pytest.mark.parametrize(
+    "display_names, expected_message",
+    [
+        ({"unknown": "Quality"}, "Unknown output score keys"),
+        ({"tone_check": "x" * 33}, "at most 32 characters"),
+        ({"tone_check": "Accuracy"}, "unique display names"),
+    ],
+)
+def test_eval_set_output_score_display_names_invalid(display_names, expected_message):
+    """Invalid updates raise and leave every score unchanged."""
+    eval = _display_name_eval()
+    with pytest.raises(ValueError, match=expected_message):
+        eval.set_output_score_display_names(display_names)
+    assert [score.display_name for score in eval.output_scores] == [None, None]
+
+
+def test_eval_set_output_score_display_names_readonly():
+    eval = _display_name_eval()
+    eval.mark_as_readonly()
+    with pytest.raises(ReadOnlyMutationError):
+        eval.set_output_score_display_names({"tone_check": "Politeness"})
+    assert eval.output_scores[0].display_name is None
+
+
+def test_eval_output_score_direction_default():
+    score = EvalOutputScore(
+        name="accuracy",
+        type=TaskOutputRatingType.five_star,
+    )
+    assert score.direction == ScoreDirection.higher_is_better
+
+
+def test_eval_output_score_direction_legacy_dict():
+    """Serialized scores that predate the direction field must still parse."""
+    score = EvalOutputScore.model_validate(
+        {
+            "name": "accuracy",
+            "type": "five_star",
+        }
+    )
+    assert score.direction == ScoreDirection.higher_is_better
+
+
+@pytest.mark.parametrize(
+    "score_type",
+    [
+        TaskOutputRatingType.five_star,
+        TaskOutputRatingType.pass_fail,
+        TaskOutputRatingType.pass_fail_critical,
+    ],
+)
+@pytest.mark.parametrize(
+    "direction",
+    [ScoreDirection.higher_is_better, ScoreDirection.informational],
+)
+def test_eval_output_score_direction_valid(score_type, direction):
+    score = EvalOutputScore(
+        name="my score",
+        type=score_type,
+        direction=direction,
+    )
+    assert score.direction == direction
+
+    round_tripped = EvalOutputScore.model_validate(score.model_dump())
+    assert round_tripped.direction == direction
+
+
+@pytest.mark.parametrize(
+    "score_type",
+    [
+        TaskOutputRatingType.five_star,
+        TaskOutputRatingType.pass_fail,
+        TaskOutputRatingType.pass_fail_critical,
+    ],
+)
+def test_eval_output_score_direction_lower_rejected(score_type):
+    with pytest.raises(
+        ValidationError,
+        match=r"'my score'.*higher-is-better by definition.*reserved for custom scores",
+    ):
+        EvalOutputScore(
+            name="my score",
+            type=score_type,
+            direction=ScoreDirection.lower_is_better,
+        )
+
+
+def test_eval_direction_legacy_file_load(mock_task, tmp_path):
+    """Eval files saved before the direction field existed must load with the default."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Legacy Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    # Rewrite the file without the direction key, simulating a pre-direction file
+    eval_path = eval.path
+    file_data = json.loads(eval_path.read_text())
+    for score in file_data["output_scores"]:
+        del score["direction"]
+    eval_path.write_text(json.dumps(file_data, ensure_ascii=False))
+
+    loaded_eval = Eval.load_from_file(str(eval_path))
+    assert loaded_eval.output_scores[0].direction == ScoreDirection.higher_is_better
+
+    # Re-saving persists the field explicitly
+    loaded_eval.save_to_file()
+    saved_data = json.loads(eval_path.read_text())
+    assert saved_data["output_scores"][0]["direction"] == "higher_is_better"
 
 
 @pytest.fixture
@@ -3021,6 +3264,17 @@ def _make_v2_eval_config(**kwargs) -> EvalConfig:
     return EvalConfig(name="V2 Test", config_type=EvalConfigType.v2, **kwargs)
 
 
+# One value_expression per EvalTaskInput field, keyed by the root variable it
+# reads. Checked against EvalTaskInput.model_fields so the coverage claim holds.
+_EVAL_INPUT_FIELD_EXPRESSIONS = {
+    "final_message": "final_message",
+    "trace": "trace[-1].content",
+    "task_input": "task_input | upper",
+    "reference_data": "reference_data",
+    "openenv_episode": "openenv_episode.final_state",
+}
+
+
 class TestV2TemplateValidation:
     def test_valid_prompt_template(self):
         """A prompt_template with a Jinja expression passes validation."""
@@ -3043,6 +3297,26 @@ class TestV2TemplateValidation:
                     prompt_template="Hello {{ broken",
                 ),
             )
+
+    @pytest.mark.parametrize(
+        "template, error",
+        [
+            ("Hello {{ broken", "Invalid Jinja2 template"),
+            ("{{ reference_data }}", "never references the model output"),
+        ],
+    )
+    def test_bad_prompt_template_rejected_every_time(self, template, error):
+        """The template check is cached per template. A bad template must still fail
+        every validation, not only the first."""
+        for _ in range(3):
+            with pytest.raises(ValidationError, match=error):
+                _make_v2_eval_config(
+                    properties=LlmJudgeProperties(
+                        model_name="m",
+                        model_provider="p",
+                        prompt_template=template,
+                    ),
+                )
 
     def test_static_prompt_template_rejected(self):
         """A prompt_template with no Jinja expressions is rejected."""
@@ -3129,6 +3403,72 @@ class TestV2TemplateValidation:
                     value_expression="final_message[",
                 ),
             )
+
+    @pytest.mark.parametrize(
+        "root,expression",
+        list(_EVAL_INPUT_FIELD_EXPRESSIONS.items()),
+    )
+    def test_value_expression_accepts_every_eval_input_field(self, root, expression):
+        # Tied to the model so a new EvalTaskInput field can't leave this test
+        # named "every field" while silently skipping one.
+        assert set(_EVAL_INPUT_FIELD_EXPRESSIONS) == set(EvalTaskInput.model_fields)
+        cfg = _make_v2_eval_config(
+            properties=ExactMatchProperties(
+                expected_value="yes",
+                value_expression=expression,
+            ),
+        )
+        assert cfg.properties.value_expression == expression
+
+    @pytest.mark.parametrize(
+        "expression,unknown",
+        [
+            ("outpt.status", "outpt"),
+            ("messages[-1].content", "messages"),
+            ("final_message ~ typo", "typo"),
+        ],
+    )
+    def test_value_expression_rejects_unknown_variable(self, expression, unknown):
+        """A typo'd root fails silently at runtime, so it has to fail loudly here.
+
+        Depending on what the expression does with it, the typo either resolves
+        to Undefined and scores every row 0.0, or -- as with `~`, which
+        stringifies Undefined to '' -- produces a plausible-looking wrong value
+        ('hi' for `final_message ~ typo`) that no one notices.
+        """
+        with pytest.raises(
+            ValidationError, match=f"unknown variable '{unknown}'"
+        ) as exc:
+            _make_v2_eval_config(
+                properties=ExactMatchProperties(
+                    expected_value="yes",
+                    value_expression=expression,
+                ),
+            )
+        assert (
+            "final_message, openenv_episode, reference_data, task_input, trace"
+            in str(exc.value)
+        )
+
+    def test_value_expression_unknown_variable_still_loads_from_file(self):
+        """Already-saved configs keep loading; the check gates writes, not reads."""
+        cfg = EvalConfig.model_validate(
+            {
+                "v": 1,
+                "id": "123",
+                "name": "Saved before the check existed",
+                "config_type": "v2",
+                "model_type": "eval_config",
+                "properties": {
+                    "type": "exact_match",
+                    "expected_value": "yes",
+                    "value_expression": "outpt.status",
+                },
+            },
+            context={"loading_from_file": True},
+        )
+        assert isinstance(cfg.properties, ExactMatchProperties)
+        assert cfg.properties.value_expression == "outpt.status"
 
     def test_none_value_expression_skipped(self):
         """value_expression=None (default) should not be validated."""
@@ -3408,6 +3748,7 @@ class TestV1EvalRunCoexistence:
         loaded = loaded_runs[0]
         assert loaded.scored_run_id is None
         assert loaded.eval_usage is None
+        assert loaded.judge_trace is None
         assert loaded.input == "legacy input"
         assert loaded.output == "legacy output"
         assert loaded.task_run_usage is not None
@@ -3952,6 +4293,15 @@ class TestV2EvalResult:
             intermediate_outputs={"chain_of_thought": "reasoning text"},
         )
         assert result.intermediate_outputs == {"chain_of_thought": "reasoning text"}
+
+    def test_judge_trace_list_content_can_be_copied(self):
+        parts = [{"type": "text", "text": "rendered judge prompt"}]
+        result = V2EvalResult(judge_trace=[{"role": "user", "content": parts}])
+
+        copied = result.model_copy(deep=True)
+        assert copied.judge_trace is not None
+        assert copied.judge_trace[0]["content"] == parts
+        assert result.model_dump()["judge_trace"][0]["content"] == parts
 
 
 # ---------------------------------------------------------------------------
@@ -5490,6 +5840,52 @@ def test_eval_usage_defaults_to_none_and_round_trips(v2_eval_config):
     assert loaded.eval_usage.cost == 0.002
 
 
+def test_judge_trace_defaults_to_none_and_round_trips_reasoning(v2_eval_config):
+    run = EvalRun(parent=v2_eval_config, **pointer_run_data())
+    assert run.judge_trace is None
+
+    run.judge_trace = [
+        {"role": "system", "content": "Score the output."},
+        {"role": "user", "content": "rendered judge prompt"},
+        {
+            "role": "assistant",
+            "content": '{"accuracy": "pass"}',
+            "reasoning_content": "The answer matches the reference.",
+        },
+    ]
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.judge_trace == run.judge_trace
+
+
+def test_judge_trace_list_content_survives_save_load_and_copy(v2_eval_config):
+    """Pydantic validates list-of-parts `content` into a single-use iterator, which
+    serializes as [] and cannot be deepcopied unless the model materializes it."""
+    parts = [
+        {"type": "text", "text": "rendered judge prompt"},
+        {"type": "text", "text": "scored output"},
+    ]
+    run = EvalRun(
+        parent=v2_eval_config,
+        **pointer_run_data(
+            judge_trace=[
+                {"role": "user", "content": parts},
+                {"role": "assistant", "content": '{"accuracy": "pass"}'},
+            ]
+        ),
+    )
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.judge_trace is not None
+    assert loaded.judge_trace[0]["content"] == parts
+
+    copied = loaded.mutable_copy()
+    assert copied.judge_trace is not None
+    assert copied.judge_trace[0]["content"] == parts
+
+
 @pytest.mark.parametrize("field_name", ["input", *LEGACY_TRACE_FIELDS])
 def test_legacy_trace_fields_are_marked_deprecated(field_name):
     """Two signals, for two audiences: the description prefix for a human reading the
@@ -5524,7 +5920,13 @@ def test_reading_a_deprecated_field_does_not_warn():
 def test_live_eval_run_fields_are_not_marked_deprecated():
     """The flag has to be per-field, not smeared across the model."""
     schema_properties = EvalRun.model_json_schema()["properties"]
-    for field_name in ("scored_run_id", "eval_usage", "scores", "intermediate_outputs"):
+    for field_name in (
+        "scored_run_id",
+        "eval_usage",
+        "judge_trace",
+        "scores",
+        "intermediate_outputs",
+    ):
         assert "deprecated" not in schema_properties[field_name], field_name
 
 
@@ -5544,3 +5946,47 @@ def test_eval_config_eval_requires_a_dataset_item():
             output="out",
             scores={"accuracy": 1.0},
         )
+
+
+@pytest.mark.parametrize("readonly", [False, True])
+def test_listing_eval_runs_does_not_reload_the_config_per_run(
+    valid_eval_config_data, tmp_path, readonly
+):
+    """EvalRun validators read their parent config; listing runs must hand it to
+    them rather than each run reloading and re-validating the config file."""
+
+    def config_loads(run_count: int) -> int:
+        folder = tmp_path / f"{run_count}_{readonly}"
+        folder.mkdir()
+        task = Task(name="Test Task", instruction="Test", path=folder / "task.kiln")
+        task.save_to_file()
+        eval = Eval(
+            name="Test Eval",
+            parent=task,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        eval.save_to_file()
+        config = EvalConfig(parent=eval, **valid_eval_config_data)
+        config.save_to_file()
+        for i in range(run_count):
+            EvalRun(
+                parent=config,
+                dataset_id=f"dataset{i}",
+                task_run_config_id="config456",
+                input="in",
+                output="out",
+                scores={"accuracy": 1.0},
+            ).save_to_file()
+
+        loaded_config = EvalConfig.load_from_file(config.path)
+        with patch.object(
+            EvalConfig, "load_from_file", wraps=EvalConfig.load_from_file
+        ) as load:
+            assert len(loaded_config.runs(readonly=readonly)) == run_count
+        return load.call_count
+
+    assert config_loads(4) == config_loads(1)

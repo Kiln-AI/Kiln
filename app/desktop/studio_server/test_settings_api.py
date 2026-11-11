@@ -168,6 +168,52 @@ def test_open_logs_endpoint(client):
         m.assert_called_once()
 
 
+class TestOpenProjectFolder:
+    @pytest.fixture
+    def mock_project_from_id(self):
+        with patch(
+            "app.desktop.studio_server.settings_api.project_from_id"
+        ) as mock_from_id:
+            mock_from_id.return_value = MagicMock(path="/tmp/project/project.kiln")
+            yield mock_from_id
+
+    @pytest.fixture
+    def mock_open_folder(self):
+        with patch("app.desktop.studio_server.settings_api.open_folder") as m:
+            yield m
+
+    def test_opens_folder(self, client, mock_project_from_id, mock_open_folder):
+        response = client.post("/api/open_project_folder/proj-1")
+        assert response.status_code == 200
+        assert response.json() == {"message": "opened"}
+        mock_project_from_id.assert_called_once_with("proj-1")
+        mock_open_folder.assert_called_once_with("/tmp/project/project.kiln")
+
+    def test_project_not_found_returns_404(self, client, mock_open_folder):
+        with patch("kiln_server.project_api.project_from_id_core", return_value=None):
+            response = client.post("/api/open_project_folder/missing")
+        assert response.status_code == 404
+        assert "Project not found" in response.json()["message"]
+        mock_open_folder.assert_not_called()
+
+    def test_missing_project_path_returns_500(
+        self, client, mock_project_from_id, mock_open_folder
+    ):
+        mock_project_from_id.return_value = MagicMock(path=None)
+        response = client.post("/api/open_project_folder/proj-1")
+        assert response.status_code == 500
+        assert response.json()["message"] == "Project path not found"
+        mock_open_folder.assert_not_called()
+
+    def test_open_folder_failure_returns_500(
+        self, client, mock_project_from_id, mock_open_folder
+    ):
+        mock_open_folder.side_effect = OSError("no file browser")
+        response = client.post("/api/open_project_folder/proj-1")
+        assert response.status_code == 500
+        assert response.json()["message"] == "no file browser"
+
+
 class TestCheckEntitlements:
     @pytest.fixture
     def mock_api_key(self):

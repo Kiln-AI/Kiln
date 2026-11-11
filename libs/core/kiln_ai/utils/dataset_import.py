@@ -2,9 +2,11 @@ import csv
 import json
 import logging
 import random
+import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
+from types import TracebackType
 from typing import Dict, Literal, Protocol
 
 from openai.types.chat import ChatCompletionUserMessageParam
@@ -29,7 +31,43 @@ logger = logging.getLogger(__name__)
 # (including 64-bit Windows).
 _CSV_FIELD_SIZE_LIMIT_BYTES = 100 * 1024 * 1024
 
-csv.field_size_limit(_CSV_FIELD_SIZE_LIMIT_BYTES)
+
+class _RaisedCSVFieldSizeLimit:
+    """Context manager that raises the process-wide ``csv.field_size_limit`` to
+    at least ``_CSV_FIELD_SIZE_LIMIT_BYTES`` while active, then restores the
+    host's previous value.
+
+    The limit is global to the interpreter, so entries are reference counted:
+    overlapping imports on different threads keep the raised limit until the
+    last one exits.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._active = 0
+        self._previous_limit = 0
+
+    def __enter__(self) -> None:
+        with self._lock:
+            if self._active == 0:
+                self._previous_limit = csv.field_size_limit(
+                    max(csv.field_size_limit(), _CSV_FIELD_SIZE_LIMIT_BYTES)
+                )
+            self._active += 1
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        with self._lock:
+            self._active -= 1
+            if self._active == 0:
+                csv.field_size_limit(self._previous_limit)
+
+
+_raised_csv_field_size_limit = _RaisedCSVFieldSizeLimit()
 
 
 class DatasetImportFormat(str, Enum):
@@ -313,7 +351,10 @@ def _import_csv_single_turn(
     optional_headers = {"reasoning", "tags", "chain_of_thought"}  # optional headers
 
     rows: list[TaskRun] = []
-    with open(dataset_path, "r", newline="", encoding="utf-8") as csvfile:
+    with (
+        open(dataset_path, "r", newline="", encoding="utf-8") as csvfile,
+        _raised_csv_field_size_limit,
+    ):
         reader = csv.DictReader(csvfile)
 
         # Check if we have headers
@@ -582,7 +623,10 @@ def _import_csv_multiturn(
     optional_headers = {"tags"}
 
     chains: list[list[TaskRun]] = []
-    with open(dataset_path, "r", newline="", encoding="utf-8") as csvfile:
+    with (
+        open(dataset_path, "r", newline="", encoding="utf-8") as csvfile,
+        _raised_csv_field_size_limit,
+    ):
         reader = csv.DictReader(csvfile)
 
         if not reader.fieldnames:

@@ -79,6 +79,7 @@ def execute_scorer_bridged(
             "trace": inputs.get("trace"),
             "reference_data": inputs.get("reference_data"),
             "task_input": inputs["task_input"],
+            "openenv_episode": inputs.get("openenv_episode"),
         }
         sig = inspect.signature(score_fn)
         declared = set(sig.parameters.keys())

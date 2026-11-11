@@ -103,6 +103,13 @@ describe("stores", () => {
       expect(provider_name_from_id("test-provider")).toBe("Test Provider")
     })
 
+    it("should fall back to the built-in name for vertex", () => {
+      available_models.set([])
+      expect(provider_name_from_id("vertex")).toBe(
+        "Gemini Enterprise Agent Platform",
+      )
+    })
+
     it("should return provider_id when provider doesn't exist", () => {
       available_models.set([])
       expect(provider_name_from_id("non-existent-provider")).toBe(

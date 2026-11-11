@@ -49,26 +49,28 @@
   sub_subtitle_link={docs_link}
   {breadcrumbs}
 >
-  {#if checking}
-    <div class="flex justify-center my-24 md:my-36">
+  <!-- Centred in a viewport-relative area, so the card sits mid-screen on
+    large monitors and still fits above the fold on short windows. -->
+  <div class="flex flex-col items-center justify-center min-h-[60vh] py-4">
+    {#if checking}
       <span class="loading loading-spinner loading-lg"></span>
-    </div>
-  {:else}
-    <div
-      class="flex flex-col max-w-[400px] mx-auto mt-24 md:mt-36 border border-base-300 rounded-2xl bg-base-100 px-6 shadow-lg py-8 md:py-12"
-    >
-      <ConnectKilnCopilotSteps
-        onSuccess={() => (connect_success = true)}
-        showCheckmark={connect_success}
-      />
-      {#if connect_success}
-        <button
-          class="btn btn-primary mt-4 btn-wide mx-auto"
-          on:click={proceed}
-        >
-          Continue
-        </button>
-      {/if}
-    </div>
-  {/if}
+    {:else}
+      <div
+        class="flex flex-col w-full max-w-[400px] border border-base-300 rounded-2xl bg-base-100 px-6 shadow-lg py-8 md:py-12"
+      >
+        <ConnectKilnCopilotSteps
+          onSuccess={() => (connect_success = true)}
+          showCheckmark={connect_success}
+        />
+        {#if connect_success}
+          <button
+            class="btn btn-primary mt-4 btn-wide mx-auto"
+            on:click={proceed}
+          >
+            Continue
+          </button>
+        {/if}
+      </div>
+    {/if}
+  </div>
 </AppPage>

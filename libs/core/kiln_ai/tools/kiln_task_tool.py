@@ -116,12 +116,10 @@ class KilnTaskTool(KilnToolInterface):
 
     @cached_property
     def _task(self) -> Task:
-        # Load the project first
         project = project_from_id(self._project_id)
         if project is None:
             raise ValueError(f"Project not found: {self._project_id}")
 
-        # Load the task from the project
         task = Task.from_id_and_parent_path(self._task_id, project.path)
         if task is None:
             raise ValueError(

@@ -87,12 +87,12 @@ def connect_settings(app: FastAPI):
         ],
     ):
         """Opens the project folder in the system file browser."""
-        try:
-            project = project_from_id(project_id)
-            path = project.path
-            if not path:
-                raise HTTPException(status_code=500, detail="Project path not found")
+        project = project_from_id(project_id)
+        path = project.path
+        if not path:
+            raise HTTPException(status_code=500, detail="Project path not found")
 
+        try:
             open_folder(path)
             return {"message": "opened"}
         except Exception as e:

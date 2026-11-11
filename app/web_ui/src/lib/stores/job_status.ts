@@ -87,8 +87,8 @@ export function job_status_display_badge_class(job: JobRecord): string {
 export type JobAction = "pause" | "resume" | "cancel" | "delete"
 
 // The set of lifecycle actions valid for a job given its status and whether
-// its worker supports pause. Mirrors the state machine (functional_spec §3) and
-// the delete policy (architecture open item #7: delete only on terminal state).
+// its worker supports pause. Mirrors the server's job state machine; delete is
+// only offered in a terminal state.
 export function available_actions(job: JobRecord): JobAction[] {
   switch (job.status) {
     case "running": {

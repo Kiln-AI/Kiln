@@ -45,7 +45,7 @@ feedback describing what should be improved. Your job is to understand the evalu
 
     @classmethod
     def _original_prompt(cls, run: TaskRun, task: Task) -> str:
-        # Get the prompt builder id. Need the second check because we used to store this in a prompt_builder_name field, so loading legacy runs will need this.
+        # Older runs store the prompt ID in prompt_builder_name.
         source_properties = (
             run.output.source.properties
             if run.output.source and run.output.source.properties

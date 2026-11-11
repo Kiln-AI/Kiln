@@ -1,0 +1,286 @@
+name: Check Release Downloads
+
+# The Kiln downloads page links to fixed "latest release" URLs, one per desktop
+# build. This catches a release that would break those links: one published or
+# edited without all of the expected files, or a deleted or unpublished release
+# that moves "latest" to one that lacks them.
+# The daily run catches files removed from a published release, which fires no release event.
+# It also downloads each file and checks its contents: the files the Linux
+# installer and Windows users rely on, and that each build is for the CPU
+# architecture its filename names.
+
+on:
+  release:
+    types: [released, edited, deleted, unpublished]
+  schedule:
+    - cron: "17 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The downloads page hardcodes these filenames. Releases before v0.14 used
+  # other names; they are never edited, so they never reach the release check.
+  EXPECTED_ASSETS: >-
+    Kiln.MacOS.AppleSilicon.M-Processor.dmg
+    Kiln.MacOS.Intel.dmg
+    Kiln.Windows.zip
+    Kiln.Linux.x64.zip
+    Kiln.Linux.ARM.zip
+  LATEST_DOWNLOAD_BASE_URL: https://github.com/Kiln-AI/Kiln/releases/latest/download
+  # Set only when a published, non-prerelease release fired this run; that
+  # release's own files are then checked. Every other run, including edits to
+  # drafts and pre-releases (which never become "latest"), checks the files
+  # behind the latest download URLs.
+  RELEASE_TAG: >-
+    ${{ github.event_name == 'release'
+    && (github.event.action == 'released' || github.event.action == 'edited')
+    && !github.event.release.draft
+    && !github.event.release.prerelease
+    && github.event.release.tag_name || '' }}
+
+jobs:
+  check-downloads:
+    name: Check Release Download URLs
+    if: ${{ github.repository == 'Kiln-AI/Kiln' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check latest download URLs resolve
+        run: |
+          failed=()
+          for name in $EXPECTED_ASSETS; do
+            url="$LATEST_DOWNLOAD_BASE_URL/$name"
+            # The asset host rejects HEAD requests, so request just the first
+            # byte, which answers 206 (or 200 if the range is ignored). curl
+            # reports 000 when no response arrives.
+            status=$(curl -sS -L --range 0-0 --retry 3 --max-time 60 -o /dev/null -w '%{http_code}' "$url" || true)
+            echo "$status $url"
+            if [ "$status" != "200" ] && [ "$status" != "206" ]; then
+              failed+=("| \`$url\` | $status |")
+            fi
+          done
+
+          if [ ${#failed[@]} -ne 0 ]; then
+            {
+              echo "### Broken latest download URLs"
+              echo
+              echo "| URL | HTTP status |"
+              echo "| --- | --- |"
+              printf '%s\n' "${failed[@]}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "${#failed[@]} latest download URL(s) did not resolve" >&2
+            exit 1
+          fi
+          echo "All latest download URLs resolve" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check release has expected assets
+        # Runs even when the URL check fails, so the summary lists every problem.
+        if: ${{ !cancelled() && env.RELEASE_TAG != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+        run: |
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.assets[].name')
+
+          missing=()
+          for name in $EXPECTED_ASSETS; do
+            if ! grep -qxF "$name" <<< "$assets"; then
+              missing+=("- \`$name\`")
+            fi
+          done
+
+          if [ ${#missing[@]} -ne 0 ]; then
+            {
+              echo "### Release \`$RELEASE_TAG\` is missing assets"
+              echo
+              printf '%s\n' "${missing[@]}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Release $RELEASE_TAG is missing ${#missing[@]} expected asset(s)" >&2
+            exit 1
+          fi
+          echo "Release \`$RELEASE_TAG\` has all expected assets" >> "$GITHUB_STEP_SUMMARY"
+
+  check-contents:
+    name: Check ${{ matrix.asset }} contents
+    if: ${{ github.repository == 'Kiln-AI/Kiln' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # For Linux, `arch` is how `file` names the ELF machine, and the zip
+        # must not hold a build for `other_arch`. For macOS, `arch` is how
+        # `lipo -archs` names the architecture the app is built for.
+        include:
+          - asset: Kiln.Linux.x64.zip
+            kind: linux
+            runner: ubuntu-latest
+            arch: x86-64
+            other_arch: ARM aarch64
+          - asset: Kiln.Linux.ARM.zip
+            kind: linux
+            runner: ubuntu-latest
+            arch: ARM aarch64
+            other_arch: x86-64
+          - asset: Kiln.Windows.zip
+            kind: windows
+            runner: ubuntu-latest
+          - asset: Kiln.MacOS.AppleSilicon.M-Processor.dmg
+            kind: macos
+            runner: macos-latest
+            arch: arm64
+          - asset: Kiln.MacOS.Intel.dmg
+            kind: macos
+            runner: macos-latest
+            arch: x86_64
+    env:
+      ASSET: ${{ matrix.asset }}
+      ARCH: ${{ matrix.arch }}
+      OTHER_ARCH: ${{ matrix.other_arch }}
+
+    # Each check step appends one Markdown list item per problem to
+    # $RUNNER_TEMP/problems.md and keeps going; the last step reports them all.
+    steps:
+      - name: Download asset
+        run: |
+          if [ -n "$RELEASE_TAG" ]; then
+            url="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$ASSET"
+          else
+            url="$LATEST_DOWNLOAD_BASE_URL/$ASSET"
+          fi
+          echo "Downloading $url"
+          if ! curl -fsSL --retry 3 --max-time 1500 -o "$RUNNER_TEMP/$ASSET" "$url"; then
+            echo "- Could not download \`$url\`" >> "$RUNNER_TEMP/problems.md"
+            exit 1
+          fi
+
+      - name: Check Linux zip
+        if: ${{ matrix.kind == 'linux' }}
+        run: |
+          problems="$RUNNER_TEMP/problems.md"
+          # app/desktop/linux_installer.sh unzips into an empty folder and
+          # installs the file named Kiln from its top level.
+          if ! listing=$(zipinfo -1 "$RUNNER_TEMP/$ASSET"); then
+            echo "- Not a readable zip file" >> "$problems"
+            exit 0
+          fi
+          if ! grep -qxF Kiln <<< "$listing"; then
+            echo "- No \`Kiln\` executable at the top level of the zip, where \`linux_installer.sh\` expects it" >> "$problems"
+            exit 0
+          fi
+
+          unzip -q "$RUNNER_TEMP/$ASSET" Kiln -d "$RUNNER_TEMP/extracted"
+          description=$(file -b "$RUNNER_TEMP/extracted/Kiln")
+          echo "file Kiln: $description"
+          # `file` describes an ELF as "ELF 64-bit LSB executable, <machine>, ...".
+          # The interpreter path later in the line can also mention x86-64, so
+          # match the machine with its surrounding commas.
+          if [[ "$description" != ELF* ]]; then
+            echo "- \`Kiln\` is not an ELF executable: \`$description\`" >> "$problems"
+          elif [[ "$description" == *", $OTHER_ARCH,"* ]]; then
+            echo "- \`Kiln\` is built for $OTHER_ARCH, not $ARCH; the two Linux zips may be swapped: \`$description\`" >> "$problems"
+          elif [[ "$description" != *", $ARCH,"* ]]; then
+            echo "- \`Kiln\` is not built for $ARCH: \`$description\`" >> "$problems"
+          fi
+
+      - name: Check Windows zip
+        if: ${{ matrix.kind == 'windows' }}
+        env:
+          INSTALLER: Kiln.Windows.Installer.exe
+        run: |
+          problems="$RUNNER_TEMP/problems.md"
+          if ! listing=$(zipinfo -1 "$RUNNER_TEMP/$ASSET"); then
+            echo "- Not a readable zip file" >> "$problems"
+            exit 0
+          fi
+          if ! grep -qxF "$INSTALLER" <<< "$listing"; then
+            echo "- No \`$INSTALLER\` at the top level of the zip" >> "$problems"
+            exit 0
+          fi
+
+          unzip -q "$RUNNER_TEMP/$ASSET" "$INSTALLER" -d "$RUNNER_TEMP/extracted"
+          description=$(file -b "$RUNNER_TEMP/extracted/$INSTALLER")
+          echo "file $INSTALLER: $description"
+          if [[ "$description" != PE32* ]] || [[ "$description" != *"for MS Windows"* ]]; then
+            echo "- \`$INSTALLER\` is not a Windows executable: \`$description\`" >> "$problems"
+          fi
+
+      - name: Check macOS DMG
+        if: ${{ matrix.kind == 'macos' }}
+        run: |
+          problems="$RUNNER_TEMP/problems.md"
+          mount_dir="$RUNNER_TEMP/dmg"
+          mkdir -p "$mount_dir"
+          if ! hdiutil attach "$RUNNER_TEMP/$ASSET" -readonly -nobrowse -noautoopen -mountpoint "$mount_dir" > /dev/null; then
+            echo "- The DMG could not be mounted" >> "$problems"
+            exit 0
+          fi
+
+          shopt -s nullglob
+          apps=("$mount_dir"/*.app)
+          if [ ${#apps[@]} -ne 1 ]; then
+            echo "- Expected one \`.app\` at the top level of the DMG, found ${#apps[@]}" >> "$problems"
+            exit 0
+          fi
+          app="${apps[0]}"
+          app_name=$(basename "$app")
+          if [ ! -f "$app/Contents/MacOS/Kiln" ]; then
+            echo "- \`$app_name\` has no \`Contents/MacOS/Kiln\` executable" >> "$problems"
+          fi
+
+          # The executables in Contents/MacOS decide which Macs the app runs
+          # on, so they must hold only the expected architecture. Bundled
+          # libraries are often universal, so they only need to include it.
+          wrong_libraries=()
+          while IFS= read -r -d '' path; do
+            archs=$(lipo -archs "$path" 2> /dev/null) || continue
+            relative_path="${path#"$mount_dir/"}"
+            case "$relative_path" in
+              "$app_name/Contents/MacOS/"*)
+                echo "$archs $relative_path"
+                if [ "$archs" != "$ARCH" ]; then
+                  echo "- \`$relative_path\` is built for \`$archs\`, expected only \`$ARCH\`" >> "$problems"
+                fi
+                ;;
+              *)
+                if [[ " $archs " != *" $ARCH "* ]]; then
+                  wrong_libraries+=("- \`$relative_path\` is built for \`$archs\`, which lacks \`$ARCH\`")
+                fi
+                ;;
+            esac
+          done < <(find "$app/Contents" -type f -print0)
+
+          listed_limit=20
+          if [ ${#wrong_libraries[@]} -gt 0 ]; then
+            printf '%s\n' "${wrong_libraries[@]:0:$listed_limit}" >> "$problems"
+          fi
+          if [ ${#wrong_libraries[@]} -gt $listed_limit ]; then
+            echo "- ...and $(( ${#wrong_libraries[@]} - listed_limit )) more bundled files that lack \`$ARCH\`" >> "$problems"
+          fi
+
+      - name: Report problems
+        if: ${{ !cancelled() }}
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          problems="$RUNNER_TEMP/problems.md"
+          source_name="the latest release"
+          if [ -n "$RELEASE_TAG" ]; then
+            source_name="release \`$RELEASE_TAG\`"
+          fi
+          if [ -s "$problems" ]; then
+            {
+              echo "### \`$ASSET\` from $source_name has problems"
+              echo
+              cat "$problems"
+            } >> "$GITHUB_STEP_SUMMARY"
+            cat "$problems" >&2
+            exit 1
+          fi
+          if [ "$JOB_STATUS" != "success" ]; then
+            echo "### \`$ASSET\` from $source_name could not be checked; see the job log" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "\`$ASSET\` from $source_name has the expected contents" >> "$GITHUB_STEP_SUMMARY"

@@ -18,15 +18,28 @@
   import {
     cancel_job,
     delete_job,
+    eval_job_properties,
     get_job_errors,
     get_job_result,
     pause_job,
     resume_job,
     type JobError,
+    type EvalJobProperties,
     type JobErrorEntry,
     type JobRecord,
   } from "$lib/stores/jobs_api"
-  import { formatDate, capitalize } from "$lib/utils/formatters"
+  import {
+    formatDate,
+    capitalize,
+    eval_config_to_ui_name,
+  } from "$lib/utils/formatters"
+  import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
+  import { load_model_info, model_info } from "$lib/stores"
+  import type { EvalConfigType } from "$lib/types"
+  import {
+    getV2EvalTypeMetadata,
+    getV2TypeFromEvalConfig,
+  } from "$lib/utils/eval_types/registry"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
   let action_error: KilnError | null = null
@@ -34,6 +47,19 @@
   let clearing_completed = false
 
   $: completed = completed_jobs($jobs)
+
+  // The eval summary resolves raw model ids to display names. The table also
+  // renders in the jobs dialog on any page, so load the model list here, once
+  // per table: $jobs changes on every progress event, and a failed load must
+  // not be retried on each of them. Without the list, ids show as raw ids.
+  let model_info_requested = false
+  $: if (
+    !model_info_requested &&
+    $jobs.some((job) => eval_job_properties(job))
+  ) {
+    model_info_requested = true
+    load_model_info()
+  }
 
   const action_runners: Record<JobAction, (id: string) => Promise<void>> = {
     pause: pause_job,
@@ -85,6 +111,20 @@
       return "No-op"
     }
     return capitalize(type)
+  }
+
+  // UI name for an eval job's judge type. A V2 judge is named by its specific
+  // type (e.g. "Exact Match"), not just "V2". The properties dict carries the
+  // values as plain strings; narrow them here so the markup stays cast-free.
+  function judge_algorithm_display(p: EvalJobProperties): string {
+    const v2_type = getV2TypeFromEvalConfig({
+      config_type: p.judge_algorithm,
+      properties: p.judge_v2_type ? { type: p.judge_v2_type } : null,
+    })
+    if (v2_type) {
+      return getV2EvalTypeMetadata(v2_type).label
+    }
+    return eval_config_to_ui_name(p.judge_algorithm as EvalConfigType)
   }
 
   function has_errors(job: JobRecord): boolean {
@@ -224,14 +264,73 @@
       </thead>
       <tbody>
         {#each $jobs as job (job.id)}
+          {@const p = eval_job_properties(job)}
           <tr>
-            <td class="whitespace-nowrap">
-              <div class="flex flex-col gap-1">
-                <span class="font-medium">{job_type_display(job.type)}</span>
-                <span class="font-mono text-xs text-gray-500">ID: {job.id}</span
-                >
-                <span class="text-xs text-gray-500"
+            <td class="align-top">
+              <div class="flex flex-col gap-1 max-w-[280px]">
+                {#if p}
+                  {@const model = p.run_config_model_name
+                    ? getDetailedModelNameFromParts(
+                        p.run_config_model_name,
+                        p.run_config_model_provider,
+                        $model_info,
+                      )
+                    : ""}
+                  {@const judge_model = p.judge_model_name
+                    ? getDetailedModelNameFromParts(
+                        p.judge_model_name,
+                        p.judge_model_provider,
+                        $model_info,
+                      )
+                    : ""}
+                  <span class="font-medium truncate" title={p.eval_name}
+                    >Eval: {p.eval_name}</span
+                  >
+                  <div class="space-y-1 text-xs text-gray-500">
+                    <div class="truncate" title={p.run_config_name}>
+                      Run config: {p.run_config_name}
+                    </div>
+                    {#if model}
+                      <div class="truncate" title={model}>Model: {model}</div>
+                    {/if}
+                    {#if p.run_config_prompt_name}
+                      <div class="truncate" title={p.run_config_prompt_name}>
+                        Prompt: {p.run_config_prompt_name}
+                      </div>
+                    {/if}
+                    {#if p.run_config_model_name}
+                      <div>
+                        Tools: {p.run_config_tools_count > 0
+                          ? `${p.run_config_tools_count} available`
+                          : "None"}
+                      </div>
+                      <div>
+                        Skills: {p.run_config_skills_count > 0
+                          ? `${p.run_config_skills_count} available`
+                          : "None"}
+                      </div>
+                    {/if}
+                    <div
+                      class="truncate"
+                      title="{p.judge_name} ({judge_algorithm_display(p)})"
+                    >
+                      Judge: {p.judge_name} ({judge_algorithm_display(p)})
+                    </div>
+                    {#if judge_model}
+                      <div class="truncate" title={judge_model}>
+                        Judge model: {judge_model}
+                      </div>
+                    {/if}
+                  </div>
+                {:else}
+                  <span class="font-medium">{job_type_display(job.type)}</span>
+                {/if}
+                <span class="text-xs text-gray-500 mt-2"
                   >{formatDate(job.created_at)}</span
+                >
+                <span
+                  class="font-mono text-xs text-gray-500 truncate"
+                  title={job.id}>ID: {job.id}</span
                 >
               </div>
             </td>

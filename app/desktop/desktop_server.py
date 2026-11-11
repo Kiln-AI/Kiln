@@ -16,6 +16,7 @@ from kiln_ai.adapters.remote_config import (
     refresh_model_list_background,
     should_skip_remote_model_list,
 )
+from kiln_ai.openenv.session_manager import shutdown_shared_session_manager
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.logging import setup_litellm_logging
 
@@ -39,6 +40,7 @@ from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.jobs.api import connect_jobs_api
 from app.desktop.studio_server.jobs.registry import job_registry
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
+from app.desktop.studio_server.openenv_server_api import connect_openenv_server_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.prompt_optimization_job_api import (
     connect_prompt_optimization_job_api,
@@ -126,6 +128,8 @@ async def lifespan(app: FastAPI):
         try:
             await _stop_background_syncs()
         finally:
+            # Close any environment sessions still open.
+            await shutdown_shared_session_manager()
             datamodel_strict_mode.set_strict_mode(original_strict_mode)
 
 
@@ -152,6 +156,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_import_api(app, tk_root=tk_root)
     connect_tool_servers_api(app)
     connect_code_tool_api(app)
+    connect_openenv_server_api(app)
     connect_skill_api(app)
     connect_prompt_optimization_job_api(app)
     connect_copilot_api(app)
@@ -203,20 +208,3 @@ class ThreadedServer(uvicorn.Server):
 
     def running(self):
         return self.started and not self.stopped
-
-
-def run_studio():
-    from kiln_ai.utils.config import Config
-
-    uvicorn.run(
-        kiln_server.app,
-        host=Config.shared().kiln_local_api_host,
-        port=Config.shared().kiln_local_api_port,
-        log_level="warning",
-    )
-
-
-def run_studio_thread():
-    thread = threading.Thread(target=run_studio)
-    thread.start()
-    return thread

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { traceIdForNextChatRequest } from "./streaming_chat"
+import { isToolOutputError, traceIdForNextChatRequest } from "./streaming_chat"
 import {
   hydrateSessionFromSnapshot,
   stripAppUiContext,
@@ -73,6 +73,60 @@ describe("hydrateSessionFromSnapshot", () => {
       output: "3",
     })
   })
+
+  it.each([
+    {
+      name: "uses error_message",
+      errorMessage: "Error: no tool named 'foo'.",
+      expectedError: "Error: no tool named 'foo'.",
+    },
+    {
+      name: "falls back to content without error_message",
+      errorMessage: undefined,
+      expectedError: "Error from content",
+    },
+  ])(
+    "maps a failed tool message to an error output ($name)",
+    ({ errorMessage, expectedError }) => {
+      const { messages } = hydrateSessionFromSnapshot(
+        snap("t-err", [
+          {
+            role: "assistant",
+            tool_calls: [
+              {
+                id: "tc1",
+                type: "function",
+                function: { name: "foo", arguments: "{}" },
+              },
+              {
+                id: "tc2",
+                type: "function",
+                function: { name: "math__add", arguments: '{"a":1,"b":2}' },
+              },
+            ],
+          },
+          {
+            role: "tool",
+            tool_call_id: "tc1",
+            content: "Error from content",
+            is_error: true,
+            error_message: errorMessage,
+          },
+          { role: "tool", tool_call_id: "tc2", content: "3", is_error: false },
+        ]),
+      )
+      const parts = messages[0].parts!
+      const failedPart = parts[0]
+      expect(failedPart).toMatchObject({
+        toolCallId: "tc1",
+        output: { error: expectedError },
+      })
+      expect(
+        "output" in failedPart && isToolOutputError(failedPart.output),
+      ).toBe(true)
+      expect(parts[1]).toMatchObject({ toolCallId: "tc2", output: "3" })
+    },
+  )
 
   it("skips system and developer messages", () => {
     const { messages } = hydrateSessionFromSnapshot(

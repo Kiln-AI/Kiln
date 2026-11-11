@@ -1,6 +1,8 @@
 import csv
 import json
 import logging
+import subprocess
+import sys
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -18,11 +20,13 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_ai.utils.dataset_import import (
+    _CSV_FIELD_SIZE_LIMIT_BYTES,
     DatasetFileImporter,
     DatasetImportFormat,
     ImportConfig,
     ImportResult,
     KilnInvalidImportFormat,
+    _raised_csv_field_size_limit,
     add_tag_splits,
     deserialize_tags,
     format_validation_error,
@@ -218,12 +222,65 @@ def test_import_csv_field_exceeds_python_default_limit(base_task: Task, tmp_path
         ),
     )
 
+    limit_before = csv.field_size_limit()
     importer.create_runs_from_file()
+    assert csv.field_size_limit() == limit_before
 
     runs = base_task.runs()
     assert len(runs) == 2
     big_run = next(run for run in runs if run.input == big_input)
     assert len(big_run.input) == len(big_input)
+
+
+def test_importing_dataset_import_leaves_csv_field_size_limit_unchanged():
+    # A fresh interpreter is needed: the module is already imported here.
+    script = (
+        "import csv\n"
+        "before = csv.field_size_limit()\n"
+        "import kiln_ai.utils.dataset_import\n"
+        "assert csv.field_size_limit() == before, csv.field_size_limit()\n"
+    )
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
+def test_import_csv_restores_field_size_limit_after_failed_import(
+    base_task: Task, tmp_path
+):
+    file_path = dicts_to_file_as_csv([{"input": "hi"}], "missing_output.csv", tmp_path)
+    importer = DatasetFileImporter(
+        base_task,
+        ImportConfig(
+            dataset_type=DatasetImportFormat.CSV,
+            dataset_path=file_path,
+            dataset_name="missing_output.csv",
+        ),
+    )
+
+    limit_before = csv.field_size_limit()
+    with pytest.raises(KilnInvalidImportFormat):
+        importer.create_runs_from_file()
+    assert csv.field_size_limit() == limit_before
+
+
+def test_raised_csv_field_size_limit_nested_restores_on_outermost_exit():
+    limit_before = csv.field_size_limit()
+    with _raised_csv_field_size_limit:
+        with _raised_csv_field_size_limit:
+            assert csv.field_size_limit() == _CSV_FIELD_SIZE_LIMIT_BYTES
+        assert csv.field_size_limit() == _CSV_FIELD_SIZE_LIMIT_BYTES
+    assert csv.field_size_limit() == limit_before
+
+
+def test_raised_csv_field_size_limit_keeps_higher_host_limit():
+    limit_before = csv.field_size_limit()
+    host_limit = _CSV_FIELD_SIZE_LIMIT_BYTES * 2
+    csv.field_size_limit(host_limit)
+    try:
+        with _raised_csv_field_size_limit:
+            assert csv.field_size_limit() == host_limit
+        assert csv.field_size_limit() == host_limit
+    finally:
+        csv.field_size_limit(limit_before)
 
 
 def test_import_csv_default_tags(base_task: Task, tmp_path):
@@ -980,6 +1037,24 @@ def test_import_csv_multiturn_basic(multiturn_task: Task, tmp_path):
     assert leaf.parent_task_run_id == root.id
     assert root.trace is not None and len(root.trace) == 2
     assert leaf.trace is not None and len(leaf.trace) == 4
+
+
+def test_import_csv_multiturn_field_exceeds_python_default_limit(
+    multiturn_task: Task, tmp_path
+):
+    big_content = "x" * 200_000
+    trace = [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": big_content},
+    ]
+
+    limit_before = csv.field_size_limit()
+    _import_multiturn_csv(multiturn_task, [{"trace": json.dumps(trace)}], tmp_path)
+    assert csv.field_size_limit() == limit_before
+
+    runs = multiturn_task.runs(include_intermediate_runs=True)
+    assert len(runs) == 1
+    assert runs[0].output.output == big_content
 
 
 def test_import_csv_multiturn_single_turn_conversation(multiturn_task: Task, tmp_path):

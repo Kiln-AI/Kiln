@@ -1,11 +1,23 @@
 import asyncio
+import gc
 import logging
 import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
+from pathlib import Path
 from typing import Awaitable, Callable
 
 import pytest
 
-from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
+from kiln_ai.adapters.eval.trace_index import (
+    TraceIndex,
+    TraceIndexRegistry,
+    TraceKey,
+    openenv_trace_tag,
+    trace_key,
+)
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -14,9 +26,15 @@ from kiln_ai.datamodel import (
     TaskRun,
 )
 from kiln_ai.datamodel.eval_splits import ItemSource
+from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvReset
 from kiln_ai.datamodel.task_run import EvalItemSource, eval_item_key
 
-KEY: TraceKey = ("eval_input", "item1", "rc1")
+KEY: TraceKey = ("eval_input", "item1", "rc1", "")
+
+
+@pytest.fixture
+def registry():
+    return TraceIndexRegistry()
 
 
 @pytest.fixture
@@ -49,12 +67,14 @@ def save_run(
     run_config_id: str | None = "rc1",
     eval_source: EvalItemSource | None = None,
     output: str = "generated",
+    openenv_episode: OpenEnvEpisode | None = None,
 ) -> TaskRun:
     run = TaskRun(
         parent=task,
         input="the input",
         output=TaskOutput(output=output, source=output_source(run_config_id)),
         eval_source=eval_source,
+        openenv_episode=openenv_episode,
     )
     run.save_to_file()
     return run
@@ -67,12 +87,27 @@ def save_trace(
     source_id: str = "item1",
     run_config_id: str | None = "rc1",
     output: str = "generated",
+    openenv_version: str | None = None,
 ) -> TaskRun:
     return save_run(
         task,
         run_config_id=run_config_id,
         eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
         output=output,
+        openenv_episode=episode_for(source_id, openenv_version),
+    )
+
+
+def episode_for(source_id: str, openenv_version: str | None) -> OpenEnvEpisode | None:
+    """An environment run's settled episode record, carrying the version the trace key is read
+    from."""
+    if not openenv_version:
+        return None
+    return OpenEnvEpisode(
+        reset=OpenEnvReset(openenv_server_id="openenv1"),
+        episode_id=f"ep_{source_id}",
+        openenv_version=openenv_version,
+        final_state={"notes": []},
     )
 
 
@@ -92,7 +127,7 @@ class Generator:
         self.rendezvous: "Rendezvous | None" = None
 
     def for_key(self, key: TraceKey) -> Callable[[], Awaitable[TaskRun]]:
-        source_type, source_id, run_config_id = key
+        source_type, source_id, run_config_id, openenv_version = key
 
         async def generate() -> TaskRun:
             self.calls += 1
@@ -112,8 +147,10 @@ class Generator:
                         output="unsaved", source=output_source(run_config_id)
                     ),
                     eval_source=EvalItemSource(
-                        source_type=source_type, source_id=source_id
+                        source_type=source_type,
+                        source_id=source_id,
                     ),
+                    openenv_episode=episode_for(source_id, openenv_version),
                 )
             return save_trace(
                 self.task,
@@ -121,6 +158,7 @@ class Generator:
                 source_id=source_id,
                 run_config_id=run_config_id,
                 output=f"generated {self.calls}",
+                openenv_version=openenv_version or None,
             )
 
         return generate
@@ -166,7 +204,12 @@ def test_trace_key_rejects_missing_ids(item, run_config_id):
 @pytest.mark.parametrize("source_type", ["eval_input", "task_run"])
 def test_trace_key_from_eval_item_source(source_type: ItemSource):
     source = EvalItemSource(source_type=source_type, source_id="item1")
-    assert trace_key(eval_item_key(source), "rc1") == (source_type, "item1", "rc1")
+    assert trace_key(eval_item_key(source), "rc1") == (
+        source_type,
+        "item1",
+        "rc1",
+        "",
+    )
 
 
 @pytest.mark.asyncio
@@ -174,7 +217,7 @@ def test_trace_key_from_eval_item_source(source_type: ItemSource):
 async def test_seed_reuses_existing_trace(task, source_type: ItemSource):
     existing = save_trace(task, source_type=source_type, source_id="item1")
     generate = Generator(task)
-    key: TraceKey = (source_type, "item1", "rc1")
+    key: TraceKey = (source_type, "item1", "rc1", "")
 
     index = TraceIndex(task)
     trace, was_generated = await index.get_or_create(key, generate.for_key(key))
@@ -189,7 +232,7 @@ async def test_seed_reuses_existing_trace(task, source_type: ItemSource):
 async def test_seed_ignores_ordinary_dataset_runs(task):
     dataset_run = save_run(task)
     generate = Generator(task)
-    key: TraceKey = ("task_run", str(dataset_run.id), "rc1")
+    key: TraceKey = ("task_run", str(dataset_run.id), "rc1", "")
 
     index = TraceIndex(task)
     trace, was_generated = await index.get_or_create(key, generate.for_key(key))
@@ -213,24 +256,78 @@ async def test_seed_ignores_trace_without_run_config(task):
 
 
 @pytest.mark.asyncio
-async def test_seed_duplicate_keys_first_wins(task):
-    save_trace(task, output="first")
-    save_trace(task, output="second")
-    # Asserted against the order the seed itself iterates, not filesystem ordering: which
-    # of two synced duplicates wins is arbitrary (D8), that it is stable is not.
-    expected = next(
-        run
-        for run in task.runs(readonly=True, include_eval_generated=True)
-        if run.eval_source is not None
-    )
+@pytest.mark.parametrize("newest_saved_first", [True, False])
+async def test_seed_duplicate_keys_newest_wins(task, newest_saved_first):
+    first = save_trace(task, output="first")
+    second = save_trace(task, output="second")
+    older = second if newest_saved_first else first
+    older.created_at = older.created_at - timedelta(hours=1)
+    older.save_to_file()
+    newest = first if newest_saved_first else second
     generate = Generator(task)
 
     index = TraceIndex(task)
     trace, was_generated = await index.get_or_create(KEY, generate.for_key(KEY))
 
     assert was_generated is False
-    assert trace.id == expected.id
+    assert trace.id == newest.id
     assert generate.calls == 0
+
+
+def test_concurrent_seeds_of_one_task_read_it_one_at_a_time(
+    task, registry, monkeypatch
+):
+    """Eval jobs that start together each seed an index. On a cold cache, each reader of
+    the task parses its own copy of every TaskRun, so the reads must not overlap."""
+    save_trace(task)
+    real_runs = Task.runs
+    active = 0
+    most_active = 0
+    counter_lock = threading.Lock()
+
+    def counting_runs(self, *args, **kwargs):
+        nonlocal active, most_active
+        with counter_lock:
+            active += 1
+            most_active = max(most_active, active)
+        try:
+            time.sleep(0.05)
+            return real_runs(self, *args, **kwargs)
+        finally:
+            with counter_lock:
+                active -= 1
+
+    monkeypatch.setattr(Task, "runs", counting_runs)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        indexes = list(pool.map(lambda _: TraceIndex(task, registry), range(4)))
+
+    assert most_active == 1
+    assert all(KEY in index._paths for index in indexes)
+
+
+def test_seeds_of_different_tasks_do_not_wait_for_each_other(
+    task, registry, tmp_path, monkeypatch
+):
+    other = Task(
+        name="other",
+        description="other",
+        instruction="do the other thing",
+        path=tmp_path / "other" / "task.kiln",
+    )
+    other.save_to_file()
+    real_runs = Task.runs
+    # Each seed waits here for the other: a lock shared across tasks breaks the barrier.
+    both_reading = threading.Barrier(2, timeout=5)
+
+    def meeting_runs(self, *args, **kwargs):
+        both_reading.wait()
+        return real_runs(self, *args, **kwargs)
+
+    monkeypatch.setattr(Task, "runs", meeting_runs)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(lambda t: TraceIndex(t, registry), [task, other]))
 
 
 @pytest.mark.asyncio
@@ -277,9 +374,9 @@ async def test_generated_trace_is_found_by_a_fresh_index(task):
 @pytest.mark.parametrize(
     "stamped_key",
     [
-        ("eval_input", "item1", "rc_other"),
-        ("eval_input", "item_other", "rc1"),
-        ("task_run", "item1", "rc1"),
+        ("eval_input", "item1", "rc_other", ""),
+        ("eval_input", "item_other", "rc1", ""),
+        ("task_run", "item1", "rc1", ""),
     ],
 )
 async def test_generated_run_stamped_with_another_key_raises(
@@ -317,9 +414,9 @@ async def test_distinct_keys_do_not_share_a_trace(task):
     generate = Generator(task)
     index = TraceIndex(task)
     keys: list[TraceKey] = [
-        ("eval_input", "item1", "rc1"),
-        ("eval_input", "item1", "rc2"),
-        ("task_run", "item1", "rc1"),
+        ("eval_input", "item1", "rc1", ""),
+        ("eval_input", "item1", "rc2", ""),
+        ("task_run", "item1", "rc1", ""),
     ]
 
     traces = [
@@ -336,6 +433,75 @@ async def test_distinct_keys_do_not_share_a_trace(task):
         assert was_generated is False
         assert found.id == trace.id
     assert reused.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_create_generates_even_when_a_trace_exists(task):
+    """A drive-only run measures its own generation, never an earlier one."""
+    existing = save_trace(task)
+    generate = Generator(task)
+    index = TraceIndex(task)
+
+    first = await index.create(KEY, generate.for_key(KEY))
+    second = await index.create(KEY, generate.for_key(KEY))
+
+    assert generate.calls == 2
+    assert len({existing.id, first.id, second.id}) == 3
+
+
+@pytest.mark.asyncio
+async def test_created_trace_is_reused_by_a_later_get_or_create(task):
+    """A judged job after a drive-only one scores the newest drive, not an older one."""
+    save_trace(task, output="older")
+    generate = Generator(task)
+    index = TraceIndex(task)
+
+    driven = await index.create(KEY, generate.for_key(KEY))
+    trace, was_generated = await index.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == driven.id
+    assert generate.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_created_trace_is_found_by_a_fresh_index(task):
+    """The cross-run half: a later judged job, in a new runner, reuses the drive."""
+    older = save_trace(task, output="older")
+    older.created_at = older.created_at - timedelta(hours=1)
+    older.save_to_file()
+    driven = await TraceIndex(task).create(KEY, Generator(task).for_key(KEY))
+
+    next_run = Generator(task)
+    trace, was_generated = await TraceIndex(task).get_or_create(
+        KEY, next_run.for_key(KEY)
+    )
+
+    assert was_generated is False
+    assert trace.id == driven.id
+    assert next_run.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_create_keeps_the_earlier_trace(task):
+    existing = save_trace(task)
+    index = TraceIndex(task)
+
+    with pytest.raises(RuntimeError, match="generation failed"):
+        await index.create(KEY, Generator(task, raises=True).for_key(KEY))
+
+    trace, was_generated = await index.get_or_create(KEY, Generator(task).for_key(KEY))
+    assert was_generated is False
+    assert trace.id == existing.id
+
+
+@pytest.mark.asyncio
+async def test_create_checks_the_stamped_key(task):
+    index = TraceIndex(task)
+    other: TraceKey = ("eval_input", "item1", "rc_other", "")
+
+    with pytest.raises(ValueError, match="files itself under"):
+        await index.create(KEY, Generator(task).for_key(other))
 
 
 @pytest.mark.asyncio
@@ -363,7 +529,7 @@ async def test_distinct_keys_generate_concurrently(task):
     generate = Generator(task)
     generate.rendezvous = Rendezvous(count=5)
     index = TraceIndex(task)
-    keys: list[TraceKey] = [("eval_input", f"item{i}", "rc1") for i in range(5)]
+    keys: list[TraceKey] = [("eval_input", f"item{i}", "rc1", "") for i in range(5)]
 
     results = await asyncio.gather(
         *(index.get_or_create(key, generate.for_key(key)) for key in keys)
@@ -482,3 +648,331 @@ async def test_corrupt_trace_file_regenerates(task, caplog, corrupt_content):
     again, was_generated_again = await index.get_or_create(KEY, generate.for_key(KEY))
     assert was_generated_again is False
     assert again.id == trace.id
+
+
+# ---------------------------------------------------------------------------
+# Variant slot
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("openenv_version", [None, ""])
+def test_trace_key_without_variant_is_empty_string(openenv_version):
+    assert trace_key(("eval_input", "item1"), "rc1", openenv_version) == (
+        "eval_input",
+        "item1",
+        "rc1",
+        "",
+    )
+
+
+def test_trace_key_carries_variant():
+    assert trace_key(("eval_input", "item1"), "rc1", "syn1:abc") == (
+        "eval_input",
+        "item1",
+        "rc1",
+        "syn1:abc",
+    )
+
+
+def test_stored_openenv_version_separates_traces(task):
+    """Two generations of one item under one run config, in different environment versions, are
+    two entries, keyed by the version on each run's episode; a job without an environment never
+    matches an environment trace."""
+    plain = save_run(
+        task, eval_source=EvalItemSource(source_type="eval_input", source_id="item1")
+    )
+    fixture_a = save_run(
+        task,
+        eval_source=EvalItemSource(source_type="eval_input", source_id="item1"),
+        openenv_episode=episode_for("item1", "syn1:a"),
+        output="from fixture a",
+    )
+    index = TraceIndex(task)
+    reset = OpenEnvReset(openenv_server_id="openenv1")
+    assert index._paths[("eval_input", "item1", "rc1", "")] == plain.path
+    assert (
+        index._paths[("eval_input", "item1", "rc1", openenv_trace_tag("syn1:a", reset))]
+        == fixture_a.path
+    )
+    assert (
+        "eval_input",
+        "item1",
+        "rc1",
+        openenv_trace_tag("syn1:b", reset),
+    ) not in index._paths
+
+
+def test_openenv_trace_tag_separates_resets():
+    """The environment half of the key covers the reset as well as the version, so an input
+    whose openenv_reset was edited no longer matches the trace made from the old one."""
+    a = OpenEnvReset(
+        openenv_server_id="openenv1", reset_kwargs={"fixture_id": "a", "seed": 1}
+    )
+    same_a = OpenEnvReset(
+        openenv_server_id="openenv1", reset_kwargs={"seed": 1, "fixture_id": "a"}
+    )
+    b = OpenEnvReset(
+        openenv_server_id="openenv1", reset_kwargs={"fixture_id": "b", "seed": 1}
+    )
+    assert openenv_trace_tag("env@1", a) == openenv_trace_tag("env@1", same_a)
+    assert openenv_trace_tag("env@1", a) != openenv_trace_tag("env@1", b)
+    assert openenv_trace_tag("env@1", a) != openenv_trace_tag("env@2", a)
+    assert openenv_trace_tag("env@1", a).startswith("env@1#")
+
+
+def test_unsettled_openenv_trace_is_never_indexed(task):
+    """An environment trace saved before its episode ended records no final state, which is
+    what graders read: it files under no key, so its job regenerates rather than
+    reusing it."""
+    unsettled = episode_for("item1", "syn1:a")
+    assert unsettled is not None
+    save_run(
+        task,
+        eval_source=EvalItemSource(source_type="eval_input", source_id="item1"),
+        openenv_episode=unsettled.model_copy(update={"final_state": None}),
+    )
+    assert TraceIndex(task)._paths == {}
+
+
+# ---------------------------------------------------------------------------
+# Sharing across runners
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_indexes_without_a_registry_do_not_share(task):
+    generate = Generator(task)
+    first = TraceIndex(task)
+    second = TraceIndex(task)
+
+    await first.get_or_create(KEY, generate.for_key(KEY))
+    await second.get_or_create(KEY, generate.for_key(KEY))
+
+    assert generate.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_indexes_on_one_task_generate_once(task, registry):
+    """Two eval jobs that share a run config under different eval configs.
+
+    Each job builds its own runner, and so its own index, and both are seeded before
+    either generates. Without a shared view both miss on the same key and both pay for
+    the trace.
+    """
+    generate = Generator(task)
+    first = TraceIndex(task, registry)
+    second = TraceIndex(task, registry)
+
+    results = await asyncio.gather(
+        first.get_or_create(KEY, generate.for_key(KEY)),
+        second.get_or_create(KEY, generate.for_key(KEY)),
+    )
+
+    assert generate.calls == 1
+    assert [was_generated for _, was_generated in results].count(True) == 1
+    assert len({trace.id for trace, _ in results}) == 1
+
+
+@pytest.mark.asyncio
+async def test_indexes_on_separately_loaded_tasks_share(task, registry):
+    """Each job loads its own Task from disk, so sharing has to meet on the file, not on
+    the object."""
+    assert task.path is not None
+    generate = Generator(task)
+    first = TraceIndex(Task.load_from_file(task.path), registry)
+    second = TraceIndex(Task.load_from_file(task.path), registry)
+
+    generated, _ = await first.get_or_create(KEY, generate.for_key(KEY))
+    reused, was_generated = await second.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert reused.id == generated.id
+    assert generate.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_indexes_on_different_tasks_do_not_share(tmp_path, registry):
+    """The key carries no task, so the shared state must be per task: a trace of one
+    task is never another task's output."""
+    tasks = []
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        other = Task(
+            name=name,
+            description="test",
+            instruction="do the thing",
+            path=tmp_path / name / "task.kiln",
+        )
+        other.save_to_file()
+        tasks.append(other)
+    generators = [Generator(other) for other in tasks]
+    indexes = [TraceIndex(other, registry) for other in tasks]
+
+    results = await asyncio.gather(
+        *(
+            index.get_or_create(KEY, generator.for_key(KEY))
+            for index, generator in zip(indexes, generators)
+        )
+    )
+
+    assert [generator.calls for generator in generators] == [1, 1]
+    assert all(was_generated for _, was_generated in results)
+
+
+@pytest.mark.asyncio
+async def test_a_joining_index_finds_traces_synced_in_after_the_first(task, registry):
+    """A long-lived server keeps the shared state while any job on the task runs. A job
+    that starts later must still find a trace that sync brought in meanwhile, so joining
+    reseeds from disk."""
+    generate = Generator(task)
+    running = TraceIndex(task, registry)
+    synced = save_trace(task)
+
+    joining = TraceIndex(task, registry)
+    trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == synced.id
+    assert generate.calls == 0
+    # The running job sees it too, through the shared view.
+    trace, was_generated = await running.get_or_create(KEY, generate.for_key(KEY))
+    assert was_generated is False
+    assert trace.id == synced.id
+
+
+@pytest.mark.asyncio
+async def test_a_joining_index_replaces_a_shared_entry_whose_file_is_gone(
+    task, registry
+):
+    """Sync can delete the trace a running job indexed and bring in another machine's
+    trace for the same key. A job that starts later must reuse the one on disk, not
+    drop the dead entry and generate again."""
+    indexed = save_trace(task)
+    running = TraceIndex(task, registry)
+    assert indexed.path is not None
+    indexed.path.unlink()
+    synced = save_trace(task)
+
+    generate = Generator(task)
+    joining = TraceIndex(task, registry)
+    trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == synced.id
+    assert generate.calls == 0
+    trace, was_generated = await running.get_or_create(KEY, generate.for_key(KEY))
+    assert was_generated is False
+    assert trace.id == synced.id
+
+
+def test_a_seed_does_not_overwrite_a_trace_generated_while_it_checked(
+    task, registry, monkeypatch
+):
+    """A seed checks the dead entry's file in a worker thread. A running job can drop
+    that entry and file a new trace in the meantime, and that job scores the new one.
+    The seed must leave it in place, or later jobs would score a different trace."""
+    indexed = save_trace(task)
+    running = TraceIndex(task, registry)
+    assert indexed.path is not None
+    dead = indexed.path
+    dead.unlink()
+    save_trace(task, output="synced")
+    regenerated: list[Path] = []
+    real_exists = Path.exists
+
+    def exists_while_a_job_regenerates(self, *args, **kwargs):
+        if self == dead and not regenerated:
+            # What the running job does between the seed's read and its write. The
+            # seed listed the task's runs before this, so it never sees this trace.
+            running._drop(KEY, dead)
+            path = save_trace(task, output="regenerated").path
+            assert path is not None
+            regenerated.append(path)
+            running._record(KEY, path)
+        return real_exists(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists_while_a_job_regenerates)
+
+    TraceIndex(task, registry)
+
+    assert running._paths[KEY] == regenerated[0]
+
+
+@pytest.mark.asyncio
+async def test_a_joining_index_takes_a_newer_trace_from_disk(task, registry):
+    """A new index keeps the newest trace of a key, and an index that joins is a new
+    index: a drive saved after a running job seeded must be what later judges score.
+    Every index on the task then shares that trace."""
+    first = save_trace(task, output="first")
+    running = TraceIndex(task, registry)
+    assert first.path is not None
+    assert running._paths[KEY] == first.path
+    second = save_trace(task, output="second")
+
+    generate = Generator(task)
+    joining = TraceIndex(task, registry)
+    trace, was_generated = await joining.get_or_create(KEY, generate.for_key(KEY))
+
+    assert was_generated is False
+    assert trace.id == second.id
+    assert generate.calls == 0
+    trace, _ = await running.get_or_create(KEY, generate.for_key(KEY))
+    assert trace.id == second.id
+
+
+@pytest.mark.asyncio
+async def test_a_joining_index_keeps_a_trace_filed_after_its_read(
+    task, registry, monkeypatch
+):
+    """A trace a job generated after the seed read the task's runs is newer than all of
+    them. The seed never saw it, and must leave it in place while its file exists."""
+    save_trace(task, output="on disk")
+    running = TraceIndex(task, registry)
+    filed: list[TaskRun] = []
+    real_runs = Task.runs
+
+    def runs_then_a_job_files(self, *args, **kwargs):
+        runs = real_runs(self, *args, **kwargs)
+        generated = save_trace(task, output="generated")
+        assert generated.path is not None
+        running._record(KEY, generated.path)
+        filed.append(generated)
+        return runs
+
+    monkeypatch.setattr(Task, "runs", runs_then_a_job_files)
+    TraceIndex(task, registry)
+
+    assert running._paths[KEY] == filed[0].path
+
+
+@pytest.mark.asyncio
+async def test_shared_state_is_released_with_the_last_index(task, registry):
+    """Nothing outlives the jobs that use it, so an idle server holds no task's traces
+    and the next job starts from what is on disk."""
+    assert task.path is not None
+    path = task.path.resolve()
+    generate = Generator(task)
+    index = TraceIndex(task, registry)
+    await index.get_or_create(KEY, generate.for_key(KEY))
+    assert path in registry._traces
+
+    del index
+    gc.collect()
+
+    assert path not in registry._traces
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_entry_does_not_remove_a_newer_one(task, registry):
+    """An index drops only the entry that failed to load. A path another index's seed
+    filed under the key in the meantime has not failed, and stays."""
+    existing = save_trace(task)
+    index = TraceIndex(task, registry)
+    assert existing.path is not None
+    replacement = save_trace(task)
+    assert replacement.path is not None
+    index._paths[KEY] = replacement.path
+
+    index._drop(KEY, existing.path)
+
+    assert index._paths[KEY] == replacement.path

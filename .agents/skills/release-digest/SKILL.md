@@ -30,6 +30,22 @@ Key design point: it uses the **git commit range** as the source of truth, not m
 dates. A PR merged the same day a tag was cut can already be in that release, so a
 date filter would over-report. Trust the range.
 
+**Pre-release / already-cut releases.** By default the baseline is the newest tag
+(`git describe`). But if the release you're QA'ing has **already been tagged** — it's a
+pre-release still being validated, so `main` is already even with it — the default
+range is empty. In that case pass `--pre-release`, which steps the baseline back one
+tag so the range recaps exactly what went *into* the pre-release:
+
+```bash
+python3 .agents/skills/release-digest/scripts/gather_changes.py --pre-release > /tmp/release_digest.json
+```
+
+Signs you want `--pre-release`: the first run reports "nothing unreleased" or "main is
+even with the latest tag", yet the user says a release was just cut / is being QA'd. To
+name the baseline explicitly instead, use `--since <tag>` (e.g. `--since v1.0.3`). The
+two flags are mutually exclusive. When `--pre-release` is used, the newest tag is the
+one being cut, so in Phase 3 use **that tag** as `<new_release>` rather than asking.
+
 The JSON contains:
 - `last_tag` — the most recent release (e.g. `v1.0.3`)
 - `head_ref` — `origin/main` (or `main` if no remote ref)
@@ -103,9 +119,11 @@ task split is **not** shown per line — it only feeds the tally at the bottom.
 
 ## Phase 3 — Compose the Slack message
 
-**First, ask the user for the new release name** — the version being cut (e.g.
-`v1.0.4`). This is the release these changes are going into; it isn't tagged yet, so
-it can't be derived from git. Use their answer as `<new_release>` in the title.
+**First, get the new release name** — the version being cut (e.g. `v1.0.4`). If you ran
+in `--pre-release` mode, the release has already been tagged, so use that newest tag
+(the one the script named as "the release being QA'd") as `<new_release>` — no need to
+ask. Otherwise the release isn't tagged yet and can't be derived from git, so **ask the
+user**. Use the result as `<new_release>` in the title.
 
 Use this shape (Slack mrkdwn — `*bold*`, not `**bold**`):
 

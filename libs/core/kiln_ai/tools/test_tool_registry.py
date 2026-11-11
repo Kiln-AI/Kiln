@@ -7,6 +7,7 @@ from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
     ToolServerType,
 )
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
@@ -16,6 +17,7 @@ from kiln_ai.datamodel.tool_id import (
     RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     _check_tool_id,
+    build_openenv_tool_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
 )
@@ -995,3 +997,189 @@ class TestValidateUniqueAllowlistToolNames:
                 ],
                 project,
             )
+
+    def _make_openenv_server(self, project, name="depot"):
+        openenv_server = OpenEnvServer(name=name, parent=project)
+        openenv_server.save_to_file()
+        return openenv_server
+
+    async def test_accepts_openenv_tools_of_an_existing_openenv_server(self, project):
+        """OpenEnv tools resolve only inside an episode, so the allowlist check finds
+        their environment in the project and does not resolve them."""
+        openenv_server = self._make_openenv_server(project)
+        helper = self._make_code_tool(project, "helper")
+        await validate_unique_allowlist_tool_names(
+            [
+                build_openenv_tool_id(openenv_server.id, "sql_query"),
+                build_openenv_tool_id(openenv_server.id, "search"),
+                f"kiln_tool::code::{helper.id}",
+            ],
+            project,
+        )
+
+    async def test_openenv_tool_still_refused_outside_an_episode(self, project):
+        """The allowlist check accepts an environment tool, and resolving it outside an
+        episode still fails."""
+        openenv_server = self._make_openenv_server(project)
+        tool_id = build_openenv_tool_id(openenv_server.id, "sql_query")
+        await validate_unique_allowlist_tool_names([tool_id], project)
+        with pytest.raises(ValueError, match="can only be used while an episode"):
+            tool_from_id_and_project(tool_id, project=project)
+
+    async def test_rejects_openenv_tool_of_unknown_openenv_server(self, project):
+        with pytest.raises(
+            ValueError,
+            match=r"OpenEnv server\(s\) no_such_openenv referenced by OpenEnv tools in the "
+            r"tool_allowlist not found",
+        ):
+            await validate_unique_allowlist_tool_names(
+                [build_openenv_tool_id("no_such_openenv", "sql_query")], project
+            )
+
+    @pytest.mark.parametrize("other_kind", ["code", "mcp"])
+    async def test_rejects_openenv_tool_colliding_with_another_tool(
+        self, project, other_kind
+    ):
+        """Sandboxed code calls an environment tool by the last segment of its id. A
+        collision with an MCP tool is refused too: the environment tool is the one that
+        can be dropped."""
+        openenv_server = self._make_openenv_server(project)
+        if other_kind == "code":
+            other_id = (
+                f"kiln_tool::code::{self._make_code_tool(project, 'sql_query').id}"
+            )
+        else:
+            server = ExternalToolServer(
+                name="server",
+                type=ToolServerType.remote_mcp,
+                properties={
+                    "server_url": "https://a.example.com",
+                    "is_archived": False,
+                },
+                parent=project,
+            )
+            server.save_to_file()
+            other_id = f"mcp::remote::{server.id}::sql_query"
+        with pytest.raises(ValueError, match="share the same function name: sql_query"):
+            await validate_unique_allowlist_tool_names(
+                [build_openenv_tool_id(openenv_server.id, "sql_query"), other_id],
+                project,
+            )
+
+    async def test_openenv_tools_do_not_skip_other_tool_checks(self, project):
+        """A missing tool or a name collision among the other tools is still refused
+        when environment tools are listed too."""
+        openenv_server = self._make_openenv_server(project)
+        openenv_tool = build_openenv_tool_id(openenv_server.id, "sql_query")
+        with pytest.raises(ValueError, match="Code tool not found"):
+            await validate_unique_allowlist_tool_names(
+                [openenv_tool, "kiln_tool::code::missing"], project
+            )
+        dup_a = self._make_code_tool(project, "dup_tool")
+        dup_b = self._make_code_tool(project, "dup_tool")
+        with pytest.raises(ValueError, match="share the same function name: dup_tool"):
+            await validate_unique_allowlist_tool_names(
+                [
+                    openenv_tool,
+                    f"kiln_tool::code::{dup_a.id}",
+                    f"kiln_tool::code::{dup_b.id}",
+                ],
+                project,
+            )
+
+
+class TestProjectToolFunctionName:
+    """The offline name lookup the eval runner uses to compare a run config's real
+    tools with the tools an environment serves."""
+
+    @pytest.fixture
+    def project(self, tmp_path):
+        project = Project(name="names_proj", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        return project
+
+    def test_mcp_names_ride_in_the_id(self, project):
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        assert (
+            project_tool_function_name("mcp::remote::srv1::lookup", project) == "lookup"
+        )
+        assert (
+            project_tool_function_name("mcp::local::srv1::search", project) == "search"
+        )
+
+    def test_code_tool_name_from_disk(self, project):
+        from kiln_ai.datamodel.code_tool import CodeTool
+        from kiln_ai.datamodel.tool_id import build_code_tool_id
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        ct = CodeTool(
+            name="real",
+            parent=project,
+            tool_function_name="append_note",
+            tool_description="d",
+            parameters_schema={"type": "object", "properties": {}},
+            code="def run():\n    return 'x'\n",
+        )
+        ct.save_to_file()
+        assert (
+            project_tool_function_name(build_code_tool_id(ct.id), project)
+            == "append_note"
+        )
+        assert project_tool_function_name("kiln_tool::code::missing", project) is None
+
+    def test_kiln_task_name_from_server_record(self, project):
+        from kiln_ai.datamodel.tool_id import build_kiln_task_tool_id
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        server = ExternalToolServer(
+            name="task server",
+            parent=project,
+            type=ToolServerType.kiln_task,
+            properties={
+                "name": "summarize",
+                "description": "d",
+                "task_id": "t1",
+                "run_config_id": "rc1",
+                "is_archived": False,
+            },
+        )
+        server.save_to_file()
+        assert (
+            project_tool_function_name(build_kiln_task_tool_id(server.id), project)
+            == "summarize"
+        )
+
+    def test_rag_name_from_config(self, project):
+        from kiln_ai.datamodel.rag import RagConfig
+        from kiln_ai.datamodel.tool_id import build_rag_tool_id
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        rag = RagConfig(
+            parent=project,
+            name="docs",
+            tool_name="search_docs",
+            tool_description="Searches the docs",
+            extractor_config_id="e",
+            chunker_config_id="c",
+            embedding_config_id="m",
+            vector_store_config_id="v",
+        )
+        rag.save_to_file()
+        assert (
+            project_tool_function_name(build_rag_tool_id(rag.id), project)
+            == "search_docs"
+        )
+        assert project_tool_function_name(build_rag_tool_id("missing"), project) is None
+
+    def test_non_project_ids_and_no_project(self, project):
+        from kiln_ai.tools.tool_registry import project_tool_function_name
+
+        assert project_tool_function_name("kiln_tool::add_numbers", project) is None
+        assert project_tool_function_name("kiln_tool::skill::s1", project) is None
+        assert (
+            project_tool_function_name("kiln_tool::openenv::openenv1::lookup", project)
+            is None
+        )
+        assert project_tool_function_name("mcp::remote::srv1::lookup", None) is None
+        assert project_tool_function_name("mcp::remote::broken", project) is None

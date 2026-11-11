@@ -86,14 +86,13 @@ export function run_config_cache_key(
 // prompt, which makes the fix-config-then-run-again recovery loop fast.
 export type CachedMintedInputs = {
   prompts_json: string
-  // The grounding guide passed to the mint (null = ungrounded). Pre-guide
-  // drafts restore without the key and simply miss the cache.
+  // The grounding guide passed to the mint (null = ungrounded). Older drafts
+  // lack the key and simply miss the cache.
   data_guide?: string | null
   // run_config_cache_key of the config the mint ran under. Model, tools,
   // skills and sampling all change what gets written, so the key is the whole
-  // config rather than a few fields of it. Drafts written before the input
-  // lane carried a config restore without the key and miss the cache, which
-  // re-mints rather than serving inputs we can no longer describe.
+  // config rather than a few fields of it. Older drafts lack the key and miss
+  // the cache, which re-mints rather than serving inputs we can't describe.
   run_config_json?: string
   // Each input as the string the pipeline runs on (structured-task inputs
   // are JSON strings — the same encoding the saved eval's items store).

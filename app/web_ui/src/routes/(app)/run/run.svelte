@@ -75,10 +75,7 @@
   async function patch_run(
     patch_body: Record<string, unknown>,
   ): Promise<TaskRun> {
-    const {
-      data, // only present if 2XX response
-      error: fetch_error, // only present if 4XX or 5XX response
-    } = await client.PATCH(
+    const { data, error: fetch_error } = await client.PATCH(
       "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
       {
         params: {
@@ -172,10 +169,7 @@
       }
       // Only send the override on the wire — when no override is set, the
       // server reads the original run's persisted model from source_properties.
-      const {
-        data: repair_data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.POST(
+      const { data: repair_data, error: fetch_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/generate_repair",
         {
           params: {
@@ -223,10 +217,7 @@
           null,
         )
       }
-      const {
-        data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.POST(
+      const { data, error: fetch_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair",
         {
           params: {

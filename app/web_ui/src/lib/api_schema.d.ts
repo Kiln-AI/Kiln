@@ -490,6 +490,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/memories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Memories
+         * @description List memory summaries newest-first. content_length 0 means the overview
+         *     is the whole memory. Truncation fields nudge how to narrow the results.
+         */
+        get: operations["list_memories_api_projects__project_id__memories_get"];
+        put?: never;
+        /** Save Memory */
+        post: operations["save_memory_api_projects__project_id__memories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Summary
+         * @description Cheap per-scope orientation (counts, newest timestamp, tag cardinalities)
+         *     with no record content. Call before targeted list queries.
+         */
+        get: operations["memory_summary_api_projects__project_id__memories_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/by_ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Memories
+         * @description Fetch full memory records by id. Unknown ids are omitted from the result.
+         */
+        get: operations["get_memories_api_projects__project_id__memories_by_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/{memory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Memory
+         * @description Hard-delete a memory. For junk, wrong, or obsolete memories; use update
+         *     instead if the memory should be corrected rather than removed.
+         */
+        delete: operations["delete_memory_api_projects__project_id__memories__memory_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Memory */
+        patch: operations["update_memory_api_projects__project_id__memories__memory_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -2333,6 +2418,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/eval_run/{eval_run_id}/judge_trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Eval Run Judge Trace
+         * @description The judge's full conversation for one eval run: the system prompt, the rendered judge prompt, and every reply. Null for runs whose judge called no model, and for runs recorded before judge traces were saved.
+         */
+        get: operations["get_eval_run_judge_trace_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__eval_run__eval_run_id__judge_trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress": {
         parameters: {
             query?: never;
@@ -2410,6 +2515,26 @@ export interface paths {
         };
         /** Get Run Config Eval Scores */
         get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/eval_scores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Eval Scores For All Run Configs
+         * @description Eval scores for every run config of the task, keyed by run config id. Each value matches the per-run-config eval_scores endpoint.
+         */
+        get: operations["get_all_run_configs_eval_scores_api_projects__project_id__tasks__task_id__run_configs_eval_scores_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2854,6 +2979,71 @@ export interface paths {
         put?: never;
         /** Archive/Unarchive Code Tool */
         post: operations["archive_code_tool_api_projects__project_id__code_tools__code_tool_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/openenv_servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List OpenEnv Servers */
+        get: operations["list_openenv_servers_api_projects__project_id__openenv_servers_get"];
+        put?: never;
+        /** Create OpenEnv Server */
+        post: operations["create_openenv_server_api_projects__project_id__openenv_servers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get OpenEnv Server */
+        get: operations["get_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete OpenEnv Server
+         * @description Delete an OpenEnv server, if no saved eval input still resets into it.
+         *
+         *     409 when one does. An eval input names its OpenEnv server by id, so a delete
+         *     that went through would leave every eval run on it failing to resolve the
+         *     OpenEnv server. Traces made on the server keep their own copy of the episode,
+         *     and stay readable.
+         */
+        delete: operations["delete_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update OpenEnv Server */
+        patch: operations["update_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List OpenEnv Server Tools
+         * @description The tools the OpenEnv server's environment serves, read fresh from the running server at url.
+         */
+        get: operations["list_openenv_server_tools_api_projects__project_id__openenv_servers__openenv_server_id__tools_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3988,6 +4178,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wait For Jobs
+         * @description Block until ALL the given jobs reach a terminal state, then return
+         *     their records in the order given. A pure observer: disconnecting never
+         *     stops a job. The timeout covers the whole set. Empty `ids` returns an
+         *     empty list. A paused job is not terminal, so a wait on one runs out
+         *     the timeout (504).
+         */
+        post: operations["wait_for_jobs_api_jobs_wait_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/evals/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Eval Job
+         * @description Start a background job that runs one split of an eval against one run
+         *     config, and return at once. Items that already have a score for this eval
+         *     config and run config are skipped. If an identical job (same eval, judge,
+         *     run config, split and items) is still pending, running or paused, returns
+         *     that job instead of starting a second one that would score the same items
+         *     again. A paused job is returned as it is, with `status` `paused`: the
+         *     request does not resume it. A wait on a paused job times out (504) until
+         *     someone resumes it, so check `status` and call
+         *     `POST /api/jobs/{id}/resume` if the job must run. Poll
+         *     `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
+         *     result. An item with an `openenv_reset` runs in a fresh episode of its environment
+         *     when the run config lists that environment's tools. A 404 means that the eval,
+         *     the eval config or the run config does not exist. A 422 means that the
+         *     eval has no such split, or that `item_ids` names an item outside it. A 400
+         *     means that the job cannot run as requested: a V1 judge on items it cannot
+         *     score, multi-turn items that cannot be driven, or, with a V2 judge, items
+         *     that the run config's environment tools cannot run, or an environment that the project
+         *     does not have while the run config lists tools. Problems that need
+         *     the running server fail item by item, in `GET /api/jobs/{id}/errors`:
+         *     an environment that cannot be reached or refuses a reset, and a run config
+         *     that lists the project's own version of a tool that the environment serves. A
+         *     503 means that a project file was not readable, for example while another
+         *     job wrote it. Send the request again.
+         *
+         *     With `judge` false the job drives every selected item again and judges
+         *     nothing: read `result.driven_runs` for the task runs, and each task run's
+         *     `usage` for the agent's cost and latency. For a multi-turn item, add the task
+         *     run's `synthetic_user_usage` for the drive's full model cost. Such a job is never
+         *     deduplicated and cannot be paused, and a 400 also means that its eval config
+         *     is not a V2 judge.
+         */
+        post: operations["run_eval_job_api_jobs_evals_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{type}": {
         parameters: {
             query?: never;
@@ -4051,9 +4314,9 @@ export interface paths {
          * Wait For Job
          * @description Block until the job reaches a terminal state, then return its record.
          *
-         *     A pure observer, like the SSE stream: if the client disconnects, uvicorn
-         *     cancels this handler coroutine, which cancels the wait() await and tears
-         *     down only the awaiter — the job's supervising task keeps running.
+         *     A pure observer: waiting never stops the job. A client that disconnects
+         *     does not cancel this handler, so a wait without a timeout on a job that
+         *     never ends (for example a paused one) lasts until that job ends.
          */
         get: operations["wait_for_job_api_jobs__id__wait_get"];
         put?: never;
@@ -4233,6 +4496,11 @@ export interface components {
         AgentOverviewOutputScore: {
             /** Name */
             name: string;
+            /**
+             * Display Name
+             * @description What the user sees this score called in the UI, if it differs from name. name stays the identifier.
+             */
+            display_name?: string | null;
             /** Type */
             type: string;
         };
@@ -4538,6 +4806,8 @@ export interface components {
              * @description The user who created the prompt.
              */
             created_by?: string | null;
+            /** @description Why this prompt exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** AppropriateToolUseProperties */
         AppropriateToolUseProperties: {
@@ -4740,7 +5010,6 @@ export interface components {
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
             /**
              * File
-             * Format: binary
              * @description The CSV file containing run data to import.
              */
             file: string;
@@ -4808,7 +5077,6 @@ export interface components {
         Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
             /**
              * File
-             * Format: binary
              * @description The file of input examples to parse and validate.
              */
             file: string;
@@ -5195,6 +5463,8 @@ export interface components {
              * @description Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.
              */
             properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5463,6 +5733,8 @@ export interface components {
              * @description Tools this code tool may call.
              */
             tool_allowlist?: string[];
+            /** @description Provenance: why this code tool exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolCreateResponse */
         CodeToolCreateResponse: {
@@ -5495,6 +5767,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /**
              * Not Trusted
              * @default false
@@ -5532,6 +5805,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolUpdateRequest */
         CodeToolUpdateRequest: {
@@ -5634,6 +5908,8 @@ export interface components {
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
             properties: components["schemas"]["SemanticChunkerPropertiesPublic"] | components["schemas"]["FixedWindowChunkerPropertiesPublic"];
+            /** @description Provenance: why this chunker config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateDatasetSplitRequest
@@ -5679,6 +5955,8 @@ export interface components {
             model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties?: components["schemas"]["EmbeddingProperties"];
+            /** @description Provenance: why this embedding config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateEvalConfigRequest
@@ -5706,6 +5984,8 @@ export interface components {
             model_name?: string | null;
             /** @description The provider of the evaluation model. Required for LLM-based eval types. */
             provider?: components["schemas"]["ModelProviderName"] | null;
+            /** @description Provenance: why this eval config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateEvalInputRequest
@@ -5729,6 +6009,8 @@ export interface components {
              * @description Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).
              */
             tags?: string[];
+            /** @description Optional environment to run this item in: an environment in this project, plus the keyword arguments its reset() is called with. A run config that lists that environment's tools runs the item in the episode the reset starts; omit it and the item runs against the project's own tools. Like the scenario, it cannot be changed afterwards — send a new item instead. */
+            openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
         };
         /**
          * CreateEvaluatorRequest
@@ -5810,6 +6092,8 @@ export interface components {
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
             /** @description The properties of the extractor config, specific to the selected extractor_type. */
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
+            /** @description Provenance: why this extractor config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateFeedbackRequest
@@ -5855,6 +6139,8 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+            /** @description Provenance: why this fine-tune exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateJobRequest
@@ -5888,10 +6174,10 @@ export interface components {
         CreateJobResponse: {
             /**
              * Job Id
-             * @description The id of the newly created job.
+             * @description The id of the job: a new job, or an existing identical job.
              */
             job_id: string;
-            /** @description The job's status immediately after creation. */
+            /** @description The job's status immediately after creation. When the request returns an existing identical job, this is that job's status, which can be 'paused'. */
             status: components["schemas"]["BackgroundJobStatus"];
         };
         /** CreateKilnCopilotApiKeyRequest */
@@ -5934,11 +6220,15 @@ export interface components {
              * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
              */
             judge_instructions?: string[] | null;
+            /** @description Optional settings for the judge model call (thinking level, temperature, top_p). Each unset field keeps its default. */
+            run_config?: components["schemas"]["LlmJudgeRunConfig"] | null;
             /**
              * Name
              * @description The name of the eval config.
              */
             name?: string | null;
+            /** @description Provenance: why this eval config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateMcpRunConfigRequest
@@ -5960,6 +6250,8 @@ export interface components {
              * @description The MCP tool ID to use.
              */
             tool_id: string;
+            /** @description Provenance: why this run config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -6013,6 +6305,8 @@ export interface components {
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+            /** @description Provenance: why this RAG config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CreateRerankerConfigRequest */
         CreateRerankerConfigRequest: {
@@ -6045,6 +6339,8 @@ export interface components {
              *     }
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+            /** @description Provenance: why this reranker config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateSpecWithCopilotRequest
@@ -6092,6 +6388,8 @@ export interface components {
              * @description Legacy `sdg_session_config` path only: the run config whose tools and skills describe the target task while examples are generated. Omit to use the task's default run config. The eval builder generates nothing, so this does not apply to it.
              */
             run_config_id?: string | null;
+            /** @description Provenance stamped onto the created judge eval config. The judge belongs to a new eval, so derived_from_ids must be empty. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskFromToolRequest
@@ -6113,6 +6411,8 @@ export interface components {
              * @description The instruction for the new task.
              */
             instruction: string;
+            /** @description Provenance stamped onto the created run config. The run config belongs to a new task, so derived_from_ids must be empty. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunConfigRequest
@@ -6134,6 +6434,8 @@ export interface components {
              * @description The run configuration properties.
              */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description Provenance: why this run config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunRequest
@@ -6193,6 +6495,8 @@ export interface components {
              * @description The properties of the vector store config, specific to the selected store_type.
              */
             properties: components["schemas"]["LanceDBConfigFTSPropertiesPublic"] | components["schemas"]["LanceDBConfigVectorPropertiesPublic"] | components["schemas"]["LanceDBConfigHybridPropertiesPublic"];
+            /** @description Provenance: why this vector store config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -6763,6 +7067,8 @@ export interface components {
             model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties: components["schemas"]["EmbeddingProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7026,6 +7332,8 @@ export interface components {
             properties?: {
                 [key: string]: unknown;
             } | (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7164,6 +7472,8 @@ export interface components {
              * @description Tags for filtering eval inputs.
              */
             tags?: string[];
+            /** @description Start a new episode on the OpenEnv server named by openenv_server_id before the run, by calling the environment's reset() with these keyword arguments. The trace records that episode. A run config that lists the OpenEnv server's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools. */
+            openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7219,6 +7529,59 @@ export interface components {
             source_id: string;
         };
         /**
+         * EvalJobParams
+         * @description Which split of an eval to run, against which run config, with which judge.
+         */
+        EvalJobParams: {
+            /**
+             * Project Id
+             * @description Id of the project the eval belongs to.
+             */
+            project_id: string;
+            /**
+             * Task Id
+             * @description Id of the task the eval belongs to.
+             */
+            task_id: string;
+            /**
+             * Eval Id
+             * @description Id of the eval to run.
+             */
+            eval_id: string;
+            /**
+             * Eval Config Id
+             * @description Id of the eval config (judge) to evaluate the run's output with.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description Id of the task run config whose outputs are being evaluated.
+             */
+            run_config_id: string;
+            /**
+             * Concurrency
+             * @description Max dataset items evaluated in parallel by the runner, from 1 to 100. Leave null to use the runner's default (25).
+             */
+            concurrency?: number | null;
+            /**
+             * Split
+             * @description Which of the eval's dataset splits to run: train, val, or test. Required, so a caller never runs the test split by omission. Fails with 422 if the eval has no such split.
+             * @enum {string}
+             */
+            split: "train" | "val" | "test";
+            /**
+             * Item Ids
+             * @description Restrict the job to these items of the split (EvalInput ids for an EvalInput-backed split, TaskRun ids for a TaskRun-backed one). Fails with 422 if an id is not in the split when the job is created. Progress and completion are measured over the subset. Leave null to run the whole split. Lets a caller trial a run config on a few named items before paying for the full split: the rows it stores are reused by a later full run, which skips scored items.
+             */
+            item_ids?: string[] | null;
+            /**
+             * Judge
+             * @description Whether to judge the items. False drives each item exactly as a judged job does (a fresh episode for an item with an openenv_reset, the synthetic user for a multi-turn item) and saves its trace as a task run with its usage, but runs no judge and stores no score. Every item is driven again, scored or not, so the usage is of this job. `result.driven_runs` names the task runs. A later judged job on the same items and run config reuses these traces instead of driving again. For an item in an environment, only while the item's openenv_reset and the environment's version are unchanged: a trace is reused only for the reset and version it ran with. Needs a V2 eval config. A drive-only job is never deduplicated and cannot be paused: each one is a new measurement.
+             * @default true
+             */
+            judge: boolean;
+        };
+        /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
          *
@@ -7231,12 +7594,22 @@ export interface components {
              */
             name: string;
             /**
+             * Display Name
+             * @description An optional, user-facing display name for the score, shown throughout the UI in place of 'name'. Purely cosmetic: it does not affect the JSON key, stored eval run scores, or the name provided to models. Falls back to 'name' when not set. Surrounding whitespace is stripped; blank values, or a value equal to 'name', are stored as None.
+             */
+            display_name?: string | null;
+            /**
              * Instruction
              * @description A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.
              */
             instruction?: string | null;
             /** @description The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical'). */
             type: components["schemas"]["TaskOutputRatingType"];
+            /**
+             * @description The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'. 'lower_is_better' is reserved for custom scores, which evaluators do not currently support.
+             * @default higher_is_better
+             */
+            direction: components["schemas"]["ScoreDirection"];
         };
         /**
          * EvalProgress
@@ -7515,6 +7888,11 @@ export interface components {
             /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
             eval_usage?: components["schemas"]["Usage"] | null;
             /**
+             * Judge Trace
+             * @description The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. Structured messages, unlike the deprecated JSON-string task_run_trace. None for V1 evals, for evals that call no model (e.g. code evals), and for records that predate this field. Distinct from the evaluated task run's trace.
+             */
+            judge_trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
              * Eval Input Id
              * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
              */
@@ -7560,8 +7938,13 @@ export interface components {
          *     itself has none - so callers see one shape regardless of which it is.
          */
         EvalRunWithTrace: {
-            /** @description The score record itself. */
+            /** @description The score record itself, without its judge_trace, which can be large. Fetch it from the eval run's judge_trace endpoint when has_judge_trace is true. */
             eval_run: components["schemas"]["EvalRun"];
+            /**
+             * Has Judge Trace
+             * @description Whether the score record saved a non-empty judge_trace.
+             */
+            has_judge_trace: boolean;
             /**
              * Input
              * @description The input the task was run on. From the scored TaskRun, from the EvalRun itself for legacy records, or from the dataset item whenever neither of those has it (pre-generation skips, and pointer records whose trace is missing).
@@ -7619,6 +8002,8 @@ export interface components {
              * @description The original task input text.
              */
             task_input?: string | null;
+            /** @description The OpenEnv episode the trace's OpenEnv tools ran in, when the run used an OpenEnv server: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ openenv_episode.final_state }}); code scorers receive it as the `openenv_episode` argument. */
+            openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
         };
         /**
          * EvalTemplateId
@@ -7954,6 +8339,8 @@ export interface components {
              * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
              */
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -8280,6 +8667,8 @@ export interface components {
             data_strategy: components["schemas"]["ChatStrategy"];
             /** @description The run configuration for this fine-tune. */
             run_config?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -8967,6 +9356,13 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Properties
+             * @description Optional static, worker-published descriptive properties for this job (validated against the worker's properties_model). Derived once from params at create time and unchanged over the run.
+             */
+            properties?: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * Params
              * @description The validated parameters this job was created with.
              */
@@ -9113,6 +9509,31 @@ export interface components {
              */
             input_transform?: components["schemas"]["JinjaInputTransform"] | null;
         };
+        /**
+         * KilnArtifactProvenance
+         * @description Why this artifact exists and what it was derived from.
+         *
+         *     Written once at creation; immutable thereafter (enforced at the API layer).
+         *     Compile-time metadata for future agent sessions and humans — never shown to
+         *     runtime models (not part of any tool/prompt surface).
+         */
+        KilnArtifactProvenance: {
+            /**
+             * Notes
+             * @description Why this artifact exists: the problem/hypothesis it addresses, what changed vs. the derived_from_ids parents, what validation/evidence supports it (cite eval/run_config/trace IDs inline), and known limits. First line = one-sentence summary. Record observations with conditions, never universal rules. Max ~2000 chars.
+             */
+            notes?: string | null;
+            /**
+             * Derived From Ids
+             * @description IDs of same-type sibling artifacts this one was derived from. Ordered: first = primary parent (the artifact this replaces or is a new version of); further entries = additional sources merged in. Empty = not derived. IDs resolve among siblings in the same parent scope only.
+             */
+            derived_from_ids?: (string | null)[];
+            /**
+             * Origin
+             * @description Whose judgment created this artifact. 'human': a person authored it directly OR an agent created it fulfilling a direct human request. 'agent': an agent created it autonomously. None: unknown/legacy. Required when this provenance is created; consumers must tolerate unknown values.
+             */
+            origin?: string | null;
+        };
         KilnAttachmentModel: {
             [key: string]: string;
         } | null;
@@ -9127,7 +9548,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        KilnBaseModel: {
+        "KilnBaseModel-Input": {
             /**
              * V
              * @description Schema version for migration support.
@@ -9155,6 +9576,48 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
+        };
+        /**
+         * KilnBaseModel
+         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
+         *
+         *     Attributes:
+         *         v (int): Schema version number for migration support
+         *         id (str): Unique identifier for the model instance
+         *         path (Path): File system path where the model is stored
+         *         created_at (datetime): Timestamp when the model was created
+         *         created_by (str): User ID of the creator
+         */
+        "KilnBaseModel-Output": {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /** Model Type */
+            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -9427,6 +9890,8 @@ export interface components {
              * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
              */
             judge_instructions?: string[] | null;
+            /** @description Optional settings for the judge model call (thinking level, temperature, top_p). Each unset field keeps its default. */
+            run_config?: components["schemas"]["LlmJudgeRunConfig"] | null;
         };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
@@ -9457,6 +9922,30 @@ export interface components {
             g_eval: boolean;
             /** Judge Instructions */
             judge_instructions?: string[] | null;
+            run_config?: components["schemas"]["LlmJudgeRunConfig"] | null;
+        };
+        /**
+         * LlmJudgeRunConfig
+         * @description Optional settings for the judge model call. Every field is optional: an unset
+         *     field keeps the value the judge would use without it (the provider's default
+         *     thinking level, and the run config's default temperature and top_p).
+         */
+        LlmJudgeRunConfig: {
+            /**
+             * Thinking Level
+             * @description The judge model's thinking level (e.g. 'none', 'low', 'medium'). Must be one the model's provider offers. If unset, the provider's default applies, which for some models is 'none'.
+             */
+            thinking_level?: string | null;
+            /**
+             * Temperature
+             * @description The judge model's temperature, between 0 and 2. If unset, the run config default applies.
+             */
+            temperature?: number | null;
+            /**
+             * Top P
+             * @description The judge model's top_p, between 0 and 1. If unset, the run config default applies.
+             */
+            top_p?: number | null;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
@@ -9634,6 +10123,124 @@ export interface components {
             mean_total_llm_latency_ms?: number | null;
         };
         /**
+         * Memory
+         * @description One memory record of the assistant working on this project.
+         *
+         *     Stored at assistant_memory/{id}/memory.kiln. Concurrent-append safe
+         *     (file per memory); updates are last-writer-wins.
+         */
+        Memory: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the full content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level, citing related Kiln records as prose IDs (e.g. 'run_config 184623901234', 'eval 5678'). Null when the overview says everything. Record observations with conditions ('batch API 429'd at 50rps on 07-04'), never universal rules.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags for filtering (existing Kiln tag rules). Free-form; skills define the working vocabulary (e.g. experiment, dead_end, constraint, api_quirk, session_state; faceted tags like lever_prompt, verdict_accept, evidence_weak).
+             */
+            tags?: string[];
+            /**
+             * Scope
+             * @description Opaque scope string, exact-match filterable. Conventions: 'project' for project-wide knowledge (constraints, environment facts); 'task::<task_id>' for task-scoped work. Not validated against existing records — a convention, not a reference.
+             */
+            scope: string;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * MemoryListResult
+         * @description A page of list_memories results plus the truncation nudge data.
+         *
+         *     remaining_tag_counts is computed over the records beyond this page (the
+         *     not-returned remainder), sorted by count descending. Adapters render it into
+         *     a prompt-facing nudge string like "62 more — filter by tag: probe(18), ...".
+         */
+        MemoryListResult: {
+            /** Listings */
+            listings: components["schemas"]["MemoryListing"][];
+            /**
+             * Matched
+             * @description How many memories matched the filters, across all pages.
+             */
+            matched: number;
+            /**
+             * Remaining
+             * @description How many matching memories come after this page.
+             */
+            remaining: number;
+            /** Remaining Tag Counts */
+            remaining_tag_counts: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * MemoryListing
+         * @description A single row in a list_memories result. Carries content_length, not content.
+         */
+        MemoryListing: {
+            /** Id */
+            id: string;
+            /** Overview */
+            overview: string;
+            /** Tags */
+            tags: string[];
+            /** Scope */
+            scope: string;
+            /** Content Length */
+            content_length: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+        };
+        /**
+         * MemorySummary
+         * @description An orientation view of a memory store, with no record content: the total and
+         *     one ScopeSummary per scope, newest scope first.
+         */
+        MemorySummary: {
+            /** Total */
+            total: number;
+            /** Scopes */
+            scopes: components["schemas"]["ScopeSummary"][];
+        };
+        /**
          * MessageUsage
          * @description Token usage and cost for a single LLM call or a multi-message sum.
          *
@@ -9738,7 +10345,7 @@ export interface components {
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai" | "typesafe";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai" | "cloudflare" | "typesafe";
         /**
          * MultiTurnDriveConfig
          * @description Settings for re-driving a multi-turn synthetic input at eval time.
@@ -10003,6 +10610,176 @@ export interface components {
              * @description API key for authentication.
              */
             api_key: string;
+        };
+        /**
+         * OpenEnvEpisode
+         * @description One reset-to-close run on an environment, recorded on the trace of the
+         *     task run that used it. The environment's tools ran inside the episode; any other tools
+         *     in the run config ran as themselves, outside the environment.
+         *
+         *     Persisted on `TaskRun.openenv_episode` so graders (including judges added later,
+         *     which reuse the same trace) can read what the run left behind. The live session is
+         *     closed when the episode ends; `final_state` is the durable record.
+         */
+        OpenEnvEpisode: {
+            /** @description The OpenEnv server and reset() keyword arguments this episode was started from: the input's openenv_reset. */
+            reset: components["schemas"]["OpenEnvReset"];
+            /**
+             * Episode Id
+             * @description Kiln's id for this episode, passed to the environment's reset() as `episode_id`.
+             */
+            episode_id: string;
+            /**
+             * Openenv Version
+             * @description The environment's name@version as its server reported it when the episode started (not the version of the openenv package): what produced this state. Kiln trusts a version to be immutable.
+             */
+            openenv_version: string;
+            /**
+             * Reset Metadata
+             * @description What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.
+             */
+            reset_metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Final State
+             * @description The environment's state() after generation, read when the episode ends. Whatever the environment chooses to report: a diff against its starting state, counters, an episode summary.
+             */
+            final_state?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /**
+         * OpenEnvReset
+         * @description Start a new episode on the OpenEnv server named by `openenv_server_id`, by calling the
+         *     environment's `reset()` with these keyword arguments before the run. The trace records
+         *     that episode.
+         *
+         *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
+         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
+         *     trace key carries a digest of the whole reset, so an input whose reset is edited
+         *     after its trace was made generates a new one rather than reusing it.
+         */
+        OpenEnvReset: {
+            /**
+             * Openenv Server Id
+             * @description ID of the OpenEnv server to start the episode on.
+             */
+            openenv_server_id: string;
+            /**
+             * Reset Kwargs
+             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.
+             */
+            reset_kwargs?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /**
+         * OpenEnvServerCreateRequest
+         * @description A new OpenEnv server: Kiln's saved pointer to a running OpenEnv environment.
+         */
+        OpenEnvServerCreateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes about the OpenEnv server.
+             */
+            description?: string | null;
+            /**
+             * Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
+             */
+            url?: string | null;
+        };
+        /**
+         * OpenEnvServerResponse
+         * @description An OpenEnv server: Kiln's saved pointer to a running OpenEnv environment.
+         */
+        OpenEnvServerResponse: {
+            /**
+             * Id
+             * @description The OpenEnv server's id.
+             */
+            id?: string | null;
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes about the OpenEnv server.
+             */
+            description?: string | null;
+            /**
+             * Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
+             */
+            url?: string | null;
+            /**
+             * Created At
+             * @description When the OpenEnv server was created.
+             */
+            created_at?: string | null;
+            /**
+             * Created By
+             * @description Who created the OpenEnv server.
+             */
+            created_by?: string | null;
+        };
+        /**
+         * OpenEnvServerUpdateRequest
+         * @description Changes to an OpenEnv server. Only the fields sent are changed.
+         */
+        OpenEnvServerUpdateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description User-facing notes about the OpenEnv server.
+             */
+            description?: string | null;
+            /**
+             * Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
+             */
+            url?: string | null;
+        };
+        /**
+         * OpenEnvToolResponse
+         * @description One tool the OpenEnv server's environment serves.
+         */
+        OpenEnvToolResponse: {
+            /**
+             * Tool Id
+             * @description The id a run config uses to list this tool directly: kiln_tool::openenv::<openenv_server_id>::<tool_name>.
+             */
+            tool_id: string;
+            /**
+             * Name
+             * @description The tool's function name, as the model sees it.
+             */
+            name: string;
+            /**
+             * Description
+             * @description The tool's description, as the model sees it.
+             * @default
+             */
+            description: string;
+            /**
+             * Input Schema
+             * @description JSON schema of the tool's arguments.
+             */
+            input_schema?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * OpenFileResponse
@@ -10285,11 +11062,13 @@ export interface components {
             /**
              * Name
              * @description Project name from the project file.
+             * @default
              */
             name: string;
             /**
              * Description
              * @description Project description from the project file.
+             * @default
              */
             description: string;
             /**
@@ -10338,6 +11117,8 @@ export interface components {
              * @description Chain of thought instructions to include in the prompt.
              */
             chain_of_thought_instructions?: string | null;
+            /** @description Provenance: why this prompt exists and what it was derived from. derived_from_ids accepts a saved prompt's id with or without the 'id::' prefix; it is stored without the prefix. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * PromptGenerator
@@ -10680,6 +11461,8 @@ export interface components {
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -10744,6 +11527,8 @@ export interface components {
              * @description Tags for document filtering.
              */
             tags?: string[] | null;
+            /** @description Provenance: why this RAG config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** RagProgress */
         RagProgress: {
@@ -10877,6 +11662,11 @@ export interface components {
              * @description Tags for which this rating option is shown.
              */
             show_for_tags: string[];
+            /**
+             * Display Name
+             * @description The user-facing label for this rating, when it differs from requirement.name (an eval score's display name). requirement.name stays the identifier.
+             */
+            display_name?: string | null;
         };
         /**
          * RatingOptionResponse
@@ -11142,6 +11932,8 @@ export interface components {
              * @description The properties of the reranker config, specific to the selected type.
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -11317,6 +12109,13 @@ export interface components {
              * @description The associated spec ID, if any.
              */
             spec_id?: string | null;
+            /**
+             * Score Display Names
+             * @description The user-facing name of each of the eval's output scores, keyed by the score's JSON key (the keys of eval_config_result.results). The score's display_name when set, otherwise its name.
+             */
+            score_display_names: {
+                [key: string]: string;
+            };
         };
         /**
          * RunConfigEvalScoresSummary
@@ -11501,6 +12300,32 @@ export interface components {
              */
             trusted: boolean;
         };
+        /**
+         * SaveMemoryRequest
+         * @description Body for creating a memory. `scope` is required — there is no default.
+         */
+        SaveMemoryRequest: {
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level. Null when the overview says everything.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering.
+             */
+            tags?: string[];
+        };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
@@ -11565,6 +12390,41 @@ export interface components {
              */
             projects: components["schemas"]["ProjectInfo"][];
         };
+        /**
+         * ScopeSummary
+         * @description Counts for the memories of one scope: how many, the newest, and per-tag counts.
+         */
+        ScopeSummary: {
+            /** Scope */
+            scope: string;
+            /** Count */
+            count: number;
+            /**
+             * Newest
+             * Format: date-time
+             */
+            newest: string;
+            /** Tags */
+            tags: {
+                [key: string]: number;
+            };
+            /**
+             * Untagged
+             * @description How many memories in this scope have no tags. Null when none.
+             */
+            untagged?: number | null;
+        };
+        /**
+         * ScoreDirection
+         * @description The direction of improvement for an eval output score.
+         *
+         *     Tells consumers how to interpret a change in the score's value: 'higher_is_better'
+         *     means an increase is an improvement, 'lower_is_better' means a decrease is an
+         *     improvement, and 'informational' scores carry context only and should never drive
+         *     decisions in either direction.
+         * @enum {string}
+         */
+        ScoreDirection: "higher_is_better" | "lower_is_better" | "informational";
         /**
          * ScoreSummary
          * @description Summary of scores for an eval run.
@@ -11841,6 +12701,8 @@ export interface components {
              * @description The markdown body of the skill.
              */
             body: string;
+            /** @description Provenance: why this skill exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillResponse
@@ -11878,6 +12740,8 @@ export interface components {
              * @description When the skill was created.
              */
             created_at?: string | null;
+            /** @description Why this skill exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillUpdateRequest
@@ -12777,7 +13641,7 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel"] | null;
+            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -12825,6 +13689,8 @@ export interface components {
             parent_task_run_id?: string | null;
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
+            /** @description Set when this run used an environment: the episode its environment tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the environment. */
+            openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
         };
         /**
          * TaskRun
@@ -12908,6 +13774,8 @@ export interface components {
             parent_task_run_id?: string | null;
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
+            /** @description Set when this run used an environment: the episode its environment tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the environment. */
+            openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -12970,6 +13838,8 @@ export interface components {
              * @default false
              */
             starred: boolean;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -13278,6 +14148,11 @@ export interface components {
              * @description Tools the scorer code called, in call order. Code evals only.
              */
             tool_call_log?: components["schemas"]["ToolCallLogEntryResponse"][];
+            /**
+             * Judge Trace
+             * @description The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. None for evals that call no model.
+             */
+            judge_trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * TestWriteAccessRequest
@@ -13478,6 +14353,10 @@ export interface components {
             tool_call_id?: string | null;
             /** Reasoning Content */
             reasoning_content?: string | null;
+            /** Is Error */
+            is_error?: boolean | null;
+            /** Error Message */
+            error_message?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -13535,12 +14414,14 @@ export interface components {
          * UpdateEvalInputRequest
          * @description Partial update of an eval input item. Omitted fields are left unchanged.
          *
-         *     `data` is deliberately absent, and `extra="forbid"` turns an attempt to send it into
-         *     a 422 rather than a silent no-op the caller reads as success. The scenario is the one
-         *     thing that genuinely cannot be edited in place: trace reuse (`TraceIndex`) keys on
-         *     `(source_type, item_id, run_config_id)`, so a later eval would hand a judge a
-         *     conversation generated from the scenario this item *used to* have. Changing a
-         *     scenario means POSTing a new item.
+         *     `data` and `openenv_reset` are deliberately absent, and `extra="forbid"` turns an
+         *     attempt to send either into a 422 rather than a silent no-op the caller reads as
+         *     success. They are what genuinely cannot be edited in place: trace reuse
+         *     (`TraceIndex`) keys on `(source_type, item_id, run_config_id, openenv_version)`, and
+         *     the item id stands for the item's whole content, so a later eval would hand a judge
+         *     a conversation generated from the scenario this item *used to* have — or, for an
+         *     OpenEnv item, one recorded in an episode the environment was reset into differently.
+         *     Changing either means POSTing a new item.
          *
          *     `reference` does not have that problem and is editable. It keys nothing: stored
          *     scores snapshot the `reference_data` the judge actually saw (`_persist_judgment`)
@@ -13593,6 +14474,13 @@ export interface components {
              * @description The updated train set filter ID.
              */
             train_set_filter_id?: string | null;
+            /**
+             * Output Score Display Names
+             * @description Updated user-facing display names for the eval's output scores, keyed by each score's JSON key (as in eval run scores). Scores not included keep their current display name; null or blank clears it, as does a value equal to the score's name. Max 32 characters, unique across the eval's scores. Display names are cosmetic only: they do not change the score name, JSON key, or any stored eval run.
+             */
+            output_score_display_names?: {
+                [key: string]: string | null;
+            } | null;
         };
         /**
          * UpdateFinetuneRequest
@@ -13609,6 +14497,34 @@ export interface components {
              * @description The updated description.
              */
             description?: string | null;
+        };
+        /**
+         * UpdateMemoryRequest
+         * @description Body for updating a memory. Only provided fields are changed; omitted
+         *     fields are left untouched. An explicit null clears `content` and `tags`, and
+         *     is rejected for `overview` and `scope`.
+         */
+        UpdateMemoryRequest: {
+            /**
+             * Overview
+             * @description New one-line summary. No newlines.
+             */
+            overview?: string | null;
+            /**
+             * Content
+             * @description New memory body. Empty or null clears it.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering. Null clears them.
+             */
+            tags?: string[] | null;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope?: string | null;
         };
         /**
          * UpdateRagConfigRequest
@@ -13796,6 +14712,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /**
          * VectorStoreConfig
@@ -13846,6 +14766,8 @@ export interface components {
              * @description The properties of the vector store config, specific to the selected store_type.
              */
             properties: components["schemas"]["LanceDBConfigFTSProperties"] | components["schemas"]["LanceDBConfigVectorProperties"] | components["schemas"]["LanceDBConfigHybridProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -13855,6 +14777,23 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /**
+         * WaitForJobsRequest
+         * @description Request body for waiting on a set of jobs.
+         */
+        WaitForJobsRequest: {
+            /**
+             * Ids
+             * @description Job ids to wait for. All must reach a terminal state.
+             */
+            ids?: string[];
+            /**
+             * Timeout
+             * @description Seconds to wait before giving up (504 on timeout; jobs keep running — re-issue the wait to keep waiting). Defaults to 600s, capped at 3600s: the wait is always bounded, since a job that never terminates (e.g. paused by the user) would otherwise hang the caller indefinitely.
+             * @default 600
+             */
+            timeout: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -15239,6 +16178,227 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_memories_api_projects__project_id__memories_get: {
+        parameters: {
+            query?: {
+                /** @description Exact-match scope filter. Omit for all scopes. */
+                scope?: string | null;
+                /** @description Memory must have ALL of these tags (AND). Repeat the param for multiple tags; omit for no tag filter. */
+                tags?: string[] | null;
+                /** @description Case-insensitive regex over overview + content. A pattern that takes too long to evaluate returns 422. */
+                content_match?: string | null;
+                /** @description Max rows to return. */
+                limit?: number;
+                /** @description Rows to skip. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryListResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_memory_api_projects__project_id__memories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_summary_api_projects__project_id__memories_summary_get: {
+        parameters: {
+            query?: {
+                /** @description Limit to one scope. Omit for all scopes. */
+                scope?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_memories_api_projects__project_id__memories_by_ids_get: {
+        parameters: {
+            query: {
+                /** @description The memory ids to fetch. */
+                ids: string[];
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_memory_api_projects__project_id__memories__memory_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_memory_api_projects__project_id__memories__memory_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
                 };
             };
             /** @description Validation Error */
@@ -19384,6 +20544,46 @@ export interface operations {
             };
         };
     };
+    get_eval_run_judge_trace_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__eval_run__eval_run_id__judge_trace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+                /** @description The unique identifier of the eval configuration. */
+                eval_config_id: string;
+                /** @description The unique identifier of the eval run. */
+                eval_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_eval_progress_api_projects__project_id__tasks__task_id__evals__eval_id__progress_get: {
         parameters: {
             query?: never;
@@ -19551,6 +20751,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_all_run_configs_eval_scores_api_projects__project_id__tasks__task_id__run_configs_eval_scores_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["RunConfigEvalScoresSummary"];
+                    };
                 };
             };
             /** @description Validation Error */
@@ -20617,6 +21853,214 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_openenv_servers_api_projects__project_id__openenv_servers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_openenv_server_api_projects__project_id__openenv_servers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenEnvServerCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenEnvServerUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_openenv_server_tools_api_projects__project_id__openenv_servers__openenv_server_id__tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvToolResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -22585,6 +24029,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_for_jobs_api_jobs_wait_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitForJobsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_eval_job_api_jobs_evals_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalJobParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateJobResponse"];
                 };
             };
             /** @description Validation Error */

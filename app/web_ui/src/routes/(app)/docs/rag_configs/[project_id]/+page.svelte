@@ -42,12 +42,10 @@
     description: `List of RAG search tool configurations for project ID ${project_id}. Shows available search tools for document retrieval.`,
   })
   $: current_task_id = $ui_state.current_task_id
-  // Deep-link straight to the RAG eval builder: the template is already
-  // decided here, and the Kiln Pro (copilot) spec builder doesn't support the
-  // reference-answer template -- only the manual flow does -- so the workflow
-  // and template pickers would be two no-op screens.
+  // The template is already decided here, so link straight to the spec builder
+  // and skip the template picker.
   $: evals_href = current_task_id
-    ? `/specs/${project_id}/${current_task_id}/spec_builder?type=reference_answer_accuracy&workflow=manual`
+    ? `/specs/${project_id}/${current_task_id}/spec_builder?type=reference_answer_accuracy`
     : undefined
 
   onMount(async () => {

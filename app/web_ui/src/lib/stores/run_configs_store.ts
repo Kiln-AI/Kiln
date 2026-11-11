@@ -1,4 +1,8 @@
-import type { TaskRunConfig, RunConfigProperties } from "$lib/types"
+import type {
+  TaskRunConfig,
+  RunConfigProperties,
+  KilnArtifactProvenance,
+} from "$lib/types"
 import { writable, get } from "svelte/store"
 import { client } from "$lib/api_client"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
@@ -54,9 +58,7 @@ export async function load_task_run_configs(
     }
   }
 
-  // Create and store the promise
   const promise = (async () => {
-    // Set loading state to true
     run_configs_loading_by_task_composite_id.update((loading) => ({
       ...loading,
       [composite_key]: true,
@@ -108,13 +110,11 @@ export async function load_task_run_configs(
 
       throw error
     } finally {
-      // Set loading state to false
       run_configs_loading_by_task_composite_id.update((loading) => ({
         ...loading,
         [composite_key]: false,
       }))
 
-      // Clean up the promise from the map
       delete loading_task_run_configs[composite_key]
     }
   })()
@@ -123,12 +123,26 @@ export async function load_task_run_configs(
   return promise
 }
 
+// The lineage parent for a clone of this run config. A fine-tuned model's run
+// config is built in memory from the fine-tune, so it is not a saved sibling run
+// config and cannot be a lineage parent.
+export function run_config_clone_parent_id(
+  source: TaskRunConfig | null,
+): string | null {
+  const id = source?.id
+  if (!id || id.startsWith("finetune_run_config::")) {
+    return null
+  }
+  return id
+}
+
 // Save a new task run configuration
 export async function save_new_task_run_config(
   project_id: string,
   task_id: string,
   run_config_properties: RunConfigProperties,
   name: string,
+  provenance: KilnArtifactProvenance | null = null,
 ): Promise<TaskRunConfig> {
   const { error, data } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/run_configs",
@@ -142,6 +156,7 @@ export async function save_new_task_run_config(
       body: {
         run_config_properties,
         name,
+        provenance,
       },
     },
   )

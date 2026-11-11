@@ -49,10 +49,8 @@ function getDefaultProjectState(): RagConfigurationProgressState {
     // rag configuration id -> is_archived
     is_archived: {},
 
-    // error
     error: null,
 
-    // last started rag config id
     last_started_rag_config_id: null,
   }
 }

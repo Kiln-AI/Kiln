@@ -1,8 +1,9 @@
 <script lang="ts">
   import Float from "$lib/ui/float.svelte"
   import BrailleSpinner from "./braille_spinner.svelte"
+  import type { ToolStatusVariant } from "./tool_status"
 
-  export let variant: "fetched" | "saved" | "fetching" | "saving"
+  export let variant: ToolStatusVariant
   export let detail: string = ""
   export let mutedClass: string = "text-base-content/50"
 
@@ -10,15 +11,18 @@
   let hovering = false
   let overflowing = false
 
-  const LABELS = {
+  const LABELS: Record<ToolStatusVariant, string> = {
     fetched: "Fetched data",
     saved: "Saved data",
     fetching: "Fetching data",
     saving: "Saving data",
-  } as const
+    fetch_failed: "Couldn't fetch data",
+    save_failed: "Couldn't save data",
+  }
 
   $: label = LABELS[variant]
   $: isLoading = variant === "fetching" || variant === "saving"
+  $: isFailed = variant === "fetch_failed" || variant === "save_failed"
   $: fullText = detail ? `${label} ${detail}` : label
 
   function measureOverflow() {
@@ -50,7 +54,9 @@
   {#if isLoading}
     <BrailleSpinner />
   {:else}
-    <span class="inline-block w-3 text-center shrink-0">✓</span>
+    <span class="inline-block w-3 text-center shrink-0"
+      >{isFailed ? "✕" : "✓"}</span
+    >
   {/if}
   <div bind:this={truncEl} class="truncate min-w-0 flex-1">
     {label}{#if isLoading}<span class="inline-flex items-baseline gap-px"

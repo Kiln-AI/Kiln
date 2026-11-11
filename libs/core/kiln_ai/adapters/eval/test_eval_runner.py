@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import ClassVar, Dict
@@ -13,11 +14,13 @@ from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.conftest import SkippingStubV2Eval, StubV2Eval
 from kiln_ai.adapters.eval.eval_runner import (
+    DEFAULT_EVAL_CONCURRENCY,
     EvalJob,
     EvalRunner,
     _conversation_usage,
     conversation_health_problem,
 )
+from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceIndexRegistry
 from kiln_ai.adapters.jev import JevApiError
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.retry_classification import is_retryable_error
@@ -64,7 +67,7 @@ from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.datamodel.usage import MessageUsage, Usage
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.synthetic_user.models import TAG_SU_ENDED_CONVERSATION
-from kiln_ai.utils.async_job_runner import RetryableError
+from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver, RetryableError
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
@@ -318,6 +321,174 @@ async def test_async_eval_runner_status_updates(mock_eval_runner, concurrency):
 
     # Verify run_job was called for each job
     assert mock_eval_runner.run_job.call_count == job_count
+
+
+@pytest.mark.asyncio
+async def test_run_collects_tasks_again_after_a_torn_read(
+    mock_eval_runner, monkeypatch
+):
+    # collect_tasks reads every EvalRun in a worker thread, while another job can be
+    # saving one. A file read between the truncate and the write raises
+    # JSONDecodeError; run() collects again once instead of failing.
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+    jobs = [{} for _ in range(3)]
+    calls: list[int] = []
+
+    def collect_tasks():
+        calls.append(1)
+        if len(calls) == 1:
+            raise json.JSONDecodeError("Expecting value", "", 0)
+        return jobs
+
+    mock_eval_runner.collect_tasks = collect_tasks
+    mock_eval_runner.run_job = AsyncMock(return_value=True)
+
+    progresses = [progress async for progress in mock_eval_runner.run()]
+
+    assert len(calls) == 2
+    assert progresses[-1].complete == 3
+    assert mock_eval_runner.run_job.call_count == 3
+
+
+def test_constructing_runner_does_not_read_task_runs(
+    mock_eval, mock_task, mock_eval_config, mock_run_config, monkeypatch
+):
+    # A runner is also built only to validate a request (validate_*_readiness). Seeding
+    # the trace index reads every TaskRun of the task, so it must not happen here.
+    # Resolving the split reads the runs too; do it before counting.
+    split = _test_split([mock_eval_config])
+    reads: list[int] = []
+    real_runs = Task.runs
+
+    def counting_runs(self, *args, **kwargs):
+        reads.append(1)
+        return real_runs(self, *args, **kwargs)
+
+    monkeypatch.setattr(Task, "runs", counting_runs)
+
+    EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+        split=split,
+    )
+
+    assert reads == []
+
+
+@pytest.mark.asyncio
+async def test_run_seeds_trace_index_once_in_a_thread_before_jobs(
+    mock_eval_runner, monkeypatch
+):
+    events: list[str] = []
+    seeded: list[TraceIndex] = []
+    seed_threads: list[int] = []
+    real_seed = TraceIndex._seed
+
+    def recording_seed(self):
+        events.append("seed")
+        seeded.append(self)
+        seed_threads.append(threading.get_ident())
+        real_seed(self)
+
+    monkeypatch.setattr(TraceIndex, "_seed", recording_seed)
+    mock_eval_runner.eval_configs = [
+        config.model_copy(update={"config_type": EvalConfigType.v2})
+        for config in mock_eval_runner.eval_configs
+    ]
+    mock_eval_runner.collect_tasks = lambda: [{} for _ in range(3)]
+
+    async def run_job(job):
+        events.append("job")
+        assert await mock_eval_runner._trace_index() is seeded[0]
+        return True
+
+    mock_eval_runner.run_job = run_job
+
+    [progress async for progress in mock_eval_runner.run()]
+
+    assert events == ["seed", "job", "job", "job"]
+    assert seed_threads != [threading.get_ident()]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "eval_run_type, job_count",
+    [
+        # Every item is scored already: nothing to look up.
+        ("task_run_eval", 0),
+        # A legacy judge generates its own output and never looks a trace up.
+        ("task_run_eval", 3),
+        # Calibration scores stored dataset runs and never generates a trace.
+        ("eval_config_eval", 3),
+    ],
+)
+async def test_run_without_trace_lookups_does_not_seed_trace_index(
+    mock_eval_runner, monkeypatch, eval_run_type, job_count
+):
+    seeds: list[int] = []
+    monkeypatch.setattr(TraceIndex, "_seed", lambda self: seeds.append(1))
+    mock_eval_runner.eval_run_type = eval_run_type
+    mock_eval_runner.collect_tasks = lambda: [{} for _ in range(job_count)]
+    mock_eval_runner.run_job = AsyncMock(return_value=True)
+
+    [progress async for progress in mock_eval_runner.run()]
+
+    assert seeds == []
+    assert mock_eval_runner.run_job.call_count == job_count
+
+
+def test_concurrent_seeds_build_one_trace_index(mock_eval_runner, monkeypatch):
+    seeding = threading.Event()
+    release = threading.Event()
+    seeds: list[int] = []
+    real_seed = TraceIndex._seed
+
+    def slow_seed(self):
+        seeds.append(1)
+        seeding.set()
+        release.wait(timeout=5)
+        real_seed(self)
+
+    monkeypatch.setattr(TraceIndex, "_seed", slow_seed)
+    indexes: list[TraceIndex] = []
+
+    def seed():
+        indexes.append(mock_eval_runner._seed_trace_index())
+
+    first = threading.Thread(target=seed)
+    first.start()
+    assert seeding.wait(timeout=5)
+    # The second caller arrives while the first is still reading the runs.
+    second = threading.Thread(target=seed)
+    second.start()
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert seeds == [1]
+    assert len(indexes) == 2
+    assert indexes[0] is indexes[1]
+
+
+@pytest.mark.asyncio
+async def test_a_job_outside_run_seeds_the_trace_index_in_a_thread(
+    mock_eval_runner, monkeypatch
+):
+    seed_threads: list[int] = []
+    real_seed = TraceIndex._seed
+
+    def recording_seed(self):
+        seed_threads.append(threading.get_ident())
+        real_seed(self)
+
+    monkeypatch.setattr(TraceIndex, "_seed", recording_seed)
+
+    index = await mock_eval_runner._trace_index()
+
+    assert await mock_eval_runner._trace_index() is index
+    assert len(seed_threads) == 1
+    assert seed_threads != [threading.get_ident()]
 
 
 def test_collect_tasks_filtering(
@@ -2190,6 +2361,45 @@ class TestV2FreshGeneration:
         assert saved.task_run_usage is None
 
     @pytest.mark.asyncio
+    async def test_judge_trace_is_recorded_on_the_score(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """The judge's conversation, so what its template rendered can be inspected."""
+        judge_trace = [
+            {"role": "system", "content": "Score the output."},
+            {"role": "user", "content": "rendered judge prompt"},
+            {"role": "assistant", "content": '{"accuracy": 1.0}'},
+        ]
+
+        class TracedJudge(StubV2Eval):
+            async def evaluate(self, eval_input):
+                return V2EvalResult(scores={"accuracy": 1.0}, judge_trace=judge_trace)
+
+        item = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stale output", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        item.save_to_file()
+
+        job = EvalJob(
+            item=item,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        with generating(TraceGenerator(mock_v2_task_run_eval_runner.task), TracedJudge):
+            await mock_v2_task_run_eval_runner.run_job(job)
+
+        (saved,) = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert saved.judge_trace == judge_trace
+        assert saved.task_run_trace is None
+
+    @pytest.mark.asyncio
     async def test_scoring_skip_still_names_the_trace_it_could_not_score(
         self,
         mock_v2_task_run_eval_runner,
@@ -2832,6 +3042,41 @@ class TestTraceReuse:
         )
         with generating(generator):
             await run_to_completion(runner)
+
+        assert len(generator.calls) == len(dataset_items)
+        assert len(eval_traces(mock_task)) == len(dataset_items)
+        assert scored_run_ids(mock_v2_task_run_eval_config) == scored_run_ids(
+            second_judge
+        )
+
+    @pytest.mark.asyncio
+    async def test_two_concurrent_jobs_on_one_run_config_generate_once_per_item(
+        self,
+        mock_task,
+        mock_v2_task_run_eval_config,
+        second_judge,
+        mock_run_config,
+        dataset_items,
+    ):
+        """The same overlap across jobs: one background eval job per eval config, posted
+        together. Each job builds its own runner, and both are built before either has
+        generated anything, so only an index shared between runners stops both from
+        generating every item.
+        """
+        generator = TraceGenerator(mock_task)
+        registry = TraceIndexRegistry()
+        first_job = build_task_run_eval_runner(
+            [mock_v2_task_run_eval_config],
+            [mock_run_config],
+            trace_index_registry=registry,
+        )
+        second_job = build_task_run_eval_runner(
+            [second_judge], [mock_run_config], trace_index_registry=registry
+        )
+        with generating(generator):
+            await asyncio.gather(
+                run_to_completion(first_job), run_to_completion(second_job)
+            )
 
         assert len(generator.calls) == len(dataset_items)
         assert len(eval_traces(mock_task)) == len(dataset_items)
@@ -4551,6 +4796,41 @@ class TestValidateMultiTurnDriveReadiness:
         with pytest.raises(ValueError, match="synthetic user configuration"):
             runner.validate_multi_turn_drive_readiness()
 
+    def test_item_ids_limit_the_check_to_selected_items(
+        self, mock_task, mock_run_config, mock_v2_redrive_config, mock_eval_inputs
+    ):
+        """Unstamped multi-turn items outside an `item_ids` subset must not block a
+        job over selected single-turn items: the check covers what the runner
+        will actually work."""
+        for item_id in ("ei_bare_1", "ei_bare_2"):
+            EvalInput(
+                id=item_id,
+                data=MultiTurnSyntheticEvalInputData(
+                    first_message=UserMessage(text="hi"),
+                    synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                ),
+                parent=mock_task,
+            ).save_to_file()
+        split = _test_split([mock_v2_redrive_config])
+
+        whole_split = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            split=split,
+        )
+        with pytest.raises(ValueError, match="synthetic user configuration"):
+            whole_split.validate_multi_turn_drive_readiness()
+
+        subset = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            split=split,
+            item_ids={"ei_1"},
+        )
+        subset.validate_multi_turn_drive_readiness()
+
     def test_partially_stamped_split_passes(
         self, mock_task, mock_run_config, mock_v2_redrive_config, multi_turn_eval_input
     ):
@@ -5566,3 +5846,225 @@ class TestDrivenConversationIsVettedBeforeSaving:
         assert drive.await_count == 3
         assert eval_traces(mock_task) == []
         assert mock_v2_redrive_config.runs(readonly=True) == []
+
+
+def test_collect_tasks_item_ids_narrow_the_split(
+    mock_eval, mock_task, mock_eval_config, data_source, mock_run_config
+):
+    """`item_ids` runs only the named items of the split. Ids outside the split are
+    ignored, and a named item that is already scored is still skipped."""
+    runs = []
+    for _ in range(3):
+        task_run = TaskRun(
+            parent=mock_task,
+            input="test1",
+            input_source=data_source,
+            output=TaskOutput(output="test1"),
+            tags=["tag1"],
+        )
+        task_run.save_to_file()
+        runs.append(task_run)
+    outside = TaskRun(
+        parent=mock_task,
+        input="x",
+        input_source=data_source,
+        output=TaskOutput(output="x"),
+        tags=["other"],
+    )
+    outside.save_to_file()
+    mock_eval.splits["test"] = TaskRunSplit(filter_id="tag::tag1")
+    EvalRun(
+        parent=mock_eval_config,
+        dataset_id=runs[2].id,
+        task_run_config_id=mock_run_config.id,
+        input="test",
+        output="test",
+        scores={"accuracy": 1.0},
+    ).save_to_file()
+
+    runner = build_task_run_eval_runner(
+        [mock_eval_config],
+        [mock_run_config],
+        item_ids={runs[0].id, runs[1].id, runs[2].id, outside.id},
+    )
+    jobs = runner.collect_tasks()
+    assert {job.item.id for job in jobs} == {runs[0].id, runs[1].id}
+
+    full = build_task_run_eval_runner([mock_eval_config], [mock_run_config])
+    assert {job.item.id for job in full.collect_tasks()} == {runs[0].id, runs[1].id}
+
+    only_scored = build_task_run_eval_runner(
+        [mock_eval_config], [mock_run_config], item_ids={runs[2].id}
+    )
+    assert only_scored.collect_tasks() == []
+
+
+def test_item_ids_rejected_outside_task_run_eval(mock_eval, mock_eval_config):
+    mock_eval.eval_configs_filter_id = "tag::tag1"
+    with pytest.raises(ValueError, match="task_run_eval"):
+        EvalRunner(
+            eval_configs=[mock_eval_config],
+            run_configs=None,
+            eval_run_type="eval_config_eval",
+            item_ids={"x"},
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "run_kwargs,expected",
+    [
+        (
+            {},
+            {
+                "concurrency": DEFAULT_EVAL_CONCURRENCY,
+                "max_retries": 2,
+                "retry_delay": 1.0,
+                "observers": None,
+            },
+        ),
+        (
+            {"concurrency": 3, "max_retries": 4, "retry_delay": 5.0},
+            {"concurrency": 3, "max_retries": 4, "retry_delay": 5.0},
+        ),
+    ],
+)
+async def test_run_threads_config_to_async_job_runner(
+    mock_eval_runner, run_kwargs, expected
+):
+    captured: dict = {}
+
+    class FakeRunner:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def run(self):
+            for _ in ():
+                yield
+
+    with patch("kiln_ai.adapters.eval.eval_runner.AsyncJobRunner", FakeRunner):
+        async for _ in mock_eval_runner.run(**run_kwargs):
+            pass
+
+    for key, value in expected.items():
+        assert captured[key] == value
+
+
+@pytest.mark.asyncio
+async def test_run_notifies_observers_of_a_failed_item(
+    mock_eval, mock_task, mock_eval_config, mock_run_config, data_source
+):
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test",
+        input_source=data_source,
+        output=TaskOutput(output="test"),
+        tags=["tag1"],
+    )
+    task_run.save_to_file()
+    mock_eval.splits["test"] = TaskRunSplit(filter_id="tag::tag1")
+    runner = build_task_run_eval_runner([mock_eval_config], [mock_run_config])
+    failures: list[tuple[EvalJob, Exception]] = []
+
+    class Recorder(AsyncJobRunnerObserver[EvalJob]):
+        async def on_error(self, job: EvalJob, error: Exception):
+            failures.append((job, error))
+
+    async def failing_run_job(job: EvalJob) -> bool:
+        raise ValueError("judge exploded")
+
+    with patch.object(runner, "run_job", side_effect=failing_run_job):
+        progress = [p async for p in runner.run(observers=[Recorder()])]
+
+    assert progress[-1].errors == 1
+    assert progress[-1].complete == 0
+    assert len(failures) == 1
+    assert failures[0][0].item.id == task_run.id
+    assert str(failures[0][1]) == "judge exploded"
+
+
+# -------------------------------------------------------------------
+# Drive-only runs (judge=False)
+# -------------------------------------------------------------------
+class TestDriveOnly:
+    @pytest.mark.asyncio
+    async def test_drives_every_item_and_scores_none(
+        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        generator = TraceGenerator(mock_task)
+        runner = build_task_run_eval_runner(
+            [mock_v2_eval_config], [mock_run_config], judge=False
+        )
+        with generating(generator):
+            async for _ in runner.run():
+                pass
+
+        assert len(generator.calls) == 2
+        assert mock_v2_eval_config.runs(readonly=True) == []
+        driven = {run.item_id: run for run in runner.driven_runs}
+        assert set(driven) == {"ei_1", "ei_2"}
+        for run in driven.values():
+            assert run.item_source == "eval_input"
+            assert run.run_config_id == mock_run_config.id
+            trace = trace_for(mock_task, run.task_run_id)
+            assert trace.usage == generator.usage
+            assert trace.eval_source is not None
+            assert trace.eval_source.source_id == run.item_id
+
+    @pytest.mark.asyncio
+    async def test_drives_items_that_are_already_scored(
+        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        """A score says nothing about this run's usage, so drive-only ignores it."""
+        generator = TraceGenerator(mock_task)
+        with generating(generator):
+            judged = build_task_run_eval_runner(
+                [mock_v2_eval_config], [mock_run_config]
+            )
+            async for _ in judged.run():
+                pass
+            assert len(generator.calls) == 2
+            assert judged.collect_tasks() == []
+
+            drive_only = build_task_run_eval_runner(
+                [mock_v2_eval_config], [mock_run_config], judge=False
+            )
+            assert len(drive_only.collect_tasks()) == 2
+            async for _ in drive_only.run():
+                pass
+
+        assert len(generator.calls) == 4
+        assert len(eval_traces(mock_task)) == 4
+        assert len(mock_v2_eval_config.runs(readonly=True)) == 2
+
+    def test_refuses_a_legacy_judge(
+        self, mock_eval_config, mock_run_config, mock_task, data_source
+    ):
+        with pytest.raises(ValueError, match="not a V2 judge with an adapter"):
+            build_task_run_eval_runner(
+                [mock_eval_config], [mock_run_config], judge=False
+            )
+
+    def test_refuses_two_eval_configs(
+        self, mock_v2_eval, mock_v2_eval_config, mock_run_config
+    ):
+        second = EvalConfig(
+            name="second",
+            config_type=EvalConfigType.v2,
+            properties=ExactMatchProperties(expected_value="x"),
+            parent=mock_v2_eval,
+        )
+        second.save_to_file()
+        with pytest.raises(ValueError, match="exactly one eval config"):
+            build_task_run_eval_runner(
+                [mock_v2_eval_config, second], [mock_run_config], judge=False
+            )
+
+    def test_refuses_judge_calibration(self, mock_v2_eval_config):
+        with pytest.raises(ValueError, match="Only a task_run_eval"):
+            EvalRunner(
+                eval_configs=[mock_v2_eval_config],
+                run_configs=None,
+                eval_run_type="eval_config_eval",
+                judge=False,
+            )

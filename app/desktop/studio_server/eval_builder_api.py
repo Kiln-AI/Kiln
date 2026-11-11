@@ -470,8 +470,7 @@ class JudgeStreamBase:
         self, case_index: int, trace: list[dict[str, Any]] | None
     ) -> tuple[str, str, list[dict[str, Any]] | None]:
         """What the judge scores for one case: (raw_input, raw_output, and
-        the structured trace to judge over; the Optional is vestigial, as
-        every arm now judges a transcript).
+        the structured trace to judge over).
 
         The default is the multi-turn reading — transcript I/O plus the full
         trace — matching what the saved eval judges. The single-turn streams
@@ -772,7 +771,7 @@ class MultiTurnPipelineRun(JudgeStreamBase):
             # The runner's BatchCompletedEvent is not forwarded: the
             # pipeline's own batch_completed fires after reviews drain.
         if any_case_driven:
-            # Replacement chains exist on disk — now the superseded batches
+            # Replacement chains exist on disk, so the superseded batches
             # can go. A drive that produced nothing keeps them untouched.
             await self._delete_superseded_batches(
                 self._input.replace_batch_tags,
@@ -1092,7 +1091,7 @@ class SingleTurnPipelineRun(JudgeStreamBase):
         async for _progress in runner.run():
             pass
         if self._any_case_driven:
-            # Replacement runs exist on disk — now the superseded batches
+            # Replacement runs exist on disk, so the superseded batches
             # can go. A run stage that produced nothing keeps them untouched.
             await self._delete_superseded_batches(
                 self._input.replace_batch_tags,

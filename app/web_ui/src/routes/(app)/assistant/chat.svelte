@@ -5,6 +5,7 @@
   import posthog from "posthog-js"
   import ChatCostDisclaimer from "./chat_cost_disclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
+  import { isToolOutputError } from "$lib/chat/streaming_chat"
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
@@ -20,6 +21,7 @@
   import ChatLoading from "./chat_loading.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
   import ToolStatusLine from "./tool_status_line.svelte"
+  import { toolStatusVariant } from "./tool_status"
   import { env } from "$env/dynamic/public"
 
   export let store: ChatSessionStore = chatSessionStore
@@ -297,15 +299,9 @@
   }
 
   function getToolOutputError(part: ChatMessagePart): string {
-    if (
-      !("output" in part) ||
-      typeof part.output !== "object" ||
-      part.output === null
-    )
-      return "Error"
-    return "error" in part.output &&
-      typeof (part.output as { error?: string }).error === "string"
-      ? (part.output as { error: string }).error
+    const output = "output" in part ? part.output : undefined
+    return isToolOutputError(output) && typeof output.error === "string"
+      ? output.error
       : "Error"
   }
 
@@ -683,8 +679,6 @@
                                     toolApprovalWaiter !== null &&
                                     approvalItem !== undefined &&
                                     toolPart.output === undefined}
-                                  {@const hasOutput =
-                                    toolPart.output !== undefined}
                                   {@const method = getToolInputString(
                                     toolPart.input,
                                     "method",
@@ -700,8 +694,6 @@
                                       : ""}
                                   {@const isActiveMessage =
                                     isLoading && message.id === lastMessage?.id}
-                                  {@const effectivelyComplete =
-                                    hasOutput || !isActiveMessage}
                                   {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
                                     <div class="mt-2 text-sm">
                                       <ToolApprovalBox
@@ -722,13 +714,11 @@
                                     </div>
                                   {:else}
                                     <ToolStatusLine
-                                      variant={effectivelyComplete
-                                        ? isGet
-                                          ? "fetched"
-                                          : "saved"
-                                        : isGet
-                                          ? "fetching"
-                                          : "saving"}
+                                      variant={toolStatusVariant(
+                                        toolPart.output,
+                                        isGet,
+                                        isActiveMessage,
+                                      )}
                                       {detail}
                                     />
                                   {/if}
@@ -884,11 +874,7 @@
                             message.parts ?? [],
                           )}
                           {@const hasOutput = part.output !== undefined}
-                          {@const hasError =
-                            hasOutput &&
-                            typeof part.output === "object" &&
-                            part.output !== null &&
-                            "error" in part.output}
+                          {@const hasError = isToolOutputError(part.output)}
                           <div class="mt-2 overflow-hidden text-sm">
                             <button
                               type="button"

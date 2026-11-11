@@ -191,17 +191,52 @@ class TotalThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
         return _EmptyResult()
 
 
-class ReconcileCompleteWorker(JobWorker[_EmptyParams, _EmptyResult]):
-    """compute_state reports complete only once the test flips `done`, so a
-    get() issued while the job is still running (run() is a long sleep)
-    reconciles it straight to succeeded mid-flight.
+class ErrorThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    """run() reports a non-zero error count, then compute_state returns error=None:
+    failed items leave nothing on disk to count. A reconcile must keep the live
+    error count, not reset it to 0.
+    """
+
+    type_name = "error_then_none"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    supports_pause = True
+    started: asyncio.Event
+    gate: asyncio.Event
+
+    async def compute_state(self, params):
+        return JobDerivedState(total=5, success=3, is_complete=False)
+
+    async def run(self, params, ctx):
+        await ctx.report_progress(success=1, error=2, total=5, message="working")
+        type(self).started.set()
+        try:
+            await type(self).gate.wait()
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if task is not None and hasattr(task, "uncancel"):
+                task.uncancel()
+        return _EmptyResult()
+
+
+class _CountResult(BaseModel):
+    count: int
+
+
+class ReconcileCompleteWorker(JobWorker[_EmptyParams, _CountResult]):
+    """compute_state reports complete only once the test flips `done`. run()
+    blocks on `gate`, so a get() can land while the source of truth already says
+    complete and the worker has not yet returned its result: the window between
+    the last item written to disk and run() returning.
     """
 
     type_name = "reconcile_complete"
     params_model = _EmptyParams
-    result_model = _EmptyResult
+    result_model = _CountResult
     supports_pause = True
     done = False
+    started: asyncio.Event
+    gate: asyncio.Event
 
     async def compute_state(self, params):
         complete = type(self).done
@@ -210,8 +245,15 @@ class ReconcileCompleteWorker(JobWorker[_EmptyParams, _EmptyResult]):
         )
 
     async def run(self, params, ctx):
-        await asyncio.sleep(5)
-        return _EmptyResult()
+        type(self).started.set()
+        await type(self).gate.wait()
+        return _CountResult(count=3)
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.done = False
+        cls.started = asyncio.Event()
+        cls.gate = asyncio.Event()
 
 
 # -- job id ------------------------------------------------------------------
@@ -627,17 +669,111 @@ async def test_apply_derived_preserves_total_when_compute_state_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_get_reconciles_running_job_to_succeeded_mid_flight():
-    # A long-running job whose source-of-truth state flips to complete should be
-    # reconciled straight to succeeded by get() (the running/get() reconcile
-    # path), not only at launch time.
+async def test_apply_derived_preserves_error_when_compute_state_returns_none():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ErrorThenNoneWorker)
+    ErrorThenNoneWorker.started = asyncio.Event()
+    ErrorThenNoneWorker.gate = asyncio.Event()
+    job = await reg.create("error_then_none", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
+    await asyncio.wait_for(ErrorThenNoneWorker.started.wait(), timeout=3.0)
+    assert reg._jobs[job.id].progress.error == 2
+
+    result = await reg.pause(job.id)
+    assert result.status == BackgroundJobStatus.PAUSED
+    assert result.progress.error == 2
+    assert result.progress.success == 3
+
+
+@pytest.mark.asyncio
+async def test_succeeded_job_with_failed_items_keeps_its_error_count_on_get():
+    # A job whose items partly failed still succeeds. Every GET reconciles against
+    # disk, where the failed items left nothing; the job must not then look clean.
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ErrorThenNoneWorker)
+    ErrorThenNoneWorker.started = asyncio.Event()
+    ErrorThenNoneWorker.gate = asyncio.Event()
+    ErrorThenNoneWorker.gate.set()
+    job = await reg.create("error_then_none", {})
+    await wait_for_status(reg, job.id, BackgroundJobStatus.SUCCEEDED)
+
+    got = await reg.get(job.id)
+    assert got is not None
+    assert got.status == BackgroundJobStatus.SUCCEEDED
+    assert got.progress.success == 3
+    assert got.progress.error == 2
+
+
+@pytest.mark.asyncio
+async def test_get_keeps_a_job_with_a_live_task_running():
+    # The source of truth says complete while run() has not returned yet. get()
+    # takes the new progress, but the status stays running: the supervising task
+    # owns the transition, because only it has the worker's result, and cancel
+    # and pause still have a live worker to stop.
     reg = JobRegistry(max_concurrent=2)
     reg.register_type(ReconcileCompleteWorker)
-    ReconcileCompleteWorker.done = False
+    ReconcileCompleteWorker.reset()
     job = await reg.create("reconcile_complete", {})
-    await wait_for_status(reg, job.id, BackgroundJobStatus.RUNNING)
-    # Still running here (run() is a 5s sleep); now flip the source of truth.
-    assert reg._jobs[job.id].status == BackgroundJobStatus.RUNNING
+    await asyncio.wait_for(ReconcileCompleteWorker.started.wait(), timeout=3.0)
+    waiter = asyncio.create_task(reg.wait(job.id, timeout=3.0))
+    ReconcileCompleteWorker.done = True
+
+    got = await reg.get(job.id)
+    assert got is not None
+    assert got.status == BackgroundJobStatus.RUNNING
+    assert got.progress.success == 3
+    assert got.ended_at is None
+    await asyncio.sleep(0.05)
+    assert not waiter.done()
+
+    ReconcileCompleteWorker.gate.set()
+    finished = await waiter
+    assert finished.status == BackgroundJobStatus.SUCCEEDED
+    assert finished.result == {"count": 3}
+    assert finished.ended_at is not None
+
+
+@pytest.mark.asyncio
+async def test_job_with_a_live_task_can_be_cancelled_after_its_items_are_done():
+    # Before this, a get() in the window flipped the job to succeeded, so cancel
+    # was a 409 while the worker kept running, and delete then let the worker
+    # publish a job event for an id that no longer existed.
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ReconcileCompleteWorker)
+    ReconcileCompleteWorker.reset()
+    published: list[tuple[str, BackgroundJobStatus]] = []
+    publish_job = reg.events.publish_job
+
+    def record(job):
+        published.append((job.id, job.status))
+        publish_job(job)
+
+    reg.events.publish_job = record  # type: ignore[method-assign]
+    job = await reg.create("reconcile_complete", {})
+    await asyncio.wait_for(ReconcileCompleteWorker.started.wait(), timeout=3.0)
+    ReconcileCompleteWorker.done = True
+    await reg.get(job.id)
+
+    with pytest.raises(JobOperationError):
+        await reg.delete(job.id)
+    cancelled = await reg.cancel(job.id)
+    assert cancelled.status == BackgroundJobStatus.CANCELLED
+    assert job.id not in reg._tasks
+    assert (job.id, BackgroundJobStatus.SUCCEEDED) not in published
+
+
+@pytest.mark.asyncio
+async def test_get_reconciles_a_paused_job_to_succeeded():
+    # A job with no live task (here paused) has no worker to finish it, so get()
+    # still moves it to succeeded when the source of truth says complete, for
+    # example when another job scored its items.
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ReconcileCompleteWorker)
+    ReconcileCompleteWorker.reset()
+    job = await reg.create("reconcile_complete", {})
+    await asyncio.wait_for(ReconcileCompleteWorker.started.wait(), timeout=3.0)
+    await reg.pause(job.id)
+    assert job.id not in reg._tasks
     ReconcileCompleteWorker.done = True
 
     got = await reg.get(job.id)
@@ -645,6 +781,24 @@ async def test_get_reconciles_running_job_to_succeeded_mid_flight():
     assert got.status == BackgroundJobStatus.SUCCEEDED
     assert got.progress.success == 3
     assert got.ended_at is not None
+
+
+@pytest.mark.asyncio
+async def test_no_job_event_for_a_job_that_is_no_longer_in_the_registry():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(ReconcileCompleteWorker)
+    published: list[str] = []
+    reg.events.publish_job = lambda job: published.append(job.id)  # type: ignore[method-assign]
+    ReconcileCompleteWorker.reset()
+    job = await reg.create("reconcile_complete", {})
+    await asyncio.wait_for(ReconcileCompleteWorker.started.wait(), timeout=3.0)
+    published.clear()
+
+    # A record that is gone from the index (deleted) must not reach subscribers.
+    reg._jobs.pop(job.id)
+    ReconcileCompleteWorker.gate.set()
+    await asyncio.sleep(0.05)
+    assert published == []
 
 
 # -- concurrency -------------------------------------------------------------
@@ -750,6 +904,40 @@ async def test_wait_times_out(registry):
     with pytest.raises(asyncio.TimeoutError):
         await registry.wait(job.id, timeout=0.01)
     await registry.cancel(job.id)
+
+
+@pytest.mark.asyncio
+async def test_wait_many_returns_all_terminal_in_order(registry):
+    a = await registry.create("noop", {"steps": 2, "sleep_per_step_seconds": 0.01})
+    b = await registry.create("noop", {"steps": 4, "sleep_per_step_seconds": 0.02})
+    c = await registry.create("noop", {"steps": 1, "sleep_per_step_seconds": 0.01})
+    results = await asyncio.wait_for(
+        registry.wait_many([a.id, b.id, c.id]), timeout=5.0
+    )
+    assert [r.id for r in results] == [a.id, b.id, c.id]
+    assert all(r.status == BackgroundJobStatus.SUCCEEDED for r in results)
+
+
+@pytest.mark.asyncio
+async def test_wait_many_empty_returns_empty(registry):
+    assert await registry.wait_many([]) == []
+
+
+@pytest.mark.asyncio
+async def test_wait_many_unknown_id_raises(registry):
+    job = await registry.create("noop", {"steps": 2, "sleep_per_step_seconds": 0.01})
+    with pytest.raises(JobNotFoundError):
+        await registry.wait_many([job.id, "j_doesnotexist"])
+
+
+@pytest.mark.asyncio
+async def test_wait_many_times_out_if_any_still_running(registry):
+    fast = await registry.create("noop", {"steps": 1, "sleep_per_step_seconds": 0.01})
+    slow = await registry.create("noop", {"steps": 50, "sleep_per_step_seconds": 0.05})
+    await wait_for_status(registry, slow.id, BackgroundJobStatus.RUNNING)
+    with pytest.raises(asyncio.TimeoutError):
+        await registry.wait_many([fast.id, slow.id], timeout=0.05)
+    await registry.cancel(slow.id)
 
 
 @pytest.mark.asyncio
@@ -872,3 +1060,210 @@ async def test_report_progress_detail_rejects_wrong_model():
     # The type guard raises inside run(), routing the job to FAILED.
     await wait_for_status(reg, job.id, BackgroundJobStatus.FAILED)
     assert reg._jobs[job.id].error is not None
+
+
+# -- describe() / properties guard ------------------------------------------
+
+
+class PropertiesModel(BaseModel):
+    label: str
+
+
+class DescribeWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "describe"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    properties_model = PropertiesModel
+    gate: asyncio.Event
+
+    async def describe(self, params):
+        return PropertiesModel(label="hello")
+
+    async def run(self, params, ctx):
+        await type(self).gate.wait()
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_create_stamps_typed_properties():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(DescribeWorker)
+    DescribeWorker.gate = asyncio.Event()
+    # Properties are computed at create time, before dispatch.
+    job = await reg.create("describe", {})
+    try:
+        assert job.properties == {"label": "hello"}
+    finally:
+        # Always release the gated worker, even if the assertion fails, so the
+        # spawned job can finish rather than leaking into teardown.
+        DescribeWorker.gate.set()
+    await wait_for_status(reg, job.id, BackgroundJobStatus.SUCCEEDED)
+
+
+class BadDescribeWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "bad_describe"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    properties_model = PropertiesModel
+
+    async def describe(self, params):
+        # Returns a model that is NOT the declared properties_model.
+        return WrongModel(other="x")
+
+    async def run(self, params, ctx):
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_create_drops_properties_on_wrong_type():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(BadDescribeWorker)
+    # The contract guard logs and drops the bad payload — create still succeeds
+    # (the job is not failed), it just carries no properties.
+    job = await reg.create("bad_describe", {})
+    assert job.properties is None
+    await wait_for_status(
+        reg,
+        job.id,
+        {BackgroundJobStatus.SUCCEEDED, BackgroundJobStatus.RUNNING},
+    )
+
+
+class RaisingDescribeWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "raising_describe"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    properties_model = PropertiesModel
+
+    async def describe(self, params):
+        raise RuntimeError("boom")
+
+    async def run(self, params, ctx):
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_create_swallows_describe_failure():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(RaisingDescribeWorker)
+    # A describe() that raises must never break job creation.
+    job = await reg.create("raising_describe", {})
+    assert job.properties is None
+    await wait_for_status(
+        reg,
+        job.id,
+        {BackgroundJobStatus.SUCCEEDED, BackgroundJobStatus.RUNNING},
+    )
+
+
+class UndeclaredPropertiesWorker(JobWorker[_EmptyParams, _EmptyResult]):
+    type_name = "undeclared_properties"
+    params_model = _EmptyParams
+    result_model = _EmptyResult
+    # properties_model intentionally left at the default (None).
+
+    async def describe(self, params):
+        return PropertiesModel(label="orphan")
+
+    async def run(self, params, ctx):
+        return _EmptyResult()
+
+
+@pytest.mark.asyncio
+async def test_create_drops_properties_without_declared_model():
+    reg = JobRegistry(max_concurrent=2)
+    reg.register_type(UndeclaredPropertiesWorker)
+    # Returning properties without declaring properties_model is a contract
+    # violation: the payload is dropped (nothing to cast to) and create() still
+    # succeeds rather than serializing an unvalidated shape.
+    job = await reg.create("undeclared_properties", {})
+    assert job.properties is None
+    await wait_for_status(
+        reg,
+        job.id,
+        {BackgroundJobStatus.SUCCEEDED, BackgroundJobStatus.RUNNING},
+    )
+
+
+# -- dedupe ---------------------------------------------------------------
+
+
+class _KeyedParams(BaseModel):
+    key: str
+    finish: bool = False
+
+
+class DedupeWorker(JobWorker[_KeyedParams, _EmptyResult]):
+    """Stays running until released. Its describe() yields to the event loop, so
+    two concurrent creates interleave at the await inside create()."""
+
+    type_name = "dedupe"
+    params_model = _KeyedParams
+    result_model = _EmptyResult
+    release: asyncio.Event
+
+    def dedupe_key(self, params: _KeyedParams):
+        return params.key
+
+    async def describe(self, params: _KeyedParams):
+        await asyncio.sleep(0)
+        return None
+
+    async def run(self, params, ctx):
+        if not params.finish:
+            await DedupeWorker.release.wait()
+        return _EmptyResult()
+
+
+@pytest.fixture
+def dedupe_registry():
+    DedupeWorker.release = asyncio.Event()
+    reg = JobRegistry(max_concurrent=10)
+    reg.register_type(DedupeWorker)
+    yield reg
+    DedupeWorker.release.set()
+
+
+async def test_identical_unfinished_job_is_returned(dedupe_registry):
+    first = await dedupe_registry.create("dedupe", {"key": "a"})
+    second = await dedupe_registry.create("dedupe", {"key": "a"})
+    assert second.id == first.id
+    assert len(dedupe_registry._jobs) == 1
+
+
+async def test_different_key_creates_a_new_job(dedupe_registry):
+    first = await dedupe_registry.create("dedupe", {"key": "a"})
+    second = await dedupe_registry.create("dedupe", {"key": "b"})
+    assert second.id != first.id
+
+
+async def test_concurrent_identical_creates_make_one_job(dedupe_registry):
+    # Both creates await describe() before inserting; the check after that await
+    # must still see the other's job.
+    first, second = await asyncio.gather(
+        dedupe_registry.create("dedupe", {"key": "a"}),
+        dedupe_registry.create("dedupe", {"key": "a"}),
+    )
+    assert first.id == second.id
+    assert len(dedupe_registry._jobs) == 1
+
+
+async def test_finished_job_is_not_reused(dedupe_registry):
+    first = await dedupe_registry.create("dedupe", {"key": "a", "finish": True})
+    await wait_for_status(dedupe_registry, first.id, BackgroundJobStatus.SUCCEEDED)
+    second = await dedupe_registry.create("dedupe", {"key": "a", "finish": True})
+    assert second.id != first.id
+
+
+async def test_deleted_job_key_is_dropped(dedupe_registry):
+    first = await dedupe_registry.create("dedupe", {"key": "a", "finish": True})
+    await wait_for_status(dedupe_registry, first.id, BackgroundJobStatus.SUCCEEDED)
+    await dedupe_registry.delete(first.id)
+    assert first.id not in dedupe_registry._dedupe_keys
+
+
+async def test_worker_without_key_never_dedupes(registry):
+    params = {"steps": 50, "sleep_per_step_seconds": 0.05}
+    first = await registry.create("noop", params)
+    second = await registry.create("noop", params)
+    assert second.id != first.id

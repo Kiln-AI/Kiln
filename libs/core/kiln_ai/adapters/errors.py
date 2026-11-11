@@ -8,6 +8,8 @@ Provides:
 - `StructuredOutputParseError`: on a structured-output task, the model's
   response wasn't parseable JSON, or parsed to something other than an object.
 - `format_error_message`: maps known exceptions to user-friendly text.
+- `EMPTY_RESPONSE_ERROR_MESSAGE`: the error raised when a model returns an
+  assistant message with no content and no tool calls.
 """
 
 from __future__ import annotations
@@ -18,6 +20,11 @@ from pydantic import BaseModel
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 _GENERIC_FALLBACK_MESSAGE = "An unexpected error occurred."
+
+EMPTY_RESPONSE_ERROR_MESSAGE = (
+    "Model returned an assistant message, but no content or tool calls. "
+    "This is not supported."
+)
 
 
 class ErrorWithTrace(BaseModel):
@@ -120,9 +127,9 @@ def format_error_message(exc: Exception) -> str:
                 return "The run exceeded the maximum number of turns."
             if msg.startswith("Too many tool calls"):
                 return "The run exceeded the maximum number of tool calls in one turn."
-            # Other RuntimeErrors (tool not found, arg parse/validate failures,
-            # reasoning required) already have user-friendly messages with
-            # useful context (e.g., tool names), so pass them through.
+            # Other RuntimeErrors (reasoning required, task_response mixed with
+            # other tool calls) already have user-friendly messages, so pass
+            # them through.
             return msg
 
         if isinstance(exc, ValueError):

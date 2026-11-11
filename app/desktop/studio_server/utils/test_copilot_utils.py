@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import finetune_run_config_id
-from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
+from kiln_ai.datamodel import Feedback, GradedClaim, Project, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import (
     FeedbackSource,
     TaskOutputRatingType,
@@ -33,6 +33,7 @@ from kiln_ai.run_context import (
     get_agent_run_id,
     set_agent_run_id,
 )
+from kiln_ai.synthetic_user.models import TAG_SU_ENDED_CONVERSATION
 from kiln_ai.utils.config import Config
 from kiln_server.utils.spec_utils import SpecEvalTags, SplitShare
 from mcp.types import ListToolsResult
@@ -951,6 +952,39 @@ def _build_chain(task: Task, batch_tag: str, turns: int = 2) -> list[TaskRun]:
     return chain
 
 
+def _add_feedback(run: TaskRun) -> None:
+    Feedback(
+        feedback="Too formal", source=FeedbackSource.run_page, parent=run
+    ).save_to_file()
+
+
+def _rate(run: TaskRun) -> None:
+    run.output.rating = TaskOutputRating(type=TaskOutputRatingType.pass_fail, value=1.0)
+    run.save_to_file()
+
+
+def _tag(run: TaskRun) -> None:
+    run.tags = ["needs_review"]
+    run.save_to_file()
+
+
+def _repair(run: TaskRun) -> None:
+    """Save a repair the way the run API does: the datamodel rejects setting
+    repair_instructions and repaired_output one at a time."""
+    repaired = TaskRun.model_validate(
+        {
+            **run.model_dump(),
+            "repair_instructions": "Answer in one sentence.",
+            "repaired_output": {
+                "output": "repaired output",
+                "source": {"type": "human", "properties": {"created_by": "reviewer"}},
+            },
+        }
+    )
+    repaired.path = run.path
+    repaired.save_to_file()
+
+
 @pytest.fixture
 def multiturn_task(tmp_path):
     project_path = tmp_path / "mt_project" / "project.kiln"
@@ -1060,6 +1094,38 @@ class TestDeleteMultiTurnBatchChains:
         assert deleted == 0
         assert len(multiturn_task.runs(include_intermediate_runs=True)) == 4
 
+    @pytest.mark.parametrize(
+        ("annotate", "turn"),
+        [
+            pytest.param(_add_feedback, -1, id="feedback_on_last_turn"),
+            pytest.param(_rate, 0, id="rating_on_earlier_turn"),
+            pytest.param(_tag, 1, id="tag_on_earlier_turn"),
+            pytest.param(_repair, -1, id="repaired_output"),
+        ],
+    )
+    def test_keeps_whole_conversation_the_user_annotated(
+        self, multiturn_task, annotate, turn
+    ):
+        chain = _build_chain(multiturn_task, "old-batch", turns=3)
+        annotate(chain[turn])
+
+        deleted = delete_multi_turn_batch_chains(multiturn_task, "old-batch")
+
+        assert deleted == 0
+        for run in chain:
+            assert run.path is not None and run.path.exists()
+
+    def test_deletes_conversation_the_synthetic_user_ended_early(self, multiturn_task):
+        chain = _build_chain(multiturn_task, "old-batch", turns=2)
+        leaf = chain[-1]
+        leaf.tags = sorted({*(leaf.tags or []), TAG_SU_ENDED_CONVERSATION})
+        leaf.save_to_file()
+
+        deleted = delete_multi_turn_batch_chains(multiturn_task, "old-batch")
+
+        assert deleted == 2
+        assert multiturn_task.runs(include_intermediate_runs=True) == []
+
 
 # ───────────── single-turn drive tags + delete_single_turn_batch_runs ───────
 
@@ -1163,6 +1229,22 @@ class TestDeleteSingleTurnBatchRuns:
         _build_single_turn_run(singleturn_task, "some-batch")
         assert delete_single_turn_batch_runs(singleturn_task, "nonexistent") == 0
         assert len(singleturn_task.runs()) == 1
+
+    @pytest.mark.parametrize(
+        "annotate",
+        [
+            pytest.param(_add_feedback, id="feedback"),
+            pytest.param(_repair, id="repaired_output"),
+        ],
+    )
+    def test_skips_run_the_user_annotated(self, singleturn_task, annotate):
+        run = _build_single_turn_run(singleturn_task, "old-batch")
+        annotate(run)
+
+        deleted = delete_single_turn_batch_runs(singleturn_task, "old-batch")
+
+        assert deleted == 0
+        assert run.path is not None and run.path.exists()
 
 
 # ───────────────── multi-turn eval slice (EvalInput writer) ─────────────────

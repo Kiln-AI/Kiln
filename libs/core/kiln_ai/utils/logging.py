@@ -34,6 +34,11 @@ class CustomLiteLLMLogger(CustomLogger):
         self.logger = logger
 
     def log_pre_api_call(self, model, messages, kwargs):
+        # Formatting a large request costs milliseconds per call; skip it when INFO is
+        # disabled.
+        if not self.logger.isEnabledFor(logging.INFO):
+            return
+
         api_base = kwargs.get("litellm_params", {}).get("api_base", "")
         headers = kwargs.get("additional_args", {}).get("headers", {})
         data = kwargs.get("additional_args", {}).get("complete_input_dict", {})
@@ -76,7 +81,6 @@ class CustomLiteLLMLogger(CustomLogger):
             self.logger.info(f"Messages: Could not print {e}")
 
     def log_post_api_call(self, kwargs, response_obj, start_time, end_time):
-        # No op
         pass
 
     def log_success_event(self, kwargs, response_obj, start_time, end_time):
@@ -134,17 +138,14 @@ class CustomLiteLLMLogger(CustomLogger):
 
 
 def setup_litellm_logging(filename: str = "model_calls.log"):
-    # Check if we already have a custom litellm logger
     for callback in litellm.callbacks or []:
         if isinstance(callback, CustomLiteLLMLogger):
-            return  # We already have a custom litellm logger
+            return
 
-    # If we don't have a custom litellm logger, create one
     # Disable the default litellm logger except for errors. It's ugly, hard to use, and we don't want it to mix with kiln logs.
     litellm_logger = logging.getLogger("LiteLLM")
     litellm_logger.setLevel(logging.ERROR)
 
-    # Create a logger that logs to files, with a max size of 5MB and 3 backup files
     handler = logging.handlers.RotatingFileHandler(
         get_log_file_path(filename),
         maxBytes=5 * 1024 * 1024,  # 5MB
@@ -152,15 +153,12 @@ def setup_litellm_logging(filename: str = "model_calls.log"):
         encoding="utf-8",
     )
 
-    # Set formatter to match the default formatting
     formatter = logging.Formatter(get_default_formatter())
     handler.setFormatter(formatter)
 
-    # Create a new logger for model calls
     model_calls_logger = logging.getLogger("ModelCalls")
     model_calls_logger.setLevel(logging.INFO)
     model_calls_logger.propagate = False  # Only log to file
     model_calls_logger.addHandler(handler)
 
-    # Tell litellm to use our custom logger
     litellm.callbacks = [CustomLiteLLMLogger(model_calls_logger)]

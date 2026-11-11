@@ -147,3 +147,18 @@ def string_not_empty(s: str) -> str:
 
 
 NonEmptyString = Annotated[str, AfterValidator(string_not_empty)]
+
+
+def validate_tags(tags: list[str]) -> list[str]:
+    """Shared Kiln tag rule: no empty-string tags, no spaces (use underscores).
+
+    Memory uses this helper. TaskRun, ExtractorConfig, Spec and RagConfig carry
+    the same rule in their own validators; they do not call this helper yet.
+    Use it for new models rather than writing the loop again.
+    """
+    for tag in tags:
+        if not tag:
+            raise ValueError("Tags cannot be empty strings")
+        if " " in tag:
+            raise ValueError("Tags cannot contain spaces. Try underscores.")
+    return tags

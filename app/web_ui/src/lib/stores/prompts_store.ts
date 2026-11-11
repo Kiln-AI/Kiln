@@ -43,9 +43,7 @@ export async function load_task_prompts(
     }
   }
 
-  // Create and store the promise
   const promise = (async () => {
-    // Set loading state to true
     prompts_loading_by_task_composite_id.update((loading) => ({
       ...loading,
       [composite_key]: true,
@@ -97,13 +95,11 @@ export async function load_task_prompts(
 
       throw error
     } finally {
-      // Set loading state to false
       prompts_loading_by_task_composite_id.update((loading) => ({
         ...loading,
         [composite_key]: false,
       }))
 
-      // Clean up the promise from the map
       delete loading_task_prompts[composite_key]
     }
   })()

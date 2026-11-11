@@ -13,6 +13,7 @@
     EmbeddingConfig,
     VectorStoreConfig,
     RerankerConfig,
+    KilnArtifactProvenance,
   } from "$lib/types"
   import {
     load_available_embedding_models,
@@ -332,6 +333,16 @@
     }
   }
 
+  // Stamp provenance on create (invisible; never displayed). A clone derives
+  // from its source RAG config; a fresh create is human-origin with no parent.
+  // `initial_rag_config` is only ever supplied by the clone route, so its id is
+  // the source. origin is required whenever a provenance object is set.
+  function build_provenance(): KilnArtifactProvenance {
+    return initial_rag_config?.id
+      ? { origin: "human", derived_from_ids: [initial_rag_config.id] }
+      : { origin: "human" }
+  }
+
   /**
    * Save the rag config from the full form
    */
@@ -401,6 +412,7 @@
                   ? selected_reranker_config_id
                   : null,
               tags: selected_tags.length > 0 ? selected_tags : null,
+              provenance: build_provenance(),
             },
           },
         )
@@ -588,6 +600,7 @@
               embedding_config_id,
               vector_store_config_id,
               tags: selected_tags.length > 0 ? selected_tags : null,
+              provenance: build_provenance(),
             },
           },
         )

@@ -37,7 +37,7 @@
   const jobs_enabled = env.PUBLIC_ENABLE_JOBS === "true"
 
   // Rail-eligibility predicate: lg breakpoint, narrow viewport (< 1550px),
-  // and chat bar expanded. See functional_spec.md "Trigger".
+  // and chat bar expanded.
   const isRailEligible = derived(
     [isLg, isNarrowViewport, chatBarExpanded],
     ([$lg, $narrow, $chatOpen]) => $lg && $narrow && $chatOpen,
@@ -166,7 +166,9 @@
       <ChatBar {section} />
     </div>
   </div>
-  <div class="drawer-side" role="navigation">
+  <!-- daisyUI gives .drawer-side no z-index, so positioned content (step
+       markers, the floating chat button) painted over the open mobile drawer -->
+  <div class="drawer-side max-lg:z-[60]" role="navigation">
     <label for="main-drawer" aria-label="close sidebar" class="drawer-overlay"
     ></label>
 

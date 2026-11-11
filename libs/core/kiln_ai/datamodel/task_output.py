@@ -78,7 +78,7 @@ class TaskOutputRating(KilnBaseModel):
         description="The ratings of the requirements of the task. The ID can be either a task_requirement_id or a named rating for an eval_output_score name (in format 'named::<name>').",
     )
 
-    # Previously we stored rating values as a dict of floats, but now we store them as RequirementRating objects.
+    # Older files store requirement_ratings as a dict of floats; upgrade them to RequirementRating on load.
     @model_validator(mode="before")
     def upgrade_old_format(cls, data: dict) -> dict:
         if not isinstance(data, dict):

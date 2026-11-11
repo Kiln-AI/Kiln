@@ -1,3 +1,6 @@
+import sys
+import threading
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -344,3 +347,55 @@ def test_cache_mutable_model_raises_error(model_cache, test_path):
         RuntimeError, match="Mutable models are not allowed to be cached"
     ):
         model_cache.set_model(test_path, model, mtime_ns)
+
+
+def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
+    """The shared cache is used from the event loop and from worker threads at once.
+
+    A reader finds the entry, then another thread removes it before the reader
+    indexes it. Or two readers both find the entry stale and both delete it. Both
+    raised KeyError when the cache tested membership and then indexed or deleted.
+    A tiny switch interval makes the interpreter change threads often enough to
+    hit those windows in a short run.
+    """
+    if not model_cache._enabled:
+        pytest.skip("Cache is disabled on this fs")
+
+    model = KilnModelTest(name="test", value=123)
+    model.mark_as_readonly()
+    fresh_mtime_ns = test_path.stat().st_mtime_ns
+    stale_mtime_ns = fresh_mtime_ns - 1
+    errors: list[BaseException] = []
+    deadline = time.monotonic() + 0.5
+
+    def run(step):
+        try:
+            while time.monotonic() < deadline:
+                step()
+        except BaseException as error:
+            errors.append(error)
+
+    def read():
+        model_cache.get_model(test_path, KilnModelTest, readonly=True)
+        model_cache.get_model_id(test_path, KilnModelTest)
+
+    def store_then_invalidate():
+        model_cache.set_model(test_path, model, fresh_mtime_ns)
+        model_cache.invalidate(test_path)
+
+    def store_stale():
+        model_cache.set_model(test_path, model, stale_mtime_ns)
+
+    steps = [read] * 4 + [store_then_invalidate] * 2 + [store_stale] * 2
+    threads = [threading.Thread(target=run, args=(step,)) for step in steps]
+    switch_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    finally:
+        sys.setswitchinterval(switch_interval)
+
+    assert errors == []

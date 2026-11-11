@@ -1,6 +1,18 @@
+import asyncio
 import logging
+import threading
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, List, Literal, Set
+from typing import (
+    Any,
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    Set,
+)
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.chat.chat_formatter import (
@@ -9,13 +21,20 @@ from kiln_ai.adapters.chat.chat_formatter import (
 )
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
-from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
+from kiln_ai.adapters.eval.trace_index import (
+    TraceIndex,
+    TraceIndexRegistry,
+    TraceKey,
+    openenv_trace_tag,
+    trace_key,
+)
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.adapters.retry_classification import (
     is_retryable_error,
+    is_transient_openenv_error,
     unwrap_kiln_run_error,
 )
 from kiln_ai.datamodel.basemodel import ID_TYPE, generate_model_id
@@ -39,29 +58,67 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.eval_splits import (
     ItemKey,
+    ItemSource,
     ResolvedSplit,
     eval_run_item_key,
     item_key,
 )
+from kiln_ai.datamodel.openenv import (
+    OpenEnvReset,
+    OpenEnvServer,
+    OpenEnvTool,
+)
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
+from kiln_ai.datamodel.tool_id import (
+    OPENENV_TOOL_ID_PREFIX,
+    build_openenv_tool_id,
+    openenv_and_tool_name_from_id,
+)
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.openenv.session_manager import (
+    OpenEnvError,
+    OpenEnvSessionManager,
+    OpenEnvTransientError,
+    shared_session_manager,
+)
+from kiln_ai.run_context import (
+    EpisodeContext,
+    reset_episode,
+    set_episode,
+)
 from kiln_ai.synthetic_user import drive_case_for_eval
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.synthetic_user.models import (
     TAG_SU_ENDED_CONVERSATION,
     SyntheticUserDriverConfig,
 )
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
+from kiln_ai.tools.tool_registry import project_tool_function_name
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    Progress,
+    RetryableError,
+)
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_ai.utils.lock import AsyncLockManager
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
 from kiln_ai.utils.slow_operation import log_if_slow
+from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 
 logger = logging.getLogger(__name__)
+
+
+DEFAULT_EVAL_CONCURRENCY = 25
+"""How many eval items `EvalRunner.run()` evaluates in parallel when the caller passes no `concurrency`."""
+
+_MAX_LISTED_ITEMS = 10
+"""How many item ids one problem of `validate_openenv_readiness` names before it counts the rest."""
 
 
 @dataclass
@@ -75,8 +132,8 @@ class EvalJob:
 def _calibration_item(job: EvalJob) -> TaskRun | None:
     """The golden TaskRun a calibration job scores, or None if this isn't calibration.
 
-    Calibration generates nothing: the human-rated dataset item *is* what gets scored
-    (functional spec 4.5). So the trace is known before the job starts, and stays known
+    Calibration generates nothing: the human-rated dataset item *is* what gets scored.
+    So the trace is known before the job starts, and stays known
     even for a job that is skipped before it reaches the judge — which is why both the
     scoring path and the skip path ask here rather than each deciding for themselves.
     """
@@ -180,11 +237,261 @@ def _splits_a_turn_into_two_messages(
     )
 
 
+@dataclass(frozen=True)
+class _OpenEnvTarget:
+    """A resolved OpenEnv server: what a job needs to launch episodes and to key its traces.
+    Resolved once per OpenEnv server per eval run, so every job in the run keys its traces by
+    the same environment version."""
+
+    openenv_server: OpenEnvServer
+    session_manager: OpenEnvSessionManager
+    tools: dict[str, OpenEnvTool]
+    openenv_version: str
+
+
+@dataclass(frozen=True)
+class _Generation:
+    """How a job produces its trace: the key it files under, and the call that makes
+    it. `generate` returns the run stamped but unsaved, so the caller saves it exactly
+    once, after anything else the trace must record (an environment's ended episode). Built
+    per lane, run through the trace index by the caller."""
+
+    key: TraceKey
+    generate: Callable[[], Awaitable[TaskRun]]
+
+
+@dataclass(frozen=True)
+class DrivenRun:
+    """One item a drive-only run drove: the TaskRun that holds its fresh trace and the
+    trace's usage (cost, latency), for a caller that measures the generation itself."""
+
+    item_source: ItemSource
+    item_id: str
+    run_config_id: str
+    task_run_id: str
+
+
+@dataclass(frozen=True)
+class _Skip:
+    reason: SkippedReason
+    detail: str
+
+
+def _openenv_reset_of(job: EvalJob) -> OpenEnvReset | None:
+    """The environment reset a job's item declares, if it is an EvalInput with one."""
+    item = getattr(job, "item", None)
+    if isinstance(item, EvalInput):
+        return item.openenv_reset
+    return None
+
+
+def _run_config_tool_ids(run_config: TaskRunConfig) -> list[str]:
+    tools_config = getattr(run_config.run_config_properties, "tools_config", None)
+    return list(tools_config.tools) if tools_config is not None else []
+
+
+_OpenEnvToolMismatch = Literal["no_openenv_reset", "stored_task_run", "other_openenv"]
+"""Why a run config's OpenEnv tools cannot run an item (see `_openenv_tool_mismatch`)."""
+
+
+def _openenv_tool_ids(run_config: TaskRunConfig) -> list[str]:
+    return [
+        t
+        for t in _run_config_tool_ids(run_config)
+        if t.startswith(OPENENV_TOOL_ID_PREFIX)
+    ]
+
+
+def _openenv_tool_mismatch(
+    run_config: TaskRunConfig,
+    item: EvalInput | TaskRun,
+    openenv_reset: OpenEnvReset | None,
+) -> _OpenEnvToolMismatch | None:
+    """Why the run config's OpenEnv tools cannot run this item, or None when they can or
+    the run config lists no OpenEnv tools. The one rule behind the per-job refusal
+    (`_uses_openenv`) and the request-time check (`validate_openenv_readiness`)."""
+    openenv_tool_ids = _openenv_tool_ids(run_config)
+    if not openenv_tool_ids:
+        return None
+    if openenv_reset is None:
+        # A stored TaskRun never carries an openenv_reset; only an EvalInput can.
+        return "stored_task_run" if isinstance(item, TaskRun) else "no_openenv_reset"
+    openenv_servers = {openenv_and_tool_name_from_id(t)[0] for t in openenv_tool_ids}
+    if openenv_servers != {openenv_reset.openenv_server_id}:
+        return "other_openenv"
+    return None
+
+
+def _uses_openenv(
+    run_config: TaskRunConfig,
+    item: EvalInput | TaskRun,
+    openenv_reset: OpenEnvReset | None,
+) -> bool:
+    """Whether this job runs in the input's environment: only when the run config
+    lists that environment's tools. A run config with no environment tools runs the input
+    against project tools and never launches an episode, environment or not. OpenEnv
+    tools without an openenv_reset, or from a different environment, are an error rather than
+    a silent run against the wrong tools. (Real versions of the environment's own tools are
+    refused separately, once the environment's tools are known.)"""
+    openenv_tool_ids = _openenv_tool_ids(run_config)
+    mismatch = _openenv_tool_mismatch(run_config, item, openenv_reset)
+    if mismatch == "no_openenv_reset":
+        raise ValueError(
+            f"Run config '{run_config.name}' lists OpenEnv tools "
+            f"({', '.join(openenv_tool_ids)}) but eval input {item.id} has no "
+            "openenv_reset. Use a run config with project tools for this "
+            "input, or give the input an openenv_reset."
+        )
+    if mismatch == "stored_task_run":
+        raise ValueError(
+            f"Run config '{run_config.name}' lists OpenEnv tools "
+            f"({', '.join(openenv_tool_ids)}) but task run {item.id} is a stored task "
+            "run, which can't run in an OpenEnv server. Use a run config without OpenEnv tools."
+        )
+    if mismatch == "other_openenv":
+        assert openenv_reset is not None
+        openenv_servers = {
+            openenv_and_tool_name_from_id(t)[0] for t in openenv_tool_ids
+        }
+        raise ValueError(
+            f"eval input {item.id} runs in OpenEnv server {openenv_reset.openenv_server_id}, but run "
+            f"config '{run_config.name}' lists tools from OpenEnv server(s) "
+            f"{sorted(openenv_servers - {openenv_reset.openenv_server_id})}. A job runs in one OpenEnv server."
+        )
+    return bool(openenv_tool_ids)
+
+
+def _resolves_openenv(
+    run_config: TaskRunConfig,
+    openenv_reset: OpenEnvReset | None,
+    uses_openenv: bool,
+) -> bool:
+    """Whether a job loads its item's environment and lists the environment's tools: when it
+    runs in the environment, and also when the run config lists project tools, to refuse the
+    project's own version of a tool the environment serves. A run config with no tools never
+    needs the environment."""
+    if openenv_reset is None:
+        return False
+    return uses_openenv or any(
+        not tool_id.startswith(OPENENV_TOOL_ID_PREFIX)
+        for tool_id in _run_config_tool_ids(run_config)
+    )
+
+
+def _openenv_server_not_found_message(
+    openenv_server_id: str, project_id: ID_TYPE
+) -> str:
+    return f"OpenEnv server {openenv_server_id} not found in project {project_id}"
+
+
+_NO_PROJECT_FOR_OPENENV_MESSAGE = (
+    "OpenEnv resets require the task to belong to a project"
+)
+
+
+def _listed_ids(ids: list[str]) -> str:
+    shown = ids[:_MAX_LISTED_ITEMS]
+    more = len(ids) - len(shown)
+    return ", ".join(shown) + (f" (and {more} more)" if more else "")
+
+
+def _multi_turn_skip(data: MultiTurnSyntheticEvalInputData) -> _Skip | None:
+    """Why a multi-turn synthetic input can't be driven, or None when it can. Checked
+    before anything is resolved or launched: a skipped item never needs its environment's
+    server, and never pays for a drive."""
+    if data.drive_config is None:
+        return _Skip(
+            SkippedReason.missing_drive_config,
+            "This item has no synthetic user configuration. "
+            "Create a new batch to replace it.",
+        )
+    if not data.first_message or not data.first_message.text:
+        return _Skip(
+            SkippedReason.incompatible_input_shape,
+            "Multi-turn synthetic input has no first_message to open the conversation",
+        )
+    return None
+
+
+def _skip_before_openenv_lane(
+    item: EvalInput | TaskRun, job_type: Literal["task_run_eval", "eval_config_eval"]
+) -> _Skip | None:
+    """Why a V2 job is skipped before its environment is resolved, or None. The one rule
+    behind `_run_v2_job` and `validate_openenv_readiness`: a skipped item never needs
+    its environment's server."""
+    if job_type != "task_run_eval":
+        return None
+    if isinstance(item, EvalInput) and isinstance(
+        item.data, MultiTurnSyntheticEvalInputData
+    ):
+        return _multi_turn_skip(item.data)
+    if isinstance(item, TaskRun) and item.parent_task_run_id is not None:
+        return _Skip(
+            SkippedReason.incompatible_input_shape,
+            "Stored multi-turn conversations can't be re-run for a run config",
+        )
+    return None
+
+
+def _check_project_versions_of_served_tools(
+    run_config: TaskRunConfig,
+    item: EvalInput | TaskRun,
+    openenv_server: OpenEnvServer,
+    served: Iterable[str],
+    project: Project | None,
+) -> None:
+    """An input with an environment may not meet the project's own version of any tool its
+    environment serves: a run config listing one is refused before anything runs. Project
+    tools the environment does not serve are fine. Names are compared offline.
+
+    Only the tools the run config lists directly are checked. Tools reached through
+    another tool (a Kiln task tool's run config, a code tool's allowlist) and the tools
+    of an MCP-type run config are not."""
+    served_names = set(served)
+    clashes = [
+        f"{tool_id} ({name})"
+        for tool_id in _run_config_tool_ids(run_config)
+        if not tool_id.startswith(OPENENV_TOOL_ID_PREFIX)
+        for name in [project_tool_function_name(tool_id, project)]
+        if name is not None and name in served_names
+    ]
+    if clashes:
+        raise ValueError(
+            f"eval input {item.id} runs in OpenEnv server '{openenv_server.name}', but "
+            f"run config '{run_config.name}' lists the project's own version of tools the "
+            f"OpenEnv server serves: {', '.join(clashes)}. List the OpenEnv server's tools "
+            f"({build_openenv_tool_id(openenv_server.id, '<tool_name>')}) instead, or use an "
+            "input without an openenv_reset to run against the project tools."
+        )
+
+
+def _check_drive_only(
+    eval_run_type: Literal["eval_config_eval", "task_run_eval"],
+    eval_configs: List[EvalConfig],
+) -> None:
+    """Raise unless a runner with these settings can drive without judging."""
+    from kiln_ai.adapters.eval.registry import has_v2_eval_adapter
+
+    if eval_run_type != "task_run_eval":
+        raise ValueError("Only a task_run_eval can drive without judging")
+    if len(eval_configs) != 1:
+        raise ValueError(
+            "A drive-only run drives each item once per run config, so it takes "
+            "exactly one eval config"
+        )
+    if not has_v2_eval_adapter(eval_configs[0]):
+        raise ValueError(
+            f"Eval config '{eval_configs[0].name}' is not a V2 judge with an adapter, "
+            "so it cannot drive items without judging them: the legacy path generates "
+            "and judges in one call. Use a V2 eval config of the same eval."
+        )
+
+
 def no_golden_set_message(eval: Eval) -> str:
     """Why judge comparison can't run without a golden set. One wording, two raisers.
 
     Shared with the API layer so the 4xx a user sees and the ValueError a library caller
-    sees say the same thing (functional spec 9, architecture 4.3).
+    sees say the same thing.
     """
     return (
         f"Eval '{eval.id}' has no golden set configured. Comparing judges scores them "
@@ -205,6 +512,11 @@ class EvalRunner:
        Multi-turn synthetic EvalInputs are re-driven as a full conversation per run
        config using the drive config stamped on each item; stored multi-turn TaskRun
        chains are skipped.
+
+    A task_run_eval runner made with `judge=False` drives without judging: each selected
+    item gets a fresh generation (an environment episode and a synthetic user where the item
+    has them), saved as a trace exactly as a judged run saves it, and nothing is scored.
+    See `driven_runs`.
     """
 
     def __init__(
@@ -214,7 +526,24 @@ class EvalRunner:
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
+        item_ids: Set[ID_TYPE] | None = None,
+        openenv_session_manager: OpenEnvSessionManager | None = None,
+        judge: bool = True,
+        trace_index_registry: TraceIndexRegistry | None = None,
     ):
+        """`item_ids` runs only these items of the split (task_run_eval mode only).
+        Ids outside the split are ignored. None runs the whole split.
+
+        `judge=False` drives each selected item once per run config and judges nothing
+        (task_run_eval mode only). Every item is driven again, scored or not, and the
+        new trace replaces the item's earlier one in the trace index, so a later judged
+        run reuses it instead of driving again (for an item in an environment, while its reset
+        and the environment's version are unchanged, as for any trace). The drive uses the eval config only to
+        reach its generation path, so it takes exactly one, and a judge with a V2
+        adapter: the legacy path generates and judges in one call.
+
+        Runners given the same `trace_index_registry` reuse each other's eval traces and
+        must run on the same event loop. None shares traces only within this runner."""
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
         target_eval = eval_configs[0].parent_eval()
@@ -268,6 +597,15 @@ class EvalRunner:
                 raise ValueError(no_golden_set_message(target_eval))
             self.golden_filter_id = target_eval.eval_configs_filter_id
 
+        if item_ids is not None and eval_run_type != "task_run_eval":
+            raise ValueError("item_ids narrows a task_run_eval split only")
+        if not judge:
+            _check_drive_only(eval_run_type, eval_configs)
+        self.judge = judge
+        # The items a drive-only run drove, in the order they finished. Empty for a
+        # judged run, whose generations are named by each EvalRun's scored_run_id.
+        self.driven_runs: list[DrivenRun] = []
+        self.item_ids = item_ids
         self.eval_run_type = eval_run_type
         self.eval_configs = eval_configs
         self.run_configs = run_configs
@@ -278,8 +616,52 @@ class EvalRunner:
         self._save_context: SaveContext = save_context or default_save_context
         # Live, not precomputed like `already_run`: a trace persisted by one job has to be
         # visible to the next, whether that next job is running concurrently under a
-        # different eval config or is this job's own retry (functional spec 4.2, 4.3).
-        self._trace_index = TraceIndex(self.task)
+        # different eval config or is this job's own retry.
+        #
+        # Seeded by `run()`, in a worker thread, and only when it has task_run_eval jobs:
+        # seeding reads every TaskRun of the task, and a runner built only to validate a
+        # request never looks a trace up.
+        self._trace_index_registry = trace_index_registry
+        self._trace_index_instance: TraceIndex | None = None
+        self._trace_index_lock = threading.Lock()
+        # A session manager passed in replaces the process-wide OpenEnv session manager
+        # (tests pass their own).
+        self._openenv_session_manager_override = openenv_session_manager
+        # One resolution per environment per run: the first job re-reads the environment's
+        # metadata, and every later job keys its traces by that same version.
+        self._openenv_targets: dict[str, _OpenEnvTarget | Exception] = {}
+        self._openenv_target_locks = AsyncLockManager()
+
+    async def _trace_index(self) -> TraceIndex:
+        index = self._trace_index_instance
+        if index is None:
+            # Only a caller that runs a job without `run()` gets here.
+            index = await asyncio.to_thread(self._seed_trace_index)
+        return index
+
+    def _seed_trace_index(self) -> TraceIndex:
+        """Build the trace index if it is not built yet, and return it. Blocking: it
+        reads every TaskRun of the task. Threads that call it at once share one index."""
+        index = self._trace_index_instance
+        if index is None:
+            with self._trace_index_lock:
+                index = self._trace_index_instance
+                if index is None:
+                    index = self._trace_index_instance = TraceIndex(
+                        self.task, self._trace_index_registry
+                    )
+        return index
+
+    def _collect_tasks_and_seed_trace_index(self) -> List[EvalJob]:
+        jobs = self.collect_tasks()
+        # Only a v2 task_run_eval job looks a trace up.
+        if (
+            jobs
+            and self.eval_run_type == "task_run_eval"
+            and any(c.config_type == EvalConfigType.v2 for c in self.eval_configs)
+        ):
+            self._seed_trace_index()
+        return jobs
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -345,6 +727,10 @@ class EvalRunner:
             already_run[eval_config.id] = {
                 run_config.id: set() for run_config in self.run_configs or []
             }
+            if not self.judge:
+                # A drive-only run measures a fresh generation, so a scored item is
+                # driven again: its score says nothing about this run's usage.
+                continue
             for run in eval_config.runs(readonly=True):
                 # Scopes the dedupe to the run configs actually being evaluated: an eval
                 # config accumulates runs for every run config ever compared against it.
@@ -367,6 +753,7 @@ class EvalRunner:
                 eval_config=eval_config,
             )
             for item in self.split.items
+            if self.item_ids is None or item.id in self.item_ids
             for eval_config in self.eval_configs
             for run_config in self.run_configs or []
             if (self.split.source, item.id)
@@ -402,10 +789,13 @@ class EvalRunner:
         """
         if self.eval_run_type != "task_run_eval" or self.split is None:
             return
+        # Only the items this runner will work: an `item_ids` subset must not be
+        # blocked by multi-turn items it does not select.
         multi_turn_items = [
             item.data
             for item in self.split.items
-            if isinstance(item, EvalInput)
+            if (self.item_ids is None or item.id in self.item_ids)
+            and isinstance(item, EvalInput)
             and isinstance(item.data, MultiTurnSyntheticEvalInputData)
         ]
         if not multi_turn_items:
@@ -456,6 +846,105 @@ class EvalRunner:
                 + "."
             )
 
+    def validate_openenv_readiness(self) -> None:
+        """Fail fast on the environment problems that every affected job would hit: a run
+        config whose environment tools cannot run an item (the item has no openenv_reset, is a
+        stored TaskRun, or runs in another environment), and an openenv_reset that names an environment
+        the project does not have. Callers can invoke this before starting a batch, so
+        the user gets one clear error instead of one failed item per job. The per-job
+        checks stay as the backstop for standalone runner use.
+
+        It shares its rules with `_run_v2_job` (`_skip_before_openenv_lane`,
+        `_openenv_tool_mismatch`, `_resolves_openenv`), and it applies them only where the
+        runner does: V2 judges that have an adapter. A legacy judge never reaches the
+        environment lane.
+
+        It needs no running server, so it does not check the problems that do: an
+        environment that cannot be reached or refuses a reset, and a run config that
+        lists the project's own version of a tool the environment serves. Those stay per job.
+
+        Like `validate_multi_turn_drive_readiness`, it checks every item the runner
+        selects, scored or not, so it reads no EvalRun.
+
+        Raises one ValueError with one sentence per problem: project-level problems
+        first, then one per run config and kind, each naming its items.
+        """
+        if self.eval_run_type != "task_run_eval" or self.split is None:
+            return
+        from kiln_ai.adapters.eval.registry import has_v2_eval_adapter
+
+        if not any(has_v2_eval_adapter(config) for config in self.eval_configs):
+            return
+
+        run_configs = self.run_configs or []
+        mismatched: dict[tuple[int, _OpenEnvToolMismatch], list[str]] = {}
+        # An ordered set per environment: several run configs can name one item.
+        items_by_openenv_server: dict[str, dict[str, None]] = {}
+        for item in self.split.items:
+            if self.item_ids is not None and item.id not in self.item_ids:
+                continue
+            if _skip_before_openenv_lane(item, "task_run_eval") is not None:
+                continue
+            openenv_reset = item.openenv_reset if isinstance(item, EvalInput) else None
+            for index, run_config in enumerate(run_configs):
+                mismatch = _openenv_tool_mismatch(run_config, item, openenv_reset)
+                if mismatch is not None:
+                    mismatched.setdefault((index, mismatch), []).append(str(item.id))
+                    continue
+                uses_openenv = bool(_openenv_tool_ids(run_config))
+                if _resolves_openenv(run_config, openenv_reset, uses_openenv):
+                    assert openenv_reset is not None
+                    items_by_openenv_server.setdefault(
+                        openenv_reset.openenv_server_id, {}
+                    )[str(item.id)] = None
+
+        problems: list[str] = []
+        if items_by_openenv_server:
+            project = self.task.parent_project()
+            if project is None:
+                problems.append(_NO_PROJECT_FOR_OPENENV_MESSAGE)
+            else:
+                for openenv_server_id, ids in sorted(items_by_openenv_server.items()):
+                    if (
+                        OpenEnvServer.from_id_and_parent_path(
+                            openenv_server_id, project.path
+                        )
+                        is None
+                    ):
+                        problems.append(
+                            f"{_openenv_server_not_found_message(openenv_server_id, project.id)}, and "
+                            f"these items run in it: {_listed_ids(list(ids))}"
+                        )
+        for (index, mismatch), ids in mismatched.items():
+            run_config = run_configs[index]
+            tools = ", ".join(_openenv_tool_ids(run_config))
+            listed = _listed_ids(ids)
+            if mismatch == "no_openenv_reset":
+                problems.append(
+                    f"Run config '{run_config.name}' lists OpenEnv tools ({tools}), but "
+                    f"these eval inputs have no openenv_reset: {listed}. Use a run "
+                    "config with project tools for them, give them an openenv_reset, "
+                    "or leave them out with item_ids"
+                )
+            elif mismatch == "stored_task_run":
+                problems.append(
+                    f"Run config '{run_config.name}' lists OpenEnv tools ({tools}), but "
+                    "these items are stored task runs, which can't run in an OpenEnv server: "
+                    f"{listed}. Use a run config without OpenEnv tools"
+                )
+            else:
+                problems.append(
+                    f"Run config '{run_config.name}' lists OpenEnv tools ({tools}), but "
+                    f"these eval inputs run in another OpenEnv server: {listed}. A job runs in "
+                    "one OpenEnv server: use a run config with that OpenEnv server's tools, or leave "
+                    "them out with item_ids"
+                )
+        if problems:
+            raise ValueError(
+                "Cannot run this eval's items in their OpenEnv servers. "
+                + " ".join(f"{problem}." for problem in problems)
+            )
+
     def _preload_skills(self) -> SkillsDict:
         """Collect all skill IDs from run configs and bulk-load them once."""
         if self.run_configs is None:
@@ -466,17 +955,38 @@ class EvalRunner:
             merged.update(skills)
         return merged
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
+    async def run(
+        self,
+        concurrency: int | None = None,
+        observers: list[AsyncJobRunnerObserver[EvalJob]] | None = None,
+        max_retries: int = 2,
+        retry_delay: float = 1.0,
+    ) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
+
+        `observers` are notified per item, for example to record the exception of a
+        failed item: `Progress.errors` is only a count. `concurrency` bounds how many
+        items run in parallel; None uses DEFAULT_EVAL_CONCURRENCY. `max_retries` and
+        `retry_delay` set how often, and after what backoff, an item that fails with a
+        transient error runs again before its error is reported.
         """
-        jobs = self.collect_tasks()
+        if concurrency is None:
+            concurrency = DEFAULT_EVAL_CONCURRENCY
+        # Collecting reads every existing EvalRun of each eval config off disk, in a
+        # thread, while another runner can be saving one.
+        # The trace index is seeded in the same thread: it reads every TaskRun.
+        jobs = await to_thread_retrying_torn_read(
+            self._collect_tasks_and_seed_trace_index
+        )
 
         runner = AsyncJobRunner(
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
-            max_retries=2,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            observers=observers,
         )
         async for progress in runner.run():
             yield progress
@@ -593,41 +1103,256 @@ class EvalRunner:
                 "V2 eval type not yet implemented",
             )
 
-        if (
+        is_multi_turn_input = (
             isinstance(job.item, EvalInput)
             and isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
             and job.type == "task_run_eval"
+        )
+
+        # Every skip comes before generation, so a job that can never be scored never
+        # pays for one, and before the environment lane, so it never needs the environment.
+        skip = _skip_before_openenv_lane(job.item, job.type)
+        if skip is not None:
+            return await self._persist_skip(job, skip.reason, skip.detail)
+
+        # OpenEnv lane. After every skip (a skipped item must never need the environment
+        # or create an episode) and before either generation lane, so single-turn and
+        # multi-turn inputs share one lifecycle: the multi-turn drive runs with the
+        # episode in context for every turn, and the leaf trace records it.
+        openenv_reset = _openenv_reset_of(job)
+        uses_openenv = job.task_run_config is not None and _uses_openenv(
+            job.task_run_config, job.item, openenv_reset
+        )
+        if job.task_run_config is not None and _resolves_openenv(
+            job.task_run_config, openenv_reset, uses_openenv
         ):
+            assert openenv_reset is not None
+            # Checked whether or not the job uses the environment: a project-tools run config is
+            # exactly what an input's environment reset must keep it away from. A run config
+            # with no tools at all has nothing to check, and never needs the environment.
+            target = await self._resolve_openenv_target(openenv_reset)
+            _check_project_versions_of_served_tools(
+                job.task_run_config,
+                job.item,
+                target.openenv_server,
+                target.tools,
+                self.task.parent_project(),
+            )
+            if uses_openenv:
+                openenv_tag = openenv_trace_tag(target.openenv_version, openenv_reset)
+                if is_multi_turn_input:
+                    assert isinstance(job.item, EvalInput)
+                    assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
+                    generation = self._multi_turn_generation(
+                        job, job.item, job.item.data, openenv_tag=openenv_tag
+                    )
+                else:
+                    generation = self._single_turn_generation(
+                        job, evaluator, openenv_tag=openenv_tag
+                    )
+                return await self._run_v2_job_in_openenv(
+                    job, evaluator, target, openenv_reset, generation
+                )
+
+        if is_multi_turn_input:
             # Multi-turn synthetic input: re-drive the conversation fresh
             # for this run config, then judge the new trace. The job.type
             # guard is defensive — collect_tasks never pairs eval_config_eval
             # with EvalInput items, because judge calibration is scoped by the
             # golden filter and golden filters only address TaskRuns. There is
             # no runtime handler for a hand-built job of that shape.
-            seed = (
-                job.item.data.first_message.text if job.item.data.first_message else ""
+            assert isinstance(job.item, EvalInput)
+            assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
+            generation = self._multi_turn_generation(job, job.item, job.item.data)
+            # A raising drive persists nothing, so the job's retry re-drives; a
+            # successful one is on disk before the judge sees it, so a scoring
+            # failure re-scores without paying for the conversation again.
+            trace = await self._trace(
+                generation.key, lambda: self._generate_and_save(generation)
             )
-            return await self._run_v2_multi_turn_synthetic_job(
-                job, evaluator, job.item, job.item.data, seed
-            )
-
-        # Both skips come before `_resolve_trace`, so a job that can never be scored
-        # never pays for a generation.
-        if (
-            isinstance(job.item, TaskRun)
-            and job.item.parent_task_run_id is not None
-            and job.type == "task_run_eval"
-        ):
-            return await self._persist_skip(
-                job,
-                SkippedReason.incompatible_input_shape,
-                "Stored multi-turn conversations can't be re-run for a run config",
-            )
+            return await self._judge_trace(job, evaluator, trace)
 
         trace = await self._resolve_trace(job, evaluator)
+        return await self._judge_trace(job, evaluator, trace)
+
+    async def _trace(
+        self, key: TraceKey, generate: Callable[[], Awaitable[TaskRun]]
+    ) -> TaskRun:
+        """The trace a job works on: the indexed one, generated only if the task has
+        none, or for a drive-only run always a new one."""
+        trace_index = await self._trace_index()
+        if not self.judge:
+            return await trace_index.create(key, generate)
+        # `TraceIndex` logs both outcomes itself — debug on reuse, info on
+        # generation — so the was_generated bool has no reader here.
+        trace, _ = await trace_index.get_or_create(key, generate)
+        return trace
+
+    async def _judge_trace(
+        self, job: EvalJob, evaluator: BaseV2EvalBridge, trace: TaskRun
+    ) -> bool:
+        """Score the trace and persist the score, or for a drive-only run record the
+        drive and stop: the trace is already saved, and nothing is judged."""
+        if not self.judge:
+            assert job.task_run_config is not None
+            self.driven_runs.append(
+                DrivenRun(
+                    item_source=item_key(job.item)[0],
+                    item_id=str(job.item.id),
+                    run_config_id=str(job.task_run_config.id),
+                    task_run_id=str(trace.id),
+                )
+            )
+            return True
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
         result = await evaluator.evaluate(eval_task_input)
         return await self._persist_judgment(job, trace, result)
+
+    async def _run_v2_job_in_openenv(
+        self,
+        job: EvalJob,
+        evaluator: BaseV2EvalBridge,
+        target: _OpenEnvTarget,
+        openenv_reset: OpenEnvReset,
+        generation: _Generation,
+    ) -> bool:
+        """One job against an episode, for either generation lane.
+
+        Generation runs under the trace index's per-key lock with a freshly launched
+        episode in context, so racing judges of one item share a single generation and
+        a single episode, and every turn of a multi-turn drive sees the same episode.
+        The context is reset in `finally`: worker tasks are reused across jobs.
+
+        Still under that lock, the episode is ended (the environment's state is read and
+        the session closed) and the trace is saved once, with the
+        settled record: a trace on disk always carries its episode's final state, so an
+        episode that fails to end leaves nothing for a later run to reuse. Graders read
+        the episode from the trace — the same record for a reused trace — so they see
+        the state the generation actually left. An environment failure that may not
+        recur (a dropped connection, a timeout, a server at capacity) is retried.
+        """
+
+        async def generate() -> TaskRun:
+            episode = await target.session_manager.start_episode(
+                target.openenv_server, openenv_reset.reset_kwargs
+            )
+            token = set_episode(
+                EpisodeContext(
+                    episode=episode,
+                    openenv_server=target.openenv_server,
+                    session_manager=target.session_manager,
+                    tools=target.tools,
+                )
+            )
+            try:
+                try:
+                    run = await generation.generate()
+                finally:
+                    reset_episode(token)
+            except BaseException:
+                await target.session_manager.release(episode)
+                raise
+            # End the episode before anyone grades: the session manager records what graders will
+            # need (the final state) and the trace persists it, so a
+            # concurrent judge reusing this generation sees the settled record.
+            ended = await target.session_manager.end_episode(episode)
+            if ended.final_state is None:
+                raise OpenEnvError(
+                    f"Episode {episode.episode_id} in OpenEnv server '{target.openenv_server.name}' "
+                    "ended without a final state, so its trace was not saved"
+                )
+            run.openenv_episode = ended
+            return await self._save_trace(run)
+
+        try:
+            trace = await self._trace(generation.key, generate)
+        except Exception as e:
+            # The model adapter lets a tool call's transient environment failure
+            # propagate, wrapped in KilnRunError, so classify the underlying error.
+            if is_transient_openenv_error(e):
+                raise RetryableError(str(unwrap_kiln_run_error(e))) from e
+            raise
+        return await self._judge_trace(job, evaluator, trace)
+
+    async def _resolve_openenv_target(
+        self, openenv_reset: OpenEnvReset
+    ) -> _OpenEnvTarget:
+        """The environment an input names, the tools its environment serves, and the trace
+        openenv_version — or an error: never a silent fallback. The reset kwargs are the
+        environment's to validate, which it does at reset.
+
+        Resolved once per environment per run, re-reading the environment's metadata the
+        first time: an environment restarted at a new version on the same URL keys
+        this run's traces by its new version, never reusing the old version's. A
+        failure is remembered for the run too, so an environment that is down or hangs
+        costs one wait, not one per job. A transient failure is not: it asks the job
+        runner for another attempt, which must reach the environment again."""
+        openenv_server_id = openenv_reset.openenv_server_id
+        async with self._openenv_target_locks.acquire(openenv_server_id):
+            cached = self._openenv_targets.get(openenv_server_id)
+            if isinstance(cached, BaseException):
+                raise cached
+            if cached is not None:
+                return cached
+            try:
+                target = await self._load_openenv_target(openenv_server_id)
+            except OpenEnvTransientError as e:
+                raise RetryableError(str(e)) from e
+            except Exception as e:
+                self._openenv_targets[openenv_server_id] = e
+                raise
+            self._openenv_targets[openenv_server_id] = target
+            return target
+
+    async def _load_openenv_target(self, openenv_server_id: str) -> _OpenEnvTarget:
+        project = self.task.parent_project()
+        if project is None:
+            raise ValueError(_NO_PROJECT_FOR_OPENENV_MESSAGE)
+        openenv_server = OpenEnvServer.from_id_and_parent_path(
+            openenv_server_id, project.path
+        )
+        if openenv_server is None:
+            raise ValueError(
+                _openenv_server_not_found_message(openenv_server_id, project.id)
+            )
+        session_manager = (
+            self._openenv_session_manager_override or shared_session_manager()
+        )
+        await session_manager.refresh(openenv_server)
+        tools = {
+            tool.name: tool for tool in await session_manager.list_tools(openenv_server)
+        }
+        return _OpenEnvTarget(
+            openenv_server=openenv_server,
+            session_manager=session_manager,
+            tools=tools,
+            # Lives on a server, not in the project, so the trace key carries it: a
+            # bump must not reuse traces made against the old code.
+            openenv_version=await session_manager.openenv_version(openenv_server),
+        )
+
+    def _single_turn_generation(
+        self,
+        job: EvalJob,
+        evaluator: BaseV2EvalBridge,
+        openenv_tag: str | None = None,
+    ) -> _Generation:
+        if job.task_run_config is None:
+            raise ValueError("A task_run_eval job requires a run config")
+        key = trace_key(item_key(job.item), job.task_run_config.id, openenv_tag)
+        return _Generation(
+            key=key,
+            generate=lambda: self._generate_trace(job, evaluator, key),
+        )
+
+    async def _generate_and_save(self, generation: _Generation) -> TaskRun:
+        """Generate outside any environment, and make the result durable before scoring."""
+        return await self._save_trace(await generation.generate())
+
+    async def _save_trace(self, run: TaskRun) -> TaskRun:
+        async with self._save_context():
+            run.save_to_file()
+        return run
 
     async def _resolve_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge
@@ -637,32 +1362,26 @@ class EvalRunner:
         if golden is not None:
             return golden
 
-        if job.task_run_config is None:
-            raise ValueError("A task_run_eval job requires a run config")
-
-        key = trace_key(item_key(job.item), job.task_run_config.id)
-        # `TraceIndex` logs both outcomes itself — debug on reuse, info on generation
-        # (architecture 8) — so the was_generated bool has no reader here.
-        trace, _ = await self._trace_index.get_or_create(
-            key, lambda: self._generate_and_persist(job, evaluator, key)
+        generation = self._single_turn_generation(job, evaluator)
+        return await self._trace(
+            generation.key, lambda: self._generate_and_save(generation)
         )
-        return trace
 
-    async def _generate_and_persist(
+    async def _generate_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge, key: TraceKey
     ) -> TaskRun:
-        """Run the task for this job's item, and make the result durable before scoring.
+        """Run the task for this job's item, stamped for the key but not yet saved.
 
         Stamped from `key` rather than re-derived from the job, so the run files itself
         under exactly the key the index filed it under. A run that disagrees is never
         found again, and the eval regenerates it on every future run.
         """
-        source_type, source_id, run_config_id = key
+        source_type, source_id, run_config_id, _ = key
         trace = await evaluator.run_task(job.item, run_config_id=run_config_id)
         if trace.id is None:
             # `run_task` builds its adapter with allow_saving=False, and every adapter
-            # clears the id of a run it did not persist (base_adapter.py:346). The runner
-            # is the one persisting here, so it mints the id — the same thing
+            # clears the id of a run it did not persist (base_adapter.py:346). The caller
+            # saves this run, so the runner mints the id — the same thing
             # data_gen_api.py:474 does with an unsaved adapter run.
             #
             # Deliberately not allow_saving=True instead: the adapter would persist the
@@ -670,9 +1389,10 @@ class EvalRunner:
             # leave an eval trace permanently indistinguishable from a curated dataset
             # row — the contamination Task.runs()' default-exclude exists to prevent.
             trace.id = generate_model_id()
-        trace.eval_source = EvalItemSource(source_type=source_type, source_id=source_id)
-        async with self._save_context():
-            trace.save_to_file()
+        trace.eval_source = EvalItemSource(
+            source_type=source_type,
+            source_id=source_id,
+        )
         return trace
 
     async def _persist_score(
@@ -685,13 +1405,14 @@ class EvalRunner:
         skipped_detail: str | None = None,
         intermediate_outputs: Dict[str, str] | None = None,
         eval_usage: Usage | None = None,
+        judge_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> bool:
         """Write one V2 score record.
 
         The single place the item-identity fields are filled in, because `collect_tasks`
         dedupes on exactly those: a skip record and a score record that disagreed would
         be two identities for one job. No inline trace field is ever set — they are
-        deprecated, and the trace lives on the TaskRun (functional spec 3.2).
+        deprecated, and the trace lives on the TaskRun.
         """
         async with self._save_context():
             EvalRun(
@@ -708,6 +1429,7 @@ class EvalRunner:
                 skipped_detail=skipped_detail,
                 intermediate_outputs=intermediate_outputs,
                 eval_usage=eval_usage,
+                judge_trace=judge_trace,
             ).save_to_file()
         return True
 
@@ -718,13 +1440,18 @@ class EvalRunner:
 
         Calibration still names its trace: the golden item *is* what would have been
         scored, it is already on disk, and a skip that happens one step later — inside
-        `evaluate()` — records it (functional spec 4.6, row 2). Where the failure
-        happened shouldn't change the record's shape, and Phase 5 migrates old
-        calibration skips to exactly this.
+        `evaluate()` — records it. Where the failure happened shouldn't change the
+        record's shape, and the `migrate-eval-runs` command converts old calibration skips
+        to exactly this.
 
         A scoring job genuinely has nothing to point at. Generating a trace for a job
         that can never be scored is the spend these early skips exist to avoid.
+
+        A drive-only run stores no score, so it has no skip record either: the item
+        fails with the reason instead, which the caller sees in its error log.
         """
+        if not self.judge:
+            raise ValueError(f"Item {job.item.id} can't be driven: {detail}")
         golden = _calibration_item(job)
         return await self._persist_score(
             job,
@@ -742,8 +1469,7 @@ class EvalRunner:
         """The score for one item, pointing at the trace it was computed over.
 
         Also the home of a scoring-time skip: the trace exists and this judge could not
-        score it, so the record carries both `scored_run_id` and `skipped_reason`
-        (functional spec 4.6, row 2).
+        score it, so the record carries both `scored_run_id` and `skipped_reason`.
         """
         return await self._persist_score(
             job,
@@ -755,17 +1481,18 @@ class EvalRunner:
             skipped_detail=result.skipped_detail,
             intermediate_outputs=result.intermediate_outputs,
             eval_usage=result.usage,
+            judge_trace=result.judge_trace,
         )
 
-    async def _run_v2_multi_turn_synthetic_job(
+    def _multi_turn_generation(
         self,
         job: EvalJob,
-        evaluator: BaseV2EvalBridge,
         eval_input: EvalInput,
         data: MultiTurnSyntheticEvalInputData,
-        seed: str,
-    ) -> bool:
-        """task_run_eval over a multi-turn synthetic input.
+        openenv_tag: str | None = None,
+    ) -> _Generation:
+        """The generation for a task_run_eval over a multi-turn synthetic input that
+        `_multi_turn_skip` has already cleared.
 
         The run config under evaluation drives the agent while the drive
         config stamped on the item plays the synthetic user, so each run
@@ -775,20 +1502,11 @@ class EvalRunner:
         like single-turn generations: durable before scoring, and reusable
         by every other judge over the same item and run config.
         """
+        seed = data.first_message.text if data.first_message else ""
         drive_config = data.drive_config
-        if drive_config is None:
-            return await self._persist_skip(
-                job,
-                SkippedReason.missing_drive_config,
-                "This item has no synthetic user configuration. "
-                "Create a new batch to replace it.",
-            )
-
-        if not seed:
-            return await self._persist_skip(
-                job,
-                SkippedReason.incompatible_input_shape,
-                "Multi-turn synthetic input has no first_message to open the conversation",
+        if drive_config is None or not seed:
+            raise ValueError(
+                f"Eval item {eval_input.id} can't be driven; it should have been skipped"
             )
 
         if job.task_run_config is None:
@@ -810,9 +1528,9 @@ class EvalRunner:
                 f"drive config: {drive_config.model_provider}"
             ) from e
 
-        key = trace_key(item_key(eval_input), job.task_run_config.id)
+        key = trace_key(item_key(eval_input), job.task_run_config.id, openenv_tag)
 
-        async def drive_and_persist() -> TaskRun:
+        async def drive() -> TaskRun:
             # No app-level timeout on the re-drive: it terminates
             # structurally (the turn ceiling, the adapter's tool-call cap,
             # the model client's per-request timeout). This path runs as a
@@ -859,20 +1577,13 @@ class EvalRunner:
                     f"The driven conversation for eval item {eval_input.id} is "
                     f"incomplete ({problem}), so it was not saved."
                 )
-            return await self._persist_driven_conversation(
+            return self._driven_conversation_run(
                 key, drive_result, seed=seed, ended_by_su=ended_by_su
             )
 
-        # A raising drive persists nothing, so the job's retry re-drives; a
-        # successful one is on disk before the judge sees it, so a scoring
-        # failure re-scores without paying for the conversation again.
-        trace, _ = await self._trace_index.get_or_create(key, drive_and_persist)
+        return _Generation(key=key, generate=drive)
 
-        eval_task_input = EvalTaskInput.from_trace(trace, eval_input)
-        result = await evaluator.evaluate(eval_task_input)
-        return await self._persist_judgment(job, trace, result)
-
-    async def _persist_driven_conversation(
+    def _driven_conversation_run(
         self,
         key: TraceKey,
         drive_result: DriveCaseResult,
@@ -889,13 +1600,14 @@ class EvalRunner:
         index's childless-only seed.
 
         Stamped from `key` rather than re-derived, for the same reason as
-        `_generate_and_persist`: the run must file itself under exactly the key
-        the index filed it under, or it is never found again.
+        `_generate_trace`: the run must file itself under exactly the key
+        the index filed it under, or it is never found again. Returned unsaved;
+        the caller saves it.
         """
-        source_type, source_id, run_config_id = key
+        source_type, source_id, run_config_id, _ = key
         leaf = drive_result.chain[-1]
         if leaf.output.source is None:
-            # Fail before anything is saved: a run without an output source can't
+            # Fail before the run is built: a run without an output source can't
             # carry the run_config_id half of its reuse key, so persisting it would
             # strand a paid conversation on disk that the index can never serve.
             raise ValueError(
@@ -924,14 +1636,16 @@ class EvalRunner:
             synthetic_user_usage=drive_result.su_usage,
             cumulative_usage=leaf.cumulative_usage
             or MessageUsage.from_trace(leaf.trace),
-            eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
+            eval_source=EvalItemSource(
+                source_type=source_type,
+                source_id=source_id,
+            ),
             tags=[TAG_SU_ENDED_CONVERSATION] if ended_by_su else [],
         )
-        # The drive runs with allow_saving=False, so nothing touched disk before
-        # this fully-stamped run — no crash window in which a driven conversation
-        # could persist without eval_source and pass for a curated dataset row.
-        async with self._save_context():
-            run.save_to_file()
+        # The drive runs with allow_saving=False, so nothing touches disk before
+        # this fully-stamped run is saved — no crash window in which a driven
+        # conversation could persist without eval_source and pass for a curated
+        # dataset row.
         return run
 
 

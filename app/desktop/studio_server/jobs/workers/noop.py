@@ -39,6 +39,7 @@ class NoopJobWorker(JobWorker[NoopJobParams, NoopJobResult]):
     params_model = NoopJobParams
     result_model = NoopJobResult
     supports_pause = True
+    generic_create_allowed = True
 
     async def compute_state(self, params: NoopJobParams) -> JobDerivedState | None:
         return None

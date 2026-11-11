@@ -26,8 +26,8 @@ class AsyncLockManager:
     """
 
     def __init__(self) -> None:
-        # Protects the _locks dict and bookkeeping counters.
-        self._mu = asyncio.Lock()
+        # Keep the bookkeeping free of awaits: a cancellation at an await between taking
+        # a key's lock and recording the holder would leak the lock.
         self._locks: Dict[Hashable, _Entry] = {}
 
     @asynccontextmanager
@@ -37,63 +37,43 @@ class AsyncLockManager:
 
         - `timeout`: optional seconds to wait; raises TimeoutError on expiry.
         """
-        # Phase 1: register as a waiter and get/create the entry (under manager mutex).
-        async with self._mu:
-            entry = self._locks.get(key)
-            if entry is None:
-                entry = self._locks[key] = _Entry()
-            entry.waiters += 1
+        entry = self._locks.get(key)
+        if entry is None:
+            entry = self._locks[key] = _Entry()
+        entry.waiters += 1
 
-        # Phase 2: wait on the per-key lock (outside manager mutex).
         try:
             if timeout is None:
                 await entry.lock.acquire()
             else:
-                # Manual timeout to keep compatibility across Python versions.
                 await asyncio.wait_for(entry.lock.acquire(), timeout=timeout)
-
-            # Phase 3: update counters: became a holder.
-            async with self._mu:
-                entry.waiters -= 1
-                entry.holders += 1
-
-            try:
-                yield  # critical section
-            finally:
-                # Phase 4: release holder and maybe cleanup.
-                entry.lock.release()
-                async with self._mu:
-                    entry.holders -= 1
-                    # Remove the entry if fully idle.
-                    if entry.waiters == 0 and entry.holders == 0:
-                        # Double-check we still point to same object (paranoia/race safety).
-                        if self._locks.get(key) is entry:
-                            del self._locks[key]
-
-        except asyncio.TimeoutError:
-            # Timed out while waiting; undo waiter count and maybe cleanup.
-            async with self._mu:
-                entry.waiters -= 1
-                if entry.waiters == 0 and entry.holders == 0:
-                    if self._locks.get(key) is entry:
-                        del self._locks[key]
+        except BaseException:
+            # Timed out or cancelled while waiting: this task never held the lock.
+            entry.waiters -= 1
+            self._discard_if_idle(key, entry)
             raise
-        except asyncio.CancelledError:
-            # Cancelled while waiting; same cleanup as timeout.
-            async with self._mu:
-                entry.waiters -= 1
-                if entry.waiters == 0 and entry.holders == 0:
-                    if self._locks.get(key) is entry:
-                        del self._locks[key]
-            raise
+
+        entry.waiters -= 1
+        entry.holders += 1
+        try:
+            yield  # critical section
+        finally:
+            entry.lock.release()
+            entry.holders -= 1
+            self._discard_if_idle(key, entry)
+
+    def _discard_if_idle(self, key: Hashable, entry: _Entry) -> None:
+        if entry.waiters == 0 and entry.holders == 0:
+            # Double-check we still point to same object (paranoia/race safety).
+            if self._locks.get(key) is entry:
+                del self._locks[key]
 
     # Optional: expose a snapshot for metrics/debugging
     async def snapshot(self) -> Dict[Hashable, dict]:
-        async with self._mu:
-            return {
-                k: {"waiters": e.waiters, "holders": e.holders}
-                for k, e in self._locks.items()
-            }
+        return {
+            k: {"waiters": e.waiters, "holders": e.holders}
+            for k, e in self._locks.items()
+        }
 
 
 # callers should use this global instance instead of creating their own

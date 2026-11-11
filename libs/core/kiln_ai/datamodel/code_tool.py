@@ -22,6 +22,7 @@ from kiln_ai.datamodel.code_file_storage import (
     write_code_to_sibling_file,
 )
 from kiln_ai.datamodel.json_schema import validate_schema_dict
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.datamodel.tool_id import (
     ToolId,
     build_code_tool_id,
@@ -52,6 +53,7 @@ class CodeTool(KilnParentedModel):
         default=False,
         description="Archived tools are hidden from pickers but still resolve if referenced.",
     )
+    provenance: KilnArtifactProvenance | None = provenance_field()
 
     # Functional content — immutable post-create (enforced at the API layer)
     tool_function_name: str = Field(

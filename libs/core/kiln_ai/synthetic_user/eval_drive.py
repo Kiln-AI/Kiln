@@ -54,7 +54,12 @@ async def drive_case_for_eval(
     adapter = adapter_for_task(
         target_task,
         target_run_config,
-        base_adapter_config=AdapterConfig(allow_saving=False, skills=skills),
+        # A multi-turn drive re-sends its whole history on every model call. Prompt caching
+        # hints let providers that need them (Anthropic) bill that repeated prefix as cache
+        # reads. It does not change the output.
+        base_adapter_config=AdapterConfig(
+            allow_saving=False, skills=skills, automatic_prompt_caching=True
+        ),
     )
     input_source = DataSource(
         type=DataSourceType.synthetic,

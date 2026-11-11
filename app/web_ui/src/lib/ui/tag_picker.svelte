@@ -3,7 +3,7 @@
   import { createEventDispatcher } from "svelte"
 
   export let tags: string[] = []
-  export let tag_type: "doc" | "task_run" = "doc"
+  export let tag_type: "doc" | "task_run" | "eval" = "doc"
   export let project_id: string | null = null
   export let task_id: string | null = null
 

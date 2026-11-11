@@ -28,7 +28,11 @@ from typing import Any, Callable
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.datamodel.tool_id import (
+    OPENENV_TOOL_ID_PREFIX,
+    ToolId,
+    openenv_and_tool_name_from_id,
+)
 from kiln_ai.sandbox.spawn import start_process_with_light_main
 from kiln_ai.tools.base_tool import ToolCallContext
 
@@ -37,8 +41,7 @@ logger = logging.getLogger(__name__)
 CODE_SANDBOX_MAX_CONCURRENCY = 16
 """Maximum concurrent top-level sandbox invocations (process-wide).
 
-Shared by code tools and code judges. Raises code tools' prior bound of 8 as a
-side effect of unifying the pool (arch §3.4)."""
+Shared by code tools and code judges."""
 
 _depth: contextvars.ContextVar[int] = contextvars.ContextVar(
     "_code_sandbox_depth", default=0
@@ -169,6 +172,9 @@ class NestedToolServer:
         self._context = context
         self._recorder = recorder
         self._name_map: dict[str, list[ToolId]] | None = None
+        # Why each allowlisted environment tool that failed to resolve is unavailable, by
+        # the name the code calls it (the last segment of its id).
+        self._unavailable: dict[str, str] = {}
 
     async def serve(
         self,
@@ -213,6 +219,9 @@ class NestedToolServer:
                     f"Tool '{tool_name}' is not available. "
                     f"Available tools: {available_names}."
                 )
+                reason = self._unavailable.get(tool_name)
+                if reason is not None:
+                    err_msg = f"Tool '{tool_name}' is not available: {reason}"
                 responses.put(
                     {
                         "type": "tool_result",
@@ -225,7 +234,8 @@ class NestedToolServer:
                         },
                     }
                 )
-                self._record(tool_name, arguments, "not allowed", True, start)
+                preview = "not allowed" if reason is None else err_msg
+                self._record(tool_name, arguments, preview, True, start)
                 return
 
             if len(tool_ids) > 1:
@@ -408,6 +418,12 @@ class NestedToolServer:
                     tool_id,
                     exc,
                 )
+                # An environment tool resolves only inside an episode of its environment, but its
+                # name is known without one: say why when the code calls it.
+                if tool_id.startswith(OPENENV_TOOL_ID_PREFIX):
+                    self._unavailable[openenv_and_tool_name_from_id(tool_id)[1]] = str(
+                        exc
+                    )
                 continue
             name_map.setdefault(fn_name, []).append(tool_id)
 

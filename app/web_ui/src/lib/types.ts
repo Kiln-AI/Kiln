@@ -47,6 +47,8 @@ export type EvalConfigType = components["schemas"]["EvalConfigType"]
 export type EvalDataType = components["schemas"]["EvalDataType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
+export type KilnArtifactProvenance =
+  components["schemas"]["KilnArtifactProvenance"]
 export type DataGuide = components["schemas"]["DataGuide"]
 export type KilnAgentRunConfigProperties =
   components["schemas"]["KilnAgentRunConfigProperties"]
@@ -153,19 +155,14 @@ export type Skill = components["schemas"]["SkillResponse"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
 export type EvalStatus = components["schemas"]["EvalStatus"]
-// Status moved from specs to evals; the old name is kept for existing call sites.
+// Status lives on the eval; spec call sites use this alias.
 export type SpecStatus = EvalStatus
 export type Priority = components["schemas"]["Priority"]
 export type Feedback = components["schemas"]["Feedback"]
 export type FeedbackSource = components["schemas"]["FeedbackSource"]
 
 // Copilot API types
-export type SyntheticDataGenerationStepConfigApi =
-  components["schemas"]["SyntheticDataGenerationStepConfigApi"]
-export type SyntheticDataGenerationSessionConfigApi =
-  components["schemas"]["SyntheticDataGenerationSessionConfigApi"]
 export type TaskMetadataApi = components["schemas"]["TaskMetadataApi"]
-export type ReviewedExample = components["schemas"]["ReviewedExample"]
 export type SampleApi = components["schemas"]["SampleApi"]
 export type SubsampleBatchOutputItemApi =
   components["schemas"]["SubsampleBatchOutputItemApi"]
@@ -189,7 +186,6 @@ export type SpecProperties =
   | components["schemas"]["JailbreakProperties"]
   | components["schemas"]["PromptLeakageProperties"]
 export type SpecType = SpecProperties["spec_type"]
-export type SubmitAnswersRequest = components["schemas"]["SubmitAnswersRequest"]
 export type SpecificationInput = components["schemas"]["SpecificationInput"]
 export type QuestionSet = components["schemas"]["QuestionSet"]
 export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]

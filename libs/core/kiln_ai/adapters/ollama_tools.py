@@ -17,8 +17,8 @@ def ollama_base_url() -> str:
     Gets the base URL for Ollama API connections.
 
     Returns:
-        The base URL to use for Ollama API calls, using environment variable if set
-        or falling back to localhost default
+        The base URL to use for Ollama API calls: the configured URL if set,
+        otherwise the localhost default
     """
     config_base_url = Config.shared().ollama_base_url
     if config_base_url:

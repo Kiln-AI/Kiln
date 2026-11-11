@@ -1,3 +1,4 @@
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
@@ -6,14 +7,18 @@ from kiln_ai.datamodel.tool_id import (
     KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
+    MEMORY_TOOL_ID_PREFIX,
+    OPENENV_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     code_tool_id_from_tool_id,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
+    openenv_and_tool_name_from_id,
     rag_config_id_from_id,
 )
+from kiln_ai.run_context import EpisodeContext, get_episode
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
@@ -37,7 +42,47 @@ def tool_from_id_and_project(
 
     This is the core resolution function. ``tool_from_id`` is a thin
     wrapper that derives the project from the task.
+
+    An OpenEnv tool id (`kiln_tool::openenv::<openenv_server_id>::<tool_name>`)
+    resolves to the tool the OpenEnv server's environment serves, and only while an episode of
+    that OpenEnv server is active (set by the eval runner for one job). Project tool ids resolve
+    to the project tool whether or not an episode is active: a run config chooses the
+    OpenEnv server's tools by listing their ids, never by substitution.
     """
+    if tool_id.startswith(OPENENV_TOOL_ID_PREFIX):
+        return _openenv_tool(tool_id, get_episode())
+    return _resolve_project_tool(tool_id, project, task)
+
+
+def _openenv_tool(
+    tool_id: str, episode_ctx: EpisodeContext | None
+) -> KilnToolInterface:
+    """The tool an OpenEnv server's environment serves under *tool_name*. Only meaningful
+    while an episode of that OpenEnv server is active."""
+    openenv_server_id, tool_name = openenv_and_tool_name_from_id(tool_id)
+    if episode_ctx is None or episode_ctx.openenv_server.id != openenv_server_id:
+        raise ValueError(
+            f"OpenEnv tool {tool_id} can only be used while an episode of "
+            f"OpenEnv server {openenv_server_id} is active: run it from an eval whose inputs carry an "
+            "openenv_reset naming that OpenEnv server."
+        )
+    served_tool = episode_ctx.tools.get(tool_name)
+    if served_tool is None:
+        raise ValueError(
+            f"OpenEnv server '{episode_ctx.openenv_server.name}' does not serve a tool "
+            f"named '{tool_name}' (for {tool_id}); it serves "
+            f"{sorted(episode_ctx.tools)}"
+        )
+    from kiln_ai.tools.openenv_tool import OpenEnvToolProxy
+
+    return OpenEnvToolProxy(tool_id, served_tool, episode_ctx)
+
+
+def _resolve_project_tool(
+    tool_id: str,
+    project: Project | None,
+    task: Task | None,
+) -> KilnToolInterface:
     # Check built-in tools
     if tool_id in [member.value for member in KilnBuiltInToolId]:
         typed_tool_id = KilnBuiltInToolId(tool_id)
@@ -82,10 +127,7 @@ def tool_from_id_and_project(
 
         # Check MCP Server Tools
         if is_mcp_tool:
-            # Get the tool server ID and tool name from the ID
-            tool_server_id, tool_name = mcp_server_and_tool_name_from_id(
-                tool_id
-            )  # Fixed function name
+            tool_server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
 
             server = next(
                 (
@@ -162,6 +204,17 @@ def tool_from_id_and_project(
 
         return PythonCodeTool(code_tool, project, task)
 
+    elif tool_id.startswith(MEMORY_TOOL_ID_PREFIX):
+        if project is None:
+            raise ValueError(
+                f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
+            )
+
+        # Lazy import to avoid circular dependency
+        from kiln_ai.tools.memory_tools import memory_tool_from_id
+
+        return memory_tool_from_id(tool_id, project)
+
     elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
         raise ValueError(
             f"Skill tool IDs are resolved by the adapter, not tool_from_id: {tool_id}"
@@ -197,12 +250,20 @@ async def validate_unique_allowlist_tool_names(
     no fix short of dropping a server's tools entirely. The sandbox bridge's
     call-time ambiguity error remains the backstop — for those, and because
     tools can be renamed after the allowlist is saved.
+
+    OpenEnv tools resolve only inside an episode of their OpenEnv server, so they are not
+    resolved here: their name is the last segment of their id, and their OpenEnv server
+    must exist in *project*. Whether the environment serves the tool is checked at
+    runtime, inside the episode.
     """
     carriers: dict[str, list[str]] = {}
     for tool_id in tool_allowlist:
-        name = await tool_from_id_and_project(
-            tool_id, project=project, task=task
-        ).name()
+        if tool_id.startswith(OPENENV_TOOL_ID_PREFIX):
+            name = openenv_and_tool_name_from_id(tool_id)[1]
+        else:
+            name = await tool_from_id_and_project(
+                tool_id, project=project, task=task
+            ).name()
         carriers.setdefault(name, []).append(tool_id)
     duplicates = sorted(
         name
@@ -215,6 +276,23 @@ async def validate_unique_allowlist_tool_names(
             f"{', '.join(duplicates)}. Tools are called by name from sandboxed "
             "code, so each tool in the allowlist must have a unique name."
         )
+
+    openenv_server_ids = {
+        openenv_and_tool_name_from_id(t)[0]
+        for t in tool_allowlist
+        if t.startswith(OPENENV_TOOL_ID_PREFIX)
+    }
+    if openenv_server_ids:
+        found = OpenEnvServer.from_ids_and_parent_path(
+            openenv_server_ids, project.path, readonly=True
+        )
+        missing = sorted(openenv_server_ids - set(found))
+        if missing:
+            raise ValueError(
+                f"OpenEnv server(s) {', '.join(missing)} referenced by OpenEnv tools in the "
+                f"tool_allowlist not found in project {project.id}. Create the OpenEnv server "
+                "first, or remove its tools from the tool_allowlist."
+            )
 
 
 async def tool_definitions_from_ids(
@@ -238,3 +316,41 @@ async def tool_definitions_from_ids(
 
 def is_mcp_tool_id(tool_id: str) -> bool:
     return tool_id.startswith((MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX))
+
+
+def project_tool_function_name(tool_id: str, project: Project | None) -> str | None:
+    """The function name a project tool presents to the model, read without contacting
+    anything: MCP names ride in the id, the rest are on disk. None for ids that are not
+    project tools (built-ins, skills, unmanaged, OpenEnv) or that cannot be found."""
+    if project is None:
+        return None
+    try:
+        if is_mcp_tool_id(tool_id):
+            return mcp_server_and_tool_name_from_id(tool_id)[1]
+        if tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+            server_id = kiln_task_server_id_from_tool_id(tool_id)
+            server = next(
+                (
+                    s
+                    for s in project.external_tool_servers(readonly=True)
+                    if s.id == server_id
+                ),
+                None,
+            )
+            name = server.properties.get("name") if server is not None else None
+            return name if isinstance(name, str) else None
+        if tool_id.startswith(CODE_TOOL_ID_PREFIX):
+            from kiln_ai.datamodel.code_tool import CodeTool
+
+            code_tool = CodeTool.from_id_and_parent_path(
+                code_tool_id_from_tool_id(tool_id), project.path
+            )
+            return code_tool.tool_function_name if code_tool is not None else None
+        if tool_id.startswith(RAG_TOOL_ID_PREFIX):
+            rag_config = RagConfig.from_id_and_parent_path(
+                rag_config_id_from_id(tool_id), project.path
+            )
+            return rag_config.tool_name if rag_config is not None else None
+    except ValueError:
+        return None
+    return None

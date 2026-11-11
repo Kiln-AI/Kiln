@@ -1,14 +1,11 @@
 """One-shot migration of V2 eval records from inline traces to trace pointers.
 
-Before the trace/score split an `EvalRun` carried both the scores and a copy of what was
-scored. Now the trace is a `TaskRun` and the `EvalRun` names it with `scored_run_id`
-(functional spec §2). New records are written that way from the moment the runner
-changed; this command converts the ones already on disk, so a project's existing
-generations are reusable by the next judge instead of being regenerated (functional
-spec §8, architecture §7).
+Older V2 `EvalRun` files carry both the scores and an inline copy of what was scored.
+Current records keep the trace as a `TaskRun` and name it with `scored_run_id`. This
+command converts the older files, so a project's existing generations are reusable by the
+next judge instead of being regenerated.
 
-Only V2 records move. V1 records keep their trace inline, forever, and are never rewritten
-(functional spec §7).
+Only V2 records move. V1 records keep their trace inline, forever, and are never rewritten.
 
 The command plans the whole project in memory first, constructing every `TaskRun` and
 every rewritten `EvalRun` through its normal validators, and only then saves. `--dry-run`
@@ -280,7 +277,7 @@ class TaskIndex:
     - **Where each dataset item is** (`items`). Consulted before clearing a record's
       inline copy of what it scored: `dataset_id` and `eval_input_id` are ids, not
       references, and nothing guarantees they still resolve — delete protection covers
-      eval *traces* (architecture §6), not the golden items and dataset rows an eval
+      eval *traces*, not the golden items and dataset rows an eval
       record names. Clearing the record's own copy in favour of something that no longer
       exists would destroy the last readable version of it.
     - **Which eval traces already exist** (`trace_paths`), keyed the way the runner's
@@ -327,8 +324,8 @@ class TaskIndex:
         interrupted migration idempotent instead of leaving a fresh undeletable duplicate
         behind on every retry.
 
-        Functional spec §8 punts deduplication, and this is not it: two records only ever
-        share a trace here when what they scored was byte-identical anyway.
+        This is not deduplication: two records only ever share a trace here when what they
+        scored was byte-identical anyway.
         """
         if planned.eval_source is None or planned.output.source is None:
             return None
@@ -352,9 +349,8 @@ def _trace_data_source(run_config: TaskRunConfig) -> DataSource:
 
     Mirrors `BaseAdapter._properties_for_task_output`, so a migrated trace describes its
     generation the way a live one does. `run_config_id` is the load-bearing field: with
-    the item's `eval_source`, it is the key the trace index reuses a trace by
-    (functional spec §2.1), so a trace missing it would be regenerated on every future
-    eval.
+    the item's `eval_source`, it is the key the trace index reuses a trace by, so a trace
+    missing it would be regenerated on every future eval.
     """
     properties = run_config.run_config_properties
     match properties:
@@ -410,9 +406,8 @@ def _synthesized_trace(
     """The TaskRun an inline record describes.
 
     One per record, with no grouping: several eval configs may hold records of the same
-    generation, and merging them would need a dedupe key the records don't carry.
-    Functional spec §8 punts that deliberately — the duplication is small, and from here
-    on the live trace lookup produces one trace per key anyway.
+    generation, and merging them would need a dedupe key the records don't carry. The
+    duplication is small, and the live trace lookup produces one trace per key anyway.
     """
     if eval_run.input is None or eval_run.output is None:
         raise UnmigratableRecord(
@@ -431,11 +426,8 @@ def _synthesized_trace(
     return TaskRun(
         parent=task,
         input=eval_run.input,
-        # Architecture §7: the synthesized run names the run config it was produced by, on
-        # both sources. A live trace records the input as human-authored (the adapter's
-        # default), which a migration cannot honestly copy — the record it is rebuilt from
-        # names no author, and attributing it to whoever is running the migration would be
-        # worse than naming the run that produced it.
+        # Both sources name the run config that produced the run: the record names no
+        # input author, so the live default (human-authored) would be a false claim.
         input_source=data_source,
         output=TaskOutput(output=eval_run.output, source=data_source),
         trace=trace,
@@ -480,7 +472,7 @@ def _required_item(eval_run: EvalRun, index: TaskIndex) -> ItemReference:
 
     Clearing a record's inline copy is only safe while what it names is still readable:
     the item supplies the golden output a calibration record scored, and the input a
-    skipped record displays (Phase 4's fallback). With the item gone, the record's own
+    skipped record displays. With the item gone, the record's own
     copy is the last one there is.
     """
     key = eval_run_item_key(eval_run)
@@ -504,10 +496,9 @@ def plan_eval_run(
 ) -> PlannedChange:
     """What the migration will do with one record, and everything it needs to do it.
 
-    Branch order follows architecture §7, and calibration is checked above the skip branch
-    on purpose: a calibration record points at the golden item whether or not the judge was
-    reached. That is the rule Phase 3 settled for live skips, so an old calibration skip
-    must migrate to the same shape a new one is written in.
+    Calibration is checked above the skip branch: a calibration record points at the golden
+    item whether or not the judge was reached. Live skips are written that way, so an old
+    calibration skip must migrate to the same shape a new one is written in.
 
     Every branch that clears inline data the record is the last copy of records what it is
     deferring to in `requires_item`, so the write pass can re-check that it is still there:
@@ -538,8 +529,8 @@ def plan_eval_run(
 
         if eval_run.skipped_reason is not None and eval_run.output is None:
             # Skipped with no output kept: either it was skipped before anything was
-            # generated, or it was skipped at scoring time, which also wrote no output
-            # (functional spec §4.6). Either way there is no trace here to reconstruct.
+            # generated, or it was skipped at scoring time, which also wrote no output.
+            # Either way there is no trace here to reconstruct.
             if not _carries_inline_data(eval_run):
                 return PlannedChange(
                     MigrationAction.nothing_to_do, eval_run, "skipped, nothing inline"
@@ -567,8 +558,8 @@ def plan_eval_run(
         if existing is not None:
             # An earlier run of this migration wrote this exact trace and was interrupted
             # before the record could point at it. Minting a second one would leave the
-            # first orphaned — and since Phase 4, an eval-generated run can't be deleted
-            # from the app, so every retry would add a permanent duplicate.
+            # first orphaned, and an eval-generated run can't be deleted from the app, so
+            # every retry would add a permanent duplicate.
             return PlannedChange(
                 MigrationAction.reuse_trace,
                 eval_run,
@@ -604,7 +595,7 @@ def plan_eval_run(
 def _v2_configs(task: Task, plan: MigrationPlan) -> List[EvalConfig]:
     """The task's V2 eval configs, counting the V1 ones it steps over.
 
-    V1 records keep their trace inline forever (functional spec §7), so their configs are
+    V1 records keep their trace inline forever, so their configs are
     identified and then left unopened — nothing here has any business reading them.
     """
     configs: List[EvalConfig] = []
@@ -644,7 +635,7 @@ def plan_project(project: Project) -> MigrationPlan:
 def apply_plan(plan: MigrationPlan) -> List[MigrationFailure]:
     """Save what the plan built, trace before score record.
 
-    That order is what an interruption is judged on (architecture §7): a saved trace with
+    That order is what an interruption is judged on: a saved trace with
     no record pointing at it is an orphan — harmless, and hidden from every dataset
     surface by default — while the reverse would be a score pointing at a file that was
     never written.

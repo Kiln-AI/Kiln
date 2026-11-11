@@ -4,7 +4,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.code_tool import CodeTool
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
+from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_server.custom_errors import connect_custom_errors
@@ -203,6 +206,172 @@ class TestCreateCodeTool:
         message = response.json()["message"]
         assert "'from'" in message
         assert "reserved Python keyword" in message
+
+
+class TestCreateCodeToolProvenance:
+    def test_create_with_valid_provenance(
+        self,
+        client,
+        test_project,
+        mock_project_from_id,
+        saved_code_tool,
+        create_request,
+    ):
+        create_request["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": [saved_code_tool.id],
+            "notes": "Cloned from my_tool.",
+        }
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["provenance"]["origin"] == "human"
+        assert result["provenance"]["derived_from_ids"] == [saved_code_tool.id]
+
+        # Returned on read too.
+        read = client.get(f"/api/projects/{test_project.id}/code_tools/{result['id']}")
+        assert read.json()["provenance"]["origin"] == "human"
+
+        loaded = CodeTool.from_id_and_parent_path(result["id"], test_project.path)
+        assert loaded is not None
+        assert loaded.provenance is not None
+        assert loaded.provenance.derived_from_ids == [saved_code_tool.id]
+
+    def test_create_derived_from_unknown_sibling_400(
+        self, client, test_project, mock_project_from_id, create_request
+    ):
+        create_request["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": ["missing"],
+        }
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 400
+        assert "unknown sibling" in response.json()["message"]
+        assert test_project.code_tools() == []
+
+    def test_create_derived_from_archived_sibling_allowed(
+        self,
+        client,
+        test_project,
+        mock_project_from_id,
+        saved_code_tool,
+        create_request,
+    ):
+        saved_code_tool.is_archived = True
+        saved_code_tool.save_to_file()
+        create_request["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": [saved_code_tool.id],
+        }
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 200
+
+    def test_create_invalid_origin_422(
+        self, client, test_project, mock_project_from_id, create_request
+    ):
+        create_request["provenance"] = {"origin": "banana"}
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 422
+
+    def test_patch_forward_compat_provenance_does_not_500(
+        self, client, test_project, mock_project_from_id
+    ):
+        # Renaming a code tool whose stored provenance was lenient-loaded
+        # (unknown origin, over-length notes, dirty ids) must not re-validate it
+        # in create mode: the update path returns 200 and preserves provenance.
+        ct = CodeTool.model_validate(
+            {
+                "name": "future_tool",
+                "tool_function_name": "future_tool",
+                "tool_description": "From a newer client.",
+                "parameters_schema": SIMPLE_SCHEMA,
+                "code": SIMPLE_CODE,
+                "provenance": {
+                    "origin": "future_origin",
+                    "derived_from_ids": ["dup", "dup"],
+                    "notes": "y" * 3000,
+                },
+            },
+            context={"loading_from_file": True},
+        )
+        ct.parent = test_project
+        ct.save_to_file()
+        ct_id = ct.id
+        assert ct_id is not None
+
+        response = client.patch(
+            f"/api/projects/{test_project.id}/code_tools/{ct_id}",
+            json={"name": "renamed_future_tool"},
+        )
+        assert response.status_code == 200
+        assert response.json()["name"] == "renamed_future_tool"
+        assert response.json()["provenance"]["origin"] == "future_origin"
+
+        reloaded = CodeTool.from_id_and_parent_path(ct_id, test_project.path)
+        assert reloaded is not None
+        assert reloaded.provenance is not None
+        assert reloaded.provenance.origin == "future_origin"
+        assert reloaded.provenance.notes == "y" * 3000
+
+    def test_patch_with_provenance_rejected_422(
+        self, client, test_project, mock_project_from_id, saved_code_tool
+    ):
+        # CodeToolUpdateRequest is extra="forbid": a stray provenance is rejected.
+        response = client.patch(
+            f"/api/projects/{test_project.id}/code_tools/{saved_code_tool.id}",
+            json={"name": "ok", "provenance": {"origin": "agent"}},
+        )
+        assert response.status_code == 422
+        reloaded = CodeTool.from_id_and_parent_path(
+            saved_code_tool.id, test_project.path
+        )
+        assert reloaded is not None
+        assert reloaded.provenance is None
+
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+def test_read_endpoints_return_stored_provenance_valid_only_on_load(
+    client, test_project, mock_project_from_id, saved_code_tool, stored
+):
+    saved_code_tool.provenance = KilnArtifactProvenance.model_validate(
+        stored, context={"loading_from_file": True}
+    )
+    saved_code_tool.save_to_file()
+
+    listed = client.get(f"/api/projects/{test_project.id}/code_tools")
+    fetched = client.get(
+        f"/api/projects/{test_project.id}/code_tools/{saved_code_tool.id}"
+    )
+
+    assert listed.status_code == 200, listed.text
+    assert fetched.status_code == 200, fetched.text
+    for returned in (listed.json()[0]["provenance"], fetched.json()["provenance"]):
+        assert returned["origin"] == stored.get("origin")
+        assert returned["notes"] == stored.get("notes")
+        assert returned["derived_from_ids"] == stored.get("derived_from_ids", [])
 
 
 class TestListCodeTools:
@@ -601,3 +770,140 @@ class TestAvailableToolsCodeGroup:
         tool_sets = response.json()
         code_sets = [ts for ts in tool_sets if ts["type"] == "code"]
         assert len(code_sets) == 0
+
+
+class TestCodeToolOpenEnvTools:
+    """OpenEnv tools resolve only inside an episode of their environment. Creating a code
+    tool checks them without one; testing one runs outside any episode."""
+
+    @pytest.fixture
+    def openenv_server(self, test_project):
+        openenv_server = OpenEnvServer(name="Depot", parent=test_project)
+        openenv_server.save_to_file()
+        return openenv_server
+
+    def _create(self, client, test_project, create_request, tool_allowlist):
+        create_request["tool_allowlist"] = tool_allowlist
+        with patch(TRUST_PATCH, return_value=True):
+            return client.post(
+                f"/api/projects/{test_project.id}/code_tools", json=create_request
+            )
+
+    def test_create_accepts_openenv_tools(
+        self, client, test_project, mock_project_from_id, create_request, openenv_server
+    ):
+        helper = CodeTool(
+            name="helper",
+            tool_function_name="helper",
+            tool_description="d",
+            parameters_schema=SIMPLE_SCHEMA,
+            code=SIMPLE_CODE,
+            parent=test_project,
+        )
+        helper.save_to_file()
+        allowlist = [
+            build_openenv_tool_id(openenv_server.id, "sql_query"),
+            f"kiln_tool::code::{helper.id}",
+        ]
+
+        response = self._create(client, test_project, create_request, allowlist)
+
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["tool_allowlist"] == allowlist
+        loaded = CodeTool.from_id_and_parent_path(result["id"], test_project.path)
+        assert loaded is not None
+        assert loaded.tool_allowlist == allowlist
+
+    def test_create_rejects_openenv_tool_of_unknown_openenv_server(
+        self, client, test_project, mock_project_from_id, create_request
+    ):
+        response = self._create(
+            client,
+            test_project,
+            create_request,
+            [build_openenv_tool_id("no_such_openenv", "sql_query")],
+        )
+
+        assert response.status_code == 400
+        assert "no_such_openenv" in response.json()["message"]
+        assert "not found in project" in response.json()["message"]
+        assert test_project.code_tools(readonly=True) == []
+
+    def test_create_rejects_openenv_tool_name_collision(
+        self,
+        client,
+        test_project,
+        mock_project_from_id,
+        create_request,
+        openenv_server,
+        saved_code_tool,
+    ):
+        response = self._create(
+            client,
+            test_project,
+            create_request,
+            [
+                build_openenv_tool_id(
+                    openenv_server.id, saved_code_tool.tool_function_name
+                ),
+                f"kiln_tool::code::{saved_code_tool.id}",
+            ],
+        )
+
+        assert response.status_code == 400
+        assert (
+            f"share the same function name: {saved_code_tool.tool_function_name}"
+            in response.json()["message"]
+        )
+
+    def test_patch_keeps_openenv_tool_allowlist(
+        self, client, test_project, mock_project_from_id, create_request, openenv_server
+    ):
+        allowlist = [build_openenv_tool_id(openenv_server.id, "sql_query")]
+        created = self._create(client, test_project, create_request, allowlist)
+        assert created.status_code == 200, created.text
+
+        response = client.patch(
+            f"/api/projects/{test_project.id}/code_tools/{created.json()['id']}",
+            json={"name": "renamed"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["name"] == "renamed"
+        assert response.json()["tool_allowlist"] == allowlist
+
+    def _test_request(self, openenv_server_id: str, code: str) -> dict:
+        return {
+            "tool_function_name": "sql_preview",
+            "parameters_schema": SIMPLE_SCHEMA,
+            "code": code,
+            "tool_allowlist": [build_openenv_tool_id(openenv_server_id, "sql_query")],
+            "params": {"x": 5},
+        }
+
+    def test_test_says_why_openenv_tool_call_is_refused(
+        self, client, test_project, mock_project_from_id, openenv_server
+    ):
+        """Runs the sandbox for real: the test runs outside any episode, so the environment
+        tool is refused, and the error says why instead of listing no tools."""
+        code = (
+            "from kiln import tools\n"
+            "def run(x: int) -> str:\n"
+            "    return tools.sql_query(query=str(x))\n"
+        )
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/test_code_tool",
+                json=self._test_request(openenv_server.id, code),
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["result"] is None
+        assert "Tool 'sql_query' is not available: OpenEnv tool" in body["error"]
+        assert "can only be used while an episode" in body["error"]
+        (entry,) = body["tool_call_log"]
+        assert entry["output_preview"].startswith(
+            "Tool 'sql_query' is not available: OpenEnv tool"
+        )

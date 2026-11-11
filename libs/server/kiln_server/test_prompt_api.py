@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Prompt, PromptGenerators, Task
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.prompt_api import connect_prompt_api, prompt_generators
@@ -105,6 +106,139 @@ def test_get_prompts_success(client, project_and_task):
     assert len(res["generators"]) > 0  # Should have our predefined generators
     assert len(res["prompts"]) == 1
     assert res["prompts"][0]["name"] == "Test Prompt"
+
+
+@pytest.mark.parametrize(
+    "padding,prefix", [("", ""), ("  ", ""), ("", "id::"), ("  ", "id::")]
+)
+def test_create_prompt_with_valid_provenance(client, project_and_task, padding, prefix):
+    project, task = project_and_task
+
+    parent_prompt = Prompt(name="Parent Prompt", prompt="Parent text", parent=task)
+    parent_prompt.save_to_file()
+
+    prompt_data = {
+        "name": "Derived Prompt",
+        "prompt": "Derived text",
+        "provenance": {
+            "origin": "human",
+            "derived_from_ids": [f"{padding}{prefix}{parent_prompt.id}{padding}"],
+            "notes": "Cloned from the parent prompt.",
+        },
+    }
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["provenance"]["origin"] == "human"
+    assert res["provenance"]["derived_from_ids"] == [parent_prompt.id]
+
+    # Persisted on disk.
+    saved = next(p for p in task.prompts() if p.name == "Derived Prompt")
+    assert saved.provenance is not None
+    assert saved.provenance.derived_from_ids == [parent_prompt.id]
+
+
+def test_create_prompt_derived_from_unknown_sibling_400(client, project_and_task):
+    project, task = project_and_task
+    prompt_data = {
+        "name": "Bad Lineage",
+        "prompt": "text",
+        "provenance": {"origin": "human", "derived_from_ids": ["nope"]},
+    }
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+    assert response.status_code == 400
+    assert "unknown sibling" in response.json()["message"]
+    assert task.prompts() == []
+
+
+def test_create_prompt_same_parent_with_and_without_prefix_422(
+    client, project_and_task
+):
+    project, task = project_and_task
+    parent_prompt = Prompt(name="Parent Prompt", prompt="Parent text", parent=task)
+    parent_prompt.save_to_file()
+    prompt_data = {
+        "name": "Duplicate Lineage",
+        "prompt": "text",
+        "provenance": {
+            "origin": "human",
+            "derived_from_ids": [f"id::{parent_prompt.id}", parent_prompt.id],
+        },
+    }
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+    assert response.status_code == 422
+    assert [p.name for p in task.prompts()] == ["Parent Prompt"]
+
+
+def test_create_prompt_invalid_origin_422(client, project_and_task):
+    project, task = project_and_task
+    prompt_data = {
+        "name": "Bad Origin",
+        "prompt": "text",
+        "provenance": {"origin": "banana"},
+    }
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
+        )
+    assert response.status_code == 422
+
+
+def test_update_prompt_model_has_no_provenance_field():
+    from kiln_server.prompt_api import PromptUpdateRequest
+
+    assert "provenance" not in PromptUpdateRequest.model_fields
+
+
+STORED_PROVENANCES = [
+    {"origin": "tool", "notes": "x" * 2500},
+    {"notes": "written before origin existed"},
+    {"origin": "agent", "derived_from_ids": ["dup", "dup", ""]},
+]
+
+
+@pytest.mark.parametrize("stored", STORED_PROVENANCES)
+def test_list_prompts_forward_compat_provenance_does_not_500(
+    client, project_and_task, stored
+):
+    project, task = project_and_task
+    # A prompt whose stored provenance is valid only on load (unknown or missing
+    # origin, over-length notes, dirty ids) must list via the API, returned
+    # as-is, never 500.
+    fc_prompt = Prompt(
+        name="future-prompt",
+        prompt="text",
+        provenance=KilnArtifactProvenance.model_validate(
+            stored, context={"loading_from_file": True}
+        ),
+        parent=task,
+    )
+    fc_prompt.save_to_file()
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/prompts")
+
+    assert response.status_code == 200, response.text
+    saved = next(p for p in response.json()["prompts"] if p["name"] == "future-prompt")
+    assert saved["provenance"]["origin"] == stored.get("origin")
+    assert saved["provenance"]["notes"] == stored.get("notes")
+    assert saved["provenance"]["derived_from_ids"] == stored.get("derived_from_ids", [])
 
 
 def test_get_prompts_task_not_found(client):

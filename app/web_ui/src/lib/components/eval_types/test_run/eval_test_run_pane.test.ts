@@ -515,6 +515,60 @@ describe("EvalTestRunPane", () => {
       expect(container.textContent).toContain("not saved")
     })
 
+    it("offers the judge trace from the test result, collapsed until opened", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          test_result: {
+            scores: { accuracy: 0.95 },
+            judge_trace: [
+              { role: "system", content: "Score the output." },
+              { role: "user", content: "Rendered judge prompt" },
+              { role: "assistant", content: '{"accuracy": 0.95}' },
+            ],
+          },
+          test_has_valid_run: true,
+        },
+      })
+
+      const link = container.querySelector(
+        '[data-testid="judge-trace-link"] button',
+      ) as HTMLButtonElement
+      expect(link.textContent?.trim()).toBe("Judge trace")
+      const dialog = container.querySelector('[data-title="Judge Trace"]')!
+      expect(dialog.getAttribute("data-width")).toBe("extra_wide")
+      expect(dialog.textContent).not.toContain("Rendered judge prompt")
+
+      await fireEvent.click(link)
+
+      expect(dialog.textContent).toContain("Rendered judge prompt")
+      const toggles = Array.from(
+        dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+      )
+      expect(toggles).toHaveLength(3)
+      expect(toggles.every((toggle) => !toggle.checked)).toBe(true)
+    })
+
+    it.each([null, []])(
+      "hides the judge trace link when the result has none (%j)",
+      (judge_trace) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { container } = render(EvalTestRunPane as any, {
+          props: {
+            available_runs: [run1],
+            selected_run: run1,
+            test_result: { scores: { accuracy: 0.95 }, judge_trace },
+            test_has_valid_run: true,
+          },
+        })
+        expect(
+          container.querySelector('[data-testid="judge-trace-link"]'),
+        ).toBeNull()
+      },
+    )
+
     it("lists the tool calls a code judge made", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {

@@ -61,6 +61,10 @@ class RatingOption(BaseModel):
     show_for_tags: List[str] = Field(
         description="Tags for which this rating option is shown."
     )
+    display_name: str | None = Field(
+        default=None,
+        description="The user-facing label for this rating, when it differs from requirement.name (an eval score's display name). requirement.name stays the identifier.",
+    )
 
 
 class RatingOptionResponse(BaseModel):
@@ -292,6 +296,10 @@ def connect_task_api(app: FastAPI):
                             existing_req.requirement.type,
                         )
 
+                    # First display name wins when evals share a score name.
+                    if existing_req.display_name is None:
+                        existing_req.display_name = output_score.display_name
+
                     if golden_set_tag not in existing_req.show_for_tags:
                         # Add the golden set tag to the existing requirement instead of creating a new one (unless that tag is already there)
                         existing_req.show_for_tags.append(golden_set_tag)
@@ -309,6 +317,7 @@ def connect_task_api(app: FastAPI):
                         requirement=requirement,
                         show_for_all=False,
                         show_for_tags=[golden_set_tag],
+                        display_name=output_score.display_name,
                     )
                 )
 
