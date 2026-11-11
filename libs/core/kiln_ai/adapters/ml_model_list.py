@@ -198,7 +198,6 @@ class ModelName(str, Enum):
     gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
-    gemini_4_carbon = "gemini_4_carbon"
     gemini_4_argon = "gemini_4_argon"
     gemini_3_8_flash = "gemini_3_8_flash"
     gemini_3_7_flash = "gemini_3_7_flash"
@@ -3592,46 +3591,6 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-3-5-haiku",
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
-            ),
-        ],
-    ),
-    KilnModel(
-        family=ModelFamily.gemini,
-        name=ModelName.gemini_4_carbon,
-        friendly_name="Gemini 4 Carbon",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="google/gemini-4-carbon",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_doc_extraction=True,
-                multimodal_capable=True,
-                supports_vision=True,
-                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
-                # lowest level that returns reasoning on OpenRouter
-                default_thinking_level="low",
-                multimodal_mime_types=[
-                    # documents
-                    KilnMimeType.PDF,
-                    KilnMimeType.CSV,
-                    KilnMimeType.TXT,
-                    KilnMimeType.HTML,
-                    KilnMimeType.MD,
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                    # audio
-                    KilnMimeType.MP3,
-                    KilnMimeType.WAV,
-                    KilnMimeType.OGG,
-                    # video
-                    KilnMimeType.MP4,
-                    KilnMimeType.MOV,
-                ],
-                multimodal_requires_pdf_as_image=True,
-                # while the model is capable of reasoning, it doesn't always return it in the response
-                # reasoning_capable=True,
-                gemini_reasoning_enabled=True,
             ),
         ],
     ),
