@@ -7,7 +7,8 @@ name: Check Release Downloads
 # The daily run catches files removed from a published release, which fires no release event.
 # It also downloads each file and checks its contents: the files the Linux
 # installer and Windows users rely on, and that each build is for the CPU
-# architecture its filename names.
+# architecture its filename names. Then it starts each build on a runner of
+# that architecture and checks the app's local server answers /ping.
 
 on:
   release:
@@ -103,16 +104,18 @@ jobs:
           echo "Release \`$RELEASE_TAG\` has all expected assets" >> "$GITHUB_STEP_SUMMARY"
 
   check-contents:
-    name: Check ${{ matrix.asset }} contents
+    name: Check ${{ matrix.asset }} contents and launch
     if: ${{ github.repository == 'Kiln-AI/Kiln' }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        # For Linux, `arch` is how `file` names the ELF machine, and the zip
-        # must not hold a build for `other_arch`. For macOS, `arch` is how
-        # `lipo -archs` names the architecture the app is built for.
+        # Each build runs on a runner of the architecture it is for, so the
+        # launch check proves it starts there. For Linux, `arch` is how `file`
+        # names the ELF machine, and the zip must not hold a build for
+        # `other_arch`. For macOS, `arch` is how `lipo -archs` names the
+        # architecture the app is built for.
         include:
           - asset: Kiln.Linux.x64.zip
             kind: linux
@@ -121,27 +124,36 @@ jobs:
             other_arch: ARM aarch64
           - asset: Kiln.Linux.ARM.zip
             kind: linux
-            runner: ubuntu-latest
+            runner: ubuntu-24.04-arm
             arch: ARM aarch64
             other_arch: x86-64
           - asset: Kiln.Windows.zip
             kind: windows
-            runner: ubuntu-latest
+            runner: windows-latest
+            installer: Kiln.Windows.Installer.exe
           - asset: Kiln.MacOS.AppleSilicon.M-Processor.dmg
             kind: macos
             runner: macos-latest
             arch: arm64
+          # The same Intel runner build_desktop.yml builds this DMG on.
           - asset: Kiln.MacOS.Intel.dmg
             kind: macos
-            runner: macos-latest
+            runner: macos-15-intel
             arch: x86_64
     env:
       ASSET: ${{ matrix.asset }}
       ARCH: ${{ matrix.arch }}
       OTHER_ARCH: ${{ matrix.other_arch }}
+      INSTALLER: ${{ matrix.installer }}
+    # Windows steps that need PowerShell say so; the rest run in Git Bash there.
+    defaults:
+      run:
+        shell: bash
 
     # Each check step appends one Markdown list item per problem to
     # $RUNNER_TEMP/problems.md and keeps going; the last step reports them all.
+    # A check step that finds the app to launch writes its path to
+    # APP_EXECUTABLE, and the launch step starts it only if no problems were found.
     steps:
       - name: Download asset
         run: |
@@ -172,6 +184,7 @@ jobs:
           fi
 
           unzip -q "$RUNNER_TEMP/$ASSET" Kiln -d "$RUNNER_TEMP/extracted"
+          echo "APP_EXECUTABLE=$RUNNER_TEMP/extracted/Kiln" >> "$GITHUB_ENV"
           description=$(file -b "$RUNNER_TEMP/extracted/Kiln")
           echo "file Kiln: $description"
           # `file` describes an ELF as "ELF 64-bit LSB executable, <machine>, ...".
@@ -187,25 +200,72 @@ jobs:
 
       - name: Check Windows zip
         if: ${{ matrix.kind == 'windows' }}
-        env:
-          INSTALLER: Kiln.Windows.Installer.exe
+        shell: pwsh
+        # PowerShell reads the zip and the PE header itself, where Git Bash may
+        # lack `zipinfo` and `file`. Its single-quoted strings keep Markdown
+        # backticks literal.
         run: |
-          problems="$RUNNER_TEMP/problems.md"
-          if ! listing=$(zipinfo -1 "$RUNNER_TEMP/$ASSET"); then
-            echo "- Not a readable zip file" >> "$problems"
+          $problems = Join-Path $env:RUNNER_TEMP 'problems.md'
+          $extracted = Join-Path $env:RUNNER_TEMP 'extracted'
+          try {
+            Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP $env:ASSET) -DestinationPath $extracted
+          } catch {
+            Add-Content -LiteralPath $problems '- Not a readable zip file'
             exit 0
-          fi
-          if ! grep -qxF "$INSTALLER" <<< "$listing"; then
-            echo "- No \`$INSTALLER\` at the top level of the zip" >> "$problems"
+          }
+          $installer = Join-Path $extracted $env:INSTALLER
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            Add-Content -LiteralPath $problems ('- No `{0}` at the top level of the zip' -f $env:INSTALLER)
             exit 0
-          fi
+          }
 
-          unzip -q "$RUNNER_TEMP/$ASSET" "$INSTALLER" -d "$RUNNER_TEMP/extracted"
-          description=$(file -b "$RUNNER_TEMP/extracted/$INSTALLER")
-          echo "file $INSTALLER: $description"
-          if [[ "$description" != PE32* ]] || [[ "$description" != *"for MS Windows"* ]]; then
-            echo "- \`$INSTALLER\` is not a Windows executable: \`$description\`" >> "$problems"
-          fi
+          # A Windows executable starts with "MZ", and the 4-byte offset at
+          # 0x3C points to the "PE\0\0" signature.
+          $header = [byte[]]::new(4096)
+          $stream = [System.IO.File]::OpenRead($installer)
+          try { $length = $stream.Read($header, 0, $header.Length) } finally { $stream.Dispose() }
+          $peOffset = if ($length -ge 64) { [BitConverter]::ToInt32($header, 0x3C) } else { -1 }
+          $isWindowsExecutable = $length -ge 64 -and $header[0] -eq 0x4D -and $header[1] -eq 0x5A `
+            -and $peOffset -ge 64 -and $peOffset + 4 -le $length `
+            -and [BitConverter]::ToUInt32($header, $peOffset) -eq 0x00004550
+          if (-not $isWindowsExecutable) {
+            Add-Content -LiteralPath $problems ('- `{0}` is not a Windows executable' -f $env:INSTALLER)
+          }
+
+      - name: Install Windows app
+        if: ${{ matrix.kind == 'windows' }}
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $problems = Join-Path $env:RUNNER_TEMP 'problems.md'
+          if ((Test-Path -LiteralPath $problems) -and (Get-Item -LiteralPath $problems).Length -gt 0) {
+            'Not installing the app: the zip checks found problems'
+            exit 0
+          }
+          $installer = Join-Path $env:RUNNER_TEMP "extracted\$env:INSTALLER"
+          $installDir = Join-Path $env:RUNNER_TEMP 'KilnInstall'
+          $installLog = Join-Path $env:RUNNER_TEMP 'installer.log'
+          # Inno Setup's unattended install options. /DIR fixes where the app
+          # lands, which otherwise depends on whether Setup runs elevated.
+          $setupArguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installDir`"", "/LOG=`"$installLog`"")
+          $setup = Start-Process -FilePath $installer -ArgumentList $setupArguments -Wait -PassThru
+          $executable = Join-Path $installDir 'Kiln.exe'
+          if ($setup.ExitCode -eq 0 -and (Test-Path -LiteralPath $executable -PathType Leaf)) {
+            # The launch step runs in Git Bash, which takes forward slashes.
+            "APP_EXECUTABLE=$($executable.Replace('\', '/'))" | Add-Content -LiteralPath $env:GITHUB_ENV
+            exit 0
+          }
+
+          if ($setup.ExitCode -ne 0) {
+            Add-Content -LiteralPath $problems ('- `{0}` failed with exit code {1}' -f $env:INSTALLER, $setup.ExitCode)
+          } else {
+            Add-Content -LiteralPath $problems ('- `{0}` finished but installed no `Kiln.exe` in `{1}`' -f $env:INSTALLER, $installDir)
+          }
+          if (Test-Path -LiteralPath $installLog) {
+            Write-Output '::group::Installer log'
+            Get-Content -LiteralPath $installLog
+            Write-Output '::endgroup::'
+          }
 
       - name: Check macOS DMG
         if: ${{ matrix.kind == 'macos' }}
@@ -226,7 +286,9 @@ jobs:
           fi
           app="${apps[0]}"
           app_name=$(basename "$app")
-          if [ ! -f "$app/Contents/MacOS/Kiln" ]; then
+          if [ -f "$app/Contents/MacOS/Kiln" ]; then
+            echo "APP_EXECUTABLE=$app/Contents/MacOS/Kiln" >> "$GITHUB_ENV"
+          else
             echo "- \`$app_name\` has no \`Contents/MacOS/Kiln\` executable" >> "$problems"
           fi
 
@@ -260,6 +322,120 @@ jobs:
             echo "- ...and $(( ${#wrong_libraries[@]} - listed_limit )) more bundled files that lack \`$ARCH\`" >> "$problems"
           fi
 
+      - name: Launch app and check /ping
+        timeout-minutes: 10
+        env:
+          # The port and response come from the server: Config's
+          # kiln_local_api_port default and kiln_server's /ping route, whose
+          # string FastAPI returns JSON-encoded.
+          PING_URL: http://localhost:8757/ping
+          EXPECTED_PING_BODY: '"pong"'
+          # PyInstaller apps can take minutes to start the first time.
+          STARTUP_TIMEOUT_SECONDS: 300
+          # The app opens Kiln in a browser once its server is up. Python's
+          # webbrowser module runs the command named in BROWSER instead.
+          BROWSER: "true"
+          KILN_LOG_LEVEL: INFO
+        run: |
+          problems="$RUNNER_TEMP/problems.md"
+          if [ -s "$problems" ]; then
+            echo "Not launching the app: the earlier checks found problems"
+            exit 0
+          fi
+          if [ -z "${APP_EXECUTABLE:-}" ]; then
+            echo "- The checks found no app to launch" >> "$problems"
+            exit 0
+          fi
+          if curl -s --max-time 5 -o /dev/null "$PING_URL"; then
+            echo "- Something already answers \`$PING_URL\` before the app starts" >> "$problems"
+            exit 0
+          fi
+
+          app_output="$RUNNER_TEMP/app-output.log"
+          app_pid=""
+          xvfb_pid=""
+          stop_app() {
+            if [ -n "$app_pid" ]; then
+              kill "$app_pid" 2> /dev/null || true
+              for _ in $(seq 20); do
+                kill -0 "$app_pid" 2> /dev/null || break
+                sleep 0.5
+              done
+              kill -9 "$app_pid" 2> /dev/null || true
+            fi
+            # Git Bash can't always signal a native Windows process or the
+            # processes it started.
+            if [ "$RUNNER_OS" = Windows ]; then
+              taskkill //F //T //IM Kiln.exe > /dev/null 2>&1 || true
+            fi
+            if [ -n "$xvfb_pid" ]; then
+              kill "$xvfb_pid" 2> /dev/null || true
+            fi
+          }
+          trap stop_app EXIT
+
+          if [ "$RUNNER_OS" = Linux ]; then
+            # linux_installer.sh also marks the extracted file executable.
+            chmod +x "$APP_EXECUTABLE"
+            # The app's hidden Tk window and tray icon need an X display.
+            Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp > "$RUNNER_TEMP/xvfb.log" 2>&1 &
+            xvfb_pid=$!
+            export DISPLAY=:99
+            for _ in $(seq 50); do
+              [ -S /tmp/.X11-unix/X99 ] && break
+              sleep 0.1
+            done
+          fi
+
+          echo "Starting $APP_EXECUTABLE"
+          "$APP_EXECUTABLE" > "$app_output" 2>&1 &
+          app_pid=$!
+
+          problem=""
+          body=""
+          started_at=$SECONDS
+          while true; do
+            body=$(curl -s --max-time 5 "$PING_URL" || true)
+            if [ "$body" = "$EXPECTED_PING_BODY" ]; then
+              echo "$PING_URL answered $body after $(( SECONDS - started_at ))s"
+              break
+            fi
+            if ! kill -0 "$app_pid" 2> /dev/null; then
+              exit_code=0
+              wait "$app_pid" || exit_code=$?
+              app_pid=""
+              problem="The app exited with code $exit_code before \`$PING_URL\` answered \`$EXPECTED_PING_BODY\`"
+              break
+            fi
+            if [ $(( SECONDS - started_at )) -ge "$STARTUP_TIMEOUT_SECONDS" ]; then
+              problem="\`$PING_URL\` did not answer \`$EXPECTED_PING_BODY\` within ${STARTUP_TIMEOUT_SECONDS}s"
+              break
+            fi
+            sleep 2
+          done
+
+          if [ -n "$problem" ]; then
+            if [ -n "$body" ]; then
+              problem="$problem; its last answer was \`$body\`"
+            fi
+            echo "- $problem" >> "$problems"
+            for log_file in "$app_output" "$HOME/.kiln_ai/logs/kiln_desktop.log"; do
+              if [ -f "$log_file" ]; then
+                echo "::group::$log_file"
+                cat "$log_file"
+                echo "::endgroup::"
+              fi
+            done
+          fi
+
+      - name: Unmount DMG
+        if: ${{ always() && matrix.kind == 'macos' }}
+        run: |
+          mount_dir="$RUNNER_TEMP/dmg"
+          if [ -d "$mount_dir" ] && ! hdiutil detach "$mount_dir"; then
+            hdiutil detach -force "$mount_dir" || true
+          fi
+
       - name: Report problems
         if: ${{ !cancelled() }}
         env:
@@ -283,4 +459,4 @@ jobs:
             echo "### \`$ASSET\` from $source_name could not be checked; see the job log" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo "\`$ASSET\` from $source_name has the expected contents" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$ASSET\` from $source_name has the expected contents, and the app starts and answers \`/ping\`" >> "$GITHUB_STEP_SUMMARY"
