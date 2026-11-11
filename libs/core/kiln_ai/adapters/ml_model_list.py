@@ -3608,23 +3608,19 @@ built_in_models: List[KilnModel] = [
                 multimodal_capable=True,
                 supports_vision=True,
                 available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
-                # lowest level that returns reasoning on OpenRouter
-                default_thinking_level="low",
+                default_thinking_level="medium",
+                litellm_allowed_openai_params=["reasoning_effort"],
                 multimodal_mime_types=[
-                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
                     KilnMimeType.TXT,
                     KilnMimeType.HTML,
                     KilnMimeType.MD,
-                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
-                    # audio
                     KilnMimeType.MP3,
                     KilnMimeType.WAV,
                     KilnMimeType.OGG,
-                    # video
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
@@ -3644,20 +3640,16 @@ built_in_models: List[KilnModel] = [
                 # the Gemini API returns no reasoning at low or medium, only at high
                 default_thinking_level="high",
                 multimodal_mime_types=[
-                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
                     KilnMimeType.TXT,
                     KilnMimeType.HTML,
                     KilnMimeType.MD,
-                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
-                    # audio
                     KilnMimeType.MP3,
                     KilnMimeType.WAV,
                     KilnMimeType.OGG,
-                    # video
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
@@ -3675,20 +3667,16 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
                 default_thinking_level="high",
                 multimodal_mime_types=[
-                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
                     KilnMimeType.TXT,
                     KilnMimeType.HTML,
                     KilnMimeType.MD,
-                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
-                    # audio
                     KilnMimeType.MP3,
                     KilnMimeType.WAV,
                     KilnMimeType.OGG,
-                    # video
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
