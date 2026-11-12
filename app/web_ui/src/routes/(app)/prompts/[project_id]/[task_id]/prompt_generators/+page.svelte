@@ -17,7 +17,7 @@
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
     name: "Prompt Generators",
-    description: `Choose a prompt generation method for project ID ${project_id}, task ID ${task_id}. Options include manual, AI-generated, and optimization-based approaches.`,
+    description: `Choose a prompt generation method for project ID ${project_id}, task ID ${task_id}. Options include prompt generators and writing a custom prompt manually.`,
   })
 
   let has_rated_data = false
@@ -58,13 +58,6 @@
 
   function on_select(template: PromptGeneratorTemplate): () => void {
     return () => {
-      if (template.generator_id === "kiln_prompt_optimizer") {
-        goto(
-          `/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`,
-        )
-        return
-      }
-
       const params = new URLSearchParams()
       const from = $page.url.searchParams.get("from")
       if (from) {

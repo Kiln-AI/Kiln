@@ -15,21 +15,6 @@ export type PromptGeneratorCategory = {
 
 export const prompt_generator_categories: PromptGeneratorCategory[] = [
   {
-    category: "Automatic Optimization",
-    templates: [
-      {
-        generator_id: "kiln_prompt_optimizer",
-        name: "Kiln Optimized",
-        description:
-          "Our state-of-the-art automatic prompt optimizer. We use evals to pinpoint and fix failure modes—no manual prompting required.",
-        requires_data: false,
-        requires_repairs: false,
-        chain_of_thought: false,
-        recommended: true,
-      },
-    ],
-  },
-  {
     category: "Prompt Generators",
     templates: [
       {

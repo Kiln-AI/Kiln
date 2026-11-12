@@ -2,7 +2,7 @@
  * Mock Kiln server for Playwright e2e tests.
  *
  * Stands in for api.kiln.tech (the hosted Kiln server that backs copilot,
- * specs, prompt-optimizer, chat, entitlements, etc.). The Kiln backend's
+ * specs, chat, entitlements, etc.). The Kiln backend's
  * generated client honors KILN_SERVER_BASE_URL — set it to this mock and
  * the entire copilot/auth surface routes here.
  *
