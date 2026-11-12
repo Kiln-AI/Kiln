@@ -152,10 +152,7 @@ class SwallowCancelWorker(JobWorker[_EmptyParams, _EmptyResult]):
             await type(self).gate.wait()
         except asyncio.CancelledError:
             task = asyncio.current_task()
-            # task.uncancel() was added in Python 3.11; on 3.10 simply
-            # swallowing the CancelledError exercises the same worst-case
-            # "swallows cancel and returns normally" path.
-            if task is not None and hasattr(task, "uncancel"):
+            if task is not None:
                 task.uncancel()
         return _EmptyResult()
 
@@ -183,10 +180,7 @@ class TotalThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
             await type(self).gate.wait()
         except asyncio.CancelledError:
             task = asyncio.current_task()
-            # task.uncancel() was added in Python 3.11; on 3.10 simply
-            # swallowing the CancelledError exercises the same worst-case
-            # "swallows cancel and returns normally" path.
-            if task is not None and hasattr(task, "uncancel"):
+            if task is not None:
                 task.uncancel()
         return _EmptyResult()
 
@@ -214,7 +208,7 @@ class ErrorThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
             await type(self).gate.wait()
         except asyncio.CancelledError:
             task = asyncio.current_task()
-            if task is not None and hasattr(task, "uncancel"):
+            if task is not None:
                 task.uncancel()
         return _EmptyResult()
 

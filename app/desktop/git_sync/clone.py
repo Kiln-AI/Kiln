@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pygit2
+from pygit2.remotes import RemoteHead
 
 from app.desktop.git_sync.config import AuthMode
 from app.desktop.git_sync.git_sync_manager import (
@@ -127,13 +128,13 @@ def _ls_remote_pygit2(
     pat_token: str | None = None,
     auth_mode: AuthMode = "system_keys",
     oauth_token: str | None = None,
-) -> list[dict[str, Any]]:
+) -> list[RemoteHead]:
     """Fetch remote references using pygit2 (no system git required).
 
-    Creates a temporary bare repo and uses Remote.ls_remotes() to list
+    Creates a temporary bare repo and uses Remote.list_heads() to list
     refs from the remote URL with proper auth callbacks.
 
-    Returns list of ref dicts with keys: name, oid, symref_target, etc.
+    Returns the refs the remote advertises (name, oid, symref_target, etc.).
     Raises pygit2.GitError on failure.
     """
     callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
@@ -141,7 +142,7 @@ def _ls_remote_pygit2(
     try:
         repo = pygit2.init_repository(tmpdir, bare=True)
         remote = repo.remotes.create("probe", git_url)
-        return remote.ls_remotes(callbacks=callbacks)
+        return remote.list_heads(callbacks=callbacks)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -199,22 +200,23 @@ def list_remote_branches(
     Returns (branches, default_branch). default_branch is the HEAD symref target
     if available, otherwise None.
     """
-    ref_list = _ls_remote_pygit2(git_url, pat_token, auth_mode, oauth_token=oauth_token)
+    remote_heads = _ls_remote_pygit2(
+        git_url, pat_token, auth_mode, oauth_token=oauth_token
+    )
 
     branches: list[str] = []
     head_target: str | None = None
 
-    for ref_dict in ref_list:
-        name = ref_dict.get("name", "")
-        symref_target = ref_dict.get("symref_target")
+    for remote_head in remote_heads:
+        name = remote_head.name or ""
+        symref_target = remote_head.symref_target
 
         if name.startswith("refs/heads/"):
             branches.append(name.removeprefix("refs/heads/"))
 
         if name == "HEAD" and symref_target:
-            symref = str(symref_target)
-            if symref.startswith("refs/heads/"):
-                head_target = symref.removeprefix("refs/heads/")
+            if symref_target.startswith("refs/heads/"):
+                head_target = symref_target.removeprefix("refs/heads/")
 
     branches.sort()
 
