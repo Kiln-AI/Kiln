@@ -55,6 +55,7 @@ class ModelFamily(str, Enum):
     paper_instruments = "paper_instruments"
     ricursive = "ricursive"
     nex = "nex"
+    motif = "motif"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -374,6 +375,7 @@ class ModelName(str, Enum):
     ultramarine_1_flash = "ultramarine_1_flash"
     ripple_65b_preview = "ripple_65b_preview"
     nex_n2_6 = "nex_n2_6"
+    motif_3 = "motif_3"
 
 
 class ModelParserID(str, Enum):
@@ -10077,6 +10079,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen-2.5-7b-instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_function_calling=False,
             ),
@@ -11735,6 +11738,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="bytedance-seed/seed-1.6",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
@@ -11750,6 +11754,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="bytedance-seed/seed-1.6-flash",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
@@ -12438,6 +12443,21 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.motif,
+        name=ModelName.motif_3,
+        friendly_name="Motif 3",
+        editorial_notes="Motif Technologies' 314B mixture-of-experts model (13.2B active), multilingual for English and Korean, with optional reasoning. Text only, no tool calling.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="motif-technologies/motif-3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=False,
             ),
         ],
     ),
