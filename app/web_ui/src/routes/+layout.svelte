@@ -129,7 +129,7 @@
 
 <svelte:head>
   <title>{pageTitle}</title>
-  <meta name="description" content="The easiest way to built AI products" />
+  <meta name="description" content="The easiest way to build AI products" />
 
   <link
     rel="apple-touch-icon"

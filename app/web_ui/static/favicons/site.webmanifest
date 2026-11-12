@@ -1,7 +1,7 @@
 {
   "name": "Kiln",
   "short_name": "Kiln",
-  "description": "The easiest way to built AI products",
+  "description": "The easiest way to build AI products",
   "start_url": "/",
   "display": "minimal-ui",
   "theme_color": "#f5f5f5",
