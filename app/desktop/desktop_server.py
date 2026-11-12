@@ -42,9 +42,6 @@ from app.desktop.studio_server.jobs.registry import job_registry
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.openenv_server_api import connect_openenv_server_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
-from app.desktop.studio_server.prompt_optimization_job_api import (
-    connect_prompt_optimization_job_api,
-)
 from app.desktop.studio_server.provider_api import connect_provider_api
 from app.desktop.studio_server.repair_api import connect_repair_api
 from app.desktop.studio_server.run_config_api import connect_run_config_api
@@ -158,7 +155,6 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_code_tool_api(app)
     connect_openenv_server_api(app)
     connect_skill_api(app)
-    connect_prompt_optimization_job_api(app)
     connect_copilot_api(app)
     connect_eval_builder_api(app)
     connect_multiturn_sdg_api(app)

@@ -44,7 +44,6 @@ from kiln_ai.datamodel.prompt_id import (
     PromptId,
     prompt_generator_values,
 )
-from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
 from kiln_ai.datamodel.provenance import (
     KilnArtifactProvenance,
     validate_derived_from_ids,
@@ -91,7 +90,6 @@ __all__ = [
     "Prompt",
     "PromptGenerators",
     "PromptId",
-    "PromptOptimizationJob",
     "RequirementRating",
     "Skill",
     "StructuredOutputMode",
