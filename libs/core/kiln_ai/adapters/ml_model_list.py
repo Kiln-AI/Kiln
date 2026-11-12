@@ -11285,7 +11285,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.ernie,
         name=ModelName.ernie_light_dt_1_0,
         friendly_name="Ernie Light DT 1.0",
-        editorial_notes="Baidu's ERNIE-Light-DT-1.0, built on open GLM models with Baidu Sparse Attention. Text only, 1M context.",
+        editorial_notes="Baidu's ERNIE-Light-DT-1.0, built on open GLM models with Baidu Sparse Attention. Text only, 1M context. Not recommended as an eval judge: in testing it sometimes gave ratings outside the requested scale.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
