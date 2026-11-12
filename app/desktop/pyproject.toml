@@ -21,7 +21,11 @@ dependencies = [
     # remains affected; other platforms are unaffected).
     "scipy>=1.15.2; python_version < '3.11'",
     "scipy>=1.16.0; python_version >= '3.11'",
-    "pygit2>=1.17.0,<2",
+    # The macOS app bundle shares pygit2's vendored libcrypto.3.dylib with Python's ssl module,
+    # so it must be at least as new as Python's OpenSSL or `import ssl` fails at launch.
+    # pygit2 1.19.3 ships OpenSSL 3.5.4 but requires Python >= 3.11, so 3.10 stays on 1.18.x.
+    "pygit2>=1.17.0,<2; python_version < '3.11'",
+    "pygit2>=1.19.3,<2; python_version >= '3.11'",
     "sentry-sdk>=2.0.0",
 ]
 
