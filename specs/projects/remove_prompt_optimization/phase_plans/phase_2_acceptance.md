@@ -45,4 +45,11 @@ There was no real Copilot API key, so kiln_server ran through a local launcher s
 ## Not verified
 
 - **Real API-key auth against Kinde, and the 401 path.** These are covered by the unit tests in `test_prompt_optimization_sunset.py` and `routes/test_auth.py`.
-- **The old Svelte UI rendering these responses.** No browser walkthrough or screenshots were taken. The UI shows `detail` from the studio's `HTTPException`, the same path the existing 403 "plan does not include" error takes.
+
+## Browser walkthrough (added after code review)
+
+Both UIs were later built and driven with Playwright against this branch: the old one (`058307fcc^`) on its own studio server, and the new one from the Kiln PR branch. The annotated screenshots are in the descriptions of Kiln-AI/kiln_server#348 and Kiln-AI/Kiln#2032.
+
+- **Old client:** the create page shows the sunset message, with an "Unexpected error:" prefix added by the old studio, and "Run Optimization" stays disabled. The job list and job pages load. A job stored as `running` stays "Running", because the old client silently drops the `410` from the status refresh.
+- **Large upload:** a start call from the old studio with a 39 MB project got `410` and the message. The pre-fix, non-draining stub did too over loopback, so the drain is a safeguard rather than a reproduced fix.
+- **New client:** the optimizer button, banner and generator option are gone. A saved `kiln_prompt_optimizer` prompt still shows as "Kiln Optimized". Old `/prompt_optimization/...` URLs show the normal 404 page.
