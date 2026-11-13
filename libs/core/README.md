@@ -33,6 +33,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
 ## Table of Contents
 
 - [Connecting AI Providers](#connecting-ai-providers-openai-openrouter-ollama-etc)
+- [Free web search and page fetching with Parallel MCP](../../docs/parallel_search_mcp.md)
 - [Using the Kiln Data Model](#using-the-kiln-data-model)
   - [Understanding the Kiln Data Model](#understanding-the-kiln-data-model)
   - [Datamodel Overview](#datamodel-overview)
