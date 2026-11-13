@@ -134,6 +134,7 @@ class ModelProviderName(str, Enum):
     docker_model_runner = "docker_model_runner"
     featherless_ai = "featherless_ai"
     cloudflare = "cloudflare"
+    openllm = "openllm"
     typesafe = "typesafe"
 
 
