@@ -10,10 +10,14 @@ jobs:
     strategy:
       matrix:
         python-version:
-          - "3.10"
           - "3.11"
           - "3.12"
           - "3.13"
+          - "3.14"
+    env:
+      # libs/core and libs/server track a .python-version of 3.13, which uv would
+      # otherwise follow in their build steps. Pin every uv command to this leg's Python.
+      UV_PYTHON: ${{ matrix.python-version }}
 
     steps:
       - uses: actions/checkout@v4
