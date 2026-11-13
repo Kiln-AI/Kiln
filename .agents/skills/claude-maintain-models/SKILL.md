@@ -1,6 +1,6 @@
 ---
 name: claude-maintain-models
-description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, asks to discover/find new models that are available but not yet in Kiln, or wants to add a net-new AI provider to Kiln.
+description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, asks to discover/find new models that are available but not yet in Kiln, wants to add a net-new AI provider to Kiln, or wants to write or fix the agent notes and tags of a model, a provider entry or a provider.
 allowed-tools: Read Edit Write Bash Grep Glob Agent WebSearch WebFetch
 ---
 
@@ -17,6 +17,7 @@ For a new model on an already-supported provider, integrating it into
 1. **`ModelName` enum** – add an enum member
 2. **`built_in_models` list** – add a `KilnModel(...)` entry with providers
 3. **`ModelFamily` enum** – only if the vendor is brand-new
+4. **Agent notes and tags** – on the new `KilnModel` and its provider entries, when a source supports them (see [Agent notes and tags](#agent-notes-and-tags))
 
 After code changes, run paid integration tests, then draft a Discord post.
 
@@ -248,6 +249,58 @@ If the model supports configurable reasoning effort (not just on/off), add `avai
 - `default_thinking_level` must be one of the values in `available_thinking_levels`
 - If the entry sets `suggested_for_evals=True`, `default_thinking_level` must be `"medium"` (or `"low"` if the model has no medium level) — never `"none"`. See [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)
 
+### 3g. Agent notes and tags
+
+For each new model, write `agent_notes` and the model `tags`. For each new provider entry, including one added to an existing model, set its `tags`. Follow [Agent notes and tags](#agent-notes-and-tags). Write only what a source supports. When nothing can be supported, leave `agent_notes` as `None` and the tags empty, and say so in the PR. A run with nobody watching, such as the scheduled model sweep, follows the same rule.
+
+---
+
+## Agent notes and tags
+
+`KilnModel.agent_notes`, `KilnModel.tags`, `KilnModelProvider.tags`, and the `notes` and `tags` of each item in `built_in_providers` (`libs/core/kiln_ai/adapters/ml_provider_list.py`) are for agents that choose or configure a model, such as the Harness Tuner optimizer and the Kiln assistant. Agents outside Kiln read them from the published remote config; Kiln clients do not load the provider list from it. `editorial_notes` is different: it is short text for people, shown on the models page of the Kiln UI. Do not copy one into the other.
+
+### What goes in `agent_notes`
+
+Write for an agent that compares this model with other models at the same price:
+
+- Strengths and weaknesses compared with models at the same price.
+- The settings it responds to, for example a thinking level that helps, or one that adds cost for no gain.
+- Output quirks, for example long answers or a fixed preamble.
+- Tool-call reliability.
+- When it matters, the model that replaces it.
+
+Do not put these in `agent_notes`: price, context window, maximum output, release date, knowledge cutoff, open weights. models.dev publishes them, and two copies get out of date.
+
+A provider's `notes` in `built_in_providers` cover data retention, rate limits, routing and gotchas.
+
+### Note rules
+
+These apply to `agent_notes` and to a provider's `notes`.
+
+- `None` means no note. An empty or whitespace-only string is not allowed.
+- At most 2,000 characters (`MAX_NOTE_CHARS`). Aim for a few sentences.
+- **State only what you can support** from the provider's documentation, a public benchmark, or Kiln's own tests (for example a paid test run). Leave an unsupported claim out. When nothing can be supported, the note stays `None` and the tags stay empty, and the PR says so.
+
+### Tag rules
+
+- The allowed tags and their meanings are in `libs/core/kiln_ai/adapters/model_agent_info.py`. Read them there. This skill keeps no copy of the list, so the list and its meanings exist in one place. There are three maps:
+  - `MODEL_TAGS` for `KilnModel.tags`: true of the model on every provider.
+  - `PROVIDER_ENTRY_TAGS` for `KilnModelProvider.tags`: true of one provider entry only, for example speed.
+  - `PROVIDER_LIST_TAGS` for the `tags` of a `built_in_providers` item.
+- Use a tag only from the map for that field. A tag in the wrong map fails the tests, for example `fast` on a model.
+- Format `^[a-z0-9_]{1,40}$` (`TAG_PATTERN`), at most 12 tags on one entry (`MAX_TAGS_PER_ENTRY`), and no tag twice.
+- A tag is a claim compared with models at the same price. Apply it only when a source supports it, as for notes.
+
+**To add a tag:** add it to the right map in `model_agent_info.py` with its meaning, and add it to `test_starting_tags` in `test_model_agent_info.py`, in the same change that first uses it. The meaning is a claim compared with models at the same price, and one the maintainer would stand behind.
+
+### How the rules are checked
+
+Kiln does not validate tags or notes when it loads the remote config, so an older client keeps loading a file that uses newer tags. Tests check the built-in data instead. Run them after every change to notes, tags or the provider list:
+
+```bash
+uv run pytest -q libs/core/kiln_ai/adapters/test_model_agent_info.py libs/core/kiln_ai/adapters/test_ml_model_list.py libs/core/kiln_ai/adapters/test_ml_provider_list.py
+```
+
 ---
 
 ## Phase 4 – Run Tests
@@ -461,6 +514,7 @@ Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `
 - [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
+- [ ] `agent_notes` and tags written where a source supports them, or left empty and the PR says so (see [Agent notes and tags](#agent-notes-and-tags))
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
 - [ ] API keys bridged into the test env (see 4a — settings.yaml is NOT used by tests)
 - [ ] Smoke test passed
@@ -511,12 +565,15 @@ entries had to be rolled back.
 
 1. **PR 1 — provider plumbing only.** The `ModelProviderName` enum member and
    everything else in the checklist below EXCEPT the model catalog. Merge
-   whenever ready.
+   whenever ready. The provider's item in `built_in_providers` belongs here,
+   because it holds the friendly name.
 2. **PR 2 — model catalog.** ALL `ml_model_list.py` changes: `ModelName`
    members, `ModelFamily` (if the vendor is new), and the `built_in_models`
    entries. Open it, but **merge only after a client release containing PR 1
-   is live.** (Only `built_in_models` is published via the remote config, but
-   the enums belong in the same PR as the entries they exist for.)
+   is live.** (Kiln clients load only the model lists from the remote config.
+   The provider list is published too, but only agents outside Kiln read it,
+   so its item is safe in PR 1. The enums belong in the same PR as the entries
+   they exist for.)
 
 ### Touchpoint checklist (from the Featherless integration, #1618)
 
@@ -536,10 +593,16 @@ model.
   providers: a new key with `env_var`; otherwise whatever fields the auth
   model needs)
 - LiteLLM provider mapping — `libs/core/kiln_ai/utils/litellm.py`
-- `libs/core/kiln_ai/adapters/provider_tools.py` — three spots: the
-  `provider_name_from_id` match (friendly name; pyright flags a missed case),
+- `libs/core/kiln_ai/adapters/provider_tools.py` — two spots:
   `provider_warnings` (missing-credential message, `required_config_keys`),
   and the adapter config (credential / base URL / headers plumbing)
+- Provider list — a `KilnProviderInfo` item in `built_in_providers`
+  (`libs/core/kiln_ai/adapters/ml_provider_list.py`), at the same position as
+  the enum member: `id`, `friendly_name` (the one Python source of the
+  friendly name; `provider_name_from_id` reads it), `models_dev_id` (the
+  provider's key in `https://models.dev/api.json`, checked there, or `None`
+  when models.dev has no entry for it), and `notes` and `tags` when a source
+  supports them (see [Agent notes and tags](#agent-notes-and-tags))
 - Model catalog — `libs/core/kiln_ai/adapters/ml_model_list.py`: `ModelName`
   members, `ModelFamily` if needed, and the `built_in_models` entries
   (**PR 2 only**, see gating rule)
@@ -588,10 +651,12 @@ the PR rather than hand-editing generated code.
 ### Friendly names everywhere
 
 The raw enum value must never be user-visible. When you add the provider,
-verify a friendly name exists in **both** name maps (python
-`provider_name_from_id` and web `provider_name_map`) — pyright and typescript
-respectively force these when the enum gains a member, which is why the
-plumbing PR must not skip them.
+verify a friendly name exists in **both** name maps: the Python provider list
+(`built_in_providers` in `ml_provider_list.py`, which `provider_name_from_id`
+reads) and the web `provider_name_map`. When the enum gains a member,
+`test_one_item_per_provider_in_enum_order` in `test_ml_provider_list.py`
+fails until the provider list has its item, and TypeScript forces the web
+map. That is why the plumbing PR must not skip them.
 
 ---
 

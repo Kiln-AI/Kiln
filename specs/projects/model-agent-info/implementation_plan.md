@@ -11,7 +11,7 @@ status: complete
   the provider list, and `serialize_config` writing `provider_list`. All
   new fields empty except the provider list's friendly names and
   `models_dev_id` values. Includes the backward-compatibility test run.
-- [ ] Phase 2: Skills and guidance. `claude-maintain-models`,
+- [x] Phase 2: Skills and guidance. `claude-maintain-models`,
   `kiln-model-sweep`, `kiln-conventions` `core.md`, and whatever else
   `docs-sync` finds.
 - [ ] Phase 3: Backfill (standalone; runs on a separate machine with web
