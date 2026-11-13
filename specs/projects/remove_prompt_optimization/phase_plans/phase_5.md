@@ -12,7 +12,7 @@ The repo is plain GitBook markdown: callouts use `{% hint style="..." %}`, navig
 
 ## Steps
 
-1. **`docs/prompts/automatic-prompt-optimizer.md`:** insert a `{% hint style="danger" %}` block directly under the H1, above the existing enterprise-plan warning: "**Deprecated: the Prompt Optimizer has been retired.** Use [Kiln Harness Tuner](https://github.com/Kiln-AI/harness-tuner), which tunes prompts, tools, skills and model together." Leave the rest of the page unchanged.
+1. **`docs/prompts/automatic-prompt-optimizer.md`:** insert a `{% hint style="danger" %}` block directly under the H1: "**Deprecated: the Prompt Optimizer has been retired.** Use [Kiln Harness Tuner](https://github.com/Kiln-AI/harness-tuner), which tunes prompts, tools, skills and model together." It adds that the rest of the page is kept for reference only. Remove the enterprise-plan warning, because it asks readers to buy the retired feature. Leave the rest of the page unchanged.
 2. **`SUMMARY.md`:** nav entry becomes `Automatic Prompt Optimizer (Deprecated)`; same path.
 3. **`README.md`:** in the "Jump right in" cards, the optimizer card title becomes "Automatic Prompt Optimizer (Deprecated)" and its description "Retired. Use Kiln Harness Tuner instead."; card target unchanged.
 4. **`docs/prompts.md`:**
