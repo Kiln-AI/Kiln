@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Functional Spec: Model Agent Info
@@ -42,9 +42,12 @@ standalone phase that runs on another machine.
     second list that the background refresh replaces at runtime, with its
     locking and tests, for no reader. When the Kiln assistant needs the
     notes, loading the key is a small, separate change.
-  - Consequence: a correction to a provider's notes reaches outside readers
-    at the next publish, as model data does. Kiln clients see the built-in
-    copy of their release, which only `provider_name_from_id` uses.
+  - So there are two copies. The copy in the code (`built_in_providers`)
+    ships with each release, and Kiln reads it for friendly names through
+    `provider_name_from_id`. The copy in the published file is for outside
+    readers only. A change to a provider's notes reaches outside readers at
+    the next publish; a change to a friendly name reaches Kiln users at the
+    next release, as today.
 
 ### Friendly names
 
