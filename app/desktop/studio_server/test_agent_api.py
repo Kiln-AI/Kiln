@@ -10,7 +10,6 @@ from kiln_ai.datamodel import (
     Finetune,
     Project,
     Prompt,
-    PromptOptimizationJob,
     Task,
     TaskOutput,
     TaskOutputRating,
@@ -41,7 +40,6 @@ from app.desktop.studio_server.agent_api import (
     _dataset_stats,
     _docs_stats,
     _fine_tunes_block,
-    _prompt_optimization_jobs_block,
     _prompts_block,
     _run_configs_block,
     _search_tools_block,
@@ -601,27 +599,6 @@ class TestFineTunesBlock:
         assert result.total_count == 0
 
 
-# --- _prompt_optimization_jobs_block tests ---
-
-
-class TestPromptOptimizationJobsBlock:
-    def test_returns_count(self, task):
-        PromptOptimizationJob(
-            parent=task,
-            name="Job 1",
-            job_id="j1",
-            target_run_config_id="rc1",
-            latest_status="succeeded",
-        ).save_to_file()
-
-        result = _prompt_optimization_jobs_block(task)
-        assert result.total_count == 1
-
-    def test_empty(self, task):
-        result = _prompt_optimization_jobs_block(task)
-        assert result.total_count == 0
-
-
 # --- Endpoint tests ---
 
 
@@ -673,7 +650,6 @@ class TestAgentOverviewEndpoint:
             assert data["run_configs"]["items"] == []
             assert data["run_configs"]["total"] == 0
             assert data["fine_tunes"] == {"total_count": 0}
-            assert data["prompt_optimization_jobs"] == {"total_count": 0}
             assert data["skills"]["items"] == []
             assert data["skills"]["archived_skill_count"] == 0
             assert data["connected_providers"] == {}

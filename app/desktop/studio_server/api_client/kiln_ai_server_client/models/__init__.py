@@ -6,9 +6,6 @@ from .api_key_verification_result import ApiKeyVerificationResult
 from .audio import Audio
 from .batch_plan_input import BatchPlanInput
 from .batch_plan_output import BatchPlanOutput
-from .body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post import (
-    BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
-)
 from .body_start_sample_job_v1_jobs_sample_job_start_post import BodyStartSampleJobV1JobsSampleJobStartPost
 from .build_claim_evidence_input import BuildClaimEvidenceInput
 from .build_claim_evidence_output import BuildClaimEvidenceOutput
@@ -30,7 +27,6 @@ from .chat_snapshot import ChatSnapshot
 from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v1_check_entitlements_get import (
     CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
 )
-from .check_model_supported_response import CheckModelSupportedResponse
 from .citation import Citation
 from .citation_1 import Citation1
 from .claim import Claim
@@ -116,8 +112,6 @@ from .new_proposed_spec_edit import NewProposedSpecEdit
 from .new_proposed_spec_edit_api import NewProposedSpecEditApi
 from .output_file_info import OutputFileInfo
 from .overview import Overview
-from .prompt_optimization_job_output import PromptOptimizationJobOutput
-from .prompt_optimization_job_result_response import PromptOptimizationJobResultResponse
 from .question import Question
 from .question_set import QuestionSet
 from .question_with_answer import QuestionWithAnswer
@@ -168,7 +162,6 @@ __all__ = (
     "Audio",
     "BatchPlanInput",
     "BatchPlanOutput",
-    "BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
     "BuildClaimEvidenceInput",
     "BuildClaimEvidenceOutput",
@@ -188,7 +181,6 @@ __all__ = (
     "ChatSessionListItem",
     "ChatSnapshot",
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
-    "CheckModelSupportedResponse",
     "Citation",
     "Citation1",
     "Claim",
@@ -266,8 +258,6 @@ __all__ = (
     "NewProposedSpecEditApi",
     "OutputFileInfo",
     "Overview",
-    "PromptOptimizationJobOutput",
-    "PromptOptimizationJobResultResponse",
     "Question",
     "QuestionSet",
     "QuestionWithAnswer",

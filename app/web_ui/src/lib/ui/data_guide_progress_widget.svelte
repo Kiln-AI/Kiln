@@ -63,8 +63,6 @@
     acknowledgeDataGuideJob(job.project_id, job.task_id)
   }
 
-  // Mirror the prompt-optimization (GEPA) status badges: outline pill, primary
-  // when complete, error when failed, with a spinner while in progress.
   $: is_failed = job?.status === "failed" || job?.status === "cancelled"
   $: is_running = !!job && job.status !== "succeeded" && !is_failed
   $: badge = is_failed
