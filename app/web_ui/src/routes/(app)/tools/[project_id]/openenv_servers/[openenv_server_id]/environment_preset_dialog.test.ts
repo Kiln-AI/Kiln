@@ -22,8 +22,8 @@ vi.mock("$lib/components/code_editor.svelte", async () => ({
   ).default,
 }))
 
-const EnvironmentOptionDialog = (
-  await import("./environment_option_dialog.svelte")
+const EnvironmentPresetDialog = (
+  await import("./environment_preset_dialog.svelte")
 ).default
 
 const RESET_SCHEMA = {
@@ -64,10 +64,10 @@ function serve_schema(reset_schema: unknown) {
   mock_get.mockResolvedValue({ data: { reset_schema }, error: undefined })
 }
 
-function render_dialog(options: NamedResetKwargs[] = [ACME, ODD]) {
+function render_dialog(presets: NamedResetKwargs[] = [ACME, ODD]) {
   const save = vi.fn().mockResolvedValue(undefined)
-  const { component, container } = render(EnvironmentOptionDialog, {
-    props: { project_id: "p1", openenv_server_id: "e1", options, save },
+  const { component, container } = render(EnvironmentPresetDialog, {
+    props: { project_id: "p1", openenv_server_id: "e1", presets, save },
   })
   return { component, container, save }
 }
@@ -94,7 +94,7 @@ async function submit(container: HTMLElement) {
   )
 }
 
-describe("EnvironmentOptionDialog", () => {
+describe("EnvironmentPresetDialog", () => {
   it("is the JSON editor with no toggle when the server has no schema", async () => {
     serve_schema(null)
     const { component, container } = render_dialog()
@@ -105,8 +105,52 @@ describe("EnvironmentOptionDialog", () => {
     expect(toggle(container, "Raw JSON")).toBeUndefined()
     expect(toggle(container, "Form")).toBeUndefined()
     expect(container.textContent).toContain(
-      "Passed to the OpenEnv's reset(). Which keys exist depends on the server.",
+      "Passed to the OpenEnv server's reset(). Which keys exist depends on the server.",
     )
+    // Reset Arguments is a section heading, a level above the fields.
+    expect(container.querySelector("h2")?.textContent).toBe("Reset Arguments")
+  })
+
+  it("names the preset with a description, and saves both", async () => {
+    serve_schema(null)
+    const { component, container, save } = render_dialog()
+    component.show_add()
+    await waitFor(() => expect(editor(container)).not.toBeNull())
+    expect(container.textContent).toContain("Add Environment Preset")
+    expect(container.textContent).toContain(
+      "Shown in the Environment Preset dropdown on the run page.",
+    )
+    expect(
+      container
+        .querySelector("#environment_preset_name")
+        ?.getAttribute("placeholder"),
+    ).toBe("Name")
+
+    await fireEvent.input(
+      container.querySelector("#environment_preset_name")!,
+      {
+        target: { value: "Small Startup" },
+      },
+    )
+    await fireEvent.input(
+      container.querySelector("#environment_preset_description")!,
+      { target: { value: "Beta's data, as an admin" } },
+    )
+    await fireEvent.input(editor(container)!, {
+      target: { value: '{"company": "beta"}' },
+    })
+    await submit(container)
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    expect(save).toHaveBeenCalledWith([
+      ACME,
+      ODD,
+      {
+        name: "Small Startup",
+        description: "Beta's data, as an admin",
+        reset_kwargs: { company: "beta" },
+      },
+    ])
   })
 
   it("keeps the JSON editor when the schema can't be read", async () => {
@@ -119,7 +163,7 @@ describe("EnvironmentOptionDialog", () => {
     expect(toggle(container, "Form")).toBeUndefined()
   })
 
-  it("shows the schema form for a new option and saves only filled fields", async () => {
+  it("shows the schema form for a new preset and saves only filled fields", async () => {
     serve_schema(RESET_SCHEMA)
     const { component, container, save } = render_dialog()
     component.show_add()
@@ -131,7 +175,7 @@ describe("EnvironmentOptionDialog", () => {
     )
 
     await fireEvent.input(
-      container.querySelector("#environment_option_name")!,
+      container.querySelector("#environment_preset_name")!,
       {
         target: { value: "Beta" },
       },
@@ -145,7 +189,7 @@ describe("EnvironmentOptionDialog", () => {
     expect(save).toHaveBeenCalledWith([
       ACME,
       ODD,
-      { name: "Beta", reset_kwargs: { company: "beta" } },
+      { name: "Beta", description: null, reset_kwargs: { company: "beta" } },
     ])
   })
 

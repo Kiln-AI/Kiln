@@ -142,12 +142,16 @@ class OpenEnvEpisode(BaseModel):
 class NamedResetKwargs(BaseModel):
     """Reset keyword arguments saved under a name, so a run can pick them by name.
 
-    Shown in the UI as an Environment Option. A run records the kwargs it used, not
-    the name, because an option can be renamed or removed later."""
+    Shown in the UI as an Environment Preset. A run records the kwargs it used, not
+    the name, because a preset can be renamed or removed later."""
 
     name: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
     ] = Field(description="User-facing name, unique within its environment.")
+    description: str | None = Field(
+        default=None,
+        description="User-facing notes on what this preset starts the environment with.",
+    )
     reset_kwargs: dict[str, JsonValue] = Field(
         default_factory=dict,
         description="Keyword arguments for the environment's reset(), passed verbatim.",
@@ -173,6 +177,10 @@ class OpenEnvServer(KilnParentedModel):
         default_factory=list,
         description="Named reset kwargs a run can start the environment with, in the order they were added. The first is the default.",
     )
+    is_archived: bool = Field(
+        default=False,
+        description="Whether the OpenEnv server is archived. An archived server's tools aren't offered in tool pickers, but run configs that already list them still run.",
+    )
 
     @field_validator("named_reset_kwargs")
     @classmethod
@@ -183,7 +191,7 @@ class OpenEnvServer(KilnParentedModel):
         for option in value:
             if option.name in seen:
                 raise ValueError(
-                    f"An Environment Option named {option.name} already exists."
+                    f"An Environment Preset named {option.name} already exists."
                 )
             seen.add(option.name)
         return value

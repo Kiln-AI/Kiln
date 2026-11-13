@@ -7,108 +7,142 @@ import {
 
 const mockGet = vi.fn()
 const mockPatch = vi.fn()
+const mockPost = vi.fn()
 
 vi.mock("$lib/api_client", () => ({
   client: {
     GET: (...args: unknown[]) => mockGet(...args),
     PATCH: (...args: unknown[]) => mockPatch(...args),
+    POST: (...args: unknown[]) => mockPost(...args),
   },
 }))
 
 import {
   blank_draft,
   clone_draft,
+  compact_reset_arguments,
   draft_from,
   load_openenv_server,
   load_openenv_server_tools,
   load_openenv_server_reset_schema,
   load_openenv_server_version,
-  options_with_draft,
-  options_without,
+  presets_with_draft,
+  presets_without,
   reset_arguments_for_form,
   reset_arguments_from_form,
-  save_environment_options,
+  save_environment_presets,
+  set_openenv_server_archived,
 } from "./openenv_server_detail"
 import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
 
 const ACME_MANAGER: NamedResetKwargs = {
   name: "Acme Manager",
+  description: "Acme's data, signed in as a manager",
   reset_kwargs: { fixture: "acme", role: "mgr" },
 }
 const ACME_TECH: NamedResetKwargs = {
   name: "Acme Tech",
   reset_kwargs: { fixture: "acme", role: "tech" },
 }
-const OPTIONS = [ACME_MANAGER, ACME_TECH]
+const PRESETS = [ACME_MANAGER, ACME_TECH]
 
 beforeEach(() => {
   mockGet.mockReset()
   mockPatch.mockReset()
+  mockPost.mockReset()
 })
 
 describe("drafts", () => {
-  it("starts an added option blank", () => {
-    expect(blank_draft()).toEqual({ name: "", reset_arguments: "" })
-  })
-
-  it("edits an option's name and formatted arguments", () => {
-    expect(draft_from(ACME_TECH)).toEqual({
-      name: "Acme Tech",
-      reset_arguments: '{\n  "fixture": "acme",\n  "role": "tech"\n}',
+  it("starts an added preset blank", () => {
+    expect(blank_draft()).toEqual({
+      name: "",
+      description: "",
+      reset_arguments: "",
     })
   })
 
-  it("clones with the same arguments and a (copy) name", () => {
-    expect(clone_draft(ACME_TECH)).toEqual({
-      name: "Acme Tech (copy)",
-      reset_arguments: draft_from(ACME_TECH).reset_arguments,
+  it("edits a preset's name, description and formatted arguments", () => {
+    expect(draft_from(ACME_MANAGER)).toEqual({
+      name: "Acme Manager",
+      description: "Acme's data, signed in as a manager",
+      reset_arguments: '{\n  "fixture": "acme",\n  "role": "mgr"\n}',
+    })
+    expect(draft_from(ACME_TECH).description).toBe("")
+  })
+
+  it("clones with the same description and arguments and a (copy) name", () => {
+    expect(clone_draft(ACME_MANAGER)).toEqual({
+      ...draft_from(ACME_MANAGER),
+      name: "Acme Manager (copy)",
     })
   })
 
-  it("shows an option saved without arguments as an empty object", () => {
+  it("shows a preset saved without arguments as an empty object", () => {
     expect(draft_from({ name: "Beta" }).reset_arguments).toBe("{}")
   })
 })
 
-describe("options_with_draft", () => {
-  it("appends a new option last, keeping the order", () => {
-    const result = options_with_draft(OPTIONS, null, {
+describe("presets_with_draft", () => {
+  it("appends a new preset last, keeping the order", () => {
+    const result = presets_with_draft(PRESETS, null, {
       name: "Acme Lead",
+      description: "Acme's data, as a team lead",
       reset_arguments: '{"fixture": "acme", "role": "lead"}',
     })
     expect(result.error).toBeNull()
-    expect(result.options).toEqual([
+    expect(result.presets).toEqual([
       ACME_MANAGER,
       ACME_TECH,
-      { name: "Acme Lead", reset_kwargs: { fixture: "acme", role: "lead" } },
+      {
+        name: "Acme Lead",
+        description: "Acme's data, as a team lead",
+        reset_kwargs: { fixture: "acme", role: "lead" },
+      },
     ])
   })
 
-  it("replaces the edited option in place", () => {
-    const result = options_with_draft(OPTIONS, 0, {
+  it("replaces the edited preset in place", () => {
+    const result = presets_with_draft(PRESETS, 0, {
       name: "Acme Admin",
+      description: "",
       reset_arguments: '{"fixture": "acme", "role": "admin"}',
     })
-    expect(result.options).toEqual([
-      { name: "Acme Admin", reset_kwargs: { fixture: "acme", role: "admin" } },
+    expect(result.presets).toEqual([
+      {
+        name: "Acme Admin",
+        description: null,
+        reset_kwargs: { fixture: "acme", role: "admin" },
+      },
       ACME_TECH,
     ])
   })
 
-  it("trims the name", () => {
-    const result = options_with_draft([], null, {
+  it("trims the name and description, saving a blank description as none", () => {
+    const result = presets_with_draft([], null, {
       name: "  Beta Tech ",
+      description: "   ",
       reset_arguments: "{}",
     })
-    expect(result.options).toEqual([{ name: "Beta Tech", reset_kwargs: {} }])
+    expect(result.presets).toEqual([
+      { name: "Beta Tech", description: null, reset_kwargs: {} },
+    ])
+    const described = presets_with_draft([], null, {
+      name: "Beta",
+      description: " Beta's data ",
+      reset_arguments: "{}",
+    })
+    expect(described.presets?.[0].description).toBe("Beta's data")
   })
 
   it("saves blank arguments as an empty object", () => {
-    const result = options_with_draft([], null, {
+    const result = presets_with_draft([], null, {
       name: "Beta",
+      description: "",
       reset_arguments: "",
     })
-    expect(result.options).toEqual([{ name: "Beta", reset_kwargs: {} }])
+    expect(result.presets).toEqual([
+      { name: "Beta", description: null, reset_kwargs: {} },
+    ])
   })
 
   it.each([
@@ -116,21 +150,41 @@ describe("options_with_draft", () => {
     ['["acme", "tech"]', RESET_ARGUMENTS_NOT_OBJECT],
   ])("refuses arguments %s", (reset_arguments, error) => {
     expect(
-      options_with_draft(OPTIONS, null, { name: "Bad", reset_arguments }),
-    ).toEqual({ options: null, error })
+      presets_with_draft(PRESETS, null, {
+        name: "Bad",
+        description: "",
+        reset_arguments,
+      }),
+    ).toEqual({ presets: null, error })
   })
 
   it("doesn't change the list it was given", () => {
-    const options = [...OPTIONS]
-    options_with_draft(options, 1, { name: "X", reset_arguments: "{}" })
-    expect(options).toEqual(OPTIONS)
+    const presets = [...PRESETS]
+    presets_with_draft(presets, 1, {
+      name: "X",
+      description: "",
+      reset_arguments: "{}",
+    })
+    expect(presets).toEqual(PRESETS)
   })
 })
 
-describe("options_without", () => {
-  it("removes only the option at the index", () => {
-    expect(options_without(OPTIONS, 0)).toEqual([ACME_TECH])
-    expect(options_without(OPTIONS, 1)).toEqual([ACME_MANAGER])
+describe("presets_without", () => {
+  it("removes only the preset at the index", () => {
+    expect(presets_without(PRESETS, 0)).toEqual([ACME_TECH])
+    expect(presets_without(PRESETS, 1)).toEqual([ACME_MANAGER])
+  })
+})
+
+describe("compact_reset_arguments", () => {
+  it("is one line of JSON", () => {
+    expect(compact_reset_arguments({ fixture: "acme", user: { id: 7 } })).toBe(
+      '{"fixture":"acme","user":{"id":7}}',
+    )
+  })
+
+  it("shows missing arguments as an empty object", () => {
+    expect(compact_reset_arguments(undefined)).toBe("{}")
   })
 })
 
@@ -244,17 +298,36 @@ describe("API calls", () => {
     await expect(load()).rejects.toBe(error)
   })
 
-  it("saves the whole options list", async () => {
+  it("saves the whole presets list", async () => {
     mockPatch.mockResolvedValue({
-      data: { name: "Acme", named_reset_kwargs: OPTIONS },
+      data: { name: "Acme", named_reset_kwargs: PRESETS },
       error: undefined,
     })
     await expect(
-      save_environment_options("p1", "e1", OPTIONS),
-    ).resolves.toEqual({ name: "Acme", named_reset_kwargs: OPTIONS })
+      save_environment_presets("p1", "e1", PRESETS),
+    ).resolves.toEqual({ name: "Acme", named_reset_kwargs: PRESETS })
     expect(mockPatch).toHaveBeenCalledWith(
       "/api/projects/{project_id}/openenv_servers/{openenv_server_id}",
-      { params: { path }, body: { named_reset_kwargs: OPTIONS } },
+      { params: { path }, body: { named_reset_kwargs: PRESETS } },
+    )
+  })
+
+  it("archives and unarchives", async () => {
+    mockPost.mockResolvedValue({
+      data: { name: "Acme", is_archived: true },
+      error: undefined,
+    })
+    await expect(
+      set_openenv_server_archived("p1", "e1", true),
+    ).resolves.toEqual({ name: "Acme", is_archived: true })
+    expect(mockPost).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/archive",
+      { params: { path }, body: { is_archived: true } },
+    )
+    const error = { message: "OpenEnv server not found" }
+    mockPost.mockResolvedValue({ data: undefined, error })
+    await expect(set_openenv_server_archived("p1", "e1", false)).rejects.toBe(
+      error,
     )
   })
 
@@ -284,10 +357,10 @@ describe("API calls", () => {
 
   it("throws the server's error when saving fails", async () => {
     const error = {
-      message: "An Environment Option named Acme Tech already exists.",
+      message: "An Environment Preset named Acme Tech already exists.",
     }
     mockPatch.mockResolvedValue({ data: undefined, error })
-    await expect(save_environment_options("p1", "e1", OPTIONS)).rejects.toBe(
+    await expect(save_environment_presets("p1", "e1", PRESETS)).rejects.toBe(
       error,
     )
   })

@@ -249,9 +249,9 @@
           },
           {
             type: "settings",
-            name: "OpenEnv",
+            name: "OpenEnv Servers",
             description:
-              "Connect an OpenEnv server, such as a copy of your product that agents can act in safely.",
+              "Connect to OpenEnv servers to add tools to your project.",
             link_label: "Learn more",
             link_href: OPENENV_DOCS_URL,
             button_text: "Connect",

@@ -3026,8 +3026,32 @@ export interface paths {
         delete: operations["delete_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__delete"];
         options?: never;
         head?: never;
-        /** Update OpenEnv Server */
+        /**
+         * Update OpenEnv Server
+         * @description Change an OpenEnv server. A new url is saved only if an OpenEnv server
+         *     answers at it; other changes are saved without contacting the server.
+         */
         patch: operations["update_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive OpenEnv Server
+         * @description Archive or unarchive an OpenEnv server. An archived server's tools aren't offered in tool pickers; run configs that already list them still run.
+         */
+        post: operations["archive_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/tools": {
@@ -10544,8 +10568,8 @@ export interface components {
          * NamedResetKwargs
          * @description Reset keyword arguments saved under a name, so a run can pick them by name.
          *
-         *     Shown in the UI as an Environment Option. A run records the kwargs it used, not
-         *     the name, because an option can be renamed or removed later.
+         *     Shown in the UI as an Environment Preset. A run records the kwargs it used, not
+         *     the name, because a preset can be renamed or removed later.
          */
         NamedResetKwargs: {
             /**
@@ -10553,6 +10577,11 @@ export interface components {
              * @description User-facing name, unique within its environment.
              */
             name: string;
+            /**
+             * Description
+             * @description User-facing notes on what this preset starts the environment with.
+             */
+            description?: string | null;
             /**
              * Reset Kwargs
              * @description Keyword arguments for the environment's reset(), passed verbatim.
@@ -10563,7 +10592,7 @@ export interface components {
         };
         /**
          * NamedResetKwargsRequest
-         * @description Reset kwargs saved under a name, shown in the UI as an Environment Option.
+         * @description Reset kwargs saved under a name, shown in the UI as an Environment Preset.
          */
         NamedResetKwargsRequest: {
             /**
@@ -10571,6 +10600,11 @@ export interface components {
              * @description User-facing name, unique within the environment.
              */
             name: string;
+            /**
+             * Description
+             * @description User-facing notes on what this preset starts the environment with.
+             */
+            description?: string | null;
             /** @description Keyword arguments for the environment's reset(), as a JSON object. */
             reset_kwargs?: components["schemas"]["JsonValue"];
         };
@@ -10769,6 +10803,17 @@ export interface components {
             };
         };
         /**
+         * OpenEnvServerArchiveRequest
+         * @description Archive or unarchive an OpenEnv server.
+         */
+        OpenEnvServerArchiveRequest: {
+            /**
+             * Is Archived
+             * @description Whether the OpenEnv server is archived.
+             */
+            is_archived: boolean;
+        };
+        /**
          * OpenEnvServerCreateRequest
          * @description A new OpenEnv server: Kiln's saved pointer to a running OpenEnv environment.
          */
@@ -10847,6 +10892,12 @@ export interface components {
              * @description Who created the OpenEnv server.
              */
             created_by?: string | null;
+            /**
+             * Is Archived
+             * @description Whether the OpenEnv server is archived.
+             * @default false
+             */
+            is_archived: boolean;
         };
         /**
          * OpenEnvServerUpdateRequest
@@ -22183,6 +22234,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["OpenEnvServerUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenEnvServerArchiveRequest"];
             };
         };
         responses: {

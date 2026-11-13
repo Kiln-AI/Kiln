@@ -644,7 +644,7 @@ class TestRunApiConversation:
         assert response.status_code == 409
         assert response.json()["message"] == (
             "The OpenEnv session for this conversation ended. Start a new "
-            "conversation to keep using this OpenEnv."
+            "conversation to keep using this OpenEnv server."
         )
 
 

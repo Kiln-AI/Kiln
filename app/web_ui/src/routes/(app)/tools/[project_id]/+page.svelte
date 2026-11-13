@@ -60,6 +60,11 @@
   $: unarchived_code_tools = (code_tools || []).filter((ct) => !ct.is_archived)
   $: archived_code_tools = (code_tools || []).filter((ct) => ct.is_archived)
 
+  $: sorted_openenv_servers = [
+    ...(openenv_servers || []).filter((server) => !server.is_archived),
+    ...(openenv_servers || []).filter((server) => server.is_archived),
+  ]
+
   async function fetch_available_tool_servers() {
     try {
       error = null
@@ -435,7 +440,7 @@
                 </td>
               </tr>
             {/each}
-            {#each openenv_servers || [] as openenv_server}
+            {#each sorted_openenv_servers as openenv_server}
               {@const href = `/tools/${project_id}/openenv_servers/${openenv_server.id}`}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
@@ -450,15 +455,23 @@
                 tabindex="0"
               >
                 <td class="font-medium">{openenv_server.name}</td>
-                <td class="text-sm">OpenEnv</td>
+                <td class="text-sm">OpenEnv Server</td>
                 <td class="text-sm">{openenv_server.description || "N/A"}</td>
                 <td class="text-sm">
-                  <Warning
-                    warning_message="Ready"
-                    warning_color="success"
-                    warning_icon="check"
-                    inline={true}
-                  />
+                  {#if openenv_server.is_archived}
+                    <Warning
+                      warning_message="Archived"
+                      warning_color="warning"
+                      inline={true}
+                    />
+                  {:else}
+                    <Warning
+                      warning_message="Ready"
+                      warning_color="success"
+                      warning_icon="check"
+                      inline={true}
+                    />
+                  {/if}
                 </td>
               </tr>
             {/each}

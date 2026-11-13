@@ -221,6 +221,15 @@ class OpenEnvSessionManager:
         version changed."""
         await self._server_for(openenv_server, refresh=True)
 
+    async def check_reachable(self, openenv_server: OpenEnvServer) -> None:
+        """Read the server's /metadata now, as `openenv_version` does, without caching
+        what it reports, so a record can be checked before it is saved.
+
+        Raises OpenEnvError when the record has no url or the server doesn't answer."""
+        if not openenv_server.url:
+            raise OpenEnvError(_no_url_message(openenv_server))
+        await self._connect_remote(openenv_server, openenv_server.url.rstrip("/"))
+
     async def list_tools(
         self, openenv_server: OpenEnvServer, fresh: bool = False
     ) -> list[OpenEnvTool]:

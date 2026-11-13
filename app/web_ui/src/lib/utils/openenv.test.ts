@@ -4,14 +4,16 @@ import {
   RESET_ARGUMENTS_INVALID_JSON,
   RESET_ARGUMENTS_NOT_OBJECT,
   openenv_server_detail_link,
-  environment_field_state,
-  environment_option_groups,
+  environment_preset_field_state,
+  environment_preset_groups,
   format_reset_arguments,
   openenv_tool_name,
   is_openenv_tool_id,
+  keeps_unlisted_openenv_tool,
+  openenv_server_id_of_tool,
   parse_reset_arguments,
   reset_kwargs_for,
-  selected_option_after_change,
+  selected_preset_after_change,
 } from "./openenv"
 
 describe("format_reset_arguments", () => {
@@ -76,9 +78,14 @@ describe("parse_reset_arguments", () => {
 const ACME: OpenEnvServer = {
   id: "openenv_1",
   name: "Acme",
+  is_archived: false,
   url: "http://127.0.0.1:8004",
   named_reset_kwargs: [
-    { name: "Acme Tech", reset_kwargs: { company: "acme", role: "tech" } },
+    {
+      name: "Acme Tech",
+      description: "  Acme's data, as a technician  ",
+      reset_kwargs: { company: "acme", role: "tech" },
+    },
     {
       name: "Acme Manager",
       reset_kwargs: { company: "acme", role: "manager" },
@@ -89,6 +96,7 @@ const ACME: OpenEnvServer = {
 const BARE: OpenEnvServer = {
   id: "openenv_2",
   name: "Beta",
+  is_archived: false,
   named_reset_kwargs: [],
 }
 
@@ -122,6 +130,47 @@ describe("openenv_tool_name", () => {
   })
 })
 
+describe("openenv_server_id_of_tool", () => {
+  it("takes the server id from an OpenEnv tool id", () => {
+    expect(
+      openenv_server_id_of_tool("kiln_tool::openenv::openenv_1::list_items"),
+    ).toBe("openenv_1")
+  })
+
+  it("is null for other or malformed tool ids", () => {
+    expect(openenv_server_id_of_tool("mcp::remote::s::search")).toBeNull()
+    expect(openenv_server_id_of_tool("kiln_tool::openenv::::list")).toBeNull()
+  })
+})
+
+describe("keeps_unlisted_openenv_tool", () => {
+  const archived = new Set(["openenv_2"])
+
+  it("keeps an offline server's tool", () => {
+    expect(
+      keeps_unlisted_openenv_tool(
+        "kiln_tool::openenv::openenv_1::list_items",
+        archived,
+      ),
+    ).toBe(true)
+  })
+
+  it("drops an archived server's tool", () => {
+    expect(
+      keeps_unlisted_openenv_tool(
+        "kiln_tool::openenv::openenv_2::list_items",
+        archived,
+      ),
+    ).toBe(false)
+  })
+
+  it("drops anything that isn't an OpenEnv tool", () => {
+    expect(
+      keeps_unlisted_openenv_tool("mcp::remote::s::search", archived),
+    ).toBe(false)
+  })
+})
+
 describe("openenv_server_detail_link", () => {
   it("links the OpenEnv detail page", () => {
     expect(openenv_server_detail_link("p1", "openenv_1")).toBe(
@@ -130,10 +179,10 @@ describe("openenv_server_detail_link", () => {
   })
 })
 
-describe("environment_field_state", () => {
+describe("environment_preset_field_state", () => {
   it("is hidden when the tools reach no OpenEnv", () => {
     expect(
-      environment_field_state({ openenv_server: null, error: null }),
+      environment_preset_field_state({ openenv_server: null, error: null }),
     ).toEqual({
       kind: "hidden",
     })
@@ -143,67 +192,81 @@ describe("environment_field_state", () => {
     const message =
       "Your tools use more than one OpenEnv (Acme, Beta). A run can only use one."
     expect(
-      environment_field_state({ openenv_server: null, error: message }),
+      environment_preset_field_state({ openenv_server: null, error: message }),
     ).toEqual({
       kind: "error",
       message,
     })
   })
 
-  it("is empty for an OpenEnv with no Environment Options", () => {
-    expect(environment_field_state({ openenv_server: BARE })).toEqual({
+  it("is empty for an OpenEnv server with no Environment Presets", () => {
+    expect(environment_preset_field_state({ openenv_server: BARE })).toEqual({
       kind: "empty",
       openenv_server: BARE,
     })
-    const no_list: OpenEnvServer = { id: "openenv_3", name: "Gamma" }
-    expect(environment_field_state({ openenv_server: no_list }).kind).toBe(
-      "empty",
-    )
+    const no_list: OpenEnvServer = {
+      id: "openenv_3",
+      name: "Gamma",
+      is_archived: false,
+    }
+    expect(
+      environment_preset_field_state({ openenv_server: no_list }).kind,
+    ).toBe("empty")
   })
 
-  it("lists the options otherwise", () => {
-    expect(environment_field_state({ openenv_server: ACME })).toEqual({
-      kind: "options",
+  it("lists the presets otherwise", () => {
+    expect(environment_preset_field_state({ openenv_server: ACME })).toEqual({
+      kind: "presets",
       openenv_server: ACME,
     })
   })
 })
 
-describe("environment_option_groups", () => {
-  it("lists options in order with their reset arguments as preformatted JSON", () => {
-    const [group] = environment_option_groups(ACME)
-    expect(group.options.map((o) => o.value)).toEqual([
-      "Acme Tech",
-      "Acme Manager",
+describe("environment_preset_groups", () => {
+  it("lists presets in order, described by their own description", () => {
+    const [group] = environment_preset_groups(ACME)
+    expect(group.options).toEqual([
+      {
+        label: "Acme Tech",
+        value: "Acme Tech",
+        description: "Acme's data, as a technician",
+      },
+      { label: "Acme Manager", value: "Acme Manager", description: undefined },
     ])
-    expect(group.options[0]).toEqual({
-      label: "Acme Tech",
-      value: "Acme Tech",
-      description: '{\n  "company": "acme",\n  "role": "tech"\n}',
-      description_preformatted: true,
-    })
+  })
+
+  it("shows no description for a blank one", () => {
+    const env: OpenEnvServer = {
+      id: "openenv_5",
+      name: "Beta",
+      is_archived: false,
+      named_reset_kwargs: [{ name: "Blank", description: "   " }],
+    }
+    expect(environment_preset_groups(env)[0].options[0].description).toBe(
+      undefined,
+    )
   })
 })
 
-describe("selected_option_after_change", () => {
+describe("selected_preset_after_change", () => {
   it("keeps a name that still exists", () => {
-    expect(selected_option_after_change(ACME, "Acme Manager")).toBe(
+    expect(selected_preset_after_change(ACME, "Acme Manager")).toBe(
       "Acme Manager",
     )
   })
 
-  it("falls back to the first option", () => {
-    expect(selected_option_after_change(ACME, null)).toBe("Acme Tech")
-    expect(selected_option_after_change(ACME, "Removed")).toBe("Acme Tech")
+  it("falls back to the first preset", () => {
+    expect(selected_preset_after_change(ACME, null)).toBe("Acme Tech")
+    expect(selected_preset_after_change(ACME, "Removed")).toBe("Acme Tech")
   })
 
-  it("is null with no options", () => {
-    expect(selected_option_after_change(BARE, "Acme Tech")).toBeNull()
+  it("is null with no presets", () => {
+    expect(selected_preset_after_change(BARE, "Acme Tech")).toBeNull()
   })
 })
 
 describe("reset_kwargs_for", () => {
-  it("returns the named option's reset arguments", () => {
+  it("returns the named preset's reset arguments", () => {
     expect(reset_kwargs_for(ACME, "Acme Manager")).toEqual({
       company: "acme",
       role: "manager",
@@ -215,10 +278,11 @@ describe("reset_kwargs_for", () => {
     expect(reset_kwargs_for(ACME, null)).toBeNull()
   })
 
-  it("treats an option without arguments as an empty object", () => {
+  it("treats a preset without arguments as an empty object", () => {
     const env: OpenEnvServer = {
       id: "openenv_4",
       name: "Delta",
+      is_archived: false,
       named_reset_kwargs: [{ name: "Default" }],
     }
     expect(reset_kwargs_for(env, "Default")).toEqual({})

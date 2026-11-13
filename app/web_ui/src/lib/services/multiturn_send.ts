@@ -12,7 +12,7 @@ export type RunConfigController = {
   run_options_as_run_config_properties: () => RunConfigProperties
   get_selected_model: () => string | null
   set_model_dropdown_error: (msg: string) => void
-  // The chosen Environment Option's reset arguments, or null when the tools
+  // The chosen Environment Preset's reset arguments, or null when the tools
   // reach no OpenEnv. Sent on a conversation's first turn only: the session
   // keeps its starting state for the rest of the conversation.
   get_openenv_reset_kwargs?: () => Promise<ResetKwargs | null>

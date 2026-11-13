@@ -9,19 +9,23 @@ import type {
 export const OPENENV_DOCS_URL = "https://docs.kiln.tech/docs/tools-and-mcp"
 export const SEAHAVEN_URL = "https://github.com/Kiln-AI/Seahaven"
 
-/** Copy for the fields shared by Connect OpenEnv and the Edit OpenEnv dialog. */
+/**
+ * Copy for the fields shared by Connect OpenEnv Server and its Edit dialog. It
+ * matches the MCP server connect form's.
+ */
 export const OPENENV_SERVER_FIELDS = {
-  name: { label: "Name", description: "A name to identify this OpenEnv." },
+  name: {
+    label: "Name",
+    description: "A name to identify this OpenEnv server.",
+  },
   description: {
     label: "Description",
-    description: "A description of this OpenEnv for your reference.",
+    description: "A description of this OpenEnv server for your reference.",
   },
   url: {
     label: "Server URL",
     description: "The URL of the OpenEnv server.",
-    info_description:
-      "Kiln connects to this server but never starts or stops it. Start the server before you connect.",
-    placeholder: "http://127.0.0.1:8004",
+    placeholder: "https://example.com/openenv",
   },
 } as const
 
@@ -60,7 +64,7 @@ export function parse_reset_arguments(text: string): ParsedResetArguments {
 }
 
 export const FORK_DISABLED_WITH_OPENENV =
-  "This conversation uses an OpenEnv, so it can only continue from the latest turn."
+  "This conversation uses an OpenEnv server, so it can only continue from the latest turn."
 
 const OPENENV_TOOL_ID_PREFIX = "kiln_tool::openenv::"
 
@@ -85,6 +89,31 @@ export function openenv_tool_name(tool_id: string): string | null {
   return parts[3]
 }
 
+/** The OpenEnv server id in an OpenEnv tool id, or null when it isn't one. */
+export function openenv_server_id_of_tool(tool_id: string): string | null {
+  if (openenv_tool_name(tool_id) === null) {
+    return null
+  }
+  return tool_id.split("::")[2]
+}
+
+/**
+ * Whether a picker keeps a selected OpenEnv tool that available_tools doesn't
+ * list. An offline server's tools stay selected, so the run reports the server
+ * can't be reached. An archived server's tools are dropped, as an archived MCP
+ * server's are.
+ */
+export function keeps_unlisted_openenv_tool(
+  tool_id: string,
+  archived_openenv_server_ids: Set<string>,
+): boolean {
+  const openenv_server_id = openenv_server_id_of_tool(tool_id)
+  return (
+    openenv_server_id !== null &&
+    !archived_openenv_server_ids.has(openenv_server_id)
+  )
+}
+
 export function openenv_server_detail_link(
   project_id: string,
   openenv_server_id: string,
@@ -92,16 +121,16 @@ export function openenv_server_detail_link(
   return `/tools/${project_id}/openenv_servers/${openenv_server_id}`
 }
 
-/** What the run page's Environment Options field shows for the selected tools. */
-export type EnvironmentFieldState =
+/** What the run page's Environment Preset field shows for the selected tools. */
+export type EnvironmentPresetFieldState =
   | { kind: "hidden" }
   | { kind: "error"; message: string }
   | { kind: "empty"; openenv_server: OpenEnvServer }
-  | { kind: "options"; openenv_server: OpenEnvServer }
+  | { kind: "presets"; openenv_server: OpenEnvServer }
 
-export function environment_field_state(
+export function environment_preset_field_state(
   run_openenv_server: RunOpenEnvServer,
-): EnvironmentFieldState {
+): EnvironmentPresetFieldState {
   if (run_openenv_server.error) {
     return { kind: "error", message: run_openenv_server.error }
   }
@@ -112,31 +141,33 @@ export function environment_field_state(
   if (!openenv_server.named_reset_kwargs?.length) {
     return { kind: "empty", openenv_server }
   }
-  return { kind: "options", openenv_server }
+  return { kind: "presets", openenv_server }
 }
 
-/** One option per Environment Option, in order, valued by its unique name. */
-export function environment_option_groups(
+/**
+ * One option per Environment Preset, in order, valued by its unique name and
+ * described by the preset's own description.
+ */
+export function environment_preset_groups(
   openenv_server: OpenEnvServer,
 ): OptionGroup[] {
   return [
     {
-      options: (openenv_server.named_reset_kwargs ?? []).map((option) => ({
-        label: option.name,
-        value: option.name,
-        description: format_reset_arguments(option.reset_kwargs),
-        description_preformatted: true,
+      options: (openenv_server.named_reset_kwargs ?? []).map((preset) => ({
+        label: preset.name,
+        value: preset.name,
+        description: preset.description?.trim() || undefined,
       })),
     },
   ]
 }
 
 /**
- * The option to select after the environment is looked up again: the same
+ * The preset to select after the environment is looked up again: the same
  * name if it's still there, otherwise the first (the default), or null when
  * there are none.
  */
-export function selected_option_after_change(
+export function selected_preset_after_change(
   openenv_server: OpenEnvServer,
   previous_name: string | null,
 ): string | null {
@@ -149,10 +180,10 @@ export function selected_option_after_change(
 
 export function reset_kwargs_for(
   openenv_server: OpenEnvServer,
-  option_name: string | null,
+  preset_name: string | null,
 ): ResetKwargs | null {
-  const option = openenv_server.named_reset_kwargs?.find(
-    (o) => o.name === option_name,
+  const preset = openenv_server.named_reset_kwargs?.find(
+    (p) => p.name === preset_name,
   )
-  return option ? option.reset_kwargs ?? {} : null
+  return preset ? preset.reset_kwargs ?? {} : null
 }

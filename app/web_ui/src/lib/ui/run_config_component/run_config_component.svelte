@@ -27,7 +27,7 @@
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import ToolsSelector from "./tools_selector.svelte"
   import SkillsSelector from "./skills_selector.svelte"
-  import EnvironmentOptionsField from "./environment_options_field.svelte"
+  import EnvironmentPresetField from "./environment_preset_field.svelte"
   import type { ResetKwargs } from "$lib/utils/openenv"
   import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
@@ -73,9 +73,9 @@
   export let selected_model_specific_run_config_id: string | null = null
   export let run_config_name: string = generate_memorable_name()
   export let show_name_field: boolean = true
-  // Show the Environment Options field when the tools reach an OpenEnv. Only
-  // for callers that start a run: the choice isn't part of the run config.
-  export let show_environment_options: boolean = false
+  // Show the Environment Preset field when the tools reach an OpenEnv server.
+  // Only for callers that start a run: the choice isn't part of the run config.
+  export let show_environment_preset: boolean = false
 
   export let model: string | null = $ui_state.selected_model
   // Optional: seed every run option (model, prompt, tools, temperature, top_p,
@@ -572,12 +572,12 @@
     skills = []
   }
 
-  let environment_options_field: EnvironmentOptionsField | null = null
+  let environment_preset_field: EnvironmentPresetField | null = null
 
-  /** The chosen Environment Option's reset arguments, or null if none applies. */
+  /** The chosen Environment Preset's reset arguments, or null if none applies. */
   export async function get_openenv_reset_kwargs(): Promise<ResetKwargs | null> {
-    return environment_options_field
-      ? await environment_options_field.get_openenv_reset_kwargs()
+    return environment_preset_field
+      ? await environment_preset_field.get_openenv_reset_kwargs()
       : null
   }
 
@@ -656,14 +656,6 @@
           {pending_skill_id}
         />
       {/if}
-      {#if show_environment_options}
-        <EnvironmentOptionsField
-          bind:this={environment_options_field}
-          {project_id}
-          task_id={current_task?.id ?? null}
-          tool_ids={[...tools, ...skills]}
-        />
-      {/if}
       <Collapse title="Advanced Options">
         <slot name="advanced" />
         <AdvancedRunOptions
@@ -676,6 +668,16 @@
             null}
           has_structured_output={requires_structured_output}
         />
+        <!-- Last, and collapsed with the rest: it appears only after the tools
+             lookup answers, so outside the collapse it would push the page down. -->
+        {#if show_environment_preset}
+          <EnvironmentPresetField
+            bind:this={environment_preset_field}
+            {project_id}
+            task_id={current_task?.id ?? null}
+            tool_ids={[...tools, ...skills]}
+          />
+        {/if}
       </Collapse>
     {:else}
       <Collapse title="Advanced Options">

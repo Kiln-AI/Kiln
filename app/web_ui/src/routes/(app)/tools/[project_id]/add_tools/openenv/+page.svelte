@@ -3,7 +3,8 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Callout from "$lib/ui/callout.svelte"
-  import WrenchIcon from "$lib/ui/icons/wrench_icon.svelte"
+  import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
+  import BuildingsIcon from "$lib/ui/icons/buildings_icon.svelte"
   import { client } from "$lib/api_client"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
@@ -19,7 +20,7 @@
 
   $: project_id = $page.params.project_id!
   $: agentInfo.set({
-    name: "Connect OpenEnv",
+    name: "Connect OpenEnv Server",
     description: `Connect an OpenEnv server to project ID ${project_id}. Adds the tools the server serves to the project.`,
   })
 
@@ -43,7 +44,7 @@
         throw api_error
       }
       if (!data.id) {
-        throw new KilnError("The new OpenEnv has no id.")
+        throw new KilnError("The new OpenEnv server has no id.")
       }
       posthog.capture("connect_openenv", {})
       uncache_available_tools(project_id)
@@ -57,7 +58,7 @@
 </script>
 
 <AppPage
-  title="Connect OpenEnv"
+  title="Connect OpenEnv Server"
   subtitle="Connect to a running OpenEnv server to add its tools to your project."
   sub_subtitle="Read the Docs"
   sub_subtitle_link={OPENENV_DOCS_URL}
@@ -78,22 +79,17 @@
 >
   <div class="mb-8 max-w-4xl">
     <Callout
-      title="Build an OpenEnv with Kiln Seahaven"
-      description="Kiln Seahaven is an open-source framework for building realistic copies of your product's tools and data, served as an OpenEnv."
+      title="Build an OpenEnv Server with Kiln Seahaven"
+      description="Kiln Seahaven is an open-source framework for building realistic copies of your product's tools and data, served as an OpenEnv server."
       button_label="Learn More"
       button_onclick={() =>
         window.open(SEAHAVEN_URL, "_blank", "noopener,noreferrer")}
     >
-      <div slot="icon"><WrenchIcon /></div>
+      <div slot="icon"><BuildingsIcon /></div>
     </Callout>
   </div>
   <div class="max-w-4xl">
-    <FormContainer
-      submit_label="Connect"
-      on:submit={connect}
-      bind:submitting
-      {error}
-    >
+    <FormContainer submit_label="Connect" on:submit={connect} bind:submitting>
       <FormElement
         label={OPENENV_SERVER_FIELDS.name.label}
         id="name"
@@ -113,10 +109,22 @@
         label={OPENENV_SERVER_FIELDS.url.label}
         id="openenv_server_url"
         description={OPENENV_SERVER_FIELDS.url.description}
-        info_description={OPENENV_SERVER_FIELDS.url.info_description}
         placeholder={OPENENV_SERVER_FIELDS.url.placeholder}
         bind:value={url}
       />
+
+      {#if error}
+        <ErrorDetailsBlock
+          title="Could Not Connect to OpenEnv Server"
+          error_messages={error.getErrorMessages()}
+          troubleshooting_steps={[
+            "Verify the URL is correct.",
+            "Verify the server is running and accessible.",
+            "Check your network connection.",
+            "Check Kiln logs for additional details.",
+          ]}
+        />
+      {/if}
     </FormContainer>
   </div>
 </AppPage>

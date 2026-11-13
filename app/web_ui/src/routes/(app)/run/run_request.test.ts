@@ -59,7 +59,7 @@ describe("build_run_request", () => {
     expect(request_args.get_openenv_reset_kwargs).not.toHaveBeenCalled()
   })
 
-  it("passes on a refusal from the Environment Options field", async () => {
+  it("passes on a refusal from the Environment Preset field", async () => {
     const request_args = args(AGENT_CONFIG, null)
     request_args.get_openenv_reset_kwargs.mockRejectedValue(
       new Error("Network down"),

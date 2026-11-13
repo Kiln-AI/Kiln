@@ -356,7 +356,7 @@
             {pending_tool_id}
             {pending_run_config_id}
             show_name_field={false}
-            show_environment_options={true}
+            show_environment_preset={true}
           />
         </div>
       </div>
@@ -403,7 +403,7 @@
               {pending_tool_id}
               {pending_run_config_id}
               show_name_field={false}
-              show_environment_options={true}
+              show_environment_preset={true}
             />
           </div>
         {/if}

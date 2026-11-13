@@ -172,6 +172,26 @@ class TestRemoteSessions:
         with pytest.raises(OpenEnvError, match="did not answer /metadata"):
             await session_manager.list_tools(openenv_server)
 
+    async def test_check_reachable_reads_metadata_without_caching(
+        self, session_manager, project, server_url
+    ):
+        unsaved = OpenEnvServer(name="new", parent=project, url=server_url + "/")
+        await session_manager.check_reachable(unsaved)
+        assert session_manager._servers == {}
+
+    async def test_check_reachable_unreachable_url(self, session_manager, project):
+        unsaved = OpenEnvServer(
+            name="dead", parent=project, url=f"http://127.0.0.1:{free_port()}"
+        )
+        with pytest.raises(OpenEnvError, match="did not answer /metadata"):
+            await session_manager.check_reachable(unsaved)
+
+    async def test_check_reachable_without_url(self, session_manager, project):
+        with pytest.raises(OpenEnvError, match="has no url"):
+            await session_manager.check_reachable(
+                OpenEnvServer(name="blank", parent=project)
+            )
+
     async def test_shutdown_closes_sessions(
         self, session_manager, remote_openenv_server
     ):

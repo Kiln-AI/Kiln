@@ -19,7 +19,7 @@ File paths are relative to the repo root. `core` means `libs/core/kiln_ai`, `ser
 | 5 | Multi-turn session registry | Builds on phase 4 |
 | 6 | OpenEnv pages (Tools area) | UI on phase 2's API |
 | 7 | Picker, run page, conversation page, run sidebar | UI on phases 3 to 5 |
-| 8 | Reset argument forms from the server's reset schema | Added after phase 7; only the Environment Option dialog reads it (section 13) |
+| 8 | Reset argument forms from the server's reset schema | Added after phase 7; only the Environment Preset dialog reads it (section 13) |
 
 Phases 6 and 7 include the small shared-component changes they need (section 9).
 
@@ -73,25 +73,30 @@ Existing trace-index digests change, because the reset's field names change. Eva
 ```python
 class NamedResetKwargs(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    description: str | None = None
     reset_kwargs: dict[str, JsonValue] = Field(default_factory=dict)
 
 class OpenEnvServer(KilnParentedModel):
     ...existing fields...
     named_reset_kwargs: list[NamedResetKwargs] = Field(default_factory=list)
+    is_archived: bool = False
 
     @field_validator("named_reset_kwargs")
     @classmethod
-    def unique_names(cls, v): ...  # ValueError "An Environment Option named {name} already exists."
+    def unique_names(cls, v): ...  # ValueError "An Environment Preset named {name} already exists."
 ```
 
 - Names are compared after `strip()`, case-sensitively.
 - `KilnBaseModel` has `validate_assignment=True`, so the validator also runs on PATCH.
 - List order is insertion order. The first entry is the default.
 - `reset_kwargs` is typed as a dict, so a JSON array or scalar is rejected by Pydantic. The API maps that to the spec's message (below).
+- `description` and `is_archived` are additive with defaults, so files saved without them load.
 
 ### API (`studio/openenv_server_api.py`)
 
-- `OpenEnvServerCreateRequest`, `OpenEnvServerUpdateRequest` and `OpenEnvServerResponse` gain `named_reset_kwargs`, and `_openenv_server_response` copies it.
+- `OpenEnvServerCreateRequest`, `OpenEnvServerUpdateRequest` and `OpenEnvServerResponse` gain `named_reset_kwargs` (each entry with its optional `description`), and `_openenv_server_response` copies it. The response also carries `is_archived`.
+- **Reachable on save, mirroring MCP's `validate_tool_server_connectivity`:** create calls `OpenEnvSessionManager.check_reachable(openenv_server)` before `save_to_file()` when `url` is set; update calls it only when the new `url` differs from the saved one. `check_reachable` does the same `GET {url}/metadata` as `openenv_version`, but caches nothing, so an unsaved record can be checked. An `OpenEnvError` becomes a 400 with its message, and nothing is saved. Update applies its changes to a deep copy, so a refused update leaves no trace on a cached record.
+- **Archive, mirroring `POST /tool_servers/{id}/archive`:** `POST /api/projects/{project_id}/openenv_servers/{openenv_server_id}/archive` with `{"is_archived": bool}` sets the flag and returns the server. It doesn't contact the server. Agent policy: requires approval, like the other writes on this router.
 - PATCH replaces the whole list. The UI sends the full list after an add, edit, clone or remove. One environment file is the unit of write, so there are no per-entry routes.
 - Validation errors return 400 with the friendly text from `ui_design.md`'s Copy table. These are a duplicate name, "Reset arguments must be a JSON object.", and the URL error "Enter a full URL starting with http:// or https://...". The URL message replaces the developer text raised by `validate_url`, which stays as the internal message.
 - The UI never calls DELETE. The route and its 409 rule stay.
@@ -120,7 +125,7 @@ def single_openenv_server_id(project: Project, tool_ids: list[ToolId]) -> str | 
 - Missing code tools, servers or run configs are skipped. Other validation reports those.
 - It reads only ids, never code, and makes no network calls.
 
-`OpenEnvReachError(ValueError)` carries the spec's message: "Your tools use more than one OpenEnv (Acme, Beta). A run can only use one." The detail text adds the `via` for each environment, for logs and the save error.
+`OpenEnvReachError(ValueError)` carries the spec's message: "Your tools use more than one OpenEnv server (Acme, Beta). A run can only use one." The detail text adds the `via` for each environment, for logs and the save error.
 
 ### Where it runs
 
@@ -240,9 +245,9 @@ def shared_conversation_sessions() -> ConversationSessions
 |---|---|
 | First turn (no parent) | Start the episode as in single-turn and set it. After the turn, `read_state` gives the turn's `openenv_episode.final_state`. `put(new_run_id, held)`. |
 | Later turn, `take(parent_id)` finds a session | Set its context and ignore `reset_kwargs`, because the choice is locked. After the turn, `read_state`, record it, and `put(new_run_id, held)` with `turn_run_ids` updated. |
-| Later turn, no session, `holds_turn(parent_id)` is true | Raise `fork_refused`: "This conversation uses an OpenEnv, so it can only continue from the latest turn." |
+| Later turn, no session, `holds_turn(parent_id)` is true | Raise `fork_refused`: "This conversation uses an OpenEnv server, so it can only continue from the latest turn." |
 | Later turn, no session, parent has `openenv_episode` | Raise `session_ended`, with the spec's message |
-| Later turn, parent has no `openenv_episode`, tools now reach an environment | Raise `not_started_with_openenv`: "This conversation started without an OpenEnv. Start a new conversation to use one." |
+| Later turn, parent has no `openenv_episode`, tools now reach an environment | Raise `not_started_with_openenv`: "This conversation started without an OpenEnv server. Start a new conversation to use one." |
 | The turn raises | If `is_run_ending_tool_error`, release the session. Otherwise `put(parent_id, held)` back, so the user can retry the same turn. |
 
 `take` removes the entry, so two concurrent sends on the same turn can't share a session. The second one gets `session_ended`. The UI already blocks double sends.
@@ -256,36 +261,47 @@ def shared_conversation_sessions() -> ConversationSessions
 ### Server (`studio/tool_api.py`)
 
 - Add `ToolSetType.OPENENV = "openenv"`.
-- After the MCP loop, list every environment with an `url` concurrently: `asyncio.gather` over `asyncio.wait_for(shared_session_manager().list_tools(env), timeout=5)`.
+- After the MCP loop, list every environment that has a `url` and isn't archived concurrently: `asyncio.gather` over `asyncio.wait_for(shared_session_manager().list_tools(env), timeout=5)`.
 - An environment that fails or times out is skipped, the same as MCP, and logged at warning level.
-- Each listed environment gives a set with `set_name="OpenEnv: " + env.name`. Its tools are `ToolApiDescription(id=build_openenv_tool_id(env.id, t.name), name=t.name, description=t.description, function_name=t.name)`.
+- Each listed environment gives a set with `set_name="OpenEnv Server: " + env.name`, like `"MCP Server: " + server.name`. Its tools are `ToolApiDescription(id=build_openenv_tool_id(env.id, t.name), name=t.name, description=t.description, function_name=t.name)`.
 
 ### Web
 
 - `web/lib/ui/run_config_component/tool_options.ts`: add `openenv` to `AGENT_TOOL_SET_RANK`, ranked after `mcp` and before `demo`. The record is exhaustive, so TypeScript requires it.
-- `tools_selector.svelte`, `drop_unselectable_tools` (around lines 159 to 184): never drop ids starting with `kiln_tool::openenv::`. Without this, an offline environment's tools would be removed from a saved selection.
+- `tools_selector.svelte`, `drop_unselectable_tools`: keep ids starting with `kiln_tool::openenv::` whose server isn't archived (`keeps_unlisted_openenv_tool` in `lib/utils/openenv.ts`). Without this, an offline environment's tools would be removed from a saved selection.
+- An archived server's tools are dropped, as an archived MCP server's are. Once a selected tool is an OpenEnv one, the picker reads `GET /openenv_servers` once per project (`load_archived_openenv_server_ids`) to learn which servers are archived. Until it answers, or if it fails, nothing is dropped.
+
+### What archive does, mirroring MCP
+
+| Where | Archived MCP server | Archived OpenEnv server |
+|---|---|---|
+| `available_tools` | Left out | Left out |
+| Tool picker | Its tools aren't offered; a selection holding them drops them | The same |
+| Saved run configs | Still list the tools, and still run: `tool_from_id` doesn't check the flag | The same: the reach walk and `OpenEnvTool` don't check it |
+| Tools list | "Archived" status | "Archived" status, listed last |
+| Detail page | Archive / Unarchive, and a warning | The same |
 
 ## 8. Phase 7: run page, conversation page, run sidebar
 
-### Environment Options field
+### Environment Preset field
 
-- New file: `web/lib/ui/run_config_component/environment_options_field.svelte`. It's rendered by `run_config_component.svelte` between Skills and the Advanced Options collapse.
+- New file: `web/lib/ui/run_config_component/environment_preset_field.svelte`. It's rendered by `run_config_component.svelte` at the bottom of the Advanced Options collapse, after `AdvancedRunOptions`. The collapse starts closed but keeps its content mounted, so `get_openenv_reset_kwargs()` works while it's closed. It sits there because it appears only after the lookup answers, and outside the collapse that shifted the page.
 - It watches `get_tools()` and debounces calls to the lookup endpoint by 250 ms. Its states:
 
 | State | Shown |
 |---|---|
 | `openenv` null, no error | Nothing (hidden) |
 | `error` set | The label, plus the error line in FormElement's error style |
-| Environment with no options | Empty state, "No Environment Options" with "Add Environment Options" linking to the detail page |
-| Environment with options | A `fancy_select` of options in order, first selected, descriptions in preformatted JSON |
+| Environment with no presets | Empty state, "No Environment Presets" with "Add Environment Preset" linking to the detail page |
+| Environment with presets | A `fancy_select` of presets in order, first selected, each option's description the preset's own description (none when it has none) |
 
-- The run page reads the selection through `run_config_component.get_openenv_reset_kwargs()`, which returns the chosen option's `reset_kwargs` or null. It includes them as `openenv_reset_kwargs` in the `/run` body.
+- The run page reads the selection through `run_config_component.get_openenv_reset_kwargs()`, which returns the chosen preset's `reset_kwargs` or null. A failed lookup is retried once and then thrown, and the more-than-one-server error is refused again by the run API, so the field being collapsed can't let a bad run through. It includes them as `openenv_reset_kwargs` in the `/run` body.
 - The multi-turn composer sends it only on the first turn.
 - It's not stored in the run config or in `localStorage`.
 
 ### Conversation page and run sidebar
 
-- `run_sidebar.svelte` and the conversation page's sidebar read `run.openenv_episode`. They show a `PropertyList` titled "OpenEnv" after Usage, with OpenEnv (a link to the detail page) and Reset Arguments (formatted JSON).
+- `run_sidebar.svelte` and the conversation page's sidebar read `run.openenv_episode`. They show a `PropertyList` titled "OpenEnv" after Usage, with OpenEnv Server (a link to the detail page), Version (`openenv_episode.openenv_version`) and Reset Arguments (formatted JSON).
 - The conversation page adds a prop to `lib/ui/trace/chat_message_actions.svelte`: `fork_disabled_reason: string | null`. When the conversation has `openenv_episode`, Fork is disabled on earlier turns, with that text as a tooltip.
 - A `session_ended` 409 from the composer shows above the composer as an error `Warning`, using the existing error display.
 
@@ -295,8 +311,8 @@ def shared_conversation_sessions() -> ConversationSessions
 |---|---|
 | `lib/components/code_editor.svelte` | Add `language: "python" \| "json" = "python"`. Import `@codemirror/lang-json` dynamically when it's `"json"`. Add the package to `web/package.json`. |
 | `lib/ui/error_details_block.svelte` | Add `full_width = false`. When it's true, drop `max-w-[600px] mx-auto`. |
-| `lib/ui/settings_item.svelte` (via `kiln_section.svelte` items) | Add optional `link_label` and `link_href`, rendered after the description as an `<a class="link">`. |
-| `lib/ui/fancy_select.svelte` and `fancy_select_types.ts` | Add `description_preformatted?: boolean` to `Option`. When it's true, render the description in `font-mono whitespace-pre` without `line-clamp`. |
+| `lib/ui/settings_item.svelte` (via `kiln_section.svelte` items) | Add optional `link_label` and `link_href`, rendered on its own line under the description as an `<a class="link">`. |
+| `lib/components/run_input_form_element.svelte` | An optional enum's dropdown starts on "Not Set", listed first (`enum_select_options` in `run_input_select_options.ts`). A required enum keeps "Select an option" with "Not Set" last. This changes every optional enum in the run input form, which is intended. |
 | `lib/ui/trace/chat_message_actions.svelte` | Add `fork_disabled_reason` (section 8) |
 
 Each change is opt-in, so existing callers render exactly as before.
@@ -305,7 +321,9 @@ Each change is opt-in, so existing callers render exactly as before.
 
 These are routes under `web/routes/(app)/tools/[project_id]/`, as listed in `ui_design.md`'s page inventory: `add_tools/openenv/+page.svelte`, `openenv_servers/[openenv_server_id]/+page.svelte`, and the Tools list and Add Tools changes.
 
-- The Environment Option dialog edits a local copy of `named_reset_kwargs` and PATCHes the whole list.
+- The Environment Preset dialog (`environment_preset_dialog.svelte`) edits a local copy of `named_reset_kwargs` and PATCHes the whole list. It has Name, an optional Description, and a Reset Arguments section headed by `SettingsHeader` with the Raw JSON / Form link in its actions slot.
+- The presets table shows Name, Description and Reset Arguments, one truncated line each, and expands a row on click (the synthetic data tables' pattern). `compact_reset_arguments` gives the one-line JSON.
+- Archive and Unarchive call the archive route, then reload `available_tools`.
 - Clone opens the Add dialog prefilled, with the name `"<name> (copy)"`.
 - Remove PATCHes the list without that entry.
 - New type aliases go in `web/lib/types.ts`.
@@ -318,7 +336,7 @@ Python uses pytest, following `python_test_guide.md`. Web uses vitest, following
 |---|---|
 | Rename | The full existing suite passes after the rename. A grep test fails on any `kiln_tool::world` or `World` identifier left in non-English source. |
 | `NamedResetKwargs` | Unique names, including after PATCH. A non-object JSON is rejected. Order is preserved. Round-trip on disk. |
-| Environment API | Create and patch with `named_reset_kwargs`. The friendly error messages. |
+| Environment API | Create and patch with `named_reset_kwargs`, including descriptions. The friendly error messages. Create and URL-changing update refuse an unreachable server and save nothing; other updates don't contact it. Archive and unarchive. |
 | `openenv_reach` | Direct ids. Nested code tools. A Kiln task tool into a run config into a code tool. Cycles terminate. Missing targets are skipped. One environment versus two, and the error text names each `via`. |
 | Save validation | Run config save refuses two environments reached indirectly. Code tool create refuses an allowlist that reaches two. |
 | Lookup endpoint | The three result shapes, plus a missing environment |
@@ -326,8 +344,8 @@ Python uses pytest, following `python_test_guide.md`. Web uses vitest, following
 | `read_state` | Returns state, keeps the session open, drops it on failure |
 | `ConversationSessions` | Put and take re-keying. Fork refused. Session ended. Not started with an environment. Retry after a non-ending error. Reap after idle, with an injected clock. `release_runs`. `close_all`. |
 | Run API multi-turn | Three turns share one episode. Each turn's `openenv_episode.final_state` comes from `read_state`. The run delete hook releases the session. |
-| `available_tools` | An OpenEnv set is listed. An offline environment is skipped. The timeout is respected. |
-| Web | `tool_options` rank, `drop_unselectable_tools` keeping env ids, all four `environment_options_field` states, the component prop defaults (each new prop off renders as before), and the request body including `openenv_reset_kwargs` |
+| `available_tools` | An OpenEnv set is listed. An offline or archived environment is skipped. The timeout is respected. |
+| Web | `tool_options` rank, `drop_unselectable_tools` keeping env ids and dropping archived ones, all four `environment_preset_field` states and its place in Advanced Options, optional enums leading with "Not Set", the component prop defaults (each new prop off renders as before), and the request body including `openenv_reset_kwargs` |
 | Reset schema (phase 8) | Core: `/schema` with `reset`, fallback to `/seahaven/schemas`, neither, a non-object `reset`, unreachable. Endpoint: no url, 502, null and a schema. Web: the converter on the Seahaven schema shape (nullable `anyOf`, `$ref` to `$defs`, enums, defaults) and each unsupported construct returning null; `kwargs_fit_form` true and false cases; empty fields left out; the dialog's three states (no schema, form, Raw JSON locked on) and the toggle round trip. |
 
 After each phase, run `uv run ./checks.sh --agent-mode`, and regenerate the API schema when an endpoint changes.
@@ -373,7 +391,7 @@ Kiln's schema form reads `JsonSchemaProperty` (`lib/utils/json_schema_editor/jso
 - `kwargs_fit_form(kwargs, form_schema): { fits: true } | { fits: false, reason: string }`. Every key must be a known property, and every value must match its property's type or enum, recursively. `null` doesn't fit, because the form can't produce it.
 - `form_value_to_kwargs(value)`: drops empty strings, `undefined` and `null`, and objects left empty after that, recursively.
 
-### Dialog (`routes/(app)/tools/[project_id]/openenv_servers/[openenv_server_id]/environment_option_dialog.svelte`)
+### Dialog (`routes/(app)/tools/[project_id]/openenv_servers/[openenv_server_id]/environment_preset_dialog.svelte`)
 
 - On open, call `load_openenv_server_reset_schema` (new, in `lib/api/openenv_server_api.ts`). Any error, or a null schema, means no schema. The error isn't shown: the detail page already shows offline state.
 - With a form schema, render `run_input_form.svelte` with `input_schema` set to the converted schema as a string, and `hide_label`. Read the value with `get_structured_input_data()`, then pass it through `form_value_to_kwargs`.
@@ -382,4 +400,4 @@ Kiln's schema form reads `JsonSchemaProperty` (`lib/utils/json_schema_editor/jso
 
 ### Not in this phase
 
-The run page's Environment Options field and the run records are unchanged. They still show the saved `reset_kwargs` as JSON.
+The run records are unchanged. They still show the saved `reset_kwargs` as JSON.

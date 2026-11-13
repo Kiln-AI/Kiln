@@ -121,7 +121,7 @@ async def openenv_for_run(
         if reset_kwargs is not None:
             raise OpenEnvRunError(
                 "kwargs_without_openenv",
-                "Reset arguments were sent, but this run's tools don't use an OpenEnv.",
+                "Reset arguments were sent, but this run's tools don't use an OpenEnv server.",
             )
         yield None
         return
@@ -174,7 +174,7 @@ def _refuse_openenv_change(
     instead = f"use {openenv_server.name}" if openenv_server else "run without it"
     raise OpenEnvRunError(
         "openenv_changed",
-        f"This conversation uses OpenEnv {held.context.openenv_server.name}. Start a new "
+        f"This conversation uses OpenEnv server {held.context.openenv_server.name}. Start a new "
         f"conversation to {instead}.",
     )
 
@@ -188,18 +188,18 @@ def _continue_conversation(
         if held_sessions.holds_turn(parent_id):
             raise OpenEnvRunError(
                 "fork_refused",
-                "This conversation uses an OpenEnv, so it can only continue from the "
+                "This conversation uses an OpenEnv server, so it can only continue from the "
                 "latest turn.",
             )
         if parent_run.openenv_episode is not None:
             raise OpenEnvRunError(
                 "session_ended",
                 "The OpenEnv session for this conversation ended. Start a new "
-                "conversation to keep using this OpenEnv.",
+                "conversation to keep using this OpenEnv server.",
             )
         raise OpenEnvRunError(
             "not_started_with_openenv",
-            "This conversation started without an OpenEnv. Start a new conversation "
+            "This conversation started without an OpenEnv server. Start a new conversation "
             "to use one.",
         )
     return held
@@ -289,8 +289,8 @@ def reject_openenv_for_streaming(
         raise ValueError(e.message) from e
     if reset_kwargs is not None or reached is not None:
         raise ValueError(
-            "Streaming runs can't use an OpenEnv. Use invoke() for a run whose tools "
-            "reach an OpenEnv or that sets openenv_reset_kwargs."
+            "Streaming runs can't use an OpenEnv server. Use invoke() for a run whose "
+            "tools reach an OpenEnv server or that sets openenv_reset_kwargs."
         )
 
 
@@ -325,7 +325,9 @@ def _run_openenv_server(
         openenv_server_id, project.path
     )
     if openenv_server is None:
-        raise OpenEnvRunError("not_found", f"OpenEnv {openenv_server_id} wasn't found.")
+        raise OpenEnvRunError(
+            "not_found", f"OpenEnv server {openenv_server_id} wasn't found."
+        )
     return openenv_server
 
 
@@ -364,13 +366,13 @@ def _session_error(
     if isinstance(error, OpenEnvCapacityError):
         return OpenEnvRunError(
             "at_capacity",
-            f"OpenEnv {openenv_server.name} is at capacity. Wait for a run to finish, "
+            f"OpenEnv server {openenv_server.name} is at capacity. Wait for a run to finish, "
             "or raise the server's session limit.",
         )
     logger.warning("Can't reach OpenEnv server %s: %s", openenv_server.id, error)
     return OpenEnvRunError(
         "unreachable",
-        f"Can't reach OpenEnv {openenv_server.name} at {openenv_server.url}. "
+        f"Can't reach OpenEnv server {openenv_server.name} at {openenv_server.url}. "
         "Check the server is running.",
     )
 

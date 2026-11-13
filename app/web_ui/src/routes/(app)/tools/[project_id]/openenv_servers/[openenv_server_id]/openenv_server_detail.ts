@@ -44,17 +44,17 @@ export async function load_openenv_server_version(
   return data.openenv_version
 }
 
-/** PATCH the whole Environment Options list; the server replaces it. */
-export async function save_environment_options(
+/** Archive or unarchive the OpenEnv server. */
+export async function set_openenv_server_archived(
   project_id: string,
   openenv_server_id: string,
-  options: NamedResetKwargs[],
+  is_archived: boolean,
 ): Promise<OpenEnvServer> {
-  const { data, error } = await client.PATCH(
-    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}",
+  const { data, error } = await client.POST(
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/archive",
     {
       params: { path: { project_id, openenv_server_id } },
-      body: { named_reset_kwargs: options },
+      body: { is_archived },
     },
   )
   if (error) {
@@ -63,62 +63,91 @@ export async function save_environment_options(
   return data
 }
 
-/** What the Environment Option dialog edits: the name and the editor's text. */
-export type OptionDraft = {
+/** PATCH the whole Environment Presets list; the server replaces it. */
+export async function save_environment_presets(
+  project_id: string,
+  openenv_server_id: string,
+  presets: NamedResetKwargs[],
+): Promise<OpenEnvServer> {
+  const { data, error } = await client.PATCH(
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}",
+    {
+      params: { path: { project_id, openenv_server_id } },
+      body: { named_reset_kwargs: presets },
+    },
+  )
+  if (error) {
+    throw error
+  }
+  return data
+}
+
+/** What the Environment Preset dialog edits: its fields and the editor's text. */
+export type PresetDraft = {
   name: string
+  description: string
   reset_arguments: string
 }
 
-export function blank_draft(): OptionDraft {
-  return { name: "", reset_arguments: "" }
+export function blank_draft(): PresetDraft {
+  return { name: "", description: "", reset_arguments: "" }
 }
 
-export function draft_from(option: NamedResetKwargs): OptionDraft {
+export function draft_from(preset: NamedResetKwargs): PresetDraft {
   return {
-    name: option.name,
-    reset_arguments: format_reset_arguments(option.reset_kwargs),
+    name: preset.name,
+    description: preset.description ?? "",
+    reset_arguments: format_reset_arguments(preset.reset_kwargs),
   }
 }
 
-export function clone_draft(option: NamedResetKwargs): OptionDraft {
-  return { ...draft_from(option), name: `${option.name} (copy)` }
+export function clone_draft(preset: NamedResetKwargs): PresetDraft {
+  return { ...draft_from(preset), name: `${preset.name} (copy)` }
 }
 
 export type DraftResult =
-  | { options: NamedResetKwargs[]; error: null }
-  | { options: null; error: string }
+  | { presets: NamedResetKwargs[]; error: null }
+  | { presets: null; error: string }
 
 /**
- * The list to save after the dialog's Save: the draft replaces the option at
+ * The list to save after the dialog's Save: the draft replaces the preset at
  * `editing_index`, or is appended when it's null. Returns the error to show
  * instead when the Reset Arguments aren't a JSON object.
  */
-export function options_with_draft(
-  options: NamedResetKwargs[],
+export function presets_with_draft(
+  presets: NamedResetKwargs[],
   editing_index: number | null,
-  draft: OptionDraft,
+  draft: PresetDraft,
 ): DraftResult {
   const parsed = parse_reset_arguments(draft.reset_arguments)
   if (parsed.error !== null) {
-    return { options: null, error: parsed.error }
+    return { presets: null, error: parsed.error }
   }
-  const option: NamedResetKwargs = {
+  const preset: NamedResetKwargs = {
     name: draft.name.trim(),
+    description: draft.description.trim() || null,
     reset_kwargs: parsed.reset_kwargs,
   }
   if (editing_index === null) {
-    return { options: [...options, option], error: null }
+    return { presets: [...presets, preset], error: null }
   }
   return {
-    options: options.map((existing, i) =>
-      i === editing_index ? option : existing,
+    presets: presets.map((existing, i) =>
+      i === editing_index ? preset : existing,
     ),
     error: null,
   }
 }
 
+/** Reset arguments on one line, for a table cell that expands to the full JSON. */
+export function compact_reset_arguments(
+  reset_kwargs: ResetKwargs | null | undefined,
+): string {
+  return JSON.stringify(reset_kwargs ?? {})
+}
+
 export const RESET_ARGUMENTS_DESCRIPTION =
-  "Passed to the OpenEnv's reset(). Which keys exist depends on the server."
+  "Passed to the OpenEnv server's reset(). Which keys exist depends on the server."
 export const RESET_ARGUMENTS_SCHEMA_DESCRIPTION =
   "From the OpenEnv server's reset schema. Leave a field empty to use the server's default."
 
@@ -150,9 +179,9 @@ export function reset_arguments_from_form(form_value: unknown): string {
   return format_reset_arguments(form_value_to_kwargs(form_value) as ResetKwargs)
 }
 
-export function options_without(
-  options: NamedResetKwargs[],
+export function presets_without(
+  presets: NamedResetKwargs[],
   index: number,
 ): NamedResetKwargs[] {
-  return options.filter((_, i) => i !== index)
+  return presets.filter((_, i) => i !== index)
 }

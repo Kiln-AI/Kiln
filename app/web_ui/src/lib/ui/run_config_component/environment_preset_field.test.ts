@@ -17,8 +17,8 @@ vi.mock("$lib/utils/form_element.svelte", async () => {
   return { default: Stub }
 })
 
-const EnvironmentOptionsField = (
-  await import("./environment_options_field.svelte")
+const EnvironmentPresetField = (
+  await import("./environment_preset_field.svelte")
 ).default
 
 const OPENENV_TOOL = "kiln_tool::openenv::openenv_1::list_items"
@@ -26,8 +26,13 @@ const OPENENV_TOOL = "kiln_tool::openenv::openenv_1::list_items"
 const ACME: OpenEnvServer = {
   id: "openenv_1",
   name: "Acme",
+  is_archived: false,
   named_reset_kwargs: [
-    { name: "Acme Tech", reset_kwargs: { company: "acme", role: "tech" } },
+    {
+      name: "Acme Tech",
+      description: "Acme's data, as a technician",
+      reset_kwargs: { company: "acme", role: "tech" },
+    },
     {
       name: "Acme Manager",
       reset_kwargs: { company: "acme", role: "manager" },
@@ -46,7 +51,7 @@ afterEach(() => {
 })
 
 function render_field(tool_ids: string[]) {
-  return render(EnvironmentOptionsField, {
+  return render(EnvironmentPresetField, {
     props: { project_id: "p1", task_id: "t1", tool_ids },
   })
 }
@@ -63,7 +68,7 @@ function field_props(container: HTMLElement): DOMStringMap | null {
   return el ? el.dataset : null
 }
 
-describe("EnvironmentOptionsField", () => {
+describe("EnvironmentPresetField", () => {
   it("stays hidden, without a lookup, when there are no tools", async () => {
     const { container, component } = render_field([])
     await settle()
@@ -89,7 +94,7 @@ describe("EnvironmentOptionsField", () => {
     await settle()
     const props = field_props(container)
     expect(props?.inputType).toBe("header_only")
-    expect(props?.label).toBe("Environment Options")
+    expect(props?.label).toBe("Environment Preset")
     // Shown once, in the error line, not also as the label's error icon.
     expect(props?.errorMessage).toBeUndefined()
     expect(container.querySelector(".text-error")?.textContent).toBe(message)
@@ -124,7 +129,7 @@ describe("EnvironmentOptionsField", () => {
     expect(container.querySelector(".text-error")).toBeNull()
   })
 
-  it("shows the empty state, linking the OpenEnv's page, with no options", async () => {
+  it("shows the empty state, linking the OpenEnv server's page, with no presets", async () => {
     lookup.mockResolvedValue({
       openenv_server: { ...ACME, named_reset_kwargs: [] },
       error: null,
@@ -134,13 +139,13 @@ describe("EnvironmentOptionsField", () => {
     const props = field_props(container)
     expect(props?.inputType).toBe("fancy_select")
     expect(JSON.parse(props?.optionValues ?? "")).toEqual([])
-    expect(props?.emptyStateMessage).toBe("No Environment Options")
-    expect(props?.emptyStateSubtitle).toBe("Add Environment Options")
+    expect(props?.emptyStateMessage).toBe("No Environment Presets")
+    expect(props?.emptyStateSubtitle).toBe("Add Environment Preset")
     expect(props?.emptyStateLink).toBe("/tools/p1/openenv_servers/openenv_1")
     expect(await component.get_openenv_reset_kwargs()).toBeNull()
   })
 
-  it("lists the options in order, with the first selected", async () => {
+  it("lists the presets in order, described by their descriptions, with the first selected", async () => {
     lookup.mockResolvedValue({ openenv_server: ACME, error: null })
     const { container, component } = render_field([OPENENV_TOOL])
     await settle()
@@ -150,9 +155,11 @@ describe("EnvironmentOptionsField", () => {
       "Acme Tech",
       "Acme Manager",
     ])
-    expect(JSON.parse(props?.optionDescriptions ?? "")[0]).toBe(
-      '{\n  "company": "acme",\n  "role": "tech"\n}',
-    )
+    // Each preset shows its own description, never its reset arguments.
+    expect(JSON.parse(props?.optionDescriptions ?? "")).toEqual([
+      "Acme's data, as a technician",
+      null,
+    ])
     expect(JSON.parse(props?.value ?? "")).toBe("Acme Tech")
     expect(await component.get_openenv_reset_kwargs()).toEqual({
       company: "acme",

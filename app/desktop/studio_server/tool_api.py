@@ -288,11 +288,14 @@ async def available_openenv_tool_sets(
 ) -> list[ToolSetApiDescription]:
     """One tool set per environment that lists its tools within *timeout_s*.
 
-    OpenEnvServers are asked in parallel. One that has no url, fails or times out
-    is left out, like an MCP server that can't be reached. Tools are read fresh so an
-    environment that has gone offline drops out rather than being served from cache.
+    OpenEnvServers are asked in parallel. One that is archived, has no url, fails or
+    times out is left out, like an MCP server that is archived or can't be reached.
+    Tools are read fresh so an environment that has gone offline drops out rather than
+    being served from cache.
     """
-    reachable = [e for e in openenv_servers if e.url and e.id is not None]
+    reachable = [
+        e for e in openenv_servers if e.url and e.id is not None and not e.is_archived
+    ]
     results = await asyncio.gather(
         *(
             asyncio.wait_for(session_manager.list_tools(e, fresh=True), timeout_s)
@@ -312,7 +315,7 @@ async def available_openenv_tool_sets(
         tool_sets.append(
             ToolSetApiDescription(
                 type=ToolSetType.OPENENV,
-                set_name="OpenEnv: " + openenv_server.name,
+                set_name="OpenEnv Server: " + openenv_server.name,
                 tools=[
                     ToolApiDescription(
                         id=build_openenv_tool_id(openenv_server.id, tool.name),

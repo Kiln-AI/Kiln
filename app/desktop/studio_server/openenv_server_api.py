@@ -46,11 +46,15 @@ _RESET_KWARGS_NOT_OBJECT_ERROR = "Reset arguments must be a JSON object."
 
 
 class NamedResetKwargsRequest(BaseModel):
-    """Reset kwargs saved under a name, shown in the UI as an Environment Option."""
+    """Reset kwargs saved under a name, shown in the UI as an Environment Preset."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="User-facing name, unique within the environment.")
+    description: str | None = Field(
+        default=None,
+        description="User-facing notes on what this preset starts the environment with.",
+    )
     # Any JSON is accepted here so a non-object gets the friendly 400 from the
     # handler instead of FastAPI's generic 422; OpenEnv enforces the object type.
     reset_kwargs: JsonValue = Field(
@@ -102,6 +106,17 @@ class OpenEnvServerResponse(BaseModel):
     created_by: str | None = Field(
         default=None, description="Who created the OpenEnv server."
     )
+    is_archived: bool = Field(
+        default=False, description="Whether the OpenEnv server is archived."
+    )
+
+
+class OpenEnvServerArchiveRequest(BaseModel):
+    """Archive or unarchive an OpenEnv server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_archived: bool = Field(description="Whether the OpenEnv server is archived.")
 
 
 class OpenEnvToolResponse(BaseModel):
@@ -188,7 +203,18 @@ def _openenv_server_response(openenv_server: OpenEnvServer) -> OpenEnvServerResp
         named_reset_kwargs=openenv_server.named_reset_kwargs,
         created_at=openenv_server.created_at,
         created_by=openenv_server.created_by,
+        is_archived=openenv_server.is_archived,
     )
+
+
+async def _require_reachable(openenv_server: OpenEnvServer) -> None:
+    """Refuse to save a URL that no OpenEnv server answers at."""
+    if not openenv_server.url:
+        return
+    try:
+        await shared_session_manager().check_reachable(openenv_server)
+    except OpenEnvError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 def _friendly_error(error: PydanticValidationError) -> str:
@@ -238,6 +264,7 @@ def connect_openenv_server_api(app: FastAPI):
             raise HTTPException(status_code=400, detail=_friendly_error(e))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        await _require_reachable(openenv_server)
         openenv_server.save_to_file()
         return _openenv_server_response(openenv_server)
 
@@ -297,7 +324,11 @@ def connect_openenv_server_api(app: FastAPI):
         ],
         request: OpenEnvServerUpdateRequest,
     ) -> OpenEnvServerResponse:
-        openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
+        """Change an OpenEnv server. A new url is saved only if an OpenEnv server
+        answers at it; other changes are saved without contacting the server."""
+        existing = _openenv_server_from_id(project_id, openenv_server_id)
+        # Changes go on a copy, so a refused update leaves no trace on a cached record.
+        openenv_server = existing.model_copy(deep=True)
         try:
             for field, value in request.model_dump(exclude_unset=True).items():
                 setattr(openenv_server, field, value)
@@ -305,6 +336,31 @@ def connect_openenv_server_api(app: FastAPI):
             raise HTTPException(status_code=400, detail=_friendly_error(e))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        if openenv_server.url != existing.url:
+            await _require_reachable(openenv_server)
+        openenv_server.save_to_file()
+        return _openenv_server_response(openenv_server)
+
+    @app.post(
+        "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/archive",
+        summary="Archive OpenEnv Server",
+        description="Archive or unarchive an OpenEnv server. An archived server's tools aren't offered in tool pickers; run configs that already list them still run.",
+        tags=["OpenEnv Servers"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to archive or unarchive an OpenEnv server?"
+        ),
+    )
+    async def archive_openenv_server(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        openenv_server_id: Annotated[
+            str, Path(description="The unique identifier of the OpenEnv server.")
+        ],
+        request: OpenEnvServerArchiveRequest,
+    ) -> OpenEnvServerResponse:
+        openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
+        openenv_server.is_archived = request.is_archived
         openenv_server.save_to_file()
         return _openenv_server_response(openenv_server)
 
@@ -460,7 +516,7 @@ def connect_openenv_server_api(app: FastAPI):
         )
         if openenv_server is None:
             return RunOpenEnvServerResponse(
-                error=f"OpenEnv {openenv_server_id} wasn't found."
+                error=f"OpenEnv server {openenv_server_id} wasn't found."
             )
         return RunOpenEnvServerResponse(
             openenv_server=_openenv_server_response(openenv_server)

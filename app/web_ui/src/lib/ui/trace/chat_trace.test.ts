@@ -1048,7 +1048,7 @@ describe("ChatTrace component — fork affordance", () => {
 
   it("disables every fork button with the given reason as its tooltip", async () => {
     const reason =
-      "This conversation uses an OpenEnv, so it can only continue from the latest turn."
+      "This conversation uses an OpenEnv server, so it can only continue from the latest turn."
     const trace: TraceType = [
       userMsg("u1"),
       assistantMsg("a1"),

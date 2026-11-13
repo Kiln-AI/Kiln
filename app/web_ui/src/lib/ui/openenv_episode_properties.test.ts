@@ -35,8 +35,12 @@ function render_episode() {
 }
 
 describe("OpenEnvEpisodeProperties", () => {
-  it("names the OpenEnv, links its page, and shows the reset arguments", async () => {
-    load_openenv_server.mockResolvedValue({ id: "openenv_1", name: "Acme" })
+  it("names the OpenEnv server, links its page, and shows the version and reset arguments", async () => {
+    load_openenv_server.mockResolvedValue({
+      id: "openenv_1",
+      name: "Acme",
+      is_archived: false,
+    })
     const { container, getByText } = render_episode()
     expect(getByText("OpenEnv", { selector: "div.text-xl" })).toBeTruthy()
 
@@ -50,9 +54,12 @@ describe("OpenEnvEpisodeProperties", () => {
     expect(container.querySelector("pre")?.textContent).toBe(
       '{\n  "company": "acme",\n  "role": "tech"\n}',
     )
+    expect(getByText("OpenEnv Server")).toBeTruthy()
+    expect(getByText("Version")).toBeTruthy()
+    expect(getByText("acme@1.0.0")).toBeTruthy()
   })
 
-  it("falls back to the id when the OpenEnv can't be loaded", async () => {
+  it("falls back to the id when the OpenEnv server can't be loaded", async () => {
     load_openenv_server.mockRejectedValue(new Error("OpenEnv not found"))
     const { container } = render_episode()
     await waitFor(() => expect(load_openenv_server).toHaveBeenCalled())

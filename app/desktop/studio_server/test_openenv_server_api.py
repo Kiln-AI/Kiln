@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -8,7 +8,7 @@ from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
-from kiln_ai.openenv.session_manager import OpenEnvSessionManager
+from kiln_ai.openenv.session_manager import OpenEnvError, OpenEnvSessionManager
 from kiln_ai.openenv.testing import (
     ENV_NAME,
     ENV_VERSION,
@@ -23,9 +23,19 @@ URL_ERROR = (
     "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8004."
 )
 ACME_OPTIONS = [
-    {"name": "Acme Manager", "reset_kwargs": {"company": "acme", "user": "manager"}},
-    {"name": "Acme Tech", "reset_kwargs": {"company": "acme", "user": {"id": 7}}},
+    {
+        "name": "Acme Manager",
+        "description": "Acme's data, signed in as a manager",
+        "reset_kwargs": {"company": "acme", "user": "manager"},
+    },
+    {
+        "name": "Acme Tech",
+        "description": None,
+        "reset_kwargs": {"company": "acme", "user": {"id": 7}},
+    },
 ]
+
+_real_check_reachable = OpenEnvSessionManager.check_reachable
 
 SESSION_MANAGER_PATCH = (
     "app.desktop.studio_server.openenv_server_api.shared_session_manager"
@@ -61,6 +71,16 @@ def mock_project_from_id(project):
         return_value=project,
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def check_reachable():
+    """Every URL answers unless a test says otherwise. Saving checks the URL, and most
+    tests save records whose server isn't running."""
+    with patch.object(
+        OpenEnvSessionManager, "check_reachable", new_callable=AsyncMock
+    ) as check:
+        yield check
 
 
 @pytest.fixture
@@ -106,6 +126,7 @@ class TestOpenEnvServers:
             "named_reset_kwargs",
             "created_at",
             "created_by",
+            "is_archived",
         }
         assert got["name"] == "Environment A"
         assert got["url"] == "http://localhost:8123"
@@ -214,6 +235,139 @@ class TestOpenEnvServers:
             == 404
         )
         assert client.delete("/api/projects/p1/openenv_servers/nope").status_code == 404
+        assert (
+            client.post(
+                "/api/projects/p1/openenv_servers/nope/archive",
+                json={"is_archived": True},
+            ).status_code
+            == 404
+        )
+
+
+class TestReachableOnSave:
+    def test_create_checks_the_url(self, client, project, check_reachable):
+        r = client.post(
+            "/api/projects/p1/openenv_servers",
+            json={"name": "Acme", "url": "http://127.0.0.1:8004"},
+        )
+        assert r.status_code == 200, r.text
+        (checked,) = check_reachable.await_args.args
+        assert checked.url == "http://127.0.0.1:8004"
+
+    def test_create_without_url_skips_the_check(self, client, check_reachable):
+        r = client.post("/api/projects/p1/openenv_servers", json={"name": "Bare"})
+        assert r.status_code == 200, r.text
+        check_reachable.assert_not_awaited()
+
+    def test_unreachable_url_is_not_saved(self, client, project, check_reachable):
+        check_reachable.side_effect = OpenEnvError(
+            "OpenEnv server 'Acme' points at http://127.0.0.1:1, which did not "
+            "answer /metadata: refused"
+        )
+        r = client.post(
+            "/api/projects/p1/openenv_servers",
+            json={"name": "Acme", "url": "http://127.0.0.1:1"},
+        )
+        assert r.status_code == 400
+        assert "did not answer /metadata" in r.json()["message"]
+        assert project.openenv_servers() == []
+
+    def test_unreachable_url_on_create_against_a_real_manager(self, client, project):
+        with patch.object(
+            OpenEnvSessionManager,
+            "check_reachable",
+            new=_real_check_reachable,
+        ):
+            r = client.post(
+                "/api/projects/p1/openenv_servers",
+                json={"name": "Down", "url": f"http://127.0.0.1:{free_port()}"},
+            )
+        assert r.status_code == 400
+        assert "did not answer /metadata" in r.json()["message"]
+        assert project.openenv_servers() == []
+
+    def test_reachable_url_on_create_against_a_real_manager(self, client, project):
+        with (
+            serve_in_thread() as base_url,
+            patch.object(
+                OpenEnvSessionManager,
+                "check_reachable",
+                new=_real_check_reachable,
+            ),
+        ):
+            r = client.post(
+                "/api/projects/p1/openenv_servers",
+                json={"name": "Up", "url": base_url},
+            )
+        assert r.status_code == 200, r.text
+        assert len(project.openenv_servers()) == 1
+
+    def test_update_checks_only_a_changed_url(
+        self, client, project, openenv_server_id, check_reachable
+    ):
+        url = f"/api/projects/p1/openenv_servers/{openenv_server_id}"
+        check_reachable.reset_mock()
+
+        r = client.patch(
+            url,
+            json={
+                "name": "Renamed",
+                "description": "d",
+                "url": "http://localhost:8123",
+                "named_reset_kwargs": ACME_OPTIONS,
+            },
+        )
+        assert r.status_code == 200, r.text
+        check_reachable.assert_not_awaited()
+
+        r = client.patch(url, json={"url": "http://localhost:9000"})
+        assert r.status_code == 200, r.text
+        (checked,) = check_reachable.await_args.args
+        assert checked.url == "http://localhost:9000"
+
+    def test_unreachable_new_url_leaves_the_record_unchanged(
+        self, client, project, openenv_server_id, check_reachable
+    ):
+        check_reachable.side_effect = OpenEnvError("did not answer /metadata")
+        r = client.patch(
+            f"/api/projects/p1/openenv_servers/{openenv_server_id}",
+            json={"url": "http://localhost:9000", "description": "changed"},
+        )
+        assert r.status_code == 400
+        assert r.json()["message"] == "did not answer /metadata"
+        openenv_server = _load_openenv_server(project, openenv_server_id)
+        assert openenv_server.url == "http://localhost:8123"
+        assert openenv_server.description is None
+        got = client.get(f"/api/projects/p1/openenv_servers/{openenv_server_id}")
+        assert got.json()["url"] == "http://localhost:8123"
+
+
+class TestArchive:
+    def test_archive_and_unarchive(self, client, project, openenv_server_id):
+        url = f"/api/projects/p1/openenv_servers/{openenv_server_id}"
+        assert client.get(url).json()["is_archived"] is False
+
+        r = client.post(f"{url}/archive", json={"is_archived": True})
+        assert r.status_code == 200, r.text
+        assert r.json()["is_archived"] is True
+        assert _load_openenv_server(project, openenv_server_id).is_archived is True
+        listed = client.get("/api/projects/p1/openenv_servers").json()
+        assert [item["is_archived"] for item in listed] == [True]
+
+        r = client.post(f"{url}/archive", json={"is_archived": False})
+        assert r.json()["is_archived"] is False
+        assert _load_openenv_server(project, openenv_server_id).is_archived is False
+
+    def test_archive_does_not_check_the_url(
+        self, client, openenv_server_id, check_reachable
+    ):
+        check_reachable.reset_mock()
+        r = client.post(
+            f"/api/projects/p1/openenv_servers/{openenv_server_id}/archive",
+            json={"is_archived": True},
+        )
+        assert r.status_code == 200, r.text
+        check_reachable.assert_not_awaited()
 
 
 class TestEnvironmentOptions:
@@ -240,7 +394,7 @@ class TestEnvironmentOptions:
         )
         assert r.status_code == 200, r.text
         assert r.json()["named_reset_kwargs"] == [
-            {"name": "Default", "reset_kwargs": {}}
+            {"name": "Default", "description": None, "reset_kwargs": {}}
         ]
 
     def test_patch_replaces_whole_list(self, client, project, openenv_server_id):
@@ -249,7 +403,10 @@ class TestEnvironmentOptions:
         assert r.status_code == 200, r.text
         assert r.json()["named_reset_kwargs"] == ACME_OPTIONS
 
-        reordered = [ACME_OPTIONS[1], {"name": "Beta", "reset_kwargs": {}}]
+        reordered = [
+            ACME_OPTIONS[1],
+            {"name": "Beta", "description": None, "reset_kwargs": {}},
+        ]
         r = client.patch(url, json={"named_reset_kwargs": reordered})
         assert r.json()["named_reset_kwargs"] == reordered
 
@@ -271,7 +428,7 @@ class TestEnvironmentOptions:
         assert r.status_code == 400
         assert (
             r.json()["message"]
-            == "An Environment Option named Acme Manager already exists."
+            == "An Environment Preset named Acme Manager already exists."
         )
         assert project.openenv_servers() == []
 
@@ -291,7 +448,7 @@ class TestEnvironmentOptions:
         assert r.status_code == 400
         assert (
             r.json()["message"]
-            == "An Environment Option named Acme Tech already exists."
+            == "An Environment Preset named Acme Tech already exists."
         )
         openenv_server = _load_openenv_server(project, openenv_server_id)
         assert [
@@ -526,7 +683,10 @@ class TestRunOpenEnvServer:
 
     def test_missing_openenv_server(self, lookup):
         body = lookup([build_openenv_tool_id("gone", "search")])
-        assert body == {"openenv_server": None, "error": "OpenEnv gone wasn't found."}
+        assert body == {
+            "openenv_server": None,
+            "error": "OpenEnv server gone wasn't found.",
+        }
 
     def test_unknown_task(self, client, task):
         r = client.post(

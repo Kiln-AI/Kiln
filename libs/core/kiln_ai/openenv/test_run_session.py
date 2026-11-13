@@ -130,7 +130,7 @@ class TestNoOpenEnvServer:
         with pytest.raises(OpenEnvRunError) as raised:
             await _enter(task, _properties([]), session_manager, {"role": "tech"})
         assert raised.value.kind == "kwargs_without_openenv"
-        assert "don't use an OpenEnv" in raised.value.message
+        assert "don't use an OpenEnv server" in raised.value.message
 
     async def test_sessions_off_opens_nothing(
         self, task, openenv_server, session_manager
@@ -194,7 +194,7 @@ class TestSetupErrors:
         with pytest.raises(OpenEnvRunError) as raised:
             await _enter(task, properties, session_manager)
         assert raised.value.kind == "not_found"
-        assert raised.value.message == "OpenEnv gone wasn't found."
+        assert raised.value.message == "OpenEnv server gone wasn't found."
 
     async def test_unreachable(self, project, task, session_manager):
         url = f"http://127.0.0.1:{free_port()}"
@@ -205,7 +205,7 @@ class TestSetupErrors:
             )
         assert raised.value.kind == "unreachable"
         assert raised.value.message == (
-            f"Can't reach OpenEnv Acme at {url}. Check the server is running."
+            f"Can't reach OpenEnv server Acme at {url}. Check the server is running."
         )
 
     async def test_at_capacity(self, project, task, session_manager):
@@ -219,7 +219,7 @@ class TestSetupErrors:
             await session_manager.release(held)
         assert raised.value.kind == "at_capacity"
         assert raised.value.message == (
-            "OpenEnv Acme is at capacity. Wait for a run to finish, or raise the "
+            "OpenEnv server Acme is at capacity. Wait for a run to finish, or raise the "
             "server's session limit."
         )
 
@@ -440,7 +440,9 @@ class TestStreaming:
         )
         with _stubbed_model(session_manager) as model_call:
             adapter = adapter_for_task(task, properties, config)
-            with pytest.raises(ValueError, match="Streaming runs can't use an OpenEnv"):
+            with pytest.raises(
+                ValueError, match="Streaming runs can't use an OpenEnv server"
+            ):
                 async for _ in getattr(adapter, stream)("hello"):
                     pass
         assert model_call.call_count == 0
@@ -580,7 +582,7 @@ class TestConversation:
             await _turn(multiturn_task, properties, session_manager, parent=first)
         assert raised.value.kind == "fork_refused"
         assert raised.value.message == (
-            "This conversation uses an OpenEnv, so it can only continue from the "
+            "This conversation uses an OpenEnv server, so it can only continue from the "
             "latest turn."
         )
 
@@ -595,7 +597,7 @@ class TestConversation:
         assert raised.value.kind == "session_ended"
         assert raised.value.message == (
             "The OpenEnv session for this conversation ended. Start a new "
-            "conversation to keep using this OpenEnv."
+            "conversation to keep using this OpenEnv server."
         )
         assert session_manager._sessions == {}
 
@@ -614,7 +616,7 @@ class TestConversation:
             )
         assert raised.value.kind == "not_started_with_openenv"
         assert raised.value.message == (
-            "This conversation started without an OpenEnv. Start a new conversation "
+            "This conversation started without an OpenEnv server. Start a new conversation "
             "to use one."
         )
         assert session_manager._sessions == {}
@@ -650,7 +652,8 @@ class TestConversation:
             await _turn(multiturn_task, properties, session_manager, parent=first)
         assert raised.value.kind == "openenv_changed"
         assert (
-            raised.value.message == f"This conversation uses OpenEnv Acme. {expected}"
+            raised.value.message
+            == f"This conversation uses OpenEnv server Acme. {expected}"
         )
         assert session_manager.conversations.holds_turn(str(first.id))
         second = await _turn(

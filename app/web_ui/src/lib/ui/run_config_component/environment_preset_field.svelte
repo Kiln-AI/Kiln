@@ -5,11 +5,11 @@
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import {
     openenv_server_detail_link,
-    environment_field_state,
-    environment_option_groups,
+    environment_preset_field_state,
+    environment_preset_groups,
     reset_kwargs_for,
-    selected_option_after_change,
-    type EnvironmentFieldState,
+    selected_preset_after_change,
+    type EnvironmentPresetFieldState,
     type ResetKwargs,
   } from "$lib/utils/openenv"
 
@@ -19,12 +19,12 @@
   export let tool_ids: string[]
 
   const LOOKUP_DEBOUNCE_MS = 250
-  const LABEL = "Environment Options"
+  const LABEL = "Environment Preset"
   const INFO =
-    "Sets the OpenEnv's starting data for this run, such as the company and the user the agent acts as."
+    "Sets the OpenEnv server's starting data for this run, such as the company and the user the agent acts as."
 
-  let field_state: EnvironmentFieldState = { kind: "hidden" }
-  let selected_option: string | null = null
+  let field_state: EnvironmentPresetFieldState = { kind: "hidden" }
+  let selected_preset: string | null = null
   let selected_openenv_server_id: string | null = null
 
   let scheduled_key: string | null = null
@@ -33,7 +33,7 @@
   let scheduled_lookup: (() => Promise<void>) | null = null
   let in_flight: Promise<void> | null = null
   // Set while the newest lookup has failed, so Run can't reset the OpenEnv
-  // with arguments the user never chose.
+  // server with arguments the user never chose.
   let failed_lookup: { error: KilnError; retry: () => Promise<void> } | null =
     null
 
@@ -83,7 +83,7 @@
         task_id,
         tool_ids,
       )
-      apply_state(request, environment_field_state(run_openenv_server))
+      apply_state(request, environment_preset_field_state(run_openenv_server))
     } catch (e) {
       const error = createKilnError(e)
       apply_state(request, { kind: "error", message: error.getMessage() })
@@ -97,26 +97,26 @@
   }
 
   // Replies can arrive out of order; only the newest request's reply counts.
-  function apply_state(request: number, next: EnvironmentFieldState) {
+  function apply_state(request: number, next: EnvironmentPresetFieldState) {
     if (request !== latest_request) {
       return
     }
     field_state = next
     failed_lookup = null
-    if (next.kind === "options" || next.kind === "empty") {
+    if (next.kind === "presets" || next.kind === "empty") {
       const same_openenv_server =
         next.openenv_server.id === selected_openenv_server_id
-      selected_option = selected_option_after_change(
+      selected_preset = selected_preset_after_change(
         next.openenv_server,
-        same_openenv_server ? selected_option : null,
+        same_openenv_server ? selected_preset : null,
       )
       selected_openenv_server_id = next.openenv_server.id ?? null
     }
   }
 
   /**
-   * The chosen option's reset arguments, or null when the tools reach no
-   * OpenEnv, reach more than one, or it has no options. Waits for a pending
+   * The chosen preset's reset arguments, or null when the tools reach no
+   * OpenEnv server, reach more than one, or it has no presets. Waits for a pending
    * lookup, so a Run clicked right after a tool change uses the new tools.
    * A failed lookup is tried once more, and its error thrown if it fails again.
    */
@@ -131,10 +131,10 @@
     if (failed_lookup) {
       throw failed_lookup.error
     }
-    if (field_state.kind !== "options") {
+    if (field_state.kind !== "presets") {
       return null
     }
-    return reset_kwargs_for(field_state.openenv_server, selected_option)
+    return reset_kwargs_for(field_state.openenv_server, selected_preset)
   }
 
   onDestroy(() => clearTimeout(debounce_timer))
@@ -143,7 +143,7 @@
 {#if field_state.kind === "error"}
   <div>
     <FormElement
-      id="environment_options"
+      id="environment_preset"
       label={LABEL}
       inputType="header_only"
       info_description={INFO}
@@ -155,7 +155,7 @@
   </div>
 {:else if field_state.kind === "empty"}
   <FormElement
-    id="environment_options"
+    id="environment_preset"
     label={LABEL}
     inputType="fancy_select"
     info_description={INFO}
@@ -164,19 +164,19 @@
     optional={true}
     hide_optional_badge={true}
     empty_label="None"
-    empty_state_message="No Environment Options"
-    empty_state_subtitle="Add Environment Options"
+    empty_state_message="No Environment Presets"
+    empty_state_subtitle="Add Environment Preset"
     empty_state_link={field_state.openenv_server.id
       ? openenv_server_detail_link(project_id, field_state.openenv_server.id)
       : null}
   />
-{:else if field_state.kind === "options"}
+{:else if field_state.kind === "presets"}
   <FormElement
-    id="environment_options"
+    id="environment_preset"
     label={LABEL}
     inputType="fancy_select"
     info_description={INFO}
-    fancy_select_options={environment_option_groups(field_state.openenv_server)}
-    bind:value={selected_option}
+    fancy_select_options={environment_preset_groups(field_state.openenv_server)}
+    bind:value={selected_preset}
   />
 {/if}

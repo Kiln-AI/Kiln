@@ -3,6 +3,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
   import CodeEditor from "$lib/components/code_editor.svelte"
   import RunInputForm from "../../../../run/run_input_form.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -16,24 +17,24 @@
     clone_draft,
     draft_from,
     load_openenv_server_reset_schema,
-    options_with_draft,
+    presets_with_draft,
     reset_arguments_for_form,
     reset_arguments_from_form,
-    type OptionDraft,
+    type PresetDraft,
   } from "./openenv_server_detail"
 
   export let project_id: string
   export let openenv_server_id: string
-  export let options: NamedResetKwargs[]
+  export let presets: NamedResetKwargs[]
   /** Saves the whole list. Throws when the server refuses it. */
-  export let save: (options: NamedResetKwargs[]) => Promise<void>
+  export let save: (presets: NamedResetKwargs[]) => Promise<void>
 
   let dialog: Dialog
   // The form is only mounted while the dialog is open, so the code editor
   // starts from each draft and Cmd+Enter can't submit a closed dialog.
   let open = false
   let editing_index: number | null = null
-  let draft: OptionDraft = blank_draft()
+  let draft: PresetDraft = blank_draft()
   let error: KilnError | null = null
   let submitting = false
 
@@ -45,7 +46,7 @@
   let schema_request = 0
   let reset_form: RunInputForm
 
-  function show(index: number | null, next_draft: OptionDraft) {
+  function show(index: number | null, next_draft: PresetDraft) {
     editing_index = index
     draft = next_draft
     opened_text = next_draft.reset_arguments
@@ -62,11 +63,11 @@
   }
 
   export function show_edit(index: number) {
-    show(index, draft_from(options[index]))
+    show(index, draft_from(presets[index]))
   }
 
   export function show_clone(index: number) {
-    show(null, clone_draft(options[index]))
+    show(null, clone_draft(presets[index]))
   }
 
   async function load_form_schema() {
@@ -148,14 +149,14 @@
         reset_arguments: reset_arguments_from_form(form_value),
       }
     }
-    const result = options_with_draft(options, editing_index, draft)
+    const result = presets_with_draft(presets, editing_index, draft)
     if (result.error !== null) {
       error = new KilnError(result.error)
       submitting = false
       return
     }
     try {
-      await save(result.options)
+      await save(result.presets)
       dialog.close()
     } catch (e) {
       error = createKilnError(e)
@@ -168,8 +169,8 @@
 <Dialog
   bind:this={dialog}
   title={editing_index === null
-    ? "Add Environment Option"
-    : "Edit Environment Option"}
+    ? "Add Environment Preset"
+    : "Edit Environment Preset"}
   on:close={() => (open = false)}
 >
   {#if open}
@@ -181,29 +182,43 @@
     >
       <FormElement
         label="Name"
-        id="environment_option_name"
+        id="environment_preset_name"
+        description="Shown in the Environment Preset dropdown on the run page."
+        info_description={'For example, "Small Startup" or "Large Company, Admin User".'}
         bind:value={draft.name}
         max_length={120}
-        placeholder="e.g. Acme Tech"
+        placeholder="Name"
       />
-      <div class="flex flex-col gap-2">
-        <!-- Kiln has no inline on/off switch, so the Raw JSON toggle is
-             FormElement's label-row action, named for the view it opens. -->
-        <FormElement
-          label="Reset Arguments"
-          id="environment_option_reset_arguments"
-          description={form_schema
+      <FormElement
+        label="Description"
+        inputType="textarea"
+        id="environment_preset_description"
+        description="Shown under the name in the Environment Preset dropdown."
+        optional={true}
+        bind:value={draft.description}
+      />
+      <div class="flex flex-col gap-4">
+        <!-- A section over its own fields, so it takes the section header a
+             level above them. Kiln has no inline on/off switch, so the Raw
+             JSON toggle is a link on the header's row, named for the view it
+             opens. -->
+        <SettingsHeader
+          title="Reset Arguments"
+          subtitle={form_schema
             ? RESET_ARGUMENTS_SCHEMA_DESCRIPTION
             : RESET_ARGUMENTS_DESCRIPTION}
-          inputType="header_only"
-          value=""
-          inline_action={form_schema
-            ? {
-                label: raw_json ? "Form" : "Raw JSON",
-                handler: toggle_raw_json,
-              }
-            : null}
-        />
+        >
+          <svelte:fragment slot="actions">
+            {#if form_schema}
+              <button
+                type="button"
+                class="link text-xs text-gray-500 hover:text-gray-700"
+                on:click|stopPropagation={toggle_raw_json}
+                >{raw_json ? "Form" : "Raw JSON"}</button
+              >
+            {/if}
+          </svelte:fragment>
+        </SettingsHeader>
         {#if raw_json}
           <CodeEditor
             language="json"

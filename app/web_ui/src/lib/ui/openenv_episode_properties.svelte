@@ -11,8 +11,8 @@
   export let project_id: string
   export let episode: OpenEnvEpisode
 
-  // Shows the arguments the session started with, not the option's name:
-  // options can be renamed or removed after the run.
+  // Shows the arguments the session started with, not the preset's name:
+  // presets can be renamed or removed after the run.
   $: openenv_server_id = episode.reset.openenv_server_id
   let openenv_server_name: string | null = null
   let latest_load = 0
@@ -31,17 +31,18 @@
         openenv_server_name = openenv_server.name
       }
     } catch {
-      // A removed OpenEnv still has its id on the run, which is shown instead.
+      // A removed OpenEnv server still has its id on the run, which is shown instead.
     }
   }
 
   let properties: UiProperty[]
   $: properties = [
     {
-      name: "OpenEnv",
+      name: "OpenEnv Server",
       value: openenv_server_name ?? openenv_server_id,
       link: openenv_server_detail_link(project_id, openenv_server_id),
     },
+    { name: "Version", value: episode.openenv_version },
     {
       name: "Reset Arguments",
       value: format_reset_arguments(episode.reset.reset_kwargs),

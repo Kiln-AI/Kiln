@@ -12,7 +12,12 @@
     build_tool_option_groups,
     selectable_tool_sets,
   } from "./tool_options"
-  import { openenv_tool_name, is_openenv_tool_id } from "$lib/utils/openenv"
+  import {
+    openenv_tool_name,
+    is_openenv_tool_id,
+    keeps_unlisted_openenv_tool,
+  } from "$lib/utils/openenv"
+  import { load_archived_openenv_server_ids } from "$lib/api/openenv_server_api"
 
   export let project_id: string
   export let task_id: string | null = null
@@ -23,6 +28,9 @@
   export let pending_tool_id: string | null = null
 
   let tools_store_loaded_task_id: string | null = null
+  // Null until read. Only read once a selected tool is an OpenEnv one.
+  let archived_openenv_server_ids: Set<string> | null = null
+  let archived_openenv_project_id: string | null = null
 
   let default_tools_selector_settings: ToolsSelectorSettings = {
     mandatory_tools: [],
@@ -133,10 +141,34 @@
     apply_pending_tool()
   }
 
+  $: if (tools.some(is_openenv_tool_id)) {
+    load_archived_openenv_servers(project_id)
+  }
+
+  async function load_archived_openenv_servers(project_id: string) {
+    if (archived_openenv_project_id === project_id) {
+      return
+    }
+    archived_openenv_project_id = project_id
+    archived_openenv_server_ids = null
+    try {
+      const ids = await load_archived_openenv_server_ids(project_id)
+      if (archived_openenv_project_id === project_id) {
+        archived_openenv_server_ids = ids
+      }
+    } catch {
+      // Unknown archive state keeps every OpenEnv tool, as for an offline server.
+      if (archived_openenv_project_id === project_id) {
+        archived_openenv_server_ids = new Set()
+      }
+    }
+  }
+
   $: drop_unselectable_tools(
     $available_tools[project_id],
     tools,
     tools_selector_settings.sandbox_code_context,
+    archived_openenv_server_ids ?? new Set(),
   )
 
   // Update tools_store when tools changes, only after initial load so we don't
@@ -153,7 +185,8 @@
   }
 
   // Drop anything this picker may not hold: tools the server no longer offers
-  // (server offline, tool removed) and tools its sandboxed-code context forbids.
+  // (server offline or archived, tool removed) and tools its sandboxed-code
+  // context forbids.
   // This is the write-path counterpart to the dropdown's filtering — without it a
   // selection that was persisted earlier, or injected via ?tool_id=, would survive
   // in `tools` and be saved back out.
@@ -161,6 +194,7 @@
     available_tool_sets: ToolSetApiDescription[] | undefined,
     current_tools: string[],
     sandbox_code_context: SandboxCodeContext,
+    archived_openenv_server_ids: Set<string>,
   ) {
     if (
       !available_tool_sets ||
@@ -176,11 +210,9 @@
       sandbox_code_context,
     )
 
-    // An offline OpenEnv is missing from available_tools, but its tools stay
-    // selected so the run reports the server can't be reached rather than
-    // quietly running without them.
     const keep = (tool_id: string) =>
-      selectable.has(tool_id) || is_openenv_tool_id(tool_id)
+      selectable.has(tool_id) ||
+      keeps_unlisted_openenv_tool(tool_id, archived_openenv_server_ids)
     const dropped = current_tools.filter((tool_id) => !keep(tool_id))
 
     if (dropped.length > 0) {
@@ -242,8 +274,8 @@
     empty_state_link: `/tools/${project_id}/add_tools`,
     disabled: tools_selector_settings.disabled,
     optional: tools_selector_settings.optional,
-    // drop_unselectable_tools keeps an offline OpenEnv's tools, which have no
-    // option, so the label names them from their ids.
+    // drop_unselectable_tools keeps an offline OpenEnv server's tools, which
+    // have no option, so the label names them from their ids.
     unlisted_value_label: (value: unknown) =>
       typeof value === "string" ? openenv_tool_name(value) : null,
   }

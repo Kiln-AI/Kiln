@@ -15,6 +15,26 @@ export async function load_openenv_server(
   return data
 }
 
+/** The ids of the project's archived OpenEnv servers. */
+export async function load_archived_openenv_server_ids(
+  project_id: string,
+): Promise<Set<string>> {
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/openenv_servers",
+    { params: { path: { project_id } } },
+  )
+  if (error) {
+    throw error
+  }
+  return new Set(
+    data
+      .filter((openenv_server) => openenv_server.is_archived)
+      .flatMap((openenv_server) =>
+        openenv_server.id ? [openenv_server.id] : [],
+      ),
+  )
+}
+
 /** The JSON schema the OpenEnv server publishes for its reset arguments, or null. */
 export async function load_openenv_server_reset_schema(
   project_id: string,

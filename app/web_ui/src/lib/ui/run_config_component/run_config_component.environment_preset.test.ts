@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// The Environment Options field is only for callers that start a run: other
+// The Environment Preset field is only for callers that start a run: other
 // callers (evals, run config dialogs) must render and behave exactly as before.
 import {
   describe,
@@ -97,6 +97,7 @@ beforeEach(() => {
     openenv_server: {
       id: "openenv_1",
       name: "Acme",
+      is_archived: false,
       named_reset_kwargs: [
         { name: "Acme Tech", reset_kwargs: { role: "tech" } },
       ],
@@ -107,7 +108,7 @@ beforeEach(() => {
     [project_id]: [
       {
         type: "openenv",
-        set_name: "OpenEnv: Acme",
+        set_name: "OpenEnv Server: Acme",
         tools: [
           {
             id: OPENENV_TOOL,
@@ -144,10 +145,10 @@ async function render_component(props: Record<string, unknown>) {
 }
 
 function has_field(container: HTMLElement): boolean {
-  return container.textContent?.includes("Environment Options") ?? false
+  return container.textContent?.includes("Environment Preset") ?? false
 }
 
-describe("RunConfigComponent Environment Options", () => {
+describe("RunConfigComponent Environment Preset", () => {
   it("is off by default: no field, no lookup, no reset arguments", async () => {
     const { container, component } = await render_component({})
     expect(has_field(container)).toBe(false)
@@ -157,17 +158,20 @@ describe("RunConfigComponent Environment Options", () => {
 
   it("shows the field and gives its reset arguments when turned on", async () => {
     const { container, component } = await render_component({
-      show_environment_options: true,
+      show_environment_preset: true,
     })
     expect(await component.get_openenv_reset_kwargs()).toEqual({ role: "tech" })
     expect(lookup).toHaveBeenCalledWith(project_id, "task_1", [OPENENV_TOOL])
     await tick()
     expect(has_field(container)).toBe(true)
+    // Inside Advanced Options, which starts collapsed, so it can't shift the page.
+    const advanced = container.querySelector(".collapse-content")
+    expect(advanced?.textContent).toContain("Environment Preset")
   })
 
   it("has no field for an MCP run config", async () => {
     const { container, component } = await render_component({
-      show_environment_options: true,
+      show_environment_preset: true,
       selected_run_config_id: "rc_mcp",
     })
     expect(has_field(container)).toBe(false)

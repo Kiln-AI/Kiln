@@ -68,6 +68,7 @@ class TestOnDiskLayout:
     def test_openenv_server_defaults(self, openenv_server):
         assert openenv_server.url is None
         assert openenv_server.description is None
+        assert openenv_server.is_archived is False
 
     def test_openenv_server_round_trip(self, project):
         openenv_server = OpenEnvServer(
@@ -82,6 +83,14 @@ class TestOnDiskLayout:
         assert loaded is not None
         assert loaded.url == "http://localhost:8123"
         assert loaded.description == "hosted"
+
+    def test_archive_round_trip(self, project):
+        openenv_server = OpenEnvServer(name="Old", parent=project, is_archived=True)
+        openenv_server.save_to_file()
+        assert openenv_server.id is not None
+        loaded = OpenEnvServer.from_id_and_parent_path(openenv_server.id, project.path)
+        assert loaded is not None
+        assert loaded.is_archived is True
 
 
 def test_project_lists_its_openenv_servers(project):
@@ -102,7 +111,11 @@ class TestNamedResetKwargs:
                 name="Acme Manager",
                 reset_kwargs={"company": "acme", "user": {"role": "manager"}},
             ),
-            NamedResetKwargs(name="Beta Tech", reset_kwargs={"seeds": [1, 2, None]}),
+            NamedResetKwargs(
+                name="Beta Tech",
+                description="Beta's tech account",
+                reset_kwargs={"seeds": [1, 2, None]},
+            ),
             NamedResetKwargs(name="Empty"),
         ]
         env = OpenEnvServer(name="Opts", parent=project, named_reset_kwargs=options)
@@ -112,11 +125,13 @@ class TestNamedResetKwargs:
         assert loaded is not None
         assert loaded.named_reset_kwargs == options
         assert loaded.named_reset_kwargs[2].reset_kwargs == {}
+        assert loaded.named_reset_kwargs[1].description == "Beta's tech account"
+        assert loaded.named_reset_kwargs[2].description is None
 
     def test_duplicate_names_rejected(self):
         with pytest.raises(
             ValidationError,
-            match="An Environment Option named Acme Manager already exists",
+            match="An Environment Preset named Acme Manager already exists",
         ):
             OpenEnvServer(
                 name="E",

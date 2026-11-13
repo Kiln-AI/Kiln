@@ -589,8 +589,10 @@ class _FakeOpenEnvSessionManager:
 
 @pytest.fixture
 def make_openenv_server(test_project):
-    def _make(name, url="http://127.0.0.1:8004"):
-        openenv_server = OpenEnvServer(name=name, url=url, parent=test_project)
+    def _make(name, url="http://127.0.0.1:8004", is_archived=False):
+        openenv_server = OpenEnvServer(
+            name=name, url=url, is_archived=is_archived, parent=test_project
+        )
         openenv_server.save_to_file()
         return openenv_server
 
@@ -609,7 +611,7 @@ async def test_openenv_tool_sets_list_each_openenv_server(make_openenv_server):
     assert [s.model_dump(mode="json") for s in sets] == [
         {
             "type": "openenv",
-            "set_name": "OpenEnv: Acme",
+            "set_name": "OpenEnv Server: Acme",
             "tools": [
                 {
                     "id": build_openenv_tool_id(acme.id, "search"),
@@ -629,14 +631,20 @@ async def test_openenv_tool_sets_skip_unlisted_openenv_servers(make_openenv_serv
         make_openenv_server("NoUrl", url=None),
         make_openenv_server("Down"),
         make_openenv_server("Slow"),
+        make_openenv_server("Archived", is_archived=True),
     ]
     manager = _FakeOpenEnvSessionManager(
-        {"Acme": [SEARCH_TOOL], "Down": ConnectionError("refused"), "Slow": "slow"}
+        {
+            "Acme": [SEARCH_TOOL],
+            "Down": ConnectionError("refused"),
+            "Slow": "slow",
+            "Archived": [SEARCH_TOOL],
+        }
     )
 
     sets = await available_openenv_tool_sets(openenv_servers, manager, timeout_s=0.05)
 
-    assert [s.set_name for s in sets] == ["OpenEnv: Acme"]
+    assert [s.set_name for s in sets] == ["OpenEnv Server: Acme"]
 
 
 def test_get_available_tools_includes_openenv_sets(
@@ -652,7 +660,7 @@ def test_get_available_tools_includes_openenv_sets(
 
     assert response.status_code == 200
     openenv_sets = [s for s in response.json() if s["type"] == "openenv"]
-    assert [s["set_name"] for s in openenv_sets] == ["OpenEnv: Acme"]
+    assert [s["set_name"] for s in openenv_sets] == ["OpenEnv Server: Acme"]
 
 
 async def test_get_available_tools_success_single_server(client, test_project):
