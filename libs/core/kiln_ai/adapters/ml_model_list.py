@@ -199,6 +199,7 @@ class ModelName(str, Enum):
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
     gemini_4_argon = "gemini_4_argon"
+    gemini_4_hydrogen = "gemini_4_hydrogen"
     gemini_3_8_flash = "gemini_3_8_flash"
     gemini_3_7_flash = "gemini_3_7_flash"
     gemini_3_6_flash = "gemini_3_6_flash"
@@ -362,6 +363,7 @@ class ModelName(str, Enum):
     mimo_v2_6_pro = "mimo_v2_6_pro"
     mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
     mimo_v2_6_flash = "mimo_v2_6_flash"
+    inkling_2_small = "inkling_2_small"
     inkling = "inkling"
     inkling_small = "inkling_small"
     jev_1_13 = "jev_1_13"
@@ -648,6 +650,13 @@ GEMINI_3_FLASH_THINKING_LEVELS = {
     "High": "high",
 }
 
+GEMINI_4_HYDROGEN_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
 GEMMA_4_THINKING_LEVELS = {
     "Off": "none",
     "On": "high",
@@ -801,6 +810,16 @@ FUGU_ULTRA_OPENROUTER_THINKING_LEVELS = {
 
 INKLING_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Max": "max",
+}
+
+# Inkling 2 Small on OpenRouter and Cloudflare. Cloudflare also lists `none`, but
+# it still returns reasoning there, so neither provider offers an Off level.
+INKLING_2_SMALL_THINKING_LEVELS = {
     "Minimal": "minimal",
     "Low": "low",
     "Medium": "medium",
@@ -3692,6 +3711,43 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+        ],
+    ),
+    # Gemini 4 Hydrogen
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_4_hydrogen,
+        friendly_name="Gemini 4 Hydrogen",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-4-hydrogen",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_THINKING_LEVELS,
+                default_thinking_level="medium",
+                litellm_allowed_openai_params=["reasoning_effort"],
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
@@ -12068,6 +12124,57 @@ built_in_models: List[KilnModel] = [
                 supports_vision=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Inkling 2 Small (Thinking Machines)
+    KilnModel(
+        family=ModelFamily.thinking_machines,
+        name=ModelName.inkling_2_small,
+        friendly_name="Inkling 2 Small",
+        editorial_notes="The first model of Thinking Machines' second Inkling generation (Apache 2.0). A 594B-parameter MoE (17B active) with image input, a 1M-token context and configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thinkingmachines/inkling-2-small",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=INKLING_2_SMALL_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="thinkingmachines/Inkling-2-Small",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/thinkingmachines/inkling-2-small",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=INKLING_2_SMALL_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
