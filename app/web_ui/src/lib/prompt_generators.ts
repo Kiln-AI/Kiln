@@ -5,7 +5,6 @@ export type PromptGeneratorTemplate = {
   requires_data: boolean
   requires_repairs: boolean
   chain_of_thought: boolean
-  recommended?: boolean
 }
 
 export type PromptGeneratorCategory = {

@@ -116,7 +116,6 @@
           disabled: state.disabled,
           disabled_reason: state.reason,
           disabled_docs_link: state.docs_link,
-          recommended: template.recommended,
         }
       },
     ),
