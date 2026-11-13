@@ -1,9 +1,9 @@
-"""End-to-end runner tests against a world.
+"""End-to-end runner tests against an environment.
 
-The world is the test OpenEnv environment from `kiln_ai.worlds.testing`: one
+The environment is the test OpenEnv environment from `kiln_ai.openenv.testing`: one
 tool, `append_note`, that records a note and pays a reward; `reset()` starts an
-episode. The world run config lists the environment's tool
-by its `kiln_tool::world::<world_id>::append_note` id; a second run config lists a
+episode. The environment run config lists the environment's tool
+by its `kiln_tool::openenv::<openenv_server_id>::append_note` id; a second run config lists a
 project code tool with the same function name for inputs without an environment. Nothing
 is swapped: the runner refuses a job whose run config and input disagree. Generation
 is stubbed at the model boundary only: most tests use a fake `run_task` that resolves
@@ -53,25 +53,25 @@ from kiln_ai.datamodel.eval import (
     V2EvalResult,
 )
 from kiln_ai.datamodel.eval_splits import resolve_split
+from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun, Usage
-from kiln_ai.datamodel.tool_id import build_code_tool_id, build_world_tool_id
-from kiln_ai.datamodel.world import World, WorldReset
-from kiln_ai.run_context import get_episode
-from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
-from kiln_ai.tools.base_tool import ToolCallContext
-from kiln_ai.tools.tool_registry import tool_from_id
-from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver, RetryableError
-from kiln_ai.worlds.session_manager import (
+from kiln_ai.datamodel.tool_id import build_code_tool_id, build_openenv_tool_id
+from kiln_ai.openenv.session_manager import (
     OpenEnvError,
     OpenEnvRejectedError,
     OpenEnvSessionManager,
     OpenEnvTransientError,
 )
-from kiln_ai.worlds.testing import ENV_NAME, free_port, serve_in_thread
+from kiln_ai.openenv.testing import ENV_NAME, free_port, serve_in_thread
+from kiln_ai.run_context import get_episode
+from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
+from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.tools.tool_registry import tool_from_id
+from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver, RetryableError
 
 SCHEMA = {"type": "object", "properties": {"note": {"type": "string"}}}
 CLOCK_A = "2026-07-14T00:00:00+00:00"
@@ -105,7 +105,7 @@ def project_tool(project):
 @pytest.fixture
 def other_tool(project):
     """A project tool the environment does not serve: always allowed alongside the
-    world's tools, even for an input that requires its world."""
+    environment's tools, even for an input that requires its environment."""
     ct = CodeTool(
         name="real write",
         parent=project,
@@ -119,16 +119,18 @@ def other_tool(project):
 
 
 @pytest.fixture
-def env_server():
+def openenv_server_url():
     with serve_in_thread() as base_url:
         yield base_url
 
 
 @pytest.fixture
-def world(project, env_server):
-    w = World(name="World", parent=project, env_url=env_server)
-    w.save_to_file()
-    return w
+def openenv_server(project, openenv_server_url):
+    openenv_server = OpenEnvServer(
+        name="Environment", parent=project, url=openenv_server_url
+    )
+    openenv_server.save_to_file()
+    return openenv_server
 
 
 @pytest.fixture
@@ -164,14 +166,14 @@ def _run_config(task, tool_ids, name="rc"):
 
 
 @pytest.fixture
-def syn_tool_id(world):
-    return build_world_tool_id(world.id, "append_note")
+def syn_tool_id(openenv_server):
+    return build_openenv_tool_id(openenv_server.id, "append_note")
 
 
 @pytest.fixture
 def run_config(task, syn_tool_id):
-    """The run config for inputs that run in the world: it lists the world's tool."""
-    return _run_config(task, [syn_tool_id], name="world rc")
+    """The run config for inputs that run in the environment: it lists the environment's tool."""
+    return _run_config(task, [syn_tool_id], name="environment rc")
 
 
 @pytest.fixture
@@ -206,22 +208,22 @@ def _config(eval_, properties, name="cfg"):
     return cfg
 
 
-def _input(task, text, world_reset=None, id=None):
+def _input(task, text, openenv_reset=None, id=None):
     ei = EvalInput(
         id=id,
         parent=task,
         data=SingleTurnEvalInputData(user_message=UserMessage(text=text)),
-        world_reset=world_reset,
+        openenv_reset=openenv_reset,
     )
     ei.save_to_file()
     return ei
 
 
-def _reset(world, fixture_id, frozen_time=None):
+def _reset(openenv_server, fixture_id, frozen_time=None):
     config = {"fixture_id": fixture_id}
     if frozen_time is not None:
         config["frozen_time"] = frozen_time
-    return WorldReset(world_id=world.id, reset_kwargs=config)
+    return OpenEnvReset(openenv_server_id=openenv_server.id, reset_kwargs=config)
 
 
 class ToolCallingGenerator:
@@ -289,9 +291,9 @@ class RecordingJudge(BaseV2EvalBridge):
 
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         RecordingJudge.seen.append(eval_input)
-        if eval_input.world_episode is not None:
+        if eval_input.openenv_episode is not None:
             RecordingJudge.states[eval_input.task_input or ""] = (
-                eval_input.world_episode.final_state
+                eval_input.openenv_episode.final_state
             )
         return V2EvalResult(scores={"accuracy": 1.0})
 
@@ -321,7 +323,7 @@ def _runner(eval_configs, run_config, session_manager, split_name="test", judge=
         run_configs=[run_config],
         eval_run_type="task_run_eval",
         split=split,
-        world_session_manager=session_manager,
+        openenv_session_manager=session_manager,
         judge=judge,
     )
 
@@ -340,18 +342,18 @@ def _traces(task):
 
 
 STATE_SCORER = (
-    "def score(output, world_episode):\n"
-    "    notes = world_episode['final_state']['notes']\n"
-    "    ok = len(notes) == 1 and world_episode['final_state']['step_count'] == 1\n"
+    "def score(output, openenv_episode):\n"
+    "    notes = openenv_episode['final_state']['notes']\n"
+    "    ok = len(notes) == 1 and openenv_episode['final_state']['step_count'] == 1\n"
     "    return {'accuracy': 1.0 if ok else 0.0}\n"
 )
 
 
 async def test_full_run_isolates_and_records_episodes(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
-    a = _input(task, "note for a", _reset(world, "a", CLOCK_A), id="ei_a")
-    b = _input(task, "note for b", _reset(world, "b", CLOCK_B), id="ei_b")
+    a = _input(task, "note for a", _reset(openenv_server, "a", CLOCK_A), id="ei_a")
+    b = _input(task, "note for b", _reset(openenv_server, "b", CLOCK_B), id="ei_b")
     cfg = _config(eval_, ExactMatchProperties(expected_value="noted:1"))
     generator = ToolCallingGenerator(task, syn_tool_id)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator), _judge_patch():
@@ -363,14 +365,17 @@ async def test_full_run_isolates_and_records_episodes(
 
     traces = {t.eval_source.source_id: t for t in _traces(task)}
     assert set(traces) == {a.id, b.id}
-    ep_a, ep_b = traces[a.id].world_episode, traces[b.id].world_episode
+    ep_a, ep_b = traces[a.id].openenv_episode, traces[b.id].openenv_episode
     assert ep_a is not None and ep_b is not None
     # The trace records the environment's function name; the run config records the
-    # world tool id it was chosen by.
+    # environment tool id it was chosen by.
     assert traces[a.id].trace[1]["tool_calls"][0]["function"]["name"] == "append_note"
     assert run_config.run_config_properties.tools_config.tools == [syn_tool_id]
     assert ep_a.episode_id != ep_b.episode_id
-    assert ep_a.reset.world_id == world.id and ep_b.reset.world_id == world.id
+    assert (
+        ep_a.reset.openenv_server_id == openenv_server.id
+        and ep_b.reset.openenv_server_id == openenv_server.id
+    )
     assert ep_a.reset.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
     assert ep_b.reset.reset_kwargs == {"fixture_id": "b", "frozen_time": CLOCK_B}
     assert ep_a.reset_metadata["fixture_id"] == "a"
@@ -381,21 +386,21 @@ async def test_full_run_isolates_and_records_episodes(
     assert ep_a.final_state["notes"] == ["note for a"]
     assert ep_b.final_state["notes"] == ["note for b"]
     # Variant on the trace key separates configs.
-    # Same world, same reported version: the world_version is identical and readable;
+    # Same environment, same reported version: the openenv_version is identical and readable;
     # the inputs'
     # own ids keep their traces apart.
     assert (
-        traces[a.id].world_episode.world_version
-        == traces[b.id].world_episode.world_version
+        traces[a.id].openenv_episode.openenv_version
+        == traces[b.id].openenv_episode.openenv_version
     )
-    assert traces[a.id].world_episode.world_version == f"{ENV_NAME}@1.0.0"
+    assert traces[a.id].openenv_episode.openenv_version == f"{ENV_NAME}@1.0.0"
     # Sessions are closed once the episode is ended.
     assert session_manager._sessions == {}
 
     # The judge saw the full episode record, and the context let it read the settled
     # state.
     by_input = {s.task_input: s for s in RecordingJudge.seen}
-    info = by_input["note for a"].world_episode
+    info = by_input["note for a"].openenv_episode
     assert info is not None
     assert info.reset.reset_kwargs == {"fixture_id": "a", "frozen_time": CLOCK_A}
     assert info.reset_metadata["fixture_id"] == "a"
@@ -408,11 +413,17 @@ async def test_full_run_isolates_and_records_episodes(
     assert all(r.scores == {"accuracy": 1.0} for r in runs)
 
 
-async def test_project_run_config_runs_project_tools_without_an_environment(
-    project, task, world, project_tool, project_run_config, eval_, session_manager
+async def test_project_run_config_runs_project_tools_without_an_openenv_server(
+    project,
+    task,
+    openenv_server,
+    project_tool,
+    project_run_config,
+    eval_,
+    session_manager,
 ):
     """An input with no environment runs the project tool under a real run config; no
-    session, no episode, no world_version."""
+    session, no episode, no openenv_version."""
     none = _input(task, "note for none", None, id="ei_none")
     cfg = _config(eval_, ExactMatchProperties(expected_value="real"))
     generator = ToolCallingGenerator(task, build_code_tool_id(project_tool.id))
@@ -427,9 +438,9 @@ async def test_project_run_config_runs_project_tools_without_an_environment(
     assert generator.outputs[none.id] == "real"
     start_episode.assert_not_called()
     (trace,) = _traces(task)
-    assert trace.world_episode is None
+    assert trace.openenv_episode is None
     (seen,) = RecordingJudge.seen
-    assert seen.world_episode is None
+    assert seen.openenv_episode is None
     assert cfg.runs(readonly=True)[0].scores == {"accuracy": 1.0}
 
 
@@ -446,8 +457,8 @@ async def _expect_job_error(runner, match, session_manager, task):
     assert session_manager._sessions == {}
 
 
-async def test_world_run_config_without_world_reset_is_an_error(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+async def test_openenv_run_config_without_openenv_reset_is_an_error(
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     _input(task, "note", None, id="ei_none")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
@@ -455,23 +466,23 @@ async def test_world_run_config_without_world_reset_is_an_error(
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _expect_job_error(
             _runner([cfg], run_config, session_manager),
-            "lists world tools .* has no world_reset",
+            "lists OpenEnv tools .* has no openenv_reset",
             session_manager,
             task,
         )
     assert generator.outputs == {}
 
 
-async def test_unserved_project_tools_ignore_the_environment(
-    project, task, world, other_tool, eval_, session_manager
+async def test_unserved_project_tools_ignore_the_openenv_server(
+    project, task, openenv_server, other_tool, eval_, session_manager
 ):
-    """An input with a world, run under a run config whose only tools
-    are real ones the world does not serve, is a plain real-tools job: nothing is
-    launched and no episode or world_version is recorded. The environment is still asked
+    """An input with an environment, run under a run config whose only tools
+    are real ones the environment does not serve, is a plain real-tools job: nothing is
+    launched and no episode or openenv_version is recorded. The environment is still asked
     which tools it serves, to refuse a run config listing the project's own version of
     one."""
     run_config = _run_config(task, [build_code_tool_id(other_tool.id)], name="other rc")
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, build_code_tool_id(other_tool.id))
     with (
@@ -485,39 +496,39 @@ async def test_unserved_project_tools_ignore_the_environment(
     start_episode.assert_not_called()
     traces = _traces(task)
     assert len(traces) == 1
-    assert traces[0].world_episode is None
+    assert traces[0].openenv_episode is None
     assert not session_manager._sessions
 
 
-async def test_tools_from_another_world_are_an_error(
-    project, task, world, eval_, session_manager
+async def test_tools_from_another_openenv_are_an_error(
+    project, task, openenv_server, eval_, session_manager
 ):
-    foreign = build_world_tool_id("other_world", "append_note")
+    foreign = build_openenv_tool_id("other_openenv", "append_note")
     run_config = _run_config(task, [foreign], name="foreign rc")
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, foreign)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _expect_job_error(
             _runner([cfg], run_config, session_manager),
-            r"lists tools from world\(s\) \['other_world'\]",
+            r"lists tools from OpenEnv server\(s\) \['other_openenv'\]",
             session_manager,
             task,
         )
     assert generator.outputs == {}
 
 
-async def test_world_tool_id_outside_a_world_job_raises(task, syn_tool_id):
+async def test_openenv_tool_id_outside_an_openenv_job_raises(task, syn_tool_id):
     with pytest.raises(ValueError, match="can only be used while an episode"):
         tool_from_id(syn_tool_id, task)
 
 
 async def test_later_judge_reuses_trace_and_episode(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """A judge added later scores the same trace and sees the same episode record,
     without opening a new session."""
-    _input(task, "look", _reset(world, "a"), id="ei_a")
+    _input(task, "look", _reset(openenv_server, "a"), id="ei_a")
     first = _config(eval_, ExactMatchProperties(expected_value="x"), name="first")
     generator = ToolCallingGenerator(task, syn_tool_id)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator), _judge_patch():
@@ -526,8 +537,8 @@ async def test_later_judge_reuses_trace_and_episode(
     launched = set()
     original_start = session_manager.start_episode
 
-    async def counting_start(world_, config):
-        episode = await original_start(world_, config)
+    async def counting_start(openenv_, config):
+        episode = await original_start(openenv_, config)
         launched.add(episode.episode_id)
         return episode
 
@@ -542,24 +553,26 @@ async def test_later_judge_reuses_trace_and_episode(
     assert len(generator.outputs) == 1
     assert launched == set()
     assert len(second.runs(readonly=True)) == 1
-    assert RecordingJudge.seen[-1].world_episode.episode_id == (
-        trace.world_episode.episode_id
+    assert RecordingJudge.seen[-1].openenv_episode.episode_id == (
+        trace.openenv_episode.episode_id
     )
     assert RecordingJudge.states["look"]["notes"] == ["look"]
 
 
-async def test_changed_environment_version_regenerates_the_trace(
-    project, task, eval_, session_manager, env_server
+async def test_changed_openenv_version_regenerates_the_trace(
+    project, task, eval_, session_manager, openenv_server_url
 ):
-    """Same world, pointed at an environment reporting a new version: the content
-    version moves, so the trace world_version moves and the item is generated again rather
+    """Same OpenEnv server, pointed at a server reporting a new version: the content
+    version moves, so the trace openenv_version moves and the item is generated again rather
     than reused."""
-    world = World(name="Versioned", parent=project, env_url=env_server)
-    world.save_to_file()
-    syn_tool_id = build_world_tool_id(world.id, "append_note")
+    openenv_server = OpenEnvServer(
+        name="Versioned", parent=project, url=openenv_server_url
+    )
+    openenv_server.save_to_file()
+    syn_tool_id = build_openenv_tool_id(openenv_server.id, "append_note")
     run_config = _run_config(task, [syn_tool_id])
 
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     first = _config(eval_, ExactMatchProperties(expected_value="x"), name="first")
     generator = ToolCallingGenerator(task, syn_tool_id)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
@@ -568,18 +581,18 @@ async def test_changed_environment_version_regenerates_the_trace(
     assert generator.outputs["ei_a"] == "noted:1"
 
     with serve_in_thread(version="2.0.0") as upgraded:
-        world.env_url = upgraded
-        world.save_to_file()
+        openenv_server.url = upgraded
+        openenv_server.save_to_file()
         second = _config(eval_, ExactMatchProperties(expected_value="x"), name="second")
         with patch.object(BaseV2EvalBridge, "run_task", new=generator):
             await _drain(_runner([second], run_config, session_manager))
     traces = _traces(task)
     assert len(traces) == 2
-    assert len({t.world_episode.world_version for t in traces}) == 2
-    assert len({t.world_episode.episode_id for t in traces}) == 2
+    assert len({t.openenv_episode.openenv_version for t in traces}) == 2
+    assert len({t.openenv_episode.episode_id for t in traces}) == 2
 
 
-def _multi_turn_input(task, world, id="ei_multi"):
+def _multi_turn_input(task, openenv_server, id="ei_multi"):
     ei = EvalInput(
         id=id,
         parent=task,
@@ -592,7 +605,7 @@ def _multi_turn_input(task, world, id="ei_multi"):
                 model_name="claude_4_5_haiku", model_provider="openrouter", turns=2
             ),
         ),
-        world_reset=_reset(world, "a"),
+        openenv_reset=_reset(openenv_server, "a"),
     )
     ei.save_to_file()
     return ei
@@ -600,14 +613,14 @@ def _multi_turn_input(task, world, id="ei_multi"):
 
 @pytest.mark.parametrize("lane", ["single_turn", "multi_turn"])
 async def test_failed_generation_releases_the_episode(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager, lane
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager, lane
 ):
-    """A generation that raises after touching the world releases its episode's
+    """A generation that raises after touching the environment releases its episode's
     session, saves nothing, and leaves the next attempt a fresh episode."""
     if lane == "single_turn":
-        _input(task, "note", _reset(world, "a"), id="ei_a")
+        _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     else:
-        _multi_turn_input(task, world)
+        _multi_turn_input(task, openenv_server)
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     tool_calling = ToolCallingGenerator(task, syn_tool_id)
 
@@ -619,8 +632,8 @@ async def test_failed_generation_releases_the_episode(
     started: list[str] = []
     original_start = session_manager.start_episode
 
-    async def recording_start(world_, reset_kwargs):
-        episode = await original_start(world_, reset_kwargs)
+    async def recording_start(openenv_, reset_kwargs):
+        episode = await original_start(openenv_, reset_kwargs)
         started.append(episode.episode_id)
         return episode
 
@@ -642,17 +655,17 @@ async def test_failed_generation_releases_the_episode(
             with patch.object(BaseV2EvalBridge, "run_task", new=tool_calling):
                 await runner.run_job(runner.collect_tasks()[0])
             (trace,) = _traces(task)
-            assert trace.world_episode.episode_id == started[-1] != started[0]
-            assert trace.world_episode.final_state["notes"] == ["note"]
+            assert trace.openenv_episode.episode_id == started[-1] != started[0]
+            assert trace.openenv_episode.final_state["notes"] == ["note"]
     assert len(started) == (2 if lane == "single_turn" else 1)
 
 
-async def test_transient_environment_error_is_retried(
-    project, task, world, run_config, eval_, session_manager
+async def test_transient_openenv_error_is_retried(
+    project, task, openenv_server, run_config, eval_, session_manager
 ):
     """A failure that may not recur (a dropped connection, a timeout, a full server)
     asks the job runner for another attempt instead of failing the job."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
 
     async def full_server(*args, **kwargs):
@@ -665,11 +678,11 @@ async def test_transient_environment_error_is_retried(
 
 
 async def test_transient_error_in_a_tool_call_is_retried(
-    project, task, world, run_config, eval_, session_manager
+    project, task, openenv_server, run_config, eval_, session_manager
 ):
     """A dropped connection during a tool call reaches the runner wrapped in the
     model adapter's KilnRunError; it is still recognized and retried."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
 
     async def dropped_tool_call(*args, **kwargs):
@@ -761,12 +774,19 @@ def _first_tool_step_raises(session_manager, error):
     ],
 )
 async def test_session_ending_tool_error_in_the_model_adapter_fails_the_run(
-    project, task, world, run_config, eval_, session_manager, error, expected_exception
+    project,
+    task,
+    openenv_server,
+    run_config,
+    eval_,
+    session_manager,
+    error,
+    expected_exception,
 ):
-    """The real model adapter runs the world tool. An error that ends the session
+    """The real model adapter runs the environment tool. An error that ends the session
     fails the run on that first call with the real error, instead of going back to
     the model; a transient one is retried."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
 
     with (
@@ -781,12 +801,12 @@ async def test_session_ending_tool_error_in_the_model_adapter_fails_the_run(
     assert session_manager._sessions == {}
 
 
-async def test_rejected_world_tool_call_goes_back_to_the_model(
-    project, task, world, run_config, eval_, session_manager
+async def test_rejected_openenv_tool_call_goes_back_to_the_model(
+    project, task, openenv_server, run_config, eval_, session_manager
 ):
     """A rejection keeps the session: the model gets an error result, answers, and
     the episode ends normally."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     rejection = OpenEnvRejectedError("The environment rejected a 'step' message: no")
 
@@ -805,22 +825,24 @@ async def test_rejected_world_tool_call_goes_back_to_the_model(
     tool_message = next(m for m in trace.trace if m["role"] == "tool")
     assert tool_message["is_error"] is True
     assert "failed unexpectedly" in tool_message["content"]
-    assert trace.world_episode is not None
-    assert trace.world_episode.final_state is not None
+    assert trace.openenv_episode is not None
+    assert trace.openenv_episode.final_state is not None
 
 
-async def test_failed_world_resolution_is_remembered_for_the_run(
+async def test_failed_openenv_resolution_is_remembered_for_the_run(
     project, task, eval_, session_manager
 ):
     """An environment that is down or hangs costs one attempt per run, not one per
     job."""
-    world = World(
-        name="Dead", parent=project, env_url=f"http://127.0.0.1:{free_port()}"
+    openenv_server = OpenEnvServer(
+        name="Dead", parent=project, url=f"http://127.0.0.1:{free_port()}"
     )
-    world.save_to_file()
-    run_config = _run_config(task, [build_world_tool_id(world.id, "append_note")])
+    openenv_server.save_to_file()
+    run_config = _run_config(
+        task, [build_openenv_tool_id(openenv_server.id, "append_note")]
+    )
     for name in ("a", "b", "c"):
-        _input(task, name, _reset(world, name), id=f"ei_{name}")
+        _input(task, name, _reset(openenv_server, name), id=f"ei_{name}")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     with patch.object(
         session_manager, "refresh", wraps=session_manager.refresh
@@ -832,62 +854,64 @@ async def test_failed_world_resolution_is_remembered_for_the_run(
     assert refresh.call_count == 1
 
 
-async def test_transient_world_resolution_failure_is_retried(
-    project, task, world, run_config, eval_, session_manager
+async def test_transient_openenv_resolution_failure_is_retried(
+    project, task, openenv_server, run_config, eval_, session_manager
 ):
-    """A transient failure while resolving the world (a full server when listing its
+    """A transient failure while resolving the environment (a full server when listing its
     tools) is not remembered: the job is retried, and the retry reaches the
     environment again instead of replaying the cached failure."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     original_list_tools = session_manager.list_tools
     calls = 0
 
-    async def full_once(world_):
+    async def full_once(openenv_):
         nonlocal calls
         calls += 1
         if calls == 1:
             raise OpenEnvTransientError("Server at capacity")
-        return await original_list_tools(world_)
+        return await original_list_tools(openenv_)
 
     with patch.object(session_manager, "list_tools", new=full_once):
         runner = _runner([cfg], run_config, session_manager)
         job = runner.collect_tasks()[0]
         with pytest.raises(RetryableError, match="Server at capacity"):
             await runner.run_job(job)
-        target = await runner._resolve_world_target(_reset(world, "a"))
-    assert target.world.id == world.id
+        target = await runner._resolve_openenv_target(_reset(openenv_server, "a"))
+    assert target.openenv_server.id == openenv_server.id
     assert calls == 2
 
 
 async def test_edited_reset_regenerates_the_trace(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """The trace key covers the input's reset, so editing it (possible through the
     SDK) generates a new trace instead of grading the state a different reset left."""
-    ei = _input(task, "note", _reset(world, "a"), id="ei_a")
+    ei = _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     generator = ToolCallingGenerator(task, syn_tool_id)
     first = _config(eval_, ExactMatchProperties(expected_value="x"), name="first")
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _drain(_runner([first], run_config, session_manager))
-    ei.world_reset = _reset(world, "b")
+    ei.openenv_reset = _reset(openenv_server, "b")
     ei.save_to_file()
     second = _config(eval_, ExactMatchProperties(expected_value="x"), name="second")
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _drain(_runner([second], run_config, session_manager))
     traces = _traces(task)
-    assert sorted(t.world_episode.reset.reset_kwargs["fixture_id"] for t in traces) == [
+    assert sorted(
+        t.openenv_episode.reset.reset_kwargs["fixture_id"] for t in traces
+    ) == [
         "a",
         "b",
     ]
 
 
 async def test_episode_ending_without_state_saves_no_trace(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """An episode whose session was already gone when it ended has no state to
     record, so its trace is not saved."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
 
     async def stateless_end(episode):
@@ -906,10 +930,10 @@ async def test_episode_ending_without_state_saves_no_trace(
     assert _traces(task) == []
 
 
-async def test_world_needs_a_project(
-    project, task, world, run_config, eval_, session_manager
+async def test_openenv_needs_a_project(
+    project, task, openenv_server, run_config, eval_, session_manager
 ):
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     runner = _runner([cfg], run_config, session_manager)
     job = runner.collect_tasks()[0]
@@ -921,11 +945,11 @@ async def test_world_needs_a_project(
 
 
 async def test_generation_guards(
-    project, task, world, run_config, eval_, session_manager
+    project, task, openenv_server, run_config, eval_, session_manager
 ):
     """Callers check these first; the generation builders refuse rather than build a
     trace key from nothing."""
-    ei = _multi_turn_input(task, world)
+    ei = _multi_turn_input(task, openenv_server)
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     runner = _runner([cfg], run_config, session_manager)
     job = runner.collect_tasks()[0]
@@ -948,11 +972,13 @@ async def test_new_version_on_the_same_url_regenerates_the_trace(
     the environment's metadata, so the long-lived session manager sees the new version
     and the item is generated again rather than reused."""
     port = free_port()
-    world = World(name="Restarted", parent=project, env_url=f"http://127.0.0.1:{port}")
-    world.save_to_file()
-    syn_tool_id = build_world_tool_id(world.id, "append_note")
+    openenv_server = OpenEnvServer(
+        name="Restarted", parent=project, url=f"http://127.0.0.1:{port}"
+    )
+    openenv_server.save_to_file()
+    syn_tool_id = build_openenv_tool_id(openenv_server.id, "append_note")
     run_config = _run_config(task, [syn_tool_id])
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     generator = ToolCallingGenerator(task, syn_tool_id)
 
     for name, version in (("first", "1.0.0"), ("second", "2.0.0")):
@@ -962,19 +988,19 @@ async def test_new_version_on_the_same_url_regenerates_the_trace(
             patch.object(BaseV2EvalBridge, "run_task", new=generator),
         ):
             await _drain(_runner([cfg], run_config, session_manager))
-    assert sorted(t.world_episode.world_version for t in _traces(task)) == [
+    assert sorted(t.openenv_episode.openenv_version for t in _traces(task)) == [
         f"{ENV_NAME}@1.0.0",
         f"{ENV_NAME}@2.0.0",
     ]
 
 
 async def test_failed_episode_end_saves_no_trace(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """An episode that fails to end leaves nothing on disk: a trace is saved only with
     its episode's final state, so the next attempt generates again instead of reusing a
     trace graders would read no state from."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, syn_tool_id)
 
@@ -995,45 +1021,45 @@ async def test_failed_episode_end_saves_no_trace(
     with patch.object(BaseV2EvalBridge, "run_task", new=generator), _judge_patch():
         await _drain(_runner([cfg], run_config, session_manager))
     (trace,) = _traces(task)
-    assert trace.world_episode.final_state["notes"] == ["note"]
+    assert trace.openenv_episode.final_state["notes"] == ["note"]
 
 
-async def test_missing_world_is_an_error_not_a_skip(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+async def test_missing_openenv_is_an_error_not_a_skip(
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     _input(
         task,
         "note",
-        WorldReset(world_id="nope", reset_kwargs={"fixture_id": "a"}),
+        OpenEnvReset(openenv_server_id="nope", reset_kwargs={"fixture_id": "a"}),
         id="ei_bad",
     )
     run_config = _run_config(
-        task, [build_world_tool_id("nope", "append_note")], name="nope rc"
+        task, [build_openenv_tool_id("nope", "append_note")], name="nope rc"
     )
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, syn_tool_id)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         runner = _runner([cfg], run_config, session_manager)
         job = runner.collect_tasks()[0]
-        with pytest.raises(ValueError, match="World nope not found"):
+        with pytest.raises(ValueError, match="OpenEnv server nope not found"):
             await runner.run_job(job)
     assert generator.outputs == {}
     assert cfg.runs(readonly=True) == []
     assert session_manager._sessions == {} and session_manager._servers == {}
 
 
-async def test_unreachable_environment_is_a_job_error(
+async def test_unreachable_openenv_is_a_job_error(
     project, task, eval_, session_manager
 ):
-    """The world resolves but its environment does not answer: the job errors before
+    """The OpenEnv server record resolves but its server does not answer: the job errors before
     any generation and nothing is persisted."""
-    world = World(
-        name="Dead", parent=project, env_url=f"http://127.0.0.1:{free_port()}"
+    openenv_server = OpenEnvServer(
+        name="Dead", parent=project, url=f"http://127.0.0.1:{free_port()}"
     )
-    world.save_to_file()
-    syn_tool_id = build_world_tool_id(world.id, "append_note")
+    openenv_server.save_to_file()
+    syn_tool_id = build_openenv_tool_id(openenv_server.id, "append_note")
     run_config = _run_config(task, [syn_tool_id])
-    _input(task, "note", _reset(world, "a"), id="ei_bad")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_bad")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, syn_tool_id)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
@@ -1047,9 +1073,9 @@ async def test_unreachable_environment_is_a_job_error(
 
 
 async def test_skipped_job_creates_no_session(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, syn_tool_id)
     with (
@@ -1071,11 +1097,11 @@ async def test_skipped_job_creates_no_session(
 
 
 async def test_concurrent_judges_share_one_generation_and_episode(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """Two scorers on one item, in one run: one generation, one episode, and both
     read the settled state."""
-    _input(task, "look", _reset(world, "a"), id="ei_a")
+    _input(task, "look", _reset(openenv_server, "a"), id="ei_a")
     first = _config(
         eval_, CodeEvalProperties(code=STATE_SCORER, timeout_seconds=30), name="first"
     )
@@ -1092,7 +1118,7 @@ async def test_concurrent_judges_share_one_generation_and_episode(
         assert run.skipped_reason is None, cfg.name
         assert run.scores == {"accuracy": 1.0}, cfg.name
     (trace,) = _traces(task)
-    assert trace.world_episode.final_state["notes"] == ["look"]
+    assert trace.openenv_episode.final_state["notes"] == ["look"]
     assert session_manager._sessions == {}
 
 
@@ -1102,11 +1128,11 @@ async def test_concurrent_judges_share_one_generation_and_episode(
 
 
 async def test_multi_turn_drive_shares_one_episode_across_turns(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """The drive runs with the episode in context for its whole conversation: every
     turn's tool call lands in the same session, the leaf trace records that episode,
-    and the trace is keyed by the world_version."""
+    and the trace is keyed by the openenv_version."""
     ei = EvalInput(
         id="ei_multi",
         parent=task,
@@ -1119,15 +1145,15 @@ async def test_multi_turn_drive_shares_one_episode_across_turns(
                 model_name="claude_4_5_haiku", model_provider="openrouter", turns=2
             ),
         ),
-        world_reset=_reset(world, "a"),
+        openenv_reset=_reset(openenv_server, "a"),
     )
     ei.save_to_file()
     cfg = _config(
         eval_,
         CodeEvalProperties(
             code=(
-                "def score(output, world_episode):\n"
-                "    notes = world_episode['final_state']['notes']\n"
+                "def score(output, openenv_episode):\n"
+                "    notes = openenv_episode['final_state']['notes']\n"
                 "    return {'accuracy': 1.0 if notes == ['first note', 'second note'] else 0.0}\n"
             ),
             timeout_seconds=30,
@@ -1179,11 +1205,11 @@ async def test_multi_turn_drive_shares_one_episode_across_turns(
     traces = _traces(task)
     assert len(traces) == 1
     trace = traces[0]
-    assert trace.world_episode is not None
-    assert trace.world_episode.episode_id == seen_episodes[0]
-    assert trace.world_episode.final_state["notes"] == ["first note", "second note"]
-    assert trace.world_episode.final_state["step_count"] == 2
-    assert trace.world_episode.world_version == f"{ENV_NAME}@1.0.0"
+    assert trace.openenv_episode is not None
+    assert trace.openenv_episode.episode_id == seen_episodes[0]
+    assert trace.openenv_episode.final_state["notes"] == ["first note", "second note"]
+    assert trace.openenv_episode.final_state["step_count"] == 2
+    assert trace.openenv_episode.openenv_version == f"{ENV_NAME}@1.0.0"
     run = cfg.runs(readonly=True)[0]
     assert run.skipped_reason is None
     assert run.scores == {"accuracy": 1.0}
@@ -1198,7 +1224,7 @@ async def test_multi_turn_drive_shares_one_episode_across_turns(
 
 
 async def test_multi_turn_skip_creates_no_episode(
-    project, task, world, run_config, eval_, session_manager
+    project, task, openenv_server, run_config, eval_, session_manager
 ):
     EvalInput(
         id="ei_nodrive",
@@ -1208,7 +1234,7 @@ async def test_multi_turn_skip_creates_no_episode(
             synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
             drive_config=None,
         ),
-        world_reset=_reset(world, "a"),
+        openenv_reset=_reset(openenv_server, "a"),
     ).save_to_file()
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     with patch.object(
@@ -1221,16 +1247,18 @@ async def test_multi_turn_skip_creates_no_episode(
     assert _traces(task) == []
 
 
-async def test_multi_turn_skip_needs_no_environment(
+async def test_multi_turn_skip_needs_no_openenv_server(
     project, task, eval_, session_manager
 ):
-    """A multi-turn item that will be skipped is skipped before its world is resolved,
+    """A multi-turn item that will be skipped is skipped before its environment is resolved,
     so an environment that is down does not turn the skip into a job error."""
-    world = World(
-        name="Dead", parent=project, env_url=f"http://127.0.0.1:{free_port()}"
+    openenv_server = OpenEnvServer(
+        name="Dead", parent=project, url=f"http://127.0.0.1:{free_port()}"
     )
-    world.save_to_file()
-    run_config = _run_config(task, [build_world_tool_id(world.id, "append_note")])
+    openenv_server.save_to_file()
+    run_config = _run_config(
+        task, [build_openenv_tool_id(openenv_server.id, "append_note")]
+    )
     EvalInput(
         id="ei_nodrive",
         parent=task,
@@ -1239,7 +1267,7 @@ async def test_multi_turn_skip_needs_no_environment(
             synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
             drive_config=None,
         ),
-        world_reset=_reset(world, "a"),
+        openenv_reset=_reset(openenv_server, "a"),
     ).save_to_file()
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     await _drain(_runner([cfg], run_config, session_manager))
@@ -1252,7 +1280,7 @@ async def test_multi_turn_skip_needs_no_environment(
 # ---------------------------------------------------------------------------
 
 
-def _multi_turn_input(task, world, id="ei_multi"):
+def _multi_turn_input(task, openenv_server, id="ei_multi"):
     ei = EvalInput(
         id=id,
         parent=task,
@@ -1265,14 +1293,14 @@ def _multi_turn_input(task, world, id="ei_multi"):
                 model_name="claude_4_5_haiku", model_provider="openrouter", turns=2
             ),
         ),
-        world_reset=_reset(world, "a"),
+        openenv_reset=_reset(openenv_server, "a"),
     )
     ei.save_to_file()
     return ei
 
 
 class NoteDrive:
-    """Stands in for the synthetic-user drive: each turn calls the world's tool, so
+    """Stands in for the synthetic-user drive: each turn calls the environment's tool, so
     the episode runs for real, and each turn reports a latency."""
 
     def __init__(self, tool_id: str):
@@ -1313,13 +1341,13 @@ class NoteDrive:
         return DriveCaseResult(chain=chain, su_usage=None)
 
 
-async def test_drive_only_drives_in_the_world_and_judges_nothing(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+async def test_drive_only_drives_in_the_openenv_and_judges_nothing(
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """A drive-only run drives a multi-turn item in a fresh episode with its
     synthetic user, saves the trace with its usage and settled episode, stores no
     score, and names the trace in `driven_runs`."""
-    ei = _multi_turn_input(task, world)
+    ei = _multi_turn_input(task, openenv_server)
     cfg = _config(eval_, ExactMatchProperties(expected_value="noted:2"))
     drive = NoteDrive(syn_tool_id)
     runner = _runner([cfg], run_config, session_manager, judge=False)
@@ -1335,8 +1363,8 @@ async def test_drive_only_drives_in_the_world_and_judges_nothing(
     traces = _traces(task)
     assert len(traces) == 1
     trace = traces[0]
-    assert trace.world_episode is not None
-    assert trace.world_episode.final_state["notes"] == ["first note", "second note"]
+    assert trace.openenv_episode is not None
+    assert trace.openenv_episode.final_state["notes"] == ["first note", "second note"]
     assert trace.usage is not None
     # Conversation-total latency: both turns of the drive.
     assert trace.usage.total_llm_latency_ms == 200
@@ -1352,11 +1380,11 @@ async def test_drive_only_drives_in_the_world_and_judges_nothing(
 
 
 async def test_drive_only_drives_again_and_a_judged_run_reuses_the_newest(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """Every drive-only run is a fresh generation, even of an item that has a trace,
     and a later judged run scores the newest drive instead of driving again."""
-    _multi_turn_input(task, world)
+    _multi_turn_input(task, openenv_server)
     cfg = _config(eval_, ExactMatchProperties(expected_value="noted:2"))
     drive = NoteDrive(syn_tool_id)
     with (
@@ -1381,11 +1409,11 @@ async def test_drive_only_drives_again_and_a_judged_run_reuses_the_newest(
 
 
 async def test_drive_only_redrives_a_scored_item_and_a_new_judge_scores_the_drive(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """A trace that was already scored is driven again, and a later judged job with
     another judge scores the new trace, not the scored one."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="noted:1"))
     other_cfg = _config(
         eval_, ExactMatchProperties(expected_value="noted:1"), name="other"
@@ -1402,14 +1430,14 @@ async def test_drive_only_redrives_a_scored_item_and_a_new_judge_scores_the_driv
     assert len(cfg.runs(readonly=True)) == 1
     [driven] = drive_only.driven_runs
     new_trace = next(t for t in _traces(task) if t.id == driven.task_run_id)
-    assert new_trace.world_episode is not None
-    assert new_trace.world_episode.final_state["notes"] == ["note"]
+    assert new_trace.openenv_episode is not None
+    assert new_trace.openenv_episode.final_state["notes"] == ["note"]
     [other_score] = other_cfg.runs(readonly=True)
     assert other_score.scored_run_id == driven.task_run_id
 
 
 async def test_drive_only_fails_an_item_that_would_be_skipped(
-    project, task, world, run_config, eval_, session_manager
+    project, task, openenv_server, run_config, eval_, session_manager
 ):
     """A drive-only run has no score record to hold a skip, so the item fails and
     says why."""
@@ -1421,7 +1449,7 @@ async def test_drive_only_fails_an_item_that_would_be_skipped(
             synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
             drive_config=None,
         ),
-        world_reset=_reset(world, "a"),
+        openenv_reset=_reset(openenv_server, "a"),
     ).save_to_file()
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     runner = _runner([cfg], run_config, session_manager, judge=False)
@@ -1446,12 +1474,12 @@ async def test_drive_only_fails_an_item_that_would_be_skipped(
 
 
 async def test_end_episode_settles_record_before_grading(
-    project, task, world, syn_tool_id, run_config, eval_, session_manager
+    project, task, openenv_server, syn_tool_id, run_config, eval_, session_manager
 ):
     """Finalize runs after generation and before any grader: scorers read the
     environment's state, judges see the ids and facts, and the trace persists the
     settled record."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     judge = _config(eval_, ExactMatchProperties(expected_value="x"), name="judge")
     scorer = _config(
         eval_, CodeEvalProperties(code=STATE_SCORER, timeout_seconds=30), name="s"
@@ -1461,9 +1489,9 @@ async def test_end_episode_settles_record_before_grading(
         await _drain(_runner([scorer], run_config, session_manager))
 
     (trace,) = _traces(task)
-    assert trace.world_episode is not None
-    assert trace.world_episode.final_state["notes"] == ["note"]
-    assert trace.world_episode.final_state["step_count"] == 1
+    assert trace.openenv_episode is not None
+    assert trace.openenv_episode.final_state["notes"] == ["note"]
+    assert trace.openenv_episode.final_state["step_count"] == 1
 
     scorer_run = scorer.runs(readonly=True)[0]
     assert scorer_run.skipped_reason is None
@@ -1476,18 +1504,24 @@ async def test_end_episode_settles_record_before_grading(
     judge_run = judge.runs(readonly=True)[0]
     assert judge_run.skipped_reason is None
     (seen,) = RecordingJudge.seen
-    assert seen.world_episode is not None
-    assert seen.world_episode.episode_id == trace.world_episode.episode_id
-    assert seen.world_episode.final_state["notes"] == ["note"]
+    assert seen.openenv_episode is not None
+    assert seen.openenv_episode.episode_id == trace.openenv_episode.episode_id
+    assert seen.openenv_episode.final_state["notes"] == ["note"]
 
 
 async def test_project_versions_of_served_tools_are_refused(
-    project, task, world, project_tool, project_run_config, eval_, session_manager
+    project,
+    task,
+    openenv_server,
+    project_tool,
+    project_run_config,
+    eval_,
+    session_manager,
 ):
-    """An input with a world never meets the project's own version of a tool
-    its world serves: such a run config is refused before anything runs, whether or
-    not it also lists the world's tools."""
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    """An input with an environment never meets the project's own version of a tool
+    its environment serves: such a run config is refused before anything runs, whether or
+    not it also lists the environment's tools."""
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, build_code_tool_id(project_tool.id))
     with (
@@ -1498,8 +1532,8 @@ async def test_project_versions_of_served_tools_are_refused(
     ):
         await _expect_job_error(
             _runner([cfg], project_run_config, session_manager),
-            "runs in world 'World', but run config 'real rc' lists "
-            "the project's own version of tools the world serves: "
+            "runs in OpenEnv server 'Environment', but run config 'real rc' lists "
+            "the project's own version of tools the OpenEnv server serves: "
             + re.escape(build_code_tool_id(project_tool.id))
             + r" \(append_note\)",
             session_manager,
@@ -1509,32 +1543,32 @@ async def test_project_versions_of_served_tools_are_refused(
     start_episode.assert_not_called()
 
 
-async def test_project_tools_the_world_does_not_serve_are_allowed(
-    project, task, world, syn_tool_id, other_tool, eval_, session_manager
+async def test_project_tools_the_openenv_does_not_serve_are_allowed(
+    project, task, openenv_server, syn_tool_id, other_tool, eval_, session_manager
 ):
-    """A project tool outside the world's coverage (a web search, a docs lookup) may sit
-    beside the world's tools; it runs for real while the world's tools run in the
+    """A project tool outside the environment's coverage (a web search, a docs lookup) may sit
+    beside the environment's tools; it runs for real while the environment's tools run in the
     episode."""
     run_config = _run_config(
         task, [syn_tool_id, build_code_tool_id(other_tool.id)], name="mixed rc"
     )
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, build_code_tool_id(other_tool.id))
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _drain(_runner([cfg], run_config, session_manager))
     assert generator.outputs["ei_a"] == "real-write"
     (trace,) = _traces(task)
-    assert trace.world_episode is not None
-    assert trace.world_episode.final_state["notes"] == []
+    assert trace.openenv_episode is not None
+    assert trace.openenv_episode.final_state["notes"] == []
 
 
 async def test_tool_error_reaches_the_model_and_ends_the_episode(
-    project, task, world, eval_, session_manager
+    project, task, openenv_server, eval_, session_manager
 ):
-    tool_id = build_world_tool_id(world.id, "explode")
+    tool_id = build_openenv_tool_id(openenv_server.id, "explode")
     run_config = _run_config(task, [tool_id])
-    _input(task, "note", _reset(world, "a"), id="ei_a")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
     generator = ToolCallingGenerator(task, tool_id, allow_error=True)
     with patch.object(BaseV2EvalBridge, "run_task", new=generator):
@@ -1547,29 +1581,29 @@ async def test_tool_error_reaches_the_model_and_ends_the_episode(
     }
     assert generator.errors["ei_a"] == "boom"
     (trace,) = _traces(task)
-    assert trace.world_episode.final_state["notes"] == []
-    assert trace.world_episode.final_state["step_count"] == 1
+    assert trace.openenv_episode.final_state["notes"] == []
+    assert trace.openenv_episode.final_state["step_count"] == 1
 
 
-# -- validate_world_readiness -------------------------------------------------
+# -- validate_openenv_readiness -------------------------------------------------
 #
-# The check needs no environment: every world here points at an address where
+# The check needs no environment: every environment here points at an address where
 # nothing listens, so a test that reached the environment would fail.
 
-UNREACHABLE_ENV_URL = "http://127.0.0.1:1"
+UNREACHABLE_URL = "http://127.0.0.1:1"
 
 
 @pytest.fixture
-def offline_world(project):
-    w = World(name="Offline", parent=project, env_url=UNREACHABLE_ENV_URL)
-    w.save_to_file()
-    return w
+def offline_openenv_server(project):
+    openenv_server = OpenEnvServer(name="Offline", parent=project, url=UNREACHABLE_URL)
+    openenv_server.save_to_file()
+    return openenv_server
 
 
 @pytest.fixture
-def offline_run_config(task, offline_world):
-    tool_id = build_world_tool_id(offline_world.id, "append_note")
-    return _run_config(task, [tool_id], name="world rc")
+def offline_run_config(task, offline_openenv_server):
+    tool_id = build_openenv_tool_id(offline_openenv_server.id, "append_note")
+    return _run_config(task, [tool_id], name="environment rc")
 
 
 def _readiness_runner(eval_, run_configs, item_ids=None, config=None):
@@ -1587,9 +1621,9 @@ def _readiness_runner(eval_, run_configs, item_ids=None, config=None):
 
 def _readiness_error(eval_, run_configs, **kwargs) -> str:
     with pytest.raises(ValueError) as error:
-        _readiness_runner(eval_, run_configs, **kwargs).validate_world_readiness()
+        _readiness_runner(eval_, run_configs, **kwargs).validate_openenv_readiness()
     message = str(error.value)
-    assert message.startswith("Cannot run this eval's items in their worlds. ")
+    assert message.startswith("Cannot run this eval's items in their OpenEnv servers. ")
     assert message.endswith(".") and ".." not in message
     return message
 
@@ -1610,117 +1644,141 @@ def _unreset_multi_turn_input(task, id, drive_config):
     return ei
 
 
-def test_world_readiness_passes_for_items_in_the_run_configs_world(
-    task, offline_world, offline_run_config, eval_
+def test_openenv_readiness_passes_for_items_in_the_run_configs_openenv_server(
+    task, offline_openenv_server, offline_run_config, eval_
 ):
-    _input(task, "a", _reset(offline_world, "a"), id="ei_a")
-    _input(task, "b", _reset(offline_world, "b"), id="ei_b")
+    _input(task, "a", _reset(offline_openenv_server, "a"), id="ei_a")
+    _input(task, "b", _reset(offline_openenv_server, "b"), id="ei_b")
 
-    _readiness_runner(eval_, [offline_run_config]).validate_world_readiness()
+    _readiness_runner(eval_, [offline_run_config]).validate_openenv_readiness()
 
 
-def test_world_readiness_groups_inputs_without_a_world(
-    task, offline_world, offline_run_config, eval_
+def test_openenv_readiness_groups_inputs_without_an_openenv_server(
+    task, offline_openenv_server, offline_run_config, eval_
 ):
-    _input(task, "a", _reset(offline_world, "a"), id="ei_a")
+    _input(task, "a", _reset(offline_openenv_server, "a"), id="ei_a")
     _input(task, "plain 1", id="ei_plain_1")
     _input(task, "plain 2", id="ei_plain_2")
 
     message = _readiness_error(eval_, [offline_run_config])
 
     # One sentence for the run config and its kind, naming both items once.
-    assert message.count("Run config 'world rc'") == 1
-    assert "these eval inputs have no world_reset: " in message
+    assert message.count("Run config 'environment rc'") == 1
+    assert "these eval inputs have no openenv_reset: " in message
     assert "ei_plain_1" in message and "ei_plain_2" in message
     assert "ei_a" not in message
     assert "leave them out with item_ids" in message
 
 
-def test_world_readiness_refuses_world_tools_from_another_world(
+def test_openenv_readiness_refuses_openenv_tools_from_another_openenv_server(
     project, task, offline_run_config, eval_
 ):
-    other = World(name="Other", parent=project, env_url=UNREACHABLE_ENV_URL)
+    other = OpenEnvServer(name="Other", parent=project, url=UNREACHABLE_URL)
     other.save_to_file()
     _input(task, "a", _reset(other, "a"), id="ei_a")
 
     message = _readiness_error(eval_, [offline_run_config])
 
-    assert "these eval inputs run in another world: ei_a" in message
-    assert "A job runs in one world" in message
+    assert "these eval inputs run in another OpenEnv server: ei_a" in message
+    assert "A job runs in one OpenEnv server" in message
 
 
-def test_world_readiness_refuses_a_deleted_world_named_by_world_tools(task, eval_):
-    # The common case: the run config lists the tools of a world that is not in the
-    # project (deleted, or never synced), and the items reset that same world.
-    run_config = _run_config(task, [build_world_tool_id("w_gone", "append_note")])
-    _input(task, "a", WorldReset(world_id="w_gone", reset_kwargs={}), id="ei_a")
+def test_openenv_readiness_refuses_a_deleted_openenv_named_by_openenv_tools(
+    task, eval_
+):
+    # The common case: the run config lists the tools of an environment that is not in the
+    # project (deleted, or never synced), and the items reset that same environment.
+    run_config = _run_config(
+        task, [build_openenv_tool_id("missing_openenv", "append_note")]
+    )
+    _input(
+        task,
+        "a",
+        OpenEnvReset(openenv_server_id="missing_openenv", reset_kwargs={}),
+        id="ei_a",
+    )
 
     message = _readiness_error(eval_, [run_config])
 
-    assert "World w_gone not found in project" in message
+    assert "OpenEnv server missing_openenv not found in project" in message
     assert "these items run in it: ei_a" in message
 
 
-def test_world_readiness_refuses_a_missing_world_for_a_project_tools_run_config(
+def test_openenv_readiness_refuses_a_missing_openenv_for_a_project_tools_run_config(
     task, project_run_config, eval_
 ):
-    # A project-tools run config still resolves the item's world, to refuse the
-    # project's own version of a served tool. A missing world fails every such job.
-    _input(task, "a", WorldReset(world_id="w_gone", reset_kwargs={}), id="ei_a")
+    # A project-tools run config still resolves the item's environment, to refuse the
+    # project's own version of a served tool. A missing environment fails every such job.
+    _input(
+        task,
+        "a",
+        OpenEnvReset(openenv_server_id="missing_openenv", reset_kwargs={}),
+        id="ei_a",
+    )
 
     message = _readiness_error(eval_, [project_run_config])
 
-    assert "World w_gone not found in project" in message
+    assert "OpenEnv server missing_openenv not found in project" in message
 
 
-def test_world_readiness_names_a_missing_world_once_and_first(
+def test_openenv_readiness_names_a_missing_openenv_once_and_first(
     task, project_run_config, offline_run_config, eval_
 ):
-    # Several items and two run configs name one missing world: one sentence, before
+    # Several items and two run configs name one missing environment: one sentence, before
     # the per-run-config problems, so the cap on ids never hides it.
     for i in range(3):
         _input(
-            task, f"a {i}", WorldReset(world_id="w_gone", reset_kwargs={}), id=f"ei_{i}"
+            task,
+            f"a {i}",
+            OpenEnvReset(openenv_server_id="missing_openenv", reset_kwargs={}),
+            id=f"ei_{i}",
         )
 
     message = _readiness_error(eval_, [project_run_config, offline_run_config])
 
-    assert message.count("World w_gone not found") == 1
-    assert message.index("World w_gone not found") < message.index("Run config")
+    assert message.count("OpenEnv server missing_openenv not found") == 1
+    assert message.index("OpenEnv server missing_openenv not found") < message.index(
+        "Run config"
+    )
     missing = message[: message.index("Run config")]
     assert all(f"ei_{i}" in missing for i in range(3))
 
 
-def test_world_readiness_ignores_a_world_no_job_resolves(task, eval_):
-    # A run config with no tools never needs the item's world, so the runner never
+def test_openenv_readiness_ignores_an_openenv_no_job_resolves(task, eval_):
+    # A run config with no tools never needs the item's environment, so the runner never
     # looks it up, and neither does the check.
-    _input(task, "a", WorldReset(world_id="w_gone", reset_kwargs={}), id="ei_a")
+    _input(
+        task,
+        "a",
+        OpenEnvReset(openenv_server_id="missing_openenv", reset_kwargs={}),
+        id="ei_a",
+    )
 
     bare = _run_config(task, [], name="bare rc")
-    _readiness_runner(eval_, [bare]).validate_world_readiness()
+    _readiness_runner(eval_, [bare]).validate_openenv_readiness()
 
 
-def test_world_readiness_checks_only_the_selected_items(
-    task, offline_world, offline_run_config, eval_
+def test_openenv_readiness_checks_only_the_selected_items(
+    task, offline_openenv_server, offline_run_config, eval_
 ):
-    good = _input(task, "a", _reset(offline_world, "a"), id="ei_a")
+    good = _input(task, "a", _reset(offline_openenv_server, "a"), id="ei_a")
     _input(task, "plain", id="ei_plain")
 
     _readiness_runner(
         eval_, [offline_run_config], item_ids={good.id}
-    ).validate_world_readiness()
+    ).validate_openenv_readiness()
 
 
-def test_world_readiness_skips_multi_turn_inputs_that_cannot_be_driven(
+def test_openenv_readiness_skips_multi_turn_inputs_that_cannot_be_driven(
     task, offline_run_config, eval_
 ):
-    # The runner skips this item before its world lane, so the check does too.
+    # The runner skips this item before its environment lane, so the check does too.
     _unreset_multi_turn_input(task, "ei_undrivable", drive_config=None)
 
-    _readiness_runner(eval_, [offline_run_config]).validate_world_readiness()
+    _readiness_runner(eval_, [offline_run_config]).validate_openenv_readiness()
 
 
-def test_world_readiness_checks_multi_turn_inputs_that_can_be_driven(
+def test_openenv_readiness_checks_multi_turn_inputs_that_can_be_driven(
     task, offline_run_config, eval_
 ):
     _unreset_multi_turn_input(
@@ -1733,7 +1791,7 @@ def test_world_readiness_checks_multi_turn_inputs_that_can_be_driven(
 
     message = _readiness_error(eval_, [offline_run_config])
 
-    assert "have no world_reset: ei_drivable" in message
+    assert "have no openenv_reset: ei_drivable" in message
 
 
 def _stored_run(task, id, parent_task_run_id=None):
@@ -1775,39 +1833,44 @@ def stored_eval(task):
     return _stored_eval(task)
 
 
-def test_world_readiness_names_stored_task_runs_as_task_runs(
+def test_openenv_readiness_names_stored_task_runs_as_task_runs(
     task, offline_run_config, stored_eval
 ):
     _stored_run(task, "tr_1")
 
     message = _readiness_error(stored_eval, [offline_run_config])
 
-    assert "these items are stored task runs, which can't run in a world: tr_1" in (
-        message
+    assert (
+        "these items are stored task runs, which can't run in an OpenEnv server: tr_1"
+        in (message)
     )
     assert "eval input" not in message
-    assert "world_reset" not in message
+    assert "openenv_reset" not in message
 
 
-def test_world_readiness_skips_stored_multi_turn_chains(project, offline_world):
-    # The runner skips a stored chain before its world lane, so the check does too.
+def test_openenv_readiness_skips_stored_multi_turn_chains(
+    project, offline_openenv_server
+):
+    # The runner skips a stored chain before its environment lane, so the check does too.
     chat = Task(
         name="chat", instruction="chat", turn_mode=TurnMode.multiturn, parent=project
     )
     chat.save_to_file()
     run_config = _run_config(
-        chat, [build_world_tool_id(offline_world.id, "append_note")], name="world rc"
+        chat,
+        [build_openenv_tool_id(offline_openenv_server.id, "append_note")],
+        name="environment rc",
     )
     parent = _stored_run(chat, "tr_parent")
     parent.tags = []
     parent.save_to_file()
     _stored_run(chat, "tr_chain", parent_task_run_id=parent.id)
 
-    _readiness_runner(_stored_eval(chat), [run_config]).validate_world_readiness()
+    _readiness_runner(_stored_eval(chat), [run_config]).validate_openenv_readiness()
 
 
-def test_world_readiness_ignores_a_legacy_judge(task, offline_run_config, eval_):
-    # A legacy judge never reaches the world lane (run_job sends it to
+def test_openenv_readiness_ignores_a_legacy_judge(task, offline_run_config, eval_):
+    # A legacy judge never reaches the environment lane (run_job sends it to
     # _run_legacy_job), so the check has nothing to say about it.
     _input(task, "plain", id="ei_plain")
     legacy = EvalConfig(
@@ -1822,11 +1885,11 @@ def test_world_readiness_ignores_a_legacy_judge(task, offline_run_config, eval_)
 
     _readiness_runner(
         eval_, [offline_run_config], config=legacy
-    ).validate_world_readiness()
+    ).validate_openenv_readiness()
 
 
 @pytest.mark.parametrize(("count", "suffix"), [(10, ""), (12, " (and 2 more)")])
-def test_world_readiness_names_ten_items_and_counts_the_rest(
+def test_openenv_readiness_names_ten_items_and_counts_the_rest(
     task, offline_run_config, eval_, count, suffix
 ):
     for i in range(count):

@@ -1,4 +1,4 @@
-"""Tests for the world datamodel: worlds, resets, episode records and world tool ids."""
+"""Tests for the OpenEnv datamodel: OpenEnv server records, resets, episode records and OpenEnv tool ids."""
 
 import json
 from datetime import datetime, timezone
@@ -14,21 +14,21 @@ from kiln_ai.datamodel.eval import (
     SingleTurnEvalInputData,
     UserMessage,
 )
+from kiln_ai.datamodel.openenv import (
+    OpenEnvEpisode,
+    OpenEnvReset,
+    OpenEnvServer,
+    OpenEnvTool,
+)
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun
 from kiln_ai.datamodel.tool_id import (
     build_code_tool_id,
-    build_world_tool_id,
+    build_openenv_tool_id,
+    openenv_and_tool_name_from_id,
     validate_tool_allowlist,
-    world_and_tool_name_from_id,
-)
-from kiln_ai.datamodel.world import (
-    OpenEnvTool,
-    World,
-    WorldEpisode,
-    WorldReset,
 )
 
 SCHEMA = {"type": "object", "properties": {"q": {"type": "string"}}}
@@ -46,44 +46,49 @@ def project(tmp_path) -> Project:
 
 
 @pytest.fixture
-def world(project) -> World:
-    w = World(name="Acme World", parent=project)
-    w.save_to_file()
-    return w
+def openenv_server(project) -> OpenEnvServer:
+    openenv_server = OpenEnvServer(name="Acme Environment", parent=project)
+    openenv_server.save_to_file()
+    return openenv_server
 
 
 class TestOnDiskLayout:
-    def test_world_under_project(self, project, world):
-        assert world.path is not None
-        assert world.path.parent.parent == project.path.parent / "worlds"
-        assert world.path.name == "world.kiln"
-        assert project.worlds()[0].id == world.id
-        loaded = World.from_id_and_parent_path(world.id, project.path)
-        assert loaded is not None and loaded.name == "Acme World"
+    def test_openenv_server_under_project(self, project, openenv_server):
+        assert openenv_server.path is not None
+        assert (
+            openenv_server.path.parent.parent == project.path.parent / "openenv_servers"
+        )
+        assert openenv_server.path.name == "openenv_server.kiln"
+        assert openenv_server.model_type == "openenv_server"
+        assert project.openenv_servers()[0].id == openenv_server.id
+        loaded = OpenEnvServer.from_id_and_parent_path(openenv_server.id, project.path)
+        assert loaded is not None and loaded.name == "Acme Environment"
 
-    def test_world_defaults(self, world):
-        assert world.env_url is None
-        assert world.description is None
+    def test_openenv_server_defaults(self, openenv_server):
+        assert openenv_server.url is None
+        assert openenv_server.description is None
 
-    def test_world_round_trip(self, project):
-        w = World(
+    def test_openenv_server_round_trip(self, project):
+        openenv_server = OpenEnvServer(
             name="Remote",
             parent=project,
-            env_url="http://localhost:8123",
+            url="http://localhost:8123",
             description="hosted",
         )
-        w.save_to_file()
-        assert w.id is not None
-        loaded = World.from_id_and_parent_path(w.id, project.path)
+        openenv_server.save_to_file()
+        assert openenv_server.id is not None
+        loaded = OpenEnvServer.from_id_and_parent_path(openenv_server.id, project.path)
         assert loaded is not None
-        assert loaded.env_url == "http://localhost:8123"
+        assert loaded.url == "http://localhost:8123"
         assert loaded.description == "hosted"
 
 
-def test_project_lists_its_worlds(project):
-    world = World(name="w", parent=project, env_url="http://127.0.0.1:8000")
-    world.save_to_file()
-    assert [w.id for w in project.worlds()] == [world.id]
+def test_project_lists_its_openenv_servers(project):
+    openenv_server = OpenEnvServer(
+        name="Notes", parent=project, url="http://127.0.0.1:8000"
+    )
+    openenv_server.save_to_file()
+    assert [saved.id for saved in project.openenv_servers()] == [openenv_server.id]
 
 
 class TestOpenEnvTool:
@@ -93,20 +98,22 @@ class TestOpenEnvTool:
 
 
 class TestToolIds:
-    def test_world_tool_id_round_trip(self):
-        tool_id = build_world_tool_id("w1", "lookup")
-        assert tool_id == "kiln_tool::world::w1::lookup"
-        assert world_and_tool_name_from_id(tool_id) == ("w1", "lookup")
+    def test_openenv_tool_id_round_trip(self):
+        tool_id = build_openenv_tool_id("openenv1", "lookup")
+        assert tool_id == "kiln_tool::openenv::openenv1::lookup"
+        assert openenv_and_tool_name_from_id(tool_id) == ("openenv1", "lookup")
 
     @pytest.mark.parametrize(
-        "bad", ["kiln_tool::world::w1", "kiln_tool::world::::t1", "x"]
+        "bad", ["kiln_tool::openenv::openenv1", "kiln_tool::openenv::::t1", "x"]
     )
-    def test_world_tool_id_rejects_malformed(self, bad):
+    def test_openenv_tool_id_rejects_malformed(self, bad):
         with pytest.raises(ValueError):
-            world_and_tool_name_from_id(bad)
+            openenv_and_tool_name_from_id(bad)
 
-    def test_world_tool_ids_accepted_in_allowlists(self):
-        validate_tool_allowlist(["kiln_tool::world::w1::t1"], caller="code tools")
+    def test_openenv_tool_ids_accepted_in_allowlists(self):
+        validate_tool_allowlist(
+            ["kiln_tool::openenv::openenv1::t1"], caller="code tools"
+        )
 
     def test_code_tool_self_reference_still_rejected(self, project):
         ct = CodeTool(
@@ -131,67 +138,69 @@ class TestToolIds:
 
 
 class TestResetAndEpisode:
-    def test_reset_requires_world_id(self):
+    def test_reset_requires_openenv_server_id(self):
         with pytest.raises(ValidationError):
-            WorldReset(world_id="")
-        assert WorldReset(world_id="w").reset_kwargs == {}
+            OpenEnvReset(openenv_server_id="")
+        assert OpenEnvReset(openenv_server_id="openenv1").reset_kwargs == {}
 
     def test_reset_kwargs_are_opaque_json(self):
-        env = WorldReset(
-            world_id="w",
+        reset = OpenEnvReset(
+            openenv_server_id="openenv1",
             reset_kwargs={"fixture_id": "f", "seed": 42, "opts": {"a": [1, 2]}},
         )
-        assert env.reset_kwargs["opts"] == {"a": [1, 2]}
+        assert reset.reset_kwargs["opts"] == {"a": [1, 2]}
 
-    def test_eval_input_round_trips_world_reset(self, project):
+    def test_eval_input_round_trips_openenv_reset(self, project):
         task = Task(name="t", instruction="i", parent=project)
         task.save_to_file()
         ei = EvalInput(
             parent=task,
             data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
-            world_reset=WorldReset(
-                world_id="w1",
+            openenv_reset=OpenEnvReset(
+                openenv_server_id="openenv1",
                 reset_kwargs={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
             ),
         )
         ei.save_to_file()
         loaded = task.eval_inputs()[0]
-        assert loaded.world_reset is not None
-        assert loaded.world_reset.reset_kwargs["fixture_id"] == "f1"
+        assert loaded.openenv_reset is not None
+        assert loaded.openenv_reset.reset_kwargs["fixture_id"] == "f1"
 
-    def test_eval_input_defaults_to_no_world_reset(self):
+    def test_eval_input_defaults_to_no_openenv_reset(self):
         ei = EvalInput(
             data=SingleTurnEvalInputData(user_message=UserMessage(text="hi"))
         )
-        assert ei.world_reset is None
+        assert ei.openenv_reset is None
 
-    def _episode(self, **overrides: Any) -> WorldEpisode:
+    def _episode(self, **overrides: Any) -> OpenEnvEpisode:
         base: dict[str, Any] = dict(
-            reset=WorldReset(world_id="w1", reset_kwargs={"fixture_id": "f1"}),
+            reset=OpenEnvReset(
+                openenv_server_id="openenv1", reset_kwargs={"fixture_id": "f1"}
+            ),
             episode_id="ep_1",
-            world_version="acme@1.0.0",
+            openenv_version="acme@1.0.0",
             reset_metadata={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
         )
         base.update(overrides)
-        return WorldEpisode(**base)
+        return OpenEnvEpisode(**base)
 
     def test_episode_defaults(self):
         ep = self._episode()
         assert ep.final_state is None
-        assert list(WorldEpisode.model_fields) == [
+        assert list(OpenEnvEpisode.model_fields) == [
             "reset",
             "episode_id",
-            "world_version",
+            "openenv_version",
             "reset_metadata",
             "final_state",
         ]
 
     def test_final_state_round_trip(self):
         ep = self._episode(final_state={"notes": ["a", "b"], "step_count": 2})
-        again = WorldEpisode.model_validate_json(ep.model_dump_json())
+        again = OpenEnvEpisode.model_validate_json(ep.model_dump_json())
         assert again.final_state == {"notes": ["a", "b"], "step_count": 2}
-        assert again.reset == WorldReset(
-            world_id="w1", reset_kwargs={"fixture_id": "f1"}
+        assert again.reset == OpenEnvReset(
+            openenv_server_id="openenv1", reset_kwargs={"fixture_id": "f1"}
         )
 
     def test_sandbox_dict_is_plain_json(self):
@@ -199,27 +208,30 @@ class TestResetAndEpisode:
         assert set(d) == {
             "reset",
             "episode_id",
-            "world_version",
+            "openenv_version",
             "reset_metadata",
             "final_state",
         }
-        assert d["reset"] == {"world_id": "w1", "reset_kwargs": {"fixture_id": "f1"}}
+        assert d["reset"] == {
+            "openenv_server_id": "openenv1",
+            "reset_kwargs": {"fixture_id": "f1"},
+        }
         assert d["reset_metadata"] == {
             "fixture_id": "f1",
             "frozen_time": NOW.isoformat(),
         }
-        assert d["world_version"] == "acme@1.0.0"
+        assert d["openenv_version"] == "acme@1.0.0"
         assert d["final_state"] == {"notes": []}
         json.dumps(d)  # JSON-serializable
 
     def test_eval_task_input_carries_the_full_episode(self):
         ep = self._episode(final_state={"big": list(range(100))})
-        eval_input = EvalTaskInput(final_message="done", world_episode=ep)
+        eval_input = EvalTaskInput(final_message="done", openenv_episode=ep)
         restored = EvalTaskInput.model_validate_json(eval_input.model_dump_json())
-        assert restored.world_episode == ep
+        assert restored.openenv_episode == ep
 
-    def test_files_saved_before_worlds_still_load(self):
-        """Records written before worlds existed carry none of the new fields."""
+    def test_files_saved_before_openenvs_still_load(self):
+        """Records written before environments existed carry none of the new fields."""
         legacy_input = EvalInput.model_validate(
             {
                 "data": {
@@ -228,13 +240,13 @@ class TestResetAndEpisode:
                 }
             }
         )
-        assert legacy_input.world_reset is None
+        assert legacy_input.openenv_reset is None
         legacy_run = TaskRun.model_validate(
             {"input": "hi", "output": {"output": "hello"}}
         )
-        assert legacy_run.world_episode is None
+        assert legacy_run.openenv_episode is None
 
-    def test_task_run_persists_world_episode(self, project):
+    def test_task_run_persists_openenv_episode(self, project):
         task = Task(name="t", instruction="i", parent=project)
         task.save_to_file()
         run = TaskRun(
@@ -253,21 +265,21 @@ class TestResetAndEpisode:
                 ),
             ),
             eval_source=EvalItemSource(source_type="eval_input", source_id="i1"),
-            world_episode=self._episode(final_state={"notes": ["a"]}),
+            openenv_episode=self._episode(final_state={"notes": ["a"]}),
         )
         run.save_to_file()
         assert run.path is not None
         loaded = TaskRun.load_from_file(run.path)
         assert loaded.eval_source is not None
-        assert loaded.world_episode is not None
-        assert loaded.world_episode.world_version == "acme@1.0.0"
-        assert loaded.world_episode.episode_id == "ep_1"
-        assert loaded.world_episode.final_state == {"notes": ["a"]}
+        assert loaded.openenv_episode is not None
+        assert loaded.openenv_episode.openenv_version == "acme@1.0.0"
+        assert loaded.openenv_episode.episode_id == "ep_1"
+        assert loaded.openenv_episode.final_state == {"notes": ["a"]}
         eti = EvalTaskInput.from_task_run(loaded)
-        assert eti.world_episode is not None
-        assert eti.world_episode.reset.reset_kwargs == {"fixture_id": "f1"}
+        assert eti.openenv_episode is not None
+        assert eti.openenv_episode.reset.reset_kwargs == {"fixture_id": "f1"}
 
-    def test_from_trace_without_world_episode(self, project):
+    def test_from_trace_without_openenv_episode(self, project):
         task = Task(name="t", instruction="i", parent=project)
         run = TaskRun(
             parent=task,
@@ -279,4 +291,4 @@ class TestResetAndEpisode:
                 ),
             ),
         )
-        assert EvalTaskInput.from_task_run(run).world_episode is None
+        assert EvalTaskInput.from_task_run(run).openenv_episode is None

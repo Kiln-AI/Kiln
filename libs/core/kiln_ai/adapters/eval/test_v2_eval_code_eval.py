@@ -348,7 +348,7 @@ class TestAsyncScorerEndToEnd:
 
 
 # ---------------------------------------------------------------------------
-# World episodes
+# OpenEnv episodes
 # ---------------------------------------------------------------------------
 
 
@@ -356,24 +356,24 @@ class TestEpisodeHandoff:
     async def test_scorer_receives_the_input_episode(self):
         """The scorer reads the episode from the eval input, as LLM judges do, so the
         two graders agree wherever the input carries one."""
-        from kiln_ai.datamodel.world import WorldEpisode, WorldReset
+        from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvReset
 
         cfg = _make_config(
-            code="def score(output, world_episode):\n    return {'accuracy': 1.0}\n"
+            code="def score(output, openenv_episode):\n    return {'accuracy': 1.0}\n"
         )
-        episode = WorldEpisode(
-            reset=WorldReset(world_id="w"),
+        episode = OpenEnvEpisode(
+            reset=OpenEnvReset(openenv_server_id="openenv1"),
             episode_id="ep_x",
-            world_version="w@1",
+            openenv_version="notes@1",
             final_state={"notes": ["a"]},
         )
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
             mock_bridge.return_value = BridgeResult(
                 result_msg={"ok": {"accuracy": 1.0}}
             )
-            await CodeEvalAdapter(cfg).evaluate(_inp(world_episode=episode))
+            await CodeEvalAdapter(cfg).evaluate(_inp(openenv_episode=episode))
         _, kwargs = mock_bridge.call_args
-        assert kwargs["args"][1]["world_episode"] == episode.to_sandbox_dict()
+        assert kwargs["args"][1]["openenv_episode"] == episode.to_sandbox_dict()
 
     async def test_no_episode_passes_none(self):
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_bridge:
@@ -382,33 +382,36 @@ class TestEpisodeHandoff:
             )
             await CodeEvalAdapter(_make_config()).evaluate(_inp())
         _, kwargs = mock_bridge.call_args
-        assert kwargs["args"][1]["world_episode"] is None
+        assert kwargs["args"][1]["openenv_episode"] is None
 
-    def test_worker_passes_world_episode_only_when_declared(self, tmp_path):
+    def test_worker_passes_openenv_episode_only_when_declared(self, tmp_path):
         from kiln_ai.adapters.eval.conftest import run_scorer
 
         record = {
-            "reset": {"world_id": "w", "reset_kwargs": {"fixture_id": "f"}},
-            "episode_id": "ep_w",
-            "world_version": "w@1",
+            "reset": {
+                "openenv_server_id": "openenv1",
+                "reset_kwargs": {"fixture_id": "f"},
+            },
+            "episode_id": "ep_1",
+            "openenv_version": "notes@1",
             "reset_metadata": {"frozen_time": "2026-07-14T00:00:00+00:00"},
             "final_state": {"notes": []},
         }
         declared = (
-            "def score(output, world_episode):\n"
-            "    return {'id': world_episode['episode_id']}\n"
+            "def score(output, openenv_episode):\n"
+            "    return {'id': openenv_episode['episode_id']}\n"
         )
         msg = run_scorer(
             declared,
-            {"output": "o", "task_input": None, "world_episode": record},
+            {"output": "o", "task_input": None, "openenv_episode": record},
             10,
         )
-        assert msg["ok"] == {"id": "ep_w"}
+        assert msg["ok"] == {"id": "ep_1"}
 
         undeclared = "def score(output):\n    return {'ok': 1}\n"
         msg = run_scorer(
             undeclared,
-            {"output": "o", "task_input": None, "world_episode": record},
+            {"output": "o", "task_input": None, "openenv_episode": record},
             10,
         )
         assert msg["ok"] == {"ok": 1}
