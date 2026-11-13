@@ -3,7 +3,9 @@ import type { OpenEnvServer } from "$lib/types"
 import {
   RESET_ARGUMENTS_INVALID_JSON,
   RESET_ARGUMENTS_NOT_OBJECT,
+  OPENENV_SERVER_URL_ERROR,
   openenv_server_detail_link,
+  openenv_server_url_error,
   environment_preset_field_state,
   environment_preset_groups,
   format_reset_arguments,
@@ -15,6 +17,37 @@ import {
   reset_kwargs_for,
   selected_preset_after_change,
 } from "./openenv"
+
+describe("openenv_server_url_error", () => {
+  it.each([
+    "http://127.0.0.1:8000",
+    "https://env.example.com/openenv",
+    "  http://localhost:8000  ",
+  ])("accepts %s", (url) => {
+    expect(openenv_server_url_error(url)).toBeNull()
+  })
+
+  it.each([
+    "127.0.0.1:8000",
+    "ftp://example.com",
+    "http://",
+    "not a url",
+    "http:example.com",
+    "http:/host",
+  ])("refuses %s", (url) => {
+    expect(openenv_server_url_error(url)).toBe(OPENENV_SERVER_URL_ERROR)
+  })
+
+  it.each(["", "   ", null, undefined])("requires a value: %s", (url) => {
+    expect(openenv_server_url_error(url)).toBe('"Server URL" is required')
+  })
+
+  it("gives an example URL on the default Seahaven port", () => {
+    expect(OPENENV_SERVER_URL_ERROR).toBe(
+      "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8000.",
+    )
+  })
+})
 
 describe("format_reset_arguments", () => {
   it("formats over several lines with a 2-space indent", () => {

@@ -9,23 +9,26 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import type { NamedResetKwargs } from "$lib/types"
   import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import { reset_schema_to_form_schema } from "$lib/utils/openenv_reset_schema"
   import {
     RESET_ARGUMENTS_DESCRIPTION,
     RESET_ARGUMENTS_SCHEMA_DESCRIPTION,
     blank_draft,
     clone_draft,
     draft_from,
-    load_openenv_server_reset_schema,
     presets_with_draft,
     reset_arguments_for_form,
     reset_arguments_from_form,
     type PresetDraft,
   } from "./openenv_server_detail"
 
-  export let project_id: string
-  export let openenv_server_id: string
   export let presets: NamedResetKwargs[]
+  /**
+   * The form for the server's reset arguments, loaded by the page. Null when
+   * the server has none the form can show, or can't be reached: the dialog
+   * then edits Raw JSON only.
+   */
+  export let form_schema: JsonSchemaProperty | null
+  export let form_schema_loading: boolean
   /** Saves the whole list. Throws when the server refuses it. */
   export let save: (presets: NamedResetKwargs[]) => Promise<void>
 
@@ -33,29 +36,40 @@
   // The form is only mounted while the dialog is open, so the code editor
   // starts from each draft and Cmd+Enter can't submit a closed dialog.
   let open = false
+  // False until the dialog knows whether it starts on the form or Raw JSON, so
+  // the whole body renders at once rather than growing as the schema arrives.
+  let ready = false
   let editing_index: number | null = null
   let draft: PresetDraft = blank_draft()
   let error: KilnError | null = null
   let submitting = false
 
-  // Null until the server's reset schema loads, and when it has none the form
-  // can show. The JSON editor shows until then, so a slow server never blocks.
-  let form_schema: JsonSchemaProperty | null = null
   let raw_json = true
-  let opened_text = ""
-  let schema_request = 0
   let reset_form: RunInputForm
 
   function show(index: number | null, next_draft: PresetDraft) {
     editing_index = index
     draft = next_draft
-    opened_text = next_draft.reset_arguments
     error = null
-    form_schema = null
     raw_json = true
+    ready = false
     open = true
     dialog.show()
-    load_form_schema()
+  }
+
+  $: if (open && !ready && !form_schema_loading) {
+    start_body()
+  }
+
+  async function start_body() {
+    ready = true
+    if (!form_schema) {
+      return
+    }
+    const result = reset_arguments_for_form(draft.reset_arguments, form_schema)
+    if ("form_value" in result) {
+      await show_form(result.form_value)
+    }
   }
 
   export function show_add() {
@@ -68,31 +82,6 @@
 
   export function show_clone(index: number) {
     show(null, clone_draft(presets[index]))
-  }
-
-  async function load_form_schema() {
-    const request = ++schema_request
-    let schema: JsonSchemaProperty | null = null
-    try {
-      schema = reset_schema_to_form_schema(
-        await load_openenv_server_reset_schema(project_id, openenv_server_id),
-      )
-    } catch {
-      // The detail page already shows when the server can't be reached.
-      schema = null
-    }
-    if (request !== schema_request || !open || !schema) {
-      return
-    }
-    form_schema = schema
-    // A schema that arrives after the user has typed doesn't move them.
-    if (draft.reset_arguments !== opened_text) {
-      return
-    }
-    const result = reset_arguments_for_form(draft.reset_arguments, schema)
-    if ("form_value" in result) {
-      await show_form(result.form_value)
-    }
   }
 
   async function show_form(form_value: unknown) {
@@ -171,9 +160,14 @@
   title={editing_index === null
     ? "Add Environment Preset"
     : "Edit Environment Preset"}
+  width="wide"
   on:close={() => (open = false)}
 >
-  {#if open}
+  {#if open && !ready}
+    <div class="flex justify-center py-12">
+      <span class="loading loading-spinner loading-lg"></span>
+    </div>
+  {:else if open}
     <FormContainer
       submit_label="Save"
       on:submit={submit}
@@ -204,9 +198,9 @@
              opens. -->
         <SettingsHeader
           title="Reset Arguments"
-          subtitle={form_schema
-            ? RESET_ARGUMENTS_SCHEMA_DESCRIPTION
-            : RESET_ARGUMENTS_DESCRIPTION}
+          subtitle={raw_json
+            ? RESET_ARGUMENTS_DESCRIPTION
+            : RESET_ARGUMENTS_SCHEMA_DESCRIPTION}
         >
           <svelte:fragment slot="actions">
             {#if form_schema}

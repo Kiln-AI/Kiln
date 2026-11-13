@@ -2,12 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@testing-library/svelte"
 import type { NamedResetKwargs } from "$lib/types"
-
-const mock_get = vi.fn()
-
-vi.mock("$lib/api_client", () => ({
-  client: { GET: (...args: unknown[]) => mock_get(...args) },
-}))
+import { reset_schema_to_form_schema } from "$lib/utils/openenv_reset_schema"
+import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
 
 // The schema form registers its fields from onMount.
 vi.mock("svelte", async (importOriginal) =>
@@ -26,13 +22,13 @@ const EnvironmentPresetDialog = (
   await import("./environment_preset_dialog.svelte")
 ).default
 
-const RESET_SCHEMA = {
+const FORM_SCHEMA = reset_schema_to_form_schema({
   type: "object",
   properties: {
     company: { type: "string", title: "Company" },
     seed: { anyOf: [{ type: "integer" }, { type: "null" }], title: "Seed" },
   },
-}
+})
 
 const ACME: NamedResetKwargs = {
   name: "Acme",
@@ -60,14 +56,14 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-function serve_schema(reset_schema: unknown) {
-  mock_get.mockResolvedValue({ data: { reset_schema }, error: undefined })
-}
-
-function render_dialog(presets: NamedResetKwargs[] = [ACME, ODD]) {
+function render_dialog(
+  form_schema: JsonSchemaProperty | null,
+  form_schema_loading = false,
+  presets: NamedResetKwargs[] = [ACME, ODD],
+) {
   const save = vi.fn().mockResolvedValue(undefined)
   const { component, container } = render(EnvironmentPresetDialog, {
-    props: { project_id: "p1", openenv_server_id: "e1", presets, save },
+    props: { presets, form_schema, form_schema_loading, save },
   })
   return { component, container, save }
 }
@@ -96,12 +92,9 @@ async function submit(container: HTMLElement) {
 
 describe("EnvironmentPresetDialog", () => {
   it("is the JSON editor with no toggle when the server has no schema", async () => {
-    serve_schema(null)
-    const { component, container } = render_dialog()
+    const { component, container } = render_dialog(null)
     component.show_add()
-    await waitFor(() => expect(mock_get).toHaveBeenCalled())
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(editor(container)).not.toBeNull()
+    await waitFor(() => expect(editor(container)).not.toBeNull())
     expect(toggle(container, "Raw JSON")).toBeUndefined()
     expect(toggle(container, "Form")).toBeUndefined()
     expect(container.textContent).toContain(
@@ -112,8 +105,7 @@ describe("EnvironmentPresetDialog", () => {
   })
 
   it("names the preset with a description, and saves both", async () => {
-    serve_schema(null)
-    const { component, container, save } = render_dialog()
+    const { component, container, save } = render_dialog(null)
     component.show_add()
     await waitFor(() => expect(editor(container)).not.toBeNull())
     expect(container.textContent).toContain("Add Environment Preset")
@@ -153,25 +145,14 @@ describe("EnvironmentPresetDialog", () => {
     ])
   })
 
-  it("keeps the JSON editor when the schema can't be read", async () => {
-    mock_get.mockResolvedValue({ data: undefined, error: { message: "down" } })
-    const { component, container } = render_dialog()
-    component.show_add()
-    await waitFor(() => expect(mock_get).toHaveBeenCalled())
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(editor(container)).not.toBeNull()
-    expect(toggle(container, "Form")).toBeUndefined()
-  })
-
   it("shows the schema form for a new preset and saves only filled fields", async () => {
-    serve_schema(RESET_SCHEMA)
-    const { component, container, save } = render_dialog()
+    const { component, container, save } = render_dialog(FORM_SCHEMA)
     component.show_add()
     await waitFor(() => expect(form_field(container, "Company")).not.toBeNull())
     expect(editor(container)).toBeNull()
     expect(toggle(container, "Raw JSON")).toBeDefined()
     expect(container.textContent).toContain(
-      "From the OpenEnv server's reset schema.",
+      "From the OpenEnv server's reset schema. Fields left empty aren't sent to the server.",
     )
 
     await fireEvent.input(
@@ -194,8 +175,7 @@ describe("EnvironmentPresetDialog", () => {
   })
 
   it("opens an edit that fits on the form, prefilled, and round trips Raw JSON", async () => {
-    serve_schema(RESET_SCHEMA)
-    const { component, container } = render_dialog()
+    const { component, container } = render_dialog(FORM_SCHEMA)
     component.show_edit(0)
     await waitFor(() =>
       expect(form_field(container, "Company")?.value).toBe("acme"),
@@ -216,8 +196,7 @@ describe("EnvironmentPresetDialog", () => {
   })
 
   it("opens an edit the form can't show on Raw JSON, and says why it can't switch", async () => {
-    serve_schema(RESET_SCHEMA)
-    const { component, container } = render_dialog()
+    const { component, container } = render_dialog(FORM_SCHEMA)
     component.show_edit(1)
     await waitFor(() => expect(toggle(container, "Form")).toBeDefined())
     expect(editor(container)!.value).toBe('{\n  "foo": 1\n}')
@@ -231,21 +210,26 @@ describe("EnvironmentPresetDialog", () => {
     expect(editor(container)).not.toBeNull()
   })
 
-  it("stays on the JSON editor when the user types before the schema loads", async () => {
-    let resolve_schema: (value: unknown) => void = () => {}
-    mock_get.mockReturnValue(
-      new Promise((resolve) => {
-        resolve_schema = resolve
-      }),
+  it("shows only a spinner until the schema loads, then the whole form at once", async () => {
+    const { component, container } = render_dialog(null, true)
+    component.show_edit(0)
+    await waitFor(() =>
+      expect(container.querySelector(".loading-spinner")).not.toBeNull(),
     )
-    const { component, container } = render_dialog()
-    component.show_add()
-    await waitFor(() => expect(editor(container)).not.toBeNull())
-    await fireEvent.input(editor(container)!, {
-      target: { value: '{"company": "acme"}' },
+    expect(container.querySelector("#environment_preset_name")).toBeNull()
+    expect(editor(container)).toBeNull()
+
+    await component.$set({
+      form_schema: FORM_SCHEMA,
+      form_schema_loading: false,
     })
-    resolve_schema({ data: { reset_schema: RESET_SCHEMA }, error: undefined })
-    await waitFor(() => expect(toggle(container, "Form")).toBeDefined())
-    expect(editor(container)!.value).toBe('{"company": "acme"}')
+    await waitFor(() =>
+      expect(form_field(container, "Company")?.value).toBe("acme"),
+    )
+    expect(container.querySelector(".loading-spinner")).toBeNull()
+    expect(
+      container.querySelector<HTMLInputElement>("#environment_preset_name")
+        ?.value,
+    ).toBe("Acme")
   })
 })

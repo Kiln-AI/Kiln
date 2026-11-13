@@ -25,9 +25,49 @@ export const OPENENV_SERVER_FIELDS = {
   url: {
     label: "Server URL",
     description: "The URL of the OpenEnv server.",
-    placeholder: "https://example.com/openenv",
+    placeholder: "http://127.0.0.1:8000",
   },
 } as const
+
+export const OPENENV_SERVER_URL_ERROR =
+  "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8000."
+
+/**
+ * The Server URL field's error, or null when the value is an http(s) URL with a
+ * host. Mirrors the backend's check on OpenEnvServer.url.
+ */
+export function openenv_server_url_error(value: unknown): string | null {
+  const text = typeof value === "string" ? value.trim() : ""
+  if (!text) {
+    return `"${OPENENV_SERVER_FIELDS.url.label}" is required`
+  }
+  // new URL() normalizes "http:host" and "http:/host" into valid URLs, which
+  // the backend's urlsplit check rejects.
+  if (!/^https?:\/\//i.test(text)) {
+    return OPENENV_SERVER_URL_ERROR
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(text)
+  } catch {
+    return OPENENV_SERVER_URL_ERROR
+  }
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    !parsed.hostname
+  ) {
+    return OPENENV_SERVER_URL_ERROR
+  }
+  return null
+}
+
+/** Shown wherever an OpenEnv server doesn't answer at its URL. */
+export const OPENENV_UNREACHABLE_TITLE = "Can't Reach OpenEnv Server"
+export const OPENENV_UNREACHABLE_STEPS = [
+  "Check the OpenEnv server is running.",
+  "Check the Server URL is correct.",
+  "If the server is remote, check your network connection.",
+]
 
 export type ResetKwargs = NonNullable<NamedResetKwargs["reset_kwargs"]>
 

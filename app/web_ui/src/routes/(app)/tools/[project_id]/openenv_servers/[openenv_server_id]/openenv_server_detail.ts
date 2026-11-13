@@ -8,13 +8,55 @@ import {
 import {
   form_value_to_kwargs,
   kwargs_fit_form,
+  reset_schema_to_form_schema,
 } from "$lib/utils/openenv_reset_schema"
 import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
+import { load_openenv_server_reset_schema } from "$lib/api/openenv_server_api"
 
 export {
   load_openenv_server,
   load_openenv_server_reset_schema,
 } from "$lib/api/openenv_server_api"
+
+/**
+ * The form schema for the server's reset arguments, or null when the server
+ * publishes none the form can show or can't be reached. The preset dialog
+ * falls back to Raw JSON on null.
+ */
+export async function load_reset_form_schema(
+  project_id: string,
+  openenv_server_id: string,
+): Promise<JsonSchemaProperty | null> {
+  try {
+    return reset_schema_to_form_schema(
+      await load_openenv_server_reset_schema(project_id, openenv_server_id),
+    )
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether a save moves the record to a different URL. Only then does the page
+ * re-read the server's tools, version and reset schema.
+ */
+export function url_changed(
+  before: Pick<OpenEnvServer, "url">,
+  url: string | null | undefined,
+): boolean {
+  return (before.url ?? "") !== (url ?? "")
+}
+
+/**
+ * Whether the detail page re-reads tools, version and reset schema after an
+ * Edit save. With the same URL it keeps what it has, so nothing flickers.
+ */
+export function reload_details_after_edit(
+  before: Pick<OpenEnvServer, "url"> | null,
+  saved: Pick<OpenEnvServer, "url">,
+): boolean {
+  return before === null || url_changed(before, saved.url)
+}
 
 export async function load_openenv_server_tools(
   project_id: string,
@@ -149,7 +191,7 @@ export function compact_reset_arguments(
 export const RESET_ARGUMENTS_DESCRIPTION =
   "Passed to the OpenEnv server's reset(). Which keys exist depends on the server."
 export const RESET_ARGUMENTS_SCHEMA_DESCRIPTION =
-  "From the OpenEnv server's reset schema. Leave a field empty to use the server's default."
+  "From the OpenEnv server's reset schema. Fields left empty aren't sent to the server."
 
 export type FormSwitch = { form_value: ResetKwargs } | { error: string }
 

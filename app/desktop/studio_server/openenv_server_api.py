@@ -40,7 +40,7 @@ _NAMED_RESET_KWARGS_DESCRIPTION = (
     "the default. Names must be unique."
 )
 _URL_ERROR = (
-    "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8004."
+    "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8000."
 )
 _RESET_KWARGS_NOT_OBJECT_ERROR = "Reset arguments must be a JSON object."
 
@@ -208,13 +208,14 @@ def _openenv_server_response(openenv_server: OpenEnvServer) -> OpenEnvServerResp
 
 
 async def _require_reachable(openenv_server: OpenEnvServer) -> None:
-    """Refuse to save a URL that no OpenEnv server answers at."""
+    """Refuse to save a URL that no OpenEnv server answers at, with a 502 so clients
+    can tell it from a 400 for an invalid field."""
     if not openenv_server.url:
         return
     try:
         await shared_session_manager().check_reachable(openenv_server)
     except OpenEnvError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 def _friendly_error(error: PydanticValidationError) -> str:

@@ -26,12 +26,15 @@ import {
   load_openenv_server_tools,
   load_openenv_server_reset_schema,
   load_openenv_server_version,
+  load_reset_form_schema,
   presets_with_draft,
   presets_without,
   reset_arguments_for_form,
   reset_arguments_from_form,
   save_environment_presets,
+  reload_details_after_edit,
   set_openenv_server_archived,
+  url_changed,
 } from "./openenv_server_detail"
 import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
 
@@ -243,6 +246,72 @@ describe("reset_arguments_from_form", () => {
     expect(
       "form_value" in result && reset_arguments_from_form(result.form_value),
     ).toBe(text)
+  })
+})
+
+describe("url_changed", () => {
+  const server = { url: "http://127.0.0.1:8000" }
+
+  it("is false for the same URL, so an edit keeps the loaded tools", () => {
+    expect(url_changed(server, "http://127.0.0.1:8000")).toBe(false)
+  })
+
+  it("is true for a different URL", () => {
+    expect(url_changed(server, "http://127.0.0.1:8001")).toBe(true)
+  })
+
+  it("treats a missing URL as empty", () => {
+    expect(url_changed({ url: null }, null)).toBe(false)
+    expect(url_changed({ url: null }, "http://127.0.0.1:8000")).toBe(true)
+  })
+})
+
+describe("reload_details_after_edit", () => {
+  const before = { url: "http://127.0.0.1:8000" }
+
+  it("keeps tools, version and reset schema when the URL is the same", () => {
+    expect(
+      reload_details_after_edit(before, { url: "http://127.0.0.1:8000" }),
+    ).toBe(false)
+  })
+
+  it("reloads them when the URL changed", () => {
+    expect(
+      reload_details_after_edit(before, { url: "http://127.0.0.1:8001" }),
+    ).toBe(true)
+  })
+
+  it("reloads them when there was no record loaded", () => {
+    expect(
+      reload_details_after_edit(null, { url: "http://127.0.0.1:8000" }),
+    ).toBe(true)
+  })
+})
+
+describe("load_reset_form_schema", () => {
+  it("is the form schema for the server's reset schema", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        reset_schema: {
+          type: "object",
+          properties: { company: { type: "string", title: "Company" } },
+        },
+      },
+      error: undefined,
+    })
+    const schema = await load_reset_form_schema("p1", "e1")
+    expect(schema?.type).toBe("object")
+    expect(Object.keys(schema?.properties ?? {})).toEqual(["company"])
+  })
+
+  it("is null when the server has no schema", async () => {
+    mockGet.mockResolvedValue({ data: {}, error: undefined })
+    await expect(load_reset_form_schema("p1", "e1")).resolves.toBeNull()
+  })
+
+  it("is null when the server can't be reached", async () => {
+    mockGet.mockResolvedValue({ data: undefined, error: { message: "down" } })
+    await expect(load_reset_form_schema("p1", "e1")).resolves.toBeNull()
   })
 })
 

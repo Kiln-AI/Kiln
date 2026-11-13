@@ -20,7 +20,7 @@ from kiln_server.custom_errors import connect_custom_errors
 from app.desktop.studio_server.openenv_server_api import connect_openenv_server_api
 
 URL_ERROR = (
-    "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8004."
+    "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8000."
 )
 ACME_OPTIONS = [
     {
@@ -268,7 +268,7 @@ class TestReachableOnSave:
             "/api/projects/p1/openenv_servers",
             json={"name": "Acme", "url": "http://127.0.0.1:1"},
         )
-        assert r.status_code == 400
+        assert r.status_code == 502
         assert "did not answer /metadata" in r.json()["message"]
         assert project.openenv_servers() == []
 
@@ -282,7 +282,7 @@ class TestReachableOnSave:
                 "/api/projects/p1/openenv_servers",
                 json={"name": "Down", "url": f"http://127.0.0.1:{free_port()}"},
             )
-        assert r.status_code == 400
+        assert r.status_code == 502
         assert "did not answer /metadata" in r.json()["message"]
         assert project.openenv_servers() == []
 
@@ -333,7 +333,7 @@ class TestReachableOnSave:
             f"/api/projects/p1/openenv_servers/{openenv_server_id}",
             json={"url": "http://localhost:9000", "description": "changed"},
         )
-        assert r.status_code == 400
+        assert r.status_code == 502
         assert r.json()["message"] == "did not answer /metadata"
         openenv_server = _load_openenv_server(project, openenv_server_id)
         assert openenv_server.url == "http://localhost:8123"

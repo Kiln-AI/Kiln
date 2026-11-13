@@ -5,16 +5,23 @@
   import Callout from "$lib/ui/callout.svelte"
   import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
   import BuildingsIcon from "$lib/ui/icons/buildings_icon.svelte"
-  import { client } from "$lib/api_client"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { KilnError } from "$lib/utils/error_handlers"
   import { uncache_available_tools, ui_state } from "$lib/stores"
   import {
     OPENENV_DOCS_URL,
     OPENENV_SERVER_FIELDS,
+    OPENENV_UNREACHABLE_STEPS,
+    OPENENV_UNREACHABLE_TITLE,
     SEAHAVEN_URL,
+    openenv_server_url_error,
   } from "$lib/utils/openenv"
+  import {
+    create_openenv_server,
+    is_openenv_unreachable,
+    openenv_server_error,
+  } from "$lib/api/openenv_server_api"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
 
@@ -33,16 +40,11 @@
   async function connect() {
     try {
       error = null
-      const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/openenv_servers",
-        {
-          params: { path: { project_id } },
-          body: { name, description: description || null, url },
-        },
-      )
-      if (api_error) {
-        throw api_error
-      }
+      const data = await create_openenv_server(project_id, {
+        name,
+        description: description || null,
+        url: url.trim(),
+      })
       if (!data.id) {
         throw new KilnError("The new OpenEnv server has no id.")
       }
@@ -50,7 +52,7 @@
       uncache_available_tools(project_id)
       goto(`/tools/${project_id}/openenv_servers/${data.id}`)
     } catch (e) {
-      error = createKilnError(e)
+      error = openenv_server_error(e)
     } finally {
       submitting = false
     }
@@ -89,7 +91,12 @@
     </Callout>
   </div>
   <div class="max-w-4xl">
-    <FormContainer submit_label="Connect" on:submit={connect} bind:submitting>
+    <FormContainer
+      submit_label="Connect"
+      on:submit={connect}
+      bind:submitting
+      error={is_openenv_unreachable(error) ? null : error}
+    >
       <FormElement
         label={OPENENV_SERVER_FIELDS.name.label}
         id="name"
@@ -110,19 +117,15 @@
         id="openenv_server_url"
         description={OPENENV_SERVER_FIELDS.url.description}
         placeholder={OPENENV_SERVER_FIELDS.url.placeholder}
+        validator={openenv_server_url_error}
         bind:value={url}
       />
 
-      {#if error}
+      {#if error && is_openenv_unreachable(error)}
         <ErrorDetailsBlock
-          title="Could Not Connect to OpenEnv Server"
+          title={OPENENV_UNREACHABLE_TITLE}
           error_messages={error.getErrorMessages()}
-          troubleshooting_steps={[
-            "Verify the URL is correct.",
-            "Verify the server is running and accessible.",
-            "Check your network connection.",
-            "Check Kiln logs for additional details.",
-          ]}
+          troubleshooting_steps={OPENENV_UNREACHABLE_STEPS}
         />
       {/if}
     </FormContainer>

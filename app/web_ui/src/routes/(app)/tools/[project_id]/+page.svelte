@@ -455,7 +455,7 @@
                 tabindex="0"
               >
                 <td class="font-medium">{openenv_server.name}</td>
-                <td class="text-sm">OpenEnv Server</td>
+                <td class="text-sm">OpenEnv</td>
                 <td class="text-sm">{openenv_server.description || "N/A"}</td>
                 <td class="text-sm">
                   {#if openenv_server.is_archived}

@@ -21,7 +21,7 @@
   const LOOKUP_DEBOUNCE_MS = 250
   const LABEL = "Environment Preset"
   const INFO =
-    "Sets the OpenEnv server's starting data for this run, such as the company and the user the agent acts as."
+    "The reset arguments the OpenEnv server starts this run with. Add presets on the OpenEnv server's page."
 
   let field_state: EnvironmentPresetFieldState = { kind: "hidden" }
   let selected_preset: string | null = null

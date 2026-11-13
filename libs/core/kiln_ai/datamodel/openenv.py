@@ -81,7 +81,7 @@ class OpenEnvReset(BaseModel):
     that episode.
 
     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
-    environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
+    environment's `reset`, and which keywords exist depends on the environment. The
     trace key carries a digest of the whole reset, so an input whose reset is edited
     after its trace was made generates a new one rather than reusing it.
     """
@@ -91,7 +91,7 @@ class OpenEnvReset(BaseModel):
     )
     reset_kwargs: dict[str, JsonValue] = Field(
         default_factory=dict,
-        description="Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.",
+        description="Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist depends on the environment.",
     )
 
 
@@ -171,7 +171,7 @@ class OpenEnvServer(KilnParentedModel):
     )
     url: str | None = Field(
         default=None,
-        description="Base URL of the running OpenEnv server (e.g. http://127.0.0.1:8004). Kiln connects to it; it never starts one.",
+        description="Base URL of the running OpenEnv server (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one.",
     )
     named_reset_kwargs: list[NamedResetKwargs] = Field(
         default_factory=list,

@@ -10784,7 +10784,7 @@ export interface components {
          *     that episode.
          *
          *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
-         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
+         *     environment's `reset`, and which keywords exist depends on the environment. The
          *     trace key carries a digest of the whole reset, so an input whose reset is edited
          *     after its trace was made generates a new one rather than reusing it.
          */
@@ -10796,7 +10796,7 @@ export interface components {
             openenv_server_id: string;
             /**
              * Reset Kwargs
-             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.
+             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist depends on the environment.
              */
             reset_kwargs?: {
                 [key: string]: components["schemas"]["JsonValue"];
