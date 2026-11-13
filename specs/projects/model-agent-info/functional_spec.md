@@ -1,5 +1,5 @@
 ---
-status: complete
+status: draft
 ---
 
 # Functional Spec: Model Agent Info
