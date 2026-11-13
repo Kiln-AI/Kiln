@@ -56,6 +56,7 @@ class ModelFamily(str, Enum):
     ricursive = "ricursive"
     nex = "nex"
     motif = "motif"
+    kt = "kt"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -376,6 +377,7 @@ class ModelName(str, Enum):
     ripple_65b_preview = "ripple_65b_preview"
     nex_n2_6 = "nex_n2_6"
     motif_3 = "motif_3"
+    midm_k_3_0_pro = "midm_k_3_0_pro"
 
 
 class ModelParserID(str, Enum):
@@ -12455,6 +12457,21 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="motif-technologies/motif-3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.kt,
+        name=ModelName.midm_k_3_0_pro,
+        friendly_name="Mi:dm K 3.0 Pro",
+        editorial_notes="KT's 120B mixture-of-experts reasoning model (12B active), with a hybrid Mamba, MoE and attention architecture. Text only, no tool calling.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="kt/midm-k-3.0-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=False,
