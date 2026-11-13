@@ -61,6 +61,23 @@ describe("run_input_form structured value", () => {
     })
   })
 
+  it("shows Not Set on an optional enum and asks for a pick on a required one", () => {
+    const { container } = render_form(
+      JSON.stringify({
+        type: "object",
+        properties: {
+          company: { type: "string", enum: ["acme", "beta"] },
+          plan: { type: "string", enum: ["free", "pro"] },
+        },
+        required: ["plan"],
+      }),
+    )
+    const closed_labels = Array.from(
+      container.querySelectorAll("span.truncate"),
+    ).map((el) => el.textContent?.trim())
+    expect(closed_labels).toEqual(["Not Set", "Select an option"])
+  })
+
   it("is a no-op in plaintext mode", async () => {
     const { component } = render_form(null)
     await component.set_structured_input_data({ note: "hello" })

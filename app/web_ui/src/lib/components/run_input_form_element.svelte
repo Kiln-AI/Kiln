@@ -8,6 +8,10 @@
     IncompleteObjectError,
   } from "$lib/utils/missing_required_property_error"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import {
+    NOT_SET_LABEL,
+    enum_select_options,
+  } from "./run_input_select_options"
   import RunInputArrayElement from "./run_input_array_element.svelte"
   import { field_value_from_json, json_property } from "./run_input_form_value"
 
@@ -94,22 +98,23 @@
       ]
     }
     if (property.enum) {
-      return [
-        {
-          options: [
-            ...property.enum.map((value) => ({
-              label: (value ?? "null").toString(),
-              value: value,
-            })),
-            {
-              label: "Not Set",
-              value: undefined,
-            },
-          ],
-        },
-      ]
+      return enum_select_options(property.enum, is_optional(property))
     }
     return undefined
+  }
+
+  function is_optional(property: SchemaModelProperty): boolean {
+    return !property.required || parentOptional
+  }
+
+  // An optional enum starts on "Not Set", so its closed dropdown says so rather
+  // than asking for a pick.
+  function empty_label_prop(property: SchemaModelProperty): {
+    empty_label?: string
+  } {
+    return property.enum && is_optional(property)
+      ? { empty_label: NOT_SET_LABEL }
+      : {}
   }
 
   function getHeight(property: SchemaModelProperty): "large" | undefined {
@@ -364,8 +369,9 @@
     inputType={get_input_type(property)}
     height={getHeight(property)}
     description={property.description || "No description"}
-    optional={!property.required || parentOptional}
+    optional={is_optional(property)}
     fancy_select_options={get_select_options(property)}
+    {...empty_label_prop(property)}
     bind:value
     info_msg={describe_type(property)}
     info_description={getInfoDescription(property)}
