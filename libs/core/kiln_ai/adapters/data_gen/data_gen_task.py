@@ -3,9 +3,15 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from kiln_ai.adapters.prompt_builders import SimplePromptBuilder
+from kiln_ai.adapters.prompt_builders import (
+    BasePromptBuilder,
+    SimplePromptBuilder,
+    prompt_builder_from_id,
+)
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.json_schema import close_object_schemas
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import RunConfigProperties
 
 from .data_gen_prompts import (
     generate_sample_generation_prompt,
@@ -311,3 +317,38 @@ The above instructions are the original instructions for this task. For this exe
 {guidance}
 </additional_instructions>
 """
+
+
+class GuidancePromptBuilder(BasePromptBuilder):
+    """The run config's own prompt with the output guidance appended.
+
+    The guidance goes on the built prompt, not on `task.instruction`: a saved
+    prompt (`id::`), a run-config prompt or a fine-tune prompt carries its own
+    text and never reads the instruction."""
+
+    def __init__(self, inner: BasePromptBuilder, guidance: str):
+        super().__init__(inner.task)
+        self.inner = inner
+        self.guidance = guidance
+
+    def prompt_id(self) -> str | None:
+        return self.inner.prompt_id()
+
+    def build_base_prompt(self) -> str:
+        return wrap_task_with_guidance(self.inner.build_base_prompt(), self.guidance)
+
+    def chain_of_thought_prompt(self) -> str | None:
+        return self.inner.chain_of_thought_prompt()
+
+
+def prompt_builder_with_guidance(
+    task: Task, run_config_properties: RunConfigProperties, guidance: str | None
+) -> BasePromptBuilder | None:
+    """The prompt builder for an output-generation run, or None to let the
+    adapter build its default one. An MCP run config has no prompt."""
+    if not guidance or not guidance.strip():
+        return None
+    if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
+        return None
+    inner = prompt_builder_from_id(run_config_properties.prompt_id, task)
+    return GuidancePromptBuilder(inner, guidance)
