@@ -3717,7 +3717,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Gemini 4 Hydrogen
     KilnModel(
         family=ModelFamily.gemini,
         name=ModelName.gemini_4_hydrogen,
@@ -12184,7 +12183,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Inkling 2 Small (Thinking Machines)
     KilnModel(
         family=ModelFamily.thinking_machines,
         name=ModelName.inkling_2_small,
