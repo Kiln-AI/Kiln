@@ -59,16 +59,16 @@
 
     <p class="text-sm font-light text-gray-500 leading-relaxed">
       {description}
-      {#if has_link}
-        <a
-          href={link_href}
-          class="link"
-          target="_blank"
-          rel="noopener noreferrer"
-          on:click|stopPropagation>{link_label}</a
-        >
-      {/if}
     </p>
+    {#if has_link}
+      <a
+        href={link_href}
+        class="link text-sm font-light text-gray-500 leading-relaxed"
+        target="_blank"
+        rel="noopener noreferrer"
+        on:click|stopPropagation>{link_label}</a
+      >
+    {/if}
   </div>
 
   <div class="flex-shrink-0 ml-6">

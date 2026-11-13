@@ -52,9 +52,10 @@ describe("settings_item with a link", () => {
     return { ...result, on_click }
   }
 
-  it("ends the description with a link that opens in a new tab", () => {
+  it("puts a link that opens in a new tab on its own line under the description", () => {
     const { container } = render_with_link()
-    const link = container.querySelector("p a") as HTMLAnchorElement
+    expect(container.querySelector("p a")).toBeNull()
+    const link = container.querySelector("p + a") as HTMLAnchorElement
     expect(link.textContent).toBe("Learn more")
     expect(link.getAttribute("href")).toBe(
       "https://docs.kiln.tech/docs/tools-and-mcp",
