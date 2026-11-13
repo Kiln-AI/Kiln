@@ -6,7 +6,7 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Sequence
 
 import httpx
 from pydantic import ValidationError
@@ -16,6 +16,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModelProvider,
     built_in_embedding_models,
 )
+from kiln_ai.adapters.ml_provider_list import KilnProviderInfo, built_in_providers
 from kiln_ai.adapters.reranker_list import (
     KilnRerankerModel,
     KilnRerankerModelProvider,
@@ -52,12 +53,15 @@ def serialize_config(
     models: List[KilnModel],
     embedding_models: List[KilnEmbeddingModel],
     reranker_models: List[KilnRerankerModel],
+    providers: Sequence[KilnProviderInfo],
     path: str | Path,
 ) -> None:
     data = {
         "model_list": [m.model_dump(mode="json") for m in models],
         "embedding_model_list": [m.model_dump(mode="json") for m in embedding_models],
         "reranker_model_list": [m.model_dump(mode="json") for m in reranker_models],
+        # Published for agents outside Kiln; deserialize_config_data does not load it.
+        "provider_list": [p.model_dump(mode="json") for p in providers],
     }
     Path(path).write_text(json.dumps(data, indent=2, sort_keys=True))
 
@@ -214,6 +218,7 @@ def dump_builtin_config(path: str | Path) -> None:
         models=built_in_models,
         embedding_models=built_in_embedding_models,
         reranker_models=built_in_rerankers,
+        providers=built_in_providers,
         path=path,
     )
 

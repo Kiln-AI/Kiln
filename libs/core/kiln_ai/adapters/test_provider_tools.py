@@ -11,6 +11,7 @@ from kiln_ai.adapters.ml_model_list import (
     ModelParserID,
     ModelProviderName,
 )
+from kiln_ai.adapters.ml_provider_list import get_provider_info
 from kiln_ai.adapters.ollama_tools import OllamaConnection
 from kiln_ai.adapters.provider_tools import (
     LiteLlmCoreConfig,
@@ -286,6 +287,14 @@ def test_provider_name_from_id_case_sensitivity():
 )
 def test_provider_name_from_id_parametrized(provider_id, expected_name):
     assert provider_name_from_id(provider_id) == expected_name
+
+
+@pytest.mark.parametrize("provider", list(ModelProviderName))
+def test_provider_name_from_id_uses_provider_list(provider):
+    name = provider_name_from_id(provider.value)
+    assert name == get_provider_info(provider).friendly_name
+    assert name.strip()
+    assert not name.startswith("Unknown provider")
 
 
 def test_get_model_and_provider_valid():

@@ -18,6 +18,7 @@ from kiln_ai.adapters.ml_model_list import (
     StructuredOutputMode,
     built_in_models,
 )
+from kiln_ai.adapters.ml_provider_list import get_provider_info
 from kiln_ai.adapters.ollama_tools import get_ollama_connection
 from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel import Finetune, Task
@@ -517,59 +518,14 @@ def provider_name_from_id(id: str) -> str:
         id: The provider identifier string
 
     Returns:
-        The human-readable name of the provider
+        The human-readable name of the provider, or "Unknown provider: <id>" for an id
+        that is not a ModelProviderName
 
     Raises:
-        ValueError: If the provider ID is invalid or unhandled
+        ValueError: If the provider is missing from built_in_providers
     """
     if id in ModelProviderName.__members__:
-        enum_id = ModelProviderName(id)
-        match enum_id:
-            case ModelProviderName.amazon_bedrock:
-                return "Amazon Bedrock"
-            case ModelProviderName.openrouter:
-                return "OpenRouter"
-            case ModelProviderName.groq:
-                return "Groq"
-            case ModelProviderName.ollama:
-                return "Ollama"
-            case ModelProviderName.openai:
-                return "OpenAI"
-            case ModelProviderName.kiln_fine_tune:
-                return "Fine Tuned Models"
-            case ModelProviderName.fireworks_ai:
-                return "Fireworks AI"
-            case ModelProviderName.kiln_custom_registry:
-                return "Custom Models"
-            case ModelProviderName.openai_compatible:
-                return "OpenAI Compatible"
-            case ModelProviderName.azure_openai:
-                return "Azure OpenAI"
-            case ModelProviderName.gemini_api:
-                return "Gemini API"
-            case ModelProviderName.anthropic:
-                return "Anthropic"
-            case ModelProviderName.huggingface:
-                return "Hugging Face"
-            case ModelProviderName.vertex:
-                return "Gemini Enterprise Agent Platform"
-            case ModelProviderName.together_ai:
-                return "Together AI"
-            case ModelProviderName.siliconflow_cn:
-                return "SiliconFlow"
-            case ModelProviderName.cerebras:
-                return "Cerebras"
-            case ModelProviderName.featherless_ai:
-                return "Featherless AI"
-            case ModelProviderName.cloudflare:
-                return "Cloudflare"
-            case ModelProviderName.docker_model_runner:
-                return "Docker Model Runner"
-            case ModelProviderName.typesafe:
-                return "TypeSafe AI"
-            case _:
-                # triggers pyright warning if I miss a case
-                raise_exhaustive_enum_error(enum_id)
+        return get_provider_info(ModelProviderName(id)).friendly_name
 
     return "Unknown provider: " + id
 

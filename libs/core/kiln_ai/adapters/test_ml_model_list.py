@@ -3,6 +3,7 @@ from collections import Counter
 import pytest
 
 from kiln_ai.adapters.ml_model_list import (
+    KilnModel,
     KilnModelProvider,
     ModelAdapterId,
     ModelName,
@@ -12,7 +13,12 @@ from kiln_ai.adapters.ml_model_list import (
     default_thinking_level_for_model_provider,
     get_model_by_name,
 )
+from kiln_ai.adapters.model_agent_info import MODEL_TAGS, PROVIDER_ENTRY_TAGS
 from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_CHAT_MODELS
+from kiln_ai.adapters.test_model_agent_info import (
+    assert_valid_note,
+    assert_valid_tags,
+)
 from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 
@@ -837,3 +843,11 @@ def test_fireworks_thinking_levels(
     assert provider.available_thinking_levels == expected_levels
     assert provider.default_thinking_level == expected_default
     assert provider.litellm_allowed_openai_params == expected_allowed_params
+
+
+@pytest.mark.parametrize("model", built_in_models, ids=lambda m: m.name)
+def test_agent_notes_and_tags_follow_rules(model: KilnModel):
+    assert_valid_note(model.agent_notes)
+    assert_valid_tags(model.tags, MODEL_TAGS)
+    for provider in model.providers:
+        assert_valid_tags(provider.tags, PROVIDER_ENTRY_TAGS)

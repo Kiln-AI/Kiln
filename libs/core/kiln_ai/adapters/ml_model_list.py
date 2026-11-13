@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import List
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
@@ -428,6 +428,7 @@ class KilnModelProvider(BaseModel):
         multimodal_requires_pdf_as_image: Whether the model requires PDFs to be processed as images
         supports_vision: Whether the model supports vision inputs (e.g. images, video)
         adapter: Which Kiln adapter runs this model. Defaults to LiteLLM; set to jev for TypeSafe's System One API.
+        tags: Labels for agents, true of this provider entry only (for example speed). Allowed tags are in PROVIDER_ENTRY_TAGS in kiln_ai.adapters.model_agent_info.
     """
 
     name: ModelProviderName
@@ -505,6 +506,8 @@ class KilnModelProvider(BaseModel):
     # The model is deprecated and no longer supported on a specific provider
     deprecated: bool = False
 
+    tags: list[str] = Field(default_factory=list)
+
     @model_validator(mode="after")
     def validate_openrouter_reasoning_object(self) -> "KilnModelProvider":
         if (
@@ -539,6 +542,9 @@ class KilnModel(BaseModel):
         friendly_name: Human-readable name for the model
         providers: List of providers that offer this model
         supports_structured_output: Whether the model supports structured output formats
+        editorial_notes: Short text for people, shown in the Kiln UI.
+        agent_notes: Notes for an agent that chooses or configures the model, such as the Harness Tuner optimizer or the Kiln assistant: strengths, weaknesses and quirks compared with models at the same price. The rules are in kiln_ai.adapters.model_agent_info.
+        tags: Labels for agents, true of the model on every provider. Allowed tags are in MODEL_TAGS in kiln_ai.adapters.model_agent_info.
     """
 
     family: str
@@ -549,6 +555,8 @@ class KilnModel(BaseModel):
     # Editorial
     featured_rank: int | None = None
     editorial_notes: str | None = None
+    agent_notes: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 GPT_5_OPENROUTER_THINKING_LEVELS = {

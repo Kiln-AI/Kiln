@@ -6,7 +6,7 @@ status: complete
 
 ## Phases
 
-- [ ] Phase 1: Code and tests. The vocabulary module, the provider list,
+- [x] Phase 1: Code and tests. The vocabulary module, the provider list,
   the new model and provider-entry fields, `provider_name_from_id` reading
   the provider list, and `serialize_config` writing `provider_list`. All
   new fields empty except the provider list's friendly names and

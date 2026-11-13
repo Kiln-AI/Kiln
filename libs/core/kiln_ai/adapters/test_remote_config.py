@@ -23,9 +23,11 @@ from kiln_ai.adapters.ml_model_list import (
     ModelName,
     built_in_models,
 )
+from kiln_ai.adapters.ml_provider_list import built_in_providers
 from kiln_ai.adapters.remote_config import (
     KilnRemoteConfig,
     deserialize_config_at_path,
+    deserialize_config_data,
     dump_builtin_config,
     load_from_url,
     refresh_model_list,
@@ -113,7 +115,11 @@ def mock_reranker_model() -> KilnRerankerModel:
 def test_round_trip(tmp_path):
     path = tmp_path / "models.json"
     serialize_config(
-        built_in_models, built_in_embedding_models, built_in_rerankers, path
+        built_in_models,
+        built_in_embedding_models,
+        built_in_rerankers,
+        built_in_providers,
+        path,
     )
     loaded = deserialize_config_at_path(path)
     assert [m.model_dump(mode="json") for m in loaded.model_list] == [
@@ -379,6 +385,75 @@ def test_deserialize_config_with_extra_keys(tmp_path, mock_model, mock_reranker_
     assert not hasattr(models.reranker_model_list[0], "extra_key")
     assert hasattr(models.reranker_model_list[0], "providers")
     assert not hasattr(models.reranker_model_list[0].providers[0], "extra_key")
+
+
+def test_serialized_config_has_provider_list_and_agent_fields(tmp_path):
+    path = tmp_path / "out.json"
+    dump_builtin_config(path)
+    data = json.loads(path.read_text())
+
+    provider_list = data["provider_list"]
+    assert [p["id"] for p in provider_list] == [p.value for p in ModelProviderName]
+    for item in provider_list:
+        assert set(item) == {"id", "friendly_name", "notes", "tags", "models_dev_id"}
+
+    for model in data["model_list"]:
+        assert "agent_notes" in model
+        assert "tags" in model
+        for provider in model["providers"]:
+            assert "tags" in provider
+
+
+@pytest.mark.parametrize(
+    "provider_list",
+    [
+        [p.model_dump(mode="json") for p in built_in_providers],
+        "not a list",
+    ],
+)
+def test_deserialize_config_ignores_provider_list(mock_model, provider_list):
+    remote_config = deserialize_config_data(
+        {
+            "model_list": [mock_model.model_dump(mode="json")],
+            "provider_list": provider_list,
+        }
+    )
+    assert [m.model_dump() for m in remote_config.model_list] == [
+        mock_model.model_dump()
+    ]
+
+
+def test_deserialize_config_does_not_validate_tags_or_notes(mock_model):
+    # A newer remote config may use tags this client doesn't know; it must still load.
+    long_note = "x" * 3000
+    model_dict = mock_model.model_dump(mode="json")
+    model_dict["tags"] = ["not_a_known_tag"]
+    model_dict["agent_notes"] = long_note
+    model_dict["providers"][0]["tags"] = ["Not A Tag!"]
+
+    remote_config = deserialize_config_data({"model_list": [model_dict]})
+
+    model = remote_config.model_list[0]
+    assert model.tags == ["not_a_known_tag"]
+    assert model.agent_notes == long_note
+    assert len(model.providers) == len(mock_model.providers)
+    assert model.providers[0].tags == ["Not A Tag!"]
+
+
+def test_deserialize_config_without_agent_fields_uses_defaults(mock_model):
+    model_dict = mock_model.model_dump(mode="json")
+    del model_dict["agent_notes"]
+    del model_dict["tags"]
+    for provider in model_dict["providers"]:
+        del provider["tags"]
+
+    remote_config = deserialize_config_data({"model_list": [model_dict]})
+
+    model = remote_config.model_list[0]
+    assert model.agent_notes is None
+    assert model.tags == []
+    assert len(model.providers) == len(mock_model.providers)
+    assert all(provider.tags == [] for provider in model.providers)
 
 
 def test_multimodal_fields_specified(tmp_path):
@@ -1422,6 +1497,7 @@ def test_backwards_compatibility_with_v0_19(tmp_path):
         built_in_models,
         built_in_embedding_models,
         built_in_rerankers,
+        built_in_providers,
         current_json_path,
     )
 
