@@ -46,7 +46,9 @@ dependencies = [
     "llama-index-vector-stores-lancedb>=0.4.2",
     "mcp[cli]>=1.10.1",
     "typer>=0.9.0",
-    "litellm>=1.102.0,<1.103",
+    # LiteLLM 1.106.0+ imports mcp>=2.2 (an optional LiteLLM extra) on every tool call,
+    # and Kiln is on mcp 1.x. Raise the cap only together with an mcp 2.x upgrade.
+    "litellm>=1.105.6,<1.106",
     "websockets>=15.0.1",
 ]
 

@@ -1,15 +1,20 @@
+import dataclasses
 from pathlib import Path
 
 import pytest
 
 import kiln_ai.datamodel as datamodel
-from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.adapter_registry import (
+    adapter_for_task,
+    litellm_core_provider_config,
+)
 from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.ml_model_list import (
     ModelName,
     ModelProviderName,
     built_in_models,
 )
+from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.test_paid_utils import (
     skip_if_missing_provider_keys,
 )
@@ -53,6 +58,9 @@ GEMINI_ADAPTIVE_THINKING_MODELS = {
     # On gemini_api, Gemini 4 Argon returns no reasoning at low or medium.
     ModelName.gemini_4_argon.value,
 }
+
+
+LOGIC_PUZZLE_PROMPT = "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
 
 
 def build_thinking_level_test_task(tmp_path: Path) -> datamodel.Task:
@@ -147,9 +155,7 @@ async def test_thinking_level_reasoning_content(
             top_p=1,
         ),
     )
-    run = await adapter.invoke(
-        "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
-    )
+    run = await adapter.invoke(LOGIC_PUZZLE_PROMPT)
     reasoning_content = reasoning_content_from_run(run)
     if thinking_level == "none":
         assert reasoning_content is None, (
@@ -157,6 +163,11 @@ async def test_thinking_level_reasoning_content(
             f"but got {len(reasoning_content)} chars "
             f"(provider={provider_name}, model={model_name})"
         )
+    elif provider_name == ModelProviderName.openai:
+        # OpenAI returns reasoning only as a summary, which Kiln requests only when the
+        # user turns on reasoning summaries (off here). Reaching here means the run
+        # succeeded; test_openai_reasoning_summaries_paid covers summaries.
+        pass
     elif (
         provider_name == ModelProviderName.anthropic
         and model_name in ANTHROPIC_ADAPTIVE_THINKING_MODELS
@@ -191,6 +202,96 @@ async def test_thinking_level_reasoning_content(
         )
 
 
+def openai_reasoning_summary_models() -> list[str]:
+    return [
+        model.name
+        for model in built_in_models
+        for provider in model.providers
+        if provider.name == ModelProviderName.openai
+        and provider.openai_reasoning_summary is not None
+    ]
+
+
+# Needs an OpenAI organization that is verified for reasoning summaries; unverified
+# organizations get a 400 on every case.
+@pytest.mark.paid
+@pytest.mark.parametrize("streamed", [False, True], ids=["invoke", "openai_stream"])
+@pytest.mark.parametrize("model_name", openai_reasoning_summary_models())
+async def test_openai_reasoning_summaries_paid(
+    tmp_path, model_name: str, streamed: bool
+):
+    skip_if_missing_provider_keys(ModelProviderName.openai)
+    task = build_thinking_level_test_task(tmp_path)
+    # Four of these models default to "none", which returns no summary, so every
+    # case runs at medium.
+    run_config = KilnAgentRunConfigProperties(
+        model_name=model_name,
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="default",
+        thinking_level="medium",
+    )
+    adapter = LiteLlmAdapter(
+        config=dataclasses.replace(
+            litellm_core_provider_config(run_config), openai_reasoning_summaries=True
+        ),
+        kiln_task=task,
+    )
+
+    if streamed:
+        stream = adapter.invoke_openai_stream(LOGIC_PUZZLE_PROMPT)
+        async for _ in stream:
+            pass
+        run = stream.task_run
+    else:
+        run = await adapter.invoke(LOGIC_PUZZLE_PROMPT)
+
+    assert run.intermediate_outputs is not None
+    reasoning = run.intermediate_outputs.get("reasoning")
+    assert isinstance(reasoning, str) and reasoning.strip(), (
+        f"Expected a reasoning summary from {model_name} (streamed={streamed})"
+    )
+
+
+def openai_reasoning_summary_models_with_none() -> list[str]:
+    return [
+        model.name
+        for model in built_in_models
+        for provider in model.providers
+        if provider.name == ModelProviderName.openai
+        and provider.openai_reasoning_summary is not None
+        and provider.available_thinking_levels is not None
+        and "none" in provider.available_thinking_levels.values()
+    ]
+
+
+# With summaries on, a "none" run still goes to /v1/responses, and several of these
+# providers default to "none". OpenAI must accept it and return no reasoning.
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", openai_reasoning_summary_models_with_none())
+async def test_openai_reasoning_summaries_at_none_paid(tmp_path, model_name: str):
+    skip_if_missing_provider_keys(ModelProviderName.openai)
+    task = build_thinking_level_test_task(tmp_path)
+    run_config = KilnAgentRunConfigProperties(
+        model_name=model_name,
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="default",
+        thinking_level="none",
+    )
+    adapter = LiteLlmAdapter(
+        config=dataclasses.replace(
+            litellm_core_provider_config(run_config), openai_reasoning_summaries=True
+        ),
+        kiln_task=task,
+    )
+
+    run = await adapter.invoke(LOGIC_PUZZLE_PROMPT)
+
+    assert run.output.output
+    assert reasoning_content_from_run(run) is None
+
+
 # Curated prerelease smoke test: same behavior as test_thinking_level_reasoning_content
 # above, restricted to a small whitelist so --runprerelease stays fast.
 @pytest.mark.paid
@@ -220,9 +321,7 @@ async def test_thinking_level_reasoning_content_prerelease_smoke(
             top_p=1,
         ),
     )
-    run = await adapter.invoke(
-        "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
-    )
+    run = await adapter.invoke(LOGIC_PUZZLE_PROMPT)
     reasoning_content = reasoning_content_from_run(run)
     if thinking_level == "none":
         assert reasoning_content is None, (

@@ -55,6 +55,7 @@ class Config:
                 env_var="OPENAI_API_KEY",
                 sensitive=True,
             ),
+            "open_ai_reasoning_summaries": ConfigProperty(bool, default=False),
             "groq_api_key": ConfigProperty(
                 str,
                 env_var="GROQ_API_KEY",

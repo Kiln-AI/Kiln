@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import copy
 from types import SimpleNamespace
 from typing import Any, List
 from unittest.mock import MagicMock, patch
 
+import litellm
 import pytest
+from litellm.types.utils import (
+    Choices,
+    Delta,
+    Message,
+    ModelResponse,
+    ModelResponseStream,
+    StreamingChoices,
+)
 
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 
@@ -138,6 +148,18 @@ class TestStreamingCompletion:
         assert received == []
         assert stream.response is None
 
+    async def test_complete_response_instead_of_stream_raises(
+        self, mock_acompletion, mock_chunk_builder
+    ):
+        mock_acompletion.return_value = ModelResponse()
+
+        stream = StreamingCompletion(model="test", messages=[])
+        with pytest.raises(RuntimeError, match="Expected a streamed response"):
+            async for _ in stream:
+                pass
+
+        mock_chunk_builder.assert_not_called()
+
     async def test_stream_options_include_usage_added_by_default(
         self, mock_acompletion, mock_chunk_builder
     ):
@@ -204,3 +226,173 @@ class TestStreamingCompletion:
 
         _, call_kwargs = mock_acompletion.call_args
         assert call_kwargs["stream_options"] == {"include_usage": True}
+
+
+def _stream_chunk(
+    index: int = 0, finish_reason: str | None = None, **delta: Any
+) -> ModelResponseStream:
+    return ModelResponseStream(
+        id="chatcmpl-test",
+        model="gpt-5.4",
+        choices=[
+            StreamingChoices(
+                index=index, finish_reason=finish_reason, delta=Delta(**delta)
+            )
+        ],
+    )
+
+
+def _reasoning_item(item_id: str, *texts: str) -> dict[str, Any]:
+    return {
+        "type": "reasoning",
+        "id": item_id,
+        "encrypted_content": f"ENC_{item_id}",
+        "summary": [{"type": "summary_text", "text": text} for text in texts],
+    }
+
+
+async def _stream_with_real_builder(
+    chunks: list[ModelResponseStream],
+) -> tuple[list[ModelResponseStream], ModelResponse]:
+    with patch("litellm.acompletion", return_value=_async_iter(chunks)):
+        stream = StreamingCompletion(model="gpt-5.4", messages=[])
+        received = [chunk async for chunk in stream]
+    assert isinstance(stream.response, ModelResponse)
+    return received, stream.response
+
+
+def _built_message(response: ModelResponse) -> Message:
+    choice = response.choices[0]
+    assert isinstance(choice, Choices)
+    return choice.message
+
+
+class TestReasoningNormalization:
+    async def test_reasoning_delta_moves_to_choice_zero(self):
+        received, _ = await _stream_with_real_builder(
+            [
+                _stream_chunk(index=0, reasoning_content="Part zero."),
+                _stream_chunk(index=1, reasoning_content="Part one."),
+            ]
+        )
+
+        assert [chunk.choices[0].index for chunk in received] == [0, 0]
+
+    async def test_blank_line_inserted_when_summary_part_changes(self):
+        received, _ = await _stream_with_real_builder(
+            [
+                _stream_chunk(index=0, reasoning_content="Part "),
+                _stream_chunk(index=0, reasoning_content="zero."),
+                _stream_chunk(index=1, reasoning_content="Part "),
+                _stream_chunk(index=1, reasoning_content="one."),
+                _stream_chunk(index=0, reasoning_content="Next item."),
+            ]
+        )
+
+        assert [chunk.choices[0].delta.reasoning_content for chunk in received] == [
+            "Part ",
+            "zero.",
+            "\n\nPart ",
+            "one.",
+            "\n\nNext item.",
+        ]
+
+    async def test_content_and_tool_call_deltas_keep_their_index(self):
+        tool_call = {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "add", "arguments": "{}"},
+            "index": 0,
+        }
+        received, _ = await _stream_with_real_builder(
+            [
+                _stream_chunk(index=1, reasoning_content="Thinking."),
+                _stream_chunk(index=2, content="Text", reasoning_content="r"),
+                _stream_chunk(index=3, tool_calls=[tool_call], reasoning_content="r"),
+            ]
+        )
+
+        assert [chunk.choices[0].index for chunk in received] == [0, 2, 3]
+        assert [chunk.choices[0].delta.reasoning_content for chunk in received] == [
+            "Thinking.",
+            "r",
+            "r",
+        ]
+
+    async def test_part_tracking_resets_on_re_iteration(self):
+        first = [_stream_chunk(index=1, reasoning_content="First run.")]
+        second = [_stream_chunk(index=0, reasoning_content="Second run.")]
+
+        with patch(
+            "litellm.acompletion", side_effect=[_async_iter(first), _async_iter(second)]
+        ):
+            stream = StreamingCompletion(model="gpt-5.4", messages=[])
+            [chunk async for chunk in stream]
+            received = [chunk async for chunk in stream]
+
+        assert received[0].choices[0].delta.reasoning_content == "Second run."
+
+
+class TestReasoningItems:
+    async def test_terminal_reasoning_items_attached_to_built_message(self):
+        items = [_reasoning_item("rs_1", "Part zero.")]
+        _, response = await _stream_with_real_builder(
+            [
+                _stream_chunk(reasoning_content="Part zero."),
+                _stream_chunk(content="Answer"),
+                _stream_chunk(reasoning_items=items),
+                _stream_chunk(finish_reason="stop"),
+            ]
+        )
+
+        message = _built_message(response)
+        assert message.reasoning_items == items
+        assert message.content == "Answer"
+
+    async def test_reasoning_content_joined_across_items_and_parts(self):
+        items = [
+            _reasoning_item("rs_1", "**Plan**\n\nFirst part. ", " Second part."),
+            _reasoning_item("rs_2", "Third part, second item."),
+        ]
+        _, response = await _stream_with_real_builder(
+            [
+                _stream_chunk(index=0, reasoning_content="**Plan**\n\nFirst part. "),
+                _stream_chunk(index=1, reasoning_content=" Second part."),
+                _stream_chunk(index=0, reasoning_content="Third part, second item."),
+                _stream_chunk(content="Answer"),
+                _stream_chunk(reasoning_items=items, finish_reason="stop"),
+            ]
+        )
+
+        assert _built_message(response).reasoning_content == (
+            "**Plan**\n\nFirst part.\n\nSecond part.\n\nThird part, second item."
+        )
+
+    async def test_reasoning_items_without_summary_text_keep_streamed_reasoning(self):
+        items = [_reasoning_item("rs_1"), _reasoning_item("rs_2", "")]
+        _, response = await _stream_with_real_builder(
+            [
+                _stream_chunk(reasoning_content="Streamed."),
+                _stream_chunk(content="Answer"),
+                _stream_chunk(reasoning_items=items, finish_reason="stop"),
+            ]
+        )
+
+        message = _built_message(response)
+        assert message.reasoning_items == items
+        assert message.reasoning_content == "Streamed."
+
+    async def test_no_reasoning_items_leaves_built_response_unchanged(self):
+        chunks = [
+            _stream_chunk(reasoning_content="Thinking."),
+            _stream_chunk(content="Answer", finish_reason="stop"),
+        ]
+        expected = litellm.stream_chunk_builder(copy.deepcopy(chunks))
+        assert isinstance(expected, ModelResponse)
+
+        _, response = await _stream_with_real_builder(chunks)
+
+        message = _built_message(response)
+        assert getattr(message, "reasoning_items", None) is None
+        assert message.reasoning_content == _built_message(expected).reasoning_content
+        assert message.content == "Answer"
