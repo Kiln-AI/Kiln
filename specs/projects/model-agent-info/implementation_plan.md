@@ -14,7 +14,7 @@ status: complete
 - [x] Phase 2: Skills and guidance. `claude-maintain-models`,
   `kiln-model-sweep`, `kiln-conventions` `core.md`, and whatever else
   `docs-sync` finds.
-- [ ] Phase 3: Vocabulary v2 (the 2026-11-15 revision). Code, tests and
+- [x] Phase 3: Vocabulary v2 (the 2026-11-15 revision). Code, tests and
   skills only; no data. `model_agent_info.py`: `TagKind`, `TagInfo`, the
   new model-tag map with kinds and limits, empty provider-entry and
   provider-list maps, the note label tuples, the new docstring. The new

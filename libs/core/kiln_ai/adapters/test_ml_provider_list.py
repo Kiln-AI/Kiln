@@ -8,8 +8,9 @@ from kiln_ai.adapters.ml_provider_list import (
     built_in_providers,
     get_provider_info,
 )
-from kiln_ai.adapters.model_agent_info import PROVIDER_LIST_TAGS
+from kiln_ai.adapters.model_agent_info import PROVIDER_LIST_TAGS, PROVIDER_NOTE_LABELS
 from kiln_ai.adapters.test_model_agent_info import (
+    assert_note_format,
     assert_valid_note,
     assert_valid_tags,
 )
@@ -28,6 +29,8 @@ def test_provider_info_follows_rules(info: KilnProviderInfo):
     assert info.models_dev_id is None or MODELS_DEV_ID_PATTERN.match(info.models_dev_id)
     assert_valid_tags(info.tags, PROVIDER_LIST_TAGS)
     assert_valid_note(info.notes)
+    if info.notes is not None:
+        assert_note_format(info.notes, PROVIDER_NOTE_LABELS, ())
 
 
 @pytest.mark.parametrize("provider", list(ModelProviderName))

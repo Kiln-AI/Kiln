@@ -13,9 +13,15 @@ from kiln_ai.adapters.ml_model_list import (
     default_thinking_level_for_model_provider,
     get_model_by_name,
 )
-from kiln_ai.adapters.model_agent_info import MODEL_TAGS, PROVIDER_ENTRY_TAGS
+from kiln_ai.adapters.model_agent_info import (
+    MODEL_NOTE_LABELS,
+    MODEL_TAGS,
+    PROVIDER_ENTRY_TAGS,
+    TagKind,
+)
 from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_CHAT_MODELS
 from kiln_ai.adapters.test_model_agent_info import (
+    assert_note_format,
     assert_valid_note,
     assert_valid_tags,
 )
@@ -851,3 +857,76 @@ def test_agent_notes_and_tags_follow_rules(model: KilnModel):
     assert_valid_tags(model.tags, MODEL_TAGS)
     for provider in model.providers:
         assert_valid_tags(provider.tags, PROVIDER_ENTRY_TAGS)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [m for m in built_in_models if m.agent_notes is not None],
+    ids=lambda m: m.name,
+)
+def test_model_note_format(model: KilnModel):
+    assert model.agent_notes is not None
+    assert_note_format(
+        model.agent_notes,
+        MODEL_NOTE_LABELS,
+        ("Description:", "Lineup:"),
+    )
+    lines = model.agent_notes.split("\n")
+    assert lines[0].startswith("Description:"), (
+        f"{model.name}: first line must start with 'Description:'"
+    )
+
+
+@pytest.mark.parametrize("model", built_in_models, ids=lambda m: m.name)
+def test_superseded_by_iff_not_current(model: KilnModel):
+    if model.agent_notes is None:
+        return
+    has_superseded = any(
+        line.startswith("Superseded by:") for line in model.agent_notes.split("\n")
+    )
+    is_current = "current" in model.tags
+    if is_current:
+        assert not has_superseded, (
+            f"{model.name}: a current model must not have a 'Superseded by:' line"
+        )
+    else:
+        assert has_superseded, (
+            f"{model.name}: a non-current model with a note must have"
+            " a 'Superseded by:' line"
+        )
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [tag for tag, info in MODEL_TAGS.items() if info.kind == TagKind.set],
+    ids=lambda t: t,
+)
+def test_set_tag_limits(tag: str):
+    info = MODEL_TAGS[tag]
+    assert info.max_models is not None
+    count = sum(1 for m in built_in_models if tag in m.tags)
+    assert count <= info.max_models, (
+        f"Tag {tag!r} is on {count} models, exceeding its limit of {info.max_models}"
+    )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [m for m in built_in_models if "recommended" in m.tags],
+    ids=lambda m: m.name,
+)
+def test_recommended_is_current(model: KilnModel):
+    assert "current" in model.tags, (
+        f"{model.name}: tagged 'recommended' but not 'current'"
+    )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [m for m in built_in_models if m.tags],
+    ids=lambda m: m.name,
+)
+def test_tagged_models_have_notes(model: KilnModel):
+    assert model.agent_notes is not None, (
+        f"{model.name}: has tags {model.tags} but agent_notes is None"
+    )

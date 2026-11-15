@@ -251,47 +251,191 @@ If the model supports configurable reasoning effort (not just on/off), add `avai
 
 ### 3g. Agent notes and tags
 
-For each new model, write `agent_notes` and the model `tags`. For each new provider entry, including one added to an existing model, set its `tags`. Follow [Agent notes and tags](#agent-notes-and-tags). Write only what a source supports. When nothing can be supported, leave `agent_notes` as `None` and the tags empty, and say so in the PR. A run with nobody watching, such as the scheduled model sweep, follows the same rule.
+For each new model, write `agent_notes` and the model `tags`, then run the `current` procedure and the set-review procedure. For each new provider entry, including one added to an existing model, set its `tags` (provider-entry tags are empty today; do not use model tags on a provider entry). Follow [Agent notes and tags](#agent-notes-and-tags). Write only what a source supports. When nothing can be supported, leave `agent_notes` as `None` and the tags empty, and say so in the PR. A run with nobody watching, such as the scheduled model sweep, follows the same rule.
+
+Steps for each new model:
+
+1. Write the model's `agent_notes` in the note format below.
+2. Write the model's `tags`.
+3. Run the `current` procedure for its lab and price level.
+4. Run the set-review procedure for each set the model could join.
+
+### 3h. PR description — set changes
+
+When any set changed (a model added to or removed from a set tag), add a section at the top of the PR description that lists each addition and removal, per set, with a short reason for each. Example:
+
+```
+## Set changes
+- **recommended**: +GPT-6.1 Terra (strong general quality, current); −GPT-5.6 Terra (superseded)
+- **top_value**: +Claude Haiku 5.5 (best quality at its price)
+```
 
 ---
 
 ## Agent notes and tags
 
-`KilnModel.agent_notes`, `KilnModel.tags`, `KilnModelProvider.tags`, and the `notes` and `tags` of each item in `built_in_providers` (`libs/core/kiln_ai/adapters/ml_provider_list.py`) are for agents that choose or configure a model, such as the Harness Tuner optimizer and the Kiln assistant. Agents outside Kiln read them from the published remote config; Kiln clients do not load the provider list from it. `editorial_notes` is different: it is short text for people, shown on the models page of the Kiln UI. Do not copy one into the other.
+`KilnModel.agent_notes`, `KilnModel.tags`, `KilnModelProvider.tags`, and the `notes` and `tags` of each item in `built_in_providers` (`libs/core/kiln_ai/adapters/ml_provider_list.py`) are for agents that choose or configure a model, such as the Harness Tuner optimizer and the Kiln assistant. `recommended` is an agent's main candidate list for new agents, and a model without the `current` tag is not chosen for a new run config unless asked. Agents outside Kiln read these from the published remote config; Kiln clients do not load the provider list from it. `editorial_notes` is different: it is short text for people, shown on the models page of the Kiln UI. Do not copy one into the other.
 
-### What goes in `agent_notes`
+### Note format
 
-Write for an agent that compares this model with other models at the same price:
+A model's `agent_notes` is one string of labeled lines, joined by `\n`, in this order:
 
-- Strengths and weaknesses compared with models at the same price.
-- The settings it responds to, for example a thinking level that helps, or one that adds cost for no gain.
-- Output quirks, for example long answers or a fixed preamble.
-- Tool-call reliability.
-- When it matters, the model that replaces it.
+| Label | Required | Content |
+|---|---|---|
+| `Description:` | yes | One line: what this model is. |
+| `Lineup:` | yes | Its place on the lab's ladder, and what it replaced. Explains names that do not show the order. |
+| `Superseded by:` | when not `current` | The model that replaced it, and why in a few words. Not present on a `current` model. |
+| `Useful for:` | no | Cases where it is a good choice, when it is not the general pick for its level. |
+| `Strengths:` | no | Its character, not its rank: "strong at agentic coding, weak at factual recall". |
+| `Behavior:` | no | Settings that help or hurt, output quirks, verbosity, tool-call reliability. |
+| `Deployment:` | no | Facts that change a hosting decision: dense or MoE, runs on a laptop, fits affordable GPUs. |
 
-Do not put these in `agent_notes`: price, context window, maximum output, release date, knowledge cutoff, open weights. models.dev publishes them, and two copies get out of date.
+Each label is used at most once. A line has one or a few sentences. In `ml_model_list.py`, write a note as adjacent string literals, one per labeled line, each but the last ending in `\n`, so each line is one source line.
 
-A provider's `notes` in `built_in_providers` cover data retention, rate limits, routing and gotchas.
+**Never in a note.** Anything that Kiln or models.dev already keeps: price, batch and cache discounts, and claims like "most expensive"; context window and maximum output; release date and knowledge cutoff; open weights; which providers host the model; support for function calling, structured output or vision; the available and default thinking levels. A note can say how the model behaves when a setting is used. It does not say which settings exist.
 
-### Note rules
+**No words relative to time.** A note must not need edits as it ages. Do not use "current", "latest", "newest", "now", "previous", "frontier", "state of the art", "best" or "peers". To compare, name an exact model or generation: "near Claude Opus 4.6 level, with open weights", "a step down from GPT-6.1 Sol", "in the GPT-6.1 generation". The `current` tag and the `Superseded by:` line, added once, are the only places that show age.
 
-These apply to `agent_notes` and to a provider's `notes`.
+### Approved examples
 
-- `None` means no note. An empty or whitespace-only string is not allowed.
-- At most 2,000 characters (`MAX_NOTE_CHARS`). Aim for a few sentences.
-- **State only what you can support** from the provider's documentation, a public benchmark, or Kiln's own tests (for example a paid test run). Leave an unsupported claim out. When nothing can be supported, the note stays `None` and the tags stay empty, and the PR says so.
+These show the format. Their facts are illustrative, not checked. Follow the same style.
 
-### Tag rules
+**GPT-6.1 Terra** · tags: `current`, `recommended`
+```
+Description: OpenAI's mid-price general model in the GPT-6.1 generation.
+Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A large step up from GPT-6 Luna, a step down from GPT-6.1 Sol. Replaced GPT-5.6 Terra.
+Strengths: Steady quality in multi-turn tool use; GPT-6.1 Sol is better on hard reasoning.
+Behavior: High effort helps on hard problems; xhigh adds latency for little gain on routine tasks.
+```
 
-- The allowed tags and their meanings are in `libs/core/kiln_ai/adapters/model_agent_info.py`. Read them there. This skill keeps no copy of the list, so the list and its meanings exist in one place. There are three maps:
-  - `MODEL_TAGS` for `KilnModel.tags`: true of the model on every provider.
-  - `PROVIDER_ENTRY_TAGS` for `KilnModelProvider.tags`: true of one provider entry only, for example speed.
-  - `PROVIDER_LIST_TAGS` for the `tags` of a `built_in_providers` item.
-- Use a tag only from the map for that field. A tag in the wrong map fails the tests, for example `fast` on a model.
-- Format `^[a-z0-9_]{1,40}$` (`TAG_PATTERN`), at most 12 tags on one entry (`MAX_TAGS_PER_ENTRY`), and no tag twice.
-- A tag is a claim compared with models at the same price. Apply it only when a source supports it, as for notes.
+**GPT-5.4 Nano** · tags: none
+```
+Description: The smallest model in the GPT-5.4 generation.
+Lineup: Below GPT-5.4 Mini.
+Superseded by: GPT-6 Luna, which is stronger at a lower price.
+```
 
-**To add a tag:** add it to the right map in `model_agent_info.py` with its meaning, and add it to `test_starting_tags` in `test_model_agent_info.py`, in the same change that first uses it. The meaning is a claim compared with models at the same price, and one the maintainer would stand behind.
+**Gemini 4 Argon** · tags: `current`, `recommended`
+```
+Description: Google's Pro-level reasoning model in the Gemini 4 generation.
+Lineup: Gemini 4 uses element names, not size names. Argon is the Pro-level model. Replaced the Gemini 3.x Pro previews.
+Strengths: Strong multimodal reasoning over charts, video and documents; mixed on long autonomous coding runs.
+Behavior: Very verbose: uses far more output tokens than GPT-6.1 Sol or Claude Opus 5.5 on the same tasks, so cost per task is high. Slow to the first token at high effort.
+```
+
+**Claude Haiku 5.5** · tags: `current`, `recommended`, `top_value`, `top_fast`
+```
+Description: Anthropic's smallest and fastest model in the 5.5 generation.
+Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. A large step down from Claude Sonnet 5.5.
+Useful for: Subagents, routing, classification and extraction at high volume.
+Behavior: Reliable tool calls for its size; quality drops on long multi-step reasoning.
+```
+
+**Mistral Large 4** · tags: `current` (not `recommended`)
+```
+Description: Mistral's open-weight flagship of the Large 4 generation.
+Lineup: Mistral's ladder is Ministral < Small < Medium < Large. Replaced Mistral Large 3.
+Useful for: Teams that need a European lab.
+Strengths: Strong at coding and terminal tasks; near GPT-5.6 Terra level on general intelligence.
+```
+
+**Qwen 3.8 27B** · tags: `current`, `top_open`
+```
+Description: Qwen's dense mid-size open-weight model in the 3.8 generation.
+Lineup: Below the Qwen 3.8 2.4T A95B open MoE. The closed Qwen 3.8 Max and Flash API models are a separate line.
+Useful for: Self-hosted or on-prem work where you manage your own GPUs.
+Strengths: Close to Gemma 4 31B at reasoning and coding.
+Deployment: Dense, so it runs on one affordable GPU more easily than MoE models of similar quality.
+```
+
+**Gemma 4 2B** · tags: `current`, `top_on_device`
+```
+Description: The smallest open-weight model in Google's Gemma 4 generation.
+Lineup: Gemma 4 sizes are 2B < 4B < 27B MoE < 31B dense. Gemma is Google's open-weight line, separate from Gemini.
+Useful for: Local or on-device agents, when data must stay on the machine.
+Behavior: Follows simple instructions well; unreliable at multi-step tool use.
+Deployment: Runs on consumer laptops and high-end phones.
+```
+
+### Provider note format
+
+A provider's `notes` in `built_in_providers` follow the same rules, with these labels, in this order, each optional but at least one present:
+
+| Label | Content |
+|---|---|
+| `Data retention:` | Whether it logs or trains on prompts; whether a zero-retention option exists, and how to get it. |
+| `Rate limits:` | How limits are set (account tier, per model); free-tier limits that break agents. |
+| `Routing:` | Whether it sends requests to more than one upstream host, so output or quality can change. |
+| `Gotchas:` | Setup or runtime problems: model access approval, region locks, project or quota setup. |
+
+Never in a provider note: pricing, the models it hosts (the model list has that) and the friendly name.
+
+**OpenRouter** (provider note example)
+```
+Data retention: Depends on the upstream host. Account settings can block hosts that log or train on prompts.
+Routing: Routes each request to one of several upstream hosts; quality and quantization can differ between them.
+Gotchas: Some models are free variants with low rate limits; do not use them for production agents.
+```
+
+### Tags
+
+There are two tag kinds:
+
+- **Lineage tag.** There is one: `current`. It moves along a lab's line of models. See [The `current` tag](#the-current-tag).
+- **Set tag.** Every other tag. A set tag names a short list of models that share a judgment, such as "the best open-weight models". Each set has a size limit. See [Set tags](#set-tags).
+
+The `top_` prefix marks a set that is the best few models with a property, not every model with it: `top_open` is not "has open weights".
+
+Read each tag's meaning, kind and limit in `libs/core/kiln_ai/adapters/model_agent_info.py`. This skill keeps no copy of the list, so the list and its meanings exist in one place. There are three maps:
+
+- `MODEL_TAGS` for `KilnModel.tags`: true of the model on every provider.
+- `PROVIDER_ENTRY_TAGS` for `KilnModelProvider.tags`: true of one provider entry only.
+- `PROVIDER_LIST_TAGS` for the `tags` of a `built_in_providers` item.
+
+Use a tag only from the map for that field. A tag in the wrong map fails the tests. Format `^[a-z0-9_]{1,40}$` (`TAG_PATTERN`), at most 12 tags on one entry (`MAX_TAGS_PER_ENTRY`), and no tag twice.
+
+### The `current` tag
+
+**Price level** is a step on the lab's own ladder, as the note's `Lineup:` line describes it: for example Luna < Terra < Sol < Astra, or Haiku < Sonnet < Opus < Fable. For open-weight labs, a size class.
+
+Procedure when a model is added:
+
+1. Find the `current` model from the same lab at the same price level.
+2. Remove its `current` tag.
+3. Add a `Superseded by:` line to its note, naming the new model and why in a few words.
+4. Tag the new model `current`.
+5. Skip this if the new model is at a different price level. No other records change.
+
+Rules:
+
+- Each lab has one `current` model at each price level: the newest release of that line, by release date, whatever its name.
+- A dated snapshot is `current` when it is newer than the plain name (for example, DeepSeek V4.1 Flash 1017 is newer than DeepSeek V4.1 Flash). When a plain alias and a snapshot serve the same weights, only the alias gets the tag.
+- A variant that is a separate product (Pro, Omni) is a line of its own. It is `current` when it is the newest model of that variant line.
+
+### Set tags
+
+Procedure when a model could be in a set:
+
+1. Load the whole set (every model with that tag across `built_in_models`).
+2. Decide whether the new model joins the set.
+3. If it joins, review every member and remove each one that no longer earns its place. That can be an older model at the same level, or a model from any lab or level that the new model beats for the set's purpose.
+4. A set never goes over its limit (`max_models` in the tag map). To add a model to a full set, remove one.
+
+Rules:
+
+- Every `recommended` model is also `current`. When a model loses `current`, it also leaves `recommended`.
+- A model in a set has a note, so a reviewer can read the reason.
+- A set tag is a claim the maintainer would stand behind. Apply it only when a source supports it, as for notes.
+
+### Sources
+
+- Artificial Analysis first for comparisons across labs: model pages (`https://artificialanalysis.ai/models/<slug>`) give the intelligence index, cost per task, output speed, time to first token and output tokens used.
+- A lab's own release benchmarks are chosen to look good. They can support a claim but are never its only source.
+- Common sense.
+
+### Adding a tag
+
+Add it to the right map in `model_agent_info.py` with its meaning, kind and limit, and add it to `test_starting_tags` in `test_model_agent_info.py`, in the same change that first uses it. A new set tag that names "the best" of something uses the `top_` prefix. An unsupported claim is left out; the PR says so.
 
 ### How the rules are checked
 
