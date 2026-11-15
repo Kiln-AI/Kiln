@@ -14,7 +14,7 @@ contracts and rules this design implements.
 
 | File | Change |
 |---|---|
-| `libs/core/kiln_ai/adapters/model_agent_info.py` | New. Tag maps, tag format, limits. |
+| `libs/core/kiln_ai/adapters/model_agent_info.py` | New. Tag maps (meaning, kind, set limit), tag format, limits, note labels. |
 | `libs/core/kiln_ai/adapters/ml_provider_list.py` | New. `KilnProviderInfo`, `built_in_providers`, `get_provider_info`. |
 | `libs/core/kiln_ai/adapters/ml_model_list.py` | New fields on `KilnModel` and `KilnModelProvider`. |
 | `libs/core/kiln_ai/adapters/provider_tools.py` | `provider_name_from_id` reads the provider list. |
@@ -50,31 +50,67 @@ and notes in the model list and provider list are for agents that choose or
 configure a model; these rules are enforced by tests on the built-in data,
 never at parse time, so an older client keeps loading a newer file.
 
+Revised for the 2026-11-15 vocabulary. The first version (tag to meaning
+string, `best_value`, `strong_*`, `verbose`, `fast`, `very_fast`) is
+replaced.
+
 ```python
 TAG_PATTERN: Final = re.compile(r"^[a-z0-9_]{1,40}$")
 MAX_TAGS_PER_ENTRY: Final = 12
 MAX_NOTE_CHARS: Final = 2000
 
-MODEL_TAGS: Final[Mapping[str, str]] = {
-    "best_value": "Its quality for its price is among the best at that price.",
-    "strong_agentic": "...",
-    "strong_coding": "...",
-    "strong_writing": "...",
-    "verbose": "...",
+
+class TagKind(str, Enum):
+    lineage = "lineage"
+    set = "set"
+
+
+@dataclass(frozen=True)
+class TagInfo:
+    meaning: str
+    kind: TagKind
+    max_models: int | None  # set tags only; None for lineage
+
+
+MODEL_TAGS: Final[Mapping[str, TagInfo]] = {
+    "current": TagInfo("...", TagKind.lineage, None),
+    "recommended": TagInfo("...", TagKind.set, 20),
+    "top_value": TagInfo("...", TagKind.set, 14),
+    "top_fast": TagInfo("...", TagKind.set, 14),
+    "top_on_device": TagInfo("...", TagKind.set, 14),
+    "top_open": TagInfo("...", TagKind.set, 14),
+    "top_writing": TagInfo("...", TagKind.set, 14),
 }
-PROVIDER_ENTRY_TAGS: Final[Mapping[str, str]] = {
-    "very_fast": "...",
-    "fast": "...",
-}
-PROVIDER_LIST_TAGS: Final[Mapping[str, str]] = {}
+PROVIDER_ENTRY_TAGS: Final[Mapping[str, TagInfo]] = {}
+PROVIDER_LIST_TAGS: Final[Mapping[str, TagInfo]] = {}
+
+# Labels of a model note, in the required order.
+MODEL_NOTE_LABELS: Final = (
+    "Description:", "Lineup:", "Superseded by:", "Useful for:",
+    "Strengths:", "Behavior:", "Deployment:",
+)
+# Labels of a provider note, in the required order.
+PROVIDER_NOTE_LABELS: Final = (
+    "Data retention:", "Rate limits:", "Routing:", "Gotchas:",
+)
 ```
 
-- The meanings are the overview's tag table, word for word.
+- The meanings are the functional spec's model-tag table, word for word.
+- The module docstring says: every tag except `current` is a set tag; the
+  `current` procedure and the set-review procedure are in
+  `claude-maintain-models`; the rules are enforced by tests on the built-in
+  data, never at parse time.
 - A one-line comment above each map says where its tags go (model,
-  provider entry, provider-list item).
+  provider entry, provider-list item). The two empty maps say they are
+  kept for later use.
 - Plain dict literals typed as `Mapping`, so the type checker rejects a
-  write. Nothing mutates them (conventions rule C7).
+  write. Nothing mutates them (conventions rule C7). `TagInfo` is frozen.
+- `TagInfo` is a frozen dataclass, not a Pydantic model: it is never
+  parsed or serialized.
 - No functions. The checks are test code (conventions rule E20).
+- In `ml_model_list.py` and `ml_provider_list.py`, a note is written as
+  adjacent string literals, one per labeled line, each but the last ending
+  in `\n`, so each line is one source line.
 
 ## `ml_provider_list.py`
 
@@ -198,24 +234,42 @@ the built-in data so a failure names the model or provider.
 
 - Each key of the three maps matches `TAG_PATTERN`; each meaning is a
   non-blank string.
-- No tag is in both the model map and the provider-entry map.
-- The starting tags are exactly the overview's: the model map has
-  `best_value`, `strong_agentic`, `strong_coding`, `strong_writing`,
-  `verbose`; the provider-entry map has `fast`, `very_fast`; the
-  provider-list map is empty. A later change that adds a tag updates this
-  test too, which is the intended review point.
+- No tag is in more than one map.
+- The model map has exactly one lineage tag, `current`, with
+  `max_models is None`. Every set tag has `max_models` of at least 1.
+- The starting tags are exactly the functional spec's: the model map has
+  `current`, `recommended`, `top_value`, `top_fast`, `top_on_device`,
+  `top_open`, `top_writing`, with those kinds and limits; the provider-entry
+  and provider-list maps are empty. A later change that adds a tag updates
+  this test too, which is the intended review point.
+- `MODEL_NOTE_LABELS` and `PROVIDER_NOTE_LABELS` have no duplicates, and
+  each label ends with `:`.
 
 `test_ml_model_list.py`, over `built_in_models`:
 
 - Model tags: each matches `TAG_PATTERN`, is in `MODEL_TAGS`, no
   duplicates, at most `MAX_TAGS_PER_ENTRY`.
-- Provider-entry tags: the same against `PROVIDER_ENTRY_TAGS`.
+- Provider-entry tags: the same against `PROVIDER_ENTRY_TAGS` (so, today,
+  none).
 - `agent_notes`: `None`, or `strip()` is non-empty and `len` is at most
   `MAX_NOTE_CHARS`.
+- Note format, by a helper `assert_note_format(note, labels, required)`
+  in `test_model_agent_info.py`: split on `\n`; each line starts with a
+  label from `labels`; labels appear in that order, each at most once;
+  each label in `required` is present. For model notes, `labels` is
+  `MODEL_NOTE_LABELS`, `required` is `Description:` and `Lineup:`, and the
+  first line is `Description:`.
+- `Superseded by:` is present if and only if the model does not have
+  `current`.
+- Each set tag is on at most `max_models` models (one test parametrized
+  over the set tags, counting across `built_in_models`).
+- Each model with `recommended` also has `current`.
+- Each model with any tag has `agent_notes`.
 - The tag check is one helper function, `assert_valid_tags(tags, allowed)`,
   defined in `test_model_agent_info.py` and imported from there by
   `test_ml_model_list.py` and `test_ml_provider_list.py`. It checks format,
   membership, duplicates and count, and names the bad tag in its message.
+  `allowed` is a tag map; only its keys are used.
 
 `test_ml_provider_list.py`:
 
@@ -223,7 +277,9 @@ the built-in data so a failure names the model or provider.
   per provider, in enum order, no duplicates.
 - Each `friendly_name` is non-blank.
 - Each `models_dev_id` is `None` or matches `^[a-z0-9-]+$`.
-- Tags against `PROVIDER_LIST_TAGS`; notes by the note rule.
+- Tags against `PROVIDER_LIST_TAGS`; notes by the note rule, and by
+  `assert_note_format` with `PROVIDER_NOTE_LABELS` and no required label
+  (at least one line).
 - `get_provider_info` returns the item for each provider.
 
 `test_provider_tools.py`:
@@ -259,16 +315,35 @@ finding to report, not to regenerate silently.
 
 `claude-maintain-models`:
 
-- A new section, "Agent notes and tags", placed after "Phase 3" subsections
-  and linked from them. It holds: what goes in `agent_notes` and what does
-  not (the overview's lists); the note rules; the tag rules; that the tag
-  list and meanings live in `libs/core/kiln_ai/adapters/model_agent_info.py`
-  and the agent reads it there; how to add a tag (add to the right map with
-  its meaning, update `test_model_agent_info.py`, in the same change); and
-  that an unsupported claim is left out, with the PR saying so.
-- Phase 3: a new subsection after 3b, "Agent notes and tags", one short
-  paragraph pointing to the section above, for each new model and each new
-  provider entry.
+- The section "Agent notes and tags" (added in Phase 2) is rewritten for
+  the 2026-11-15 vocabulary. It holds, in this order:
+  1. What the notes and tags are for: an agent choosing or configuring a
+     model; `recommended` is its main candidate list, and a model without
+     `current` is not chosen for a new run config unless asked.
+  2. The note format table, the "never in a note" list and the rule
+     against words relative to time, from the functional spec.
+  3. The approved examples, word for word, with their tags.
+  4. The provider note format.
+  5. Tags: the two kinds; "every tag except `current` is a set tag"; read
+     each tag's meaning, kind and limit in
+     `libs/core/kiln_ai/adapters/model_agent_info.py`.
+  6. The `current` procedure (price level, snapshots, variants, the
+     `Superseded by:` line), as numbered steps.
+  7. The set-review procedure, as numbered steps, with the limits and the
+     `recommended`-is-`current` rule.
+  8. Sources: Artificial Analysis first for comparisons across labs (model
+     pages give the intelligence index, cost per task, output speed, time
+     to first token and output tokens used); a lab's release benchmarks
+     are chosen to look good and are support only; common sense.
+  9. How to add a tag (map, meaning, kind, limit, `test_model_agent_info.py`,
+     same change), and that an unsupported claim is left out, with the PR
+     saying so.
+- Phase 3: the subsection "Agent notes and tags" after 3b, for each new
+  model: write the note and tags, run the `current` procedure, run the
+  set-review procedure for each set the model could join. Provider entries
+  get no tags.
+- The PR description step: when any set changed, a section at the top
+  lists each addition and removal, per set, with a short reason.
 - "Adding a Net-New Provider": in the libs/core touchpoints, replace the
   `provider_name_from_id` part of the `provider_tools.py` item with a new
   item for `built_in_providers` in `ml_provider_list.py`. "Friendly names
@@ -276,7 +351,7 @@ finding to report, not to regenerate silently.
   type checker) catches a missing item.
 
 `kiln-model-sweep`: add `ml_provider_list.py` to the files its publish check
-diffs.
+diffs (done in Phase 2). Its PR description puts set changes at the top.
 
 `kiln-conventions/references/core.md`: "Where things go" names
 `ml_provider_list.py` for a provider's info; "Adding a provider" item 3
@@ -288,9 +363,10 @@ Run the `docs-sync` skill for anything else that names
 ## Backfill design
 
 The backfill is data entry with research. It changes `ml_model_list.py`
-(agent notes, model tags, provider-entry tags), `ml_provider_list.py`
-(provider notes, the `huggingface` `models_dev_id`) and adds
-`specs/projects/model-agent-info/backfill_sources.md`.
+(agent notes, model tags), `ml_provider_list.py` (provider notes, the
+`huggingface` `models_dev_id`) and adds
+`specs/projects/model-agent-info/backfill_sources.md`. It writes no
+provider-entry or provider-list tags.
 
 1. Fetch `https://models.dev/api.json` once into a scratch directory.
 2. Build the selection with a throwaway script (not committed): for each
@@ -299,14 +375,26 @@ The backfill is data entry with research. It changes `ml_model_list.py`
    (`models_dev_id`, `model_id`). Select by the functional spec's rule,
    with "today" as the run date. Record the selected list, with dates, at
    the top of the sources log.
-3. Group the selected models by family. Research and write each family as
-   one batch, so notes compare models with their real peers. Sub-agents may
-   take one family each; each returns its edits and its sources.
-4. Provider notes from each provider's own documentation: data retention,
-   rate limits, routing and gotchas.
-5. Run the data tests after each batch.
-6. The sources log has one section per model and per provider: the note,
-   each tag, and the source URL or Kiln test behind each claim.
+3. Collect Artificial Analysis data for the selected models from their
+   model pages (`https://artificialanalysis.ai/models/<slug>`): the
+   intelligence index, cost per task, output speed, time to first token,
+   and output tokens used. Keep it in a scratch table; the figures used
+   for a tag or a claim go into the sources log. A model with no AA page
+   is judged on the other sources.
+4. Lab by lab: write the notes for each lab's selected models as one
+   batch, so the `Lineup:` lines agree, and assign `current` by the
+   functional spec's rules. Sub-agents may take one lab each; each returns
+   its edits and its sources.
+5. Sets: build each set as one review across all selected models, using
+   the scratch table, within its limit. `recommended` is built last, from
+   the `current` models.
+6. Provider notes from each provider's own documentation, in the provider
+   note format.
+7. Run the data tests after each batch.
+8. The sources log has one section per model and per provider (the note,
+   and the source URL or Kiln test behind each line) and one section per
+   set (members, reason for each, AA figures).
 
-The PR from this phase lists the counts (models selected, models with
-notes, tags used) and any selected model left empty, with the reason.
+The PR from this phase lists, at the top, the members of each set. Then
+the counts (models selected, models with notes, models `current`) and any
+selected model left empty, with the reason.

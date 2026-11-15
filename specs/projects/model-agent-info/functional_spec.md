@@ -24,7 +24,12 @@ friendly provider names move into the provider list and
 
 The work ships in two parts. The code, tests and skill changes come first,
 with the new fields empty. The backfill of notes and tags comes last, as a
-standalone phase that runs on another machine.
+standalone phase that runs on a machine with web access.
+
+Revised on 2026-11-15, after an audit of the first backfill (not
+committed): the note format, the tag kinds and vocabulary, and the
+maintenance procedures below replace the first version. The code and skill
+from the first version change to match before the backfill runs again.
 
 ## Decisions on the overview's questions
 
@@ -70,23 +75,85 @@ See [Tests](#tests).
 
 ### Where the tag list is kept
 
-The allowed tags and their meanings are kept in code, in a new module
+The allowed tags are kept in code, in a new module
 `libs/core/kiln_ai/adapters/model_agent_info.py`, as three maps from tag to
-meaning:
+its info (meaning, kind and set limit):
 
 - model tags;
-- provider-entry tags;
-- provider-list tags (empty at the start).
+- provider-entry tags (empty);
+- provider-list tags (empty).
 
-The same module holds the format rule and the limits below. Tests check the
-data against this module. `claude-maintain-models` explains the rules and
-points to this module for the list. It does not keep its own copy of the
-table, so the list and its meanings exist in one place.
+The same module holds the format rule, the limits and the note labels
+below. Tests check the data against this module. `claude-maintain-models`
+explains the rules and points to this module for each tag's meaning. It
+does not keep its own copy of the table, so the list and its meanings exist
+in one place.
 
-This differs from the overview in one detail: the overview has the skill
-document each tag. The skill still tells the maintainer what each tag means
-and how to add one, by sending them to the module. A second copy in the
-skill would drift.
+### Tag kinds
+
+Every tag is one of two kinds. The kind sets how a maintainer keeps the tag
+correct, and limits the records that one edit touches.
+
+- **Lineage tag.** There is one: `current`. It moves along a lab's line of
+  models. See [The `current` tag](#the-current-tag).
+- **Set tag.** Every other tag. A set tag names a short list of models that
+  share a judgment, such as "the best open-weight models". Each set has a
+  size limit. See [Set tags](#set-tags).
+
+The `top_` prefix marks a set that is the best few models with a property,
+not every model with it: `top_open` is not "has open weights".
+
+### The model tags
+
+| Tag | Kind | Meaning | Limit |
+|---|---|---|---|
+| `current` | lineage | The lab's best offering at this price level. A model without this tag is superseded: do not choose it for a new run config unless asked. | none |
+| `recommended` | set | A model we recommend as a candidate for new agents. Always also `current`. | 20 |
+| `top_value` | set | Among the best quality for its cost. Look at these first when optimizing for cost. | 14 |
+| `top_fast` | set | Among the fastest models for latency-sensitive work, by output speed and time to first token. | 14 |
+| `top_on_device` | set | Among the best models that run on consumer laptops or phones. | 14 |
+| `top_open` | set | Among the best open-weight models, across a range of sizes. | 14 |
+| `top_writing` | set | Among the best at prose: tone, style and following a writing brief. | 14 |
+
+The meanings above go into the tag map word for word.
+
+The provider-entry map and the provider-list map are empty. The `tags`
+fields on provider entries and provider-list items stay, for later use.
+
+### The `current` tag
+
+- **Price level** is a step on the lab's own ladder, as the note's
+  `Lineup:` line describes it: for example Luna < Terra < Sol < Astra, or
+  Haiku < Sonnet < Opus < Fable. For open-weight labs, a size class.
+- Each lab has one `current` model at each price level: the newest release
+  of that line, by release date, whatever its name.
+- A dated snapshot is `current` when it is newer than the plain name (for
+  example, DeepSeek V4.1 Flash 1017 is newer than DeepSeek V4.1 Flash). When
+  a plain alias and a snapshot serve the same weights, only the alias gets
+  the tag.
+- A variant that is a separate product (Pro, Omni) is a line of its own. It
+  is `current` when it is the newest model of that variant line.
+- **When a model is added:** find the `current` model from the same lab at
+  the same price level. Remove its `current` tag and add a `Superseded by:`
+  line to its note. Skip this if the new model is at a different price
+  level. No other records change.
+
+### Set tags
+
+- **When a model could be in a set:** (1) load the whole set; (2) decide
+  whether the model joins; (3) if it joins, review every member and remove
+  each one that no longer earns its place. That can be an older model at
+  the same level, or a model from any lab or level that the new model beats
+  for the set's purpose.
+- A set never goes over its limit. To add a model to a full set, remove one.
+- Every `recommended` model is also `current`. When a model loses
+  `current`, it also leaves `recommended`.
+- A model in a set has a note, so a reviewer can read the reason.
+- Judgments that compare labs use independent data: Artificial Analysis
+  first, and common sense. A lab's own release benchmarks are chosen to
+  look good. They can support a claim but are never its only source.
+- The PR that changes a set lists each addition to and removal from each
+  set, at the top of its description.
 
 ### Tag rules
 
@@ -96,28 +163,139 @@ skill would drift.
 - No tag twice on one entry.
 - A tag on a model is in the model-tag map. A tag on a provider entry is in
   the provider-entry map. A tag on a provider-list item is in the
-  provider-list map. A tag in the wrong map is an error, for example
-  `fast` on a model.
-- A new tag is added to the right map, with its meaning, in the same change
-  that first uses it. Its meaning is a claim compared with models at the
-  same price, and one the maintainer would stand behind.
+  provider-list map. A tag in the wrong map is an error.
+- A new tag is added to the right map, with its meaning, kind and limit, in
+  the same change that first uses it. A new set tag that names "the best"
+  of something uses the `top_` prefix.
 
-The starting model tags and provider-entry tags are the overview's table,
-with its meanings word for word.
+### Note format
+
+These apply to `agent_notes` on a model.
+
+A note is one string of labeled lines, joined by `\n`, in this order:
+
+| Label | Required | Content |
+|---|---|---|
+| `Description:` | yes | One line: what this model is. |
+| `Lineup:` | yes | Its place on the lab's ladder, and what it replaced. Explains names that do not show the order. |
+| `Superseded by:` | when not `current` | The model that replaced it, and why in a few words. Not present on a `current` model. |
+| `Useful for:` | no | Cases where it is a good choice, when it is not the general pick for its level. |
+| `Strengths:` | no | Its character, not its rank: "strong at agentic coding, weak at factual recall". |
+| `Behavior:` | no | Settings that help or hurt, output quirks, verbosity, tool-call reliability. |
+| `Deployment:` | no | Facts that change a hosting decision: dense or MoE, runs on a laptop, fits affordable GPUs. |
+
+Each label is used at most once. A line has one or a few sentences.
+
+**Never in a note.** Anything that Kiln or models.dev already keeps: price,
+batch and cache discounts, and claims like "most expensive"; context
+window and maximum output; release date and knowledge cutoff; open
+weights; which providers host the model; support for function calling,
+structured output or vision; the available and default thinking levels.
+A note can say how the model behaves when a setting is used. It does not
+say which settings exist.
+
+**No words relative to time.** A note must not need edits as it ages. Do
+not use "current", "latest", "newest", "now", "previous", "frontier",
+"state of the art", "best" or "peers". To compare, name an exact model or
+generation: "near Claude Opus 4.6 level, with open weights", "a step down
+from GPT-6.1 Sol", "in the GPT-6.1 generation". The `current` tag and the
+`Superseded by:` line, added once, are the only places that show age.
+
+### Provider note format
+
+These apply to `notes` on a provider-list item. The same rules, with these
+labels, in this order, each optional but at least one present:
+
+| Label | Content |
+|---|---|
+| `Data retention:` | Whether it logs or trains on prompts; whether a zero-retention option exists, and how to get it. |
+| `Rate limits:` | How limits are set (account tier, per model); free-tier limits that break agents. |
+| `Routing:` | Whether it sends requests to more than one upstream host, so output or quality can change. |
+| `Gotchas:` | Setup or runtime problems: model access approval, region locks, project or quota setup. |
+
+Never in a provider note: pricing, the models it hosts (the model list has
+that) and the friendly name.
 
 ### Note rules
 
-These apply to `agent_notes` on a model and to `notes` on a provider-list
-item.
+These apply to model notes and provider notes.
 
 - `None` means no note. An empty or whitespace-only string is not allowed.
-- At most 2,000 characters. The target is a few sentences.
-- Content: as the overview's "What goes in `agent_notes`" says. Provider
-  notes cover data retention, rate limits, routing and gotchas.
+- At most 2,000 characters. The target is 300 to 600.
 - A note states only what a maintainer can support from the provider's
-  documentation, a public benchmark, or Kiln's own tests. When a maintainer
-  cannot support a claim, they leave it out. When nothing can be supported,
-  the note stays `None` and the tags stay empty.
+  documentation, Artificial Analysis or another public benchmark, or
+  Kiln's own tests. When a maintainer cannot support a claim, they leave it
+  out. When nothing can be supported, the note stays `None` and the tags
+  stay empty.
+
+### Approved examples
+
+These show the format. Their facts are illustrative, not checked.
+`claude-maintain-models` repeats them as models to follow.
+
+**GPT-6.1 Terra** · tags: `current`, `recommended`
+```
+Description: OpenAI's mid-price general model in the GPT-6.1 generation.
+Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A large step up from GPT-6 Luna, a step down from GPT-6.1 Sol. Replaced GPT-5.6 Terra.
+Strengths: Steady quality in multi-turn tool use; GPT-6.1 Sol is better on hard reasoning.
+Behavior: High effort helps on hard problems; xhigh adds latency for little gain on routine tasks.
+```
+
+**GPT-5.4 Nano** · tags: none
+```
+Description: The smallest model in the GPT-5.4 generation.
+Lineup: Below GPT-5.4 Mini.
+Superseded by: GPT-6 Luna, which is stronger at a lower price.
+```
+
+**Gemini 4 Argon** · tags: `current`, `recommended`
+```
+Description: Google's Pro-level reasoning model in the Gemini 4 generation.
+Lineup: Gemini 4 uses element names, not size names. Argon is the Pro-level model. Replaced the Gemini 3.x Pro previews.
+Strengths: Strong multimodal reasoning over charts, video and documents; mixed on long autonomous coding runs.
+Behavior: Very verbose: uses far more output tokens than GPT-6.1 Sol or Claude Opus 5.5 on the same tasks, so cost per task is high. Slow to the first token at high effort.
+```
+
+**Claude Haiku 5.5** · tags: `current`, `recommended`, `top_value`, `top_fast`
+```
+Description: Anthropic's smallest and fastest model in the 5.5 generation.
+Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. A large step down from Claude Sonnet 5.5.
+Useful for: Subagents, routing, classification and extraction at high volume.
+Behavior: Reliable tool calls for its size; quality drops on long multi-step reasoning.
+```
+
+**Mistral Large 4** · tags: `current` (not `recommended`)
+```
+Description: Mistral's open-weight flagship of the Large 4 generation.
+Lineup: Mistral's ladder is Ministral < Small < Medium < Large. Replaced Mistral Large 3.
+Useful for: Teams that need a European lab.
+Strengths: Strong at coding and terminal tasks; near GPT-5.6 Terra level on general intelligence.
+```
+
+**Qwen 3.8 27B** · tags: `current`, `top_open`
+```
+Description: Qwen's dense mid-size open-weight model in the 3.8 generation.
+Lineup: Below the Qwen 3.8 2.4T A95B open MoE. The closed Qwen 3.8 Max and Flash API models are a separate line.
+Useful for: Self-hosted or on-prem work where you manage your own GPUs.
+Strengths: Close to Gemma 4 31B at reasoning and coding.
+Deployment: Dense, so it runs on one affordable GPU more easily than MoE models of similar quality.
+```
+
+**Gemma 4 2B** · tags: `current`, `top_on_device`
+```
+Description: The smallest open-weight model in Google's Gemma 4 generation.
+Lineup: Gemma 4 sizes are 2B < 4B < 27B MoE < 31B dense. Gemma is Google's open-weight line, separate from Gemini.
+Useful for: Local or on-device agents, when data must stay on the machine.
+Behavior: Follows simple instructions well; unreliable at multi-step tool use.
+Deployment: Runs on consumer laptops and high-end phones.
+```
+
+**OpenRouter** (provider note)
+```
+Data retention: Depends on the upstream host. Account settings can block hosts that log or train on prompts.
+Routing: Routes each request to one of several upstream hosts; quality and quantization can differ between them.
+Gotchas: Some models are free variants with low rate limits; do not use them for production agents.
+```
 
 ### No validation at parse time
 
@@ -193,14 +371,24 @@ gains `tags`. Nothing else in the file changes.
 `claude-maintain-models` changes as the overview's "The maintenance skill"
 section says, with these details:
 
-- A new section on agent notes and tags: what goes in a note and what does
-  not, the tag rules, where the tag list is kept, how to add a tag, and the
-  rule that an unsupported claim is left out.
-- Phase 3 (code changes) gets a step to fill `agent_notes` and model `tags`
-  for each new model, and `tags` for each new provider entry, under the
-  note rules. A run with nobody watching (the scheduled model sweep) follows
-  the same rule: when nothing can be supported, it leaves the fields empty
-  and says so in the PR.
+- A section on agent notes and tags that holds:
+  - the note format, the "never in a note" list, the rule against words
+    relative to time, and the approved examples above, word for word;
+  - the provider note format;
+  - the two tag kinds, and that each tag's meaning, kind and limit are in
+    the tag map;
+  - the `current` procedure and the set-review procedure, step by step, as
+    above;
+  - the rule on sources: Artificial Analysis first for comparisons across
+    labs, a lab's own release claims as support only, and common sense;
+  - how to add a tag, and that an unsupported claim is left out.
+- Phase 3 (code changes) gets a step for each new model: write its note and
+  tags, run the `current` procedure for its lab and price level, and run
+  the set-review procedure for each set it could join. A run with nobody
+  watching (the scheduled model sweep) follows the same rules: when nothing
+  can be supported, it leaves the fields empty and says so in the PR.
+- The PR description: when a set changes, a section at the top lists each
+  addition and removal, per set, with a short reason for each.
 - "Adding a Net-New Provider": the touchpoint checklist replaces the
   `provider_name_from_id` item with a provider-list item: id, friendly name,
   `models_dev_id` (checked against models.dev, or `None`), and notes and
@@ -211,7 +399,8 @@ Other guidance that the change makes stale is updated in the same change,
 found with the `docs-sync` skill. Known items:
 
 - `kiln-model-sweep`: its check for a remote-config publish diffs a list of
-  files. `ml_provider_list.py` joins that list.
+  files. `ml_provider_list.py` joins that list. Its PR description puts set
+  changes at the top, as above.
 - `kiln-conventions` (`references/core.md`): the "Where things go" table and
   the provider touchpoint list name the provider list.
 
@@ -224,7 +413,18 @@ Data tests, on the built-in lists:
 - Every `agent_notes` and provider `notes` follows the note rules: `None`
   or a non-blank string of at most 2,000 characters.
 - Every key of the three tag maps follows the format rule, and every
-  meaning is a non-blank string.
+  meaning is a non-blank string. The model map has exactly one lineage tag,
+  `current`, with no limit. Every set tag has a limit.
+- Each set tag is on no more models than its limit.
+- Every model tagged `recommended` is also tagged `current`.
+- Every model with a tag has a note.
+- Every model note follows the note format: the first line starts with
+  `Description:`; every line starts with a known label; labels are in the
+  table's order and each is used at most once; `Lineup:` is present.
+- A model with a note has a `Superseded by:` line if and only if it is not
+  `current`.
+- Every provider note uses only the provider labels, in order, each at most
+  once.
 - The provider list has exactly one item per `ModelProviderName`, in enum
   order. Every friendly name is non-blank. Every `models_dev_id` is `None`
   or matches `^[a-z0-9-]+$`.
@@ -263,11 +463,19 @@ up models.dev under the provider's `models_dev_id` and the entry's
 `model_id`. Use the earliest `release_date` found. A model with no match on
 any entry is not selected, unless it is featured.
 
+Labs that stopped publishing are not backfilled: a lab with no selected
+model gets no `current` tags.
+
+### Tags in the backfill
+
+- `current`: for each lab, for each price level, the one model the
+  `current` rules pick, among the selected models.
+- Each set is built as one review across all selected models, not model by
+  model, and stays within its limit.
+- No provider-entry tags and no provider-list tags.
+
 ### What else
 
-- Provider-entry tags (`fast`, `very_fast`) on the selected models' entries
-  that are not deprecated, where the provider's documentation or a public
-  benchmark supports them.
 - `notes` for every provider-list item that a person can connect: every
   item except `kiln_fine_tune` and `kiln_custom_registry`.
 - The `huggingface` `models_dev_id`: set it to `huggingface` only after
@@ -281,8 +489,11 @@ any entry is not selected, unless it is featured.
   they are.
 - A sources log is committed with the data, at
   `specs/projects/model-agent-info/backfill_sources.md`. For each model and
-  provider it lists the sources behind the note and each tag, so a reviewer
-  can check a claim without redoing the research.
+  provider it lists the source URL behind each line of the note, so a
+  reviewer can check a claim without redoing the research. For each set it
+  lists the members, the reason for each, and the Artificial Analysis
+  figures used.
+- The PR description lists the members of each set at the top.
 - The data tests pass.
 
 ## Out of scope

@@ -14,9 +14,21 @@ status: complete
 - [x] Phase 2: Skills and guidance. `claude-maintain-models`,
   `kiln-model-sweep`, `kiln-conventions` `core.md`, and whatever else
   `docs-sync` finds.
-- [ ] Phase 3: Backfill (standalone; runs on a separate machine with web
-  access). Agent notes and tags for the selected models, provider-entry
-  speed tags, provider notes, the `huggingface` `models_dev_id` check, and
-  the sources log. Data only. Needs Phases 1 and 2 merged or on the branch.
-  Follow "The backfill" in the functional spec and "Backfill design" in
-  the architecture.
+- [ ] Phase 3: Vocabulary v2 (the 2026-11-15 revision). Code, tests and
+  skills only; no data. `model_agent_info.py`: `TagKind`, `TagInfo`, the
+  new model-tag map with kinds and limits, empty provider-entry and
+  provider-list maps, the note label tuples, the new docstring. The new
+  data tests (note format, `Superseded by:` if and only if not `current`,
+  set limits, `recommended` is `current`, tagged models have notes,
+  provider note labels) and the updated vocabulary tests.
+  `claude-maintain-models`: the rewritten "Agent notes and tags" section
+  with the approved examples word for word, the `current` and set-review
+  procedures, the sources rule, the Phase 3 step and the PR section.
+  `kiln-model-sweep`: set changes at the top of its PR. Then `docs-sync`
+  for anything else that names the old tags.
+- [ ] Phase 4: Backfill (needs web access; Phases 1 to 3 on the branch).
+  Notes in the new format and tags for the selected models, `current` for
+  each lab and price level, each set built as one review with Artificial
+  Analysis data, provider notes, the `huggingface` `models_dev_id` check,
+  and the sources log. Data only. Follow "The backfill" in the functional
+  spec and "Backfill design" in the architecture.

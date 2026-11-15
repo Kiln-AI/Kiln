@@ -14,6 +14,10 @@ checked against Kiln `main` at commit `a1dc3e4` and the models.dev file of
 the same day. Start this project with `/spec new_project` as
 `model-agent-info`.
 
+Revised on 2026-11-15, after an audit of the first backfill: a fixed note
+format, a new tag vocabulary (`current` and set tags), and maintenance
+rules that keep each edit small. The first backfill was not committed.
+
 ## Why
 
 Harness Tuner improves an AI agent by changing its harness: the prompt, the
@@ -67,28 +71,33 @@ Each field is optional and has a default, so an older client ignores it.
 |---|---|---|---|
 | `agent_notes` | `KilnModel` | `str \| None`, default `None` | Notes for an agent that chooses or configures the model, such as the Harness Tuner optimizer or the Kiln assistant. The docstring says this. |
 | `tags` | `KilnModel` | `list[str]`, default empty | Short labels that code can filter on. True of the model on every provider. |
-| `tags` | `KilnModelProvider` | `list[str]`, default empty | Labels true of one provider entry only, for example speed. |
+| `tags` | `KilnModelProvider` | `list[str]`, default empty | Labels true of one provider entry only. No tags are defined for it yet. |
 | `provider_list` | the published file, top level | list of `id`, `friendly_name`, `notes`, `tags`, `models_dev_id` | Notes about each provider, and the one map from Kiln's provider ids to models.dev. |
 
 `editorial_notes` does not change. It stays short text for the Kiln UI.
 
 ### What goes in `agent_notes`
 
-Write for an agent that compares this model with others at the same price.
+Write for an agent that chooses or configures a model. The note says what
+the structured data cannot: where the model sits in its lab's lineup, what
+replaced it, what it is useful for, and how it behaves.
 
-- Strengths and weaknesses compared with models at the same price.
-- The settings it responds to, for example a thinking level that helps or
-  that adds cost for no gain.
-- Output quirks, for example long answers or a fixed preamble.
-- Tool-call reliability.
-- When it matters, the model that replaces it.
+A note is a few short labeled lines in a fixed order, starting with a
+one-line `Description:`. The functional spec gives the exact format, the
+rules and approved examples.
 
-Do not put these in `agent_notes`: price, context window, maximum output,
-release date, knowledge cutoff, open weights. models.dev gives them, and two
-copies get out of date.
+Do not put in `agent_notes` anything that Kiln or models.dev already
+keeps: price and discounts, context window, maximum output, release date,
+knowledge cutoff, open weights, which providers host the model, support
+for function calling, structured output or vision, and the available or
+default thinking levels. Two copies get out of date.
 
-Keep each note short. A few sentences is the target. Harness Tuner cuts a
-note over 2,000 characters.
+A note must not need edits as it ages. It names exact models and
+generations ("near Claude Opus 4.6 level"), not words relative to time
+("current", "latest", "frontier"). The `current` tag, and a `Superseded
+by:` line added once, are the only places that show a model's age.
+
+Keep each note short. Harness Tuner cuts a note over 2,000 characters.
 
 ## Tags
 
@@ -96,29 +105,36 @@ A tag is lower case letters, digits and `_`, at most 40 characters. An
 entry has at most 12 tags. Harness Tuner drops a tag that does not follow
 this rule.
 
-The starting tags:
+Tags exist so that an agent can find candidates, and that needs claims that
+compare models across labs. To keep those claims maintainable, each tag is
+one of two kinds, and each kind has a maintenance rule that limits the
+records an edit touches.
 
-| Tag | On | Meaning |
-|---|---|---|
-| `very_fast` | provider entry | Output speed is much higher than usual for a model of this size, usually on special hardware. |
-| `fast` | provider entry | Output speed is higher than usual for a model of this size and price. |
-| `best_value` | model | Its quality for its price is among the best at that price. |
-| `strong_agentic` | model | Reliable in multi-step tool use and agent loops, compared with models at the same price. |
-| `strong_coding` | model | Strong at writing and fixing code, compared with models at the same price. |
-| `strong_writing` | model | Strong at prose: tone, style and following a writing brief, compared with models at the same price. |
-| `verbose` | model | Its answers are usually longer than asked, or longer than those of similar models. |
+| Tag | Kind | Meaning | Limit |
+|---|---|---|---|
+| `current` | lineage | The lab's best offering at this price level. A model without it is superseded. | none |
+| `recommended` | set | The models we recommend for new agents. Always also `current`. | 20 |
+| `top_value` | set | Look at these first when optimizing for cost. | 14 |
+| `top_fast` | set | The fastest models for latency-sensitive work. | 14 |
+| `top_on_device` | set | Models that run on consumer laptops or phones. | 14 |
+| `top_open` | set | The best open-weight models, across a range of sizes. | 14 |
+| `top_writing` | set | The best at prose: tone, style and following a writing brief. | 14 |
 
-`claude-maintain-models` documents each tag with this meaning.
+- **Lineage (`current`).** When a model is added, the maintainer removes
+  `current` from the same lab's model at the same price level, and adds a
+  `Superseded by:` line to that model's note. No other records change.
+- **Set tags** (every tag except `current`). When a model could join a set,
+  the maintainer loads the whole set, decides, and if the model joins,
+  reviews every member and removes any that no longer earn their place.
+  The `top_` prefix says the set is a short list of the best, not every
+  model with the property (`top_open` is not "open weights").
+- Cross-lab judgments use independent data (Artificial Analysis) and
+  common sense, not a lab's release claims.
+- The PR that changes a set lists each addition and removal at the top of
+  its description.
 
-The rule for a new tag:
-
-- lower case and `_`;
-- a claim the maintainer would stand behind, compared with models at the
-  same price;
-- documented in the skill before it is used.
-
-There are no starting tags for the provider list. A tag there follows the
-same rule.
+Provider entries and the provider list have no tags yet. Their `tags`
+fields stay, empty, for later use.
 
 ## The provider list
 
@@ -178,10 +194,15 @@ The friendly names exist today in `provider_name_from_id`
 
 `claude-maintain-models` changes so that:
 
-- it fills `agent_notes` and model `tags` for each new model;
-- it fills provider-entry `tags` for each new provider entry;
-- it documents every tag and its meaning, and the rule for a new tag;
+- it fills `agent_notes` and model `tags` for each new model, in the note
+  format, with the approved examples as models to follow;
+- it runs the lineage rule and the set-review rule above for each new
+  model;
 - it says what goes in `agent_notes` and what does not (the section above);
+- it documents the tag kinds and points to the tag map for each tag's
+  meaning;
+- it says not to trust a lab's release claims;
+- it lists set changes at the top of the PR description;
 - it keeps the provider list current. "Adding a Net-New Provider" and its
   touchpoint checklist get an item for the provider list.
 
@@ -190,12 +211,14 @@ The friendly names exist today in `provider_name_from_id`
 - `agent_notes` and tags for the featured models, and for each model
   released in the last 12 months that has a provider entry that is not
   deprecated. On 2026-11-13 that was about 143 models, by the models.dev
-  release dates. All 13 featured models are in that set.
+  release dates. All 13 featured models are in that set. Labs that stopped
+  publishing are not backfilled.
 - The other models stay empty until a maintainer changes them.
 - The provider list in full, with notes for each provider that a person can
   connect.
 - A note states only what a maintainer can support from the provider's
-  documentation, a public benchmark, or Kiln's own tests.
+  documentation, Artificial Analysis or another public benchmark, or Kiln's
+  own tests.
 
 ## Who reads this data
 
@@ -207,8 +230,8 @@ its tools work with the other fields.
 
 ## Not in this project
 
-- `superseded_by`: a model can infer that a newer model of the same line
-  replaces an old one. When it matters, `agent_notes` says so.
+- `superseded_by` as a field: a model without the `current` tag is
+  superseded, and its note's `Superseded by:` line names the replacement.
 - A size class: price is close to a tier.
 - Release date and open weights: models.dev has them.
 - Zero data retention as a field: the provider's `notes` say it.
