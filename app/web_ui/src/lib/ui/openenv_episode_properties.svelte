@@ -54,6 +54,6 @@
 <PropertyList {properties} title="OpenEnv">
   <svelte:fragment slot="custom_value" let:property>
     <pre
-      class="min-w-0 font-mono text-sm whitespace-pre-wrap break-all">{property.value}</pre>
+      class="min-w-0 font-mono text-sm whitespace-pre-wrap break-words">{property.value}</pre>
   </svelte:fragment>
 </PropertyList>
