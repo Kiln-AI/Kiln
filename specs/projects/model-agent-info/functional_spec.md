@@ -108,6 +108,12 @@ correct, and limits the records that one edit touches.
 The `top_` prefix marks a set that is the best few models with a property,
 not every model with it: `top_open` is not "has open weights".
 
+The bar for a `top_` set: when an agent optimizes for that property, it
+should know about this model. So `top_fast` can hold a serving variant that
+is not among the fastest models overall, but is the faster way to run a
+strong model; its note says so ("Not the fastest model overall, but the
+faster way to run GLM 5.3.").
+
 ### The model tags
 
 | Tag | Kind | Meaning | Limit |
@@ -115,7 +121,7 @@ not every model with it: `top_open` is not "has open weights".
 | `current` | lineage | The lab's best offering at this price level. A model without this tag is superseded: do not choose it for a new run config unless asked. | none |
 | `recommended` | set | A model we recommend as a candidate for new agents. Always also `current`. | 20 |
 | `top_value` | set | Among the best quality for its cost. Look at these first when optimizing for cost. | 14 |
-| `top_fast` | set | Among the fastest models for latency-sensitive work, by output speed and time to first token. | 14 |
+| `top_fast` | set | Among the fastest models for latency-sensitive work, by output speed and time to first token, or a faster hosted version of a strong model. | 14 |
 | `top_on_device` | set | Among the best models that run on consumer laptops or phones. | 14 |
 | `top_open` | set | Among the best open-weight models, across a range of sizes. | 14 |
 | `top_writing` | set | Among the best at prose: tone, style and following a writing brief. | 14 |

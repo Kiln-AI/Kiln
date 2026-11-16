@@ -115,7 +115,7 @@ records an edit touches.
 | `current` | lineage | The lab's best offering at this price level. A model without it is superseded. | none |
 | `recommended` | set | The models we recommend for new agents. Always also `current`. | 20 |
 | `top_value` | set | Look at these first when optimizing for cost. | 14 |
-| `top_fast` | set | The fastest models for latency-sensitive work. | 14 |
+| `top_fast` | set | The fastest models for latency-sensitive work, or a faster hosted version of a strong model. | 14 |
 | `top_on_device` | set | Models that run on consumer laptops or phones. | 14 |
 | `top_open` | set | The best open-weight models, across a range of sizes. | 14 |
 | `top_writing` | set | The best at prose: tone, style and following a writing brief. | 14 |
