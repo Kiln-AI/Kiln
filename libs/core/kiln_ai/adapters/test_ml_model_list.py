@@ -881,18 +881,20 @@ def test_model_note_format(model: KilnModel):
 def test_superseded_by_iff_not_current(model: KilnModel):
     if model.agent_notes is None:
         return
-    has_superseded = any(
-        line.startswith("Superseded by:") for line in model.agent_notes.split("\n")
-    )
+    lines = model.agent_notes.split("\n")
+    has_superseded = any(line.startswith("Superseded by:") for line in lines)
+    has_same_weights = any(line.startswith("Same weights:") for line in lines)
     is_current = "current" in model.tags
     if is_current:
         assert not has_superseded, (
             f"{model.name}: a current model must not have a 'Superseded by:' line"
         )
     else:
-        assert has_superseded, (
+        # Revision 2: a serving variant of a current model has Same weights:
+        # instead of Superseded by:.
+        assert has_superseded or has_same_weights, (
             f"{model.name}: a non-current model with a note must have"
-            " a 'Superseded by:' line"
+            " a 'Superseded by:' or 'Same weights:' line"
         )
 
 

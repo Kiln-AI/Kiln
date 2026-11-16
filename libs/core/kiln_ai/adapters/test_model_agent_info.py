@@ -253,6 +253,7 @@ class TestAssertNoteFormat:
             "Description: Mid-price model.\n"
             "Lineup: Below the flagship.\n"
             "Superseded by: The newer model.\n"
+            "Same weights: The fast variant is a faster hosted version.\n"
             "Useful for: Classification.\n"
             "Strengths: Coding.\n"
             "Behavior: Verbose.\n"

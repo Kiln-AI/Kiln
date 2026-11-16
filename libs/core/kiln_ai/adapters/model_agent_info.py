@@ -55,7 +55,8 @@ MODEL_TAGS: Final[Mapping[str, TagInfo]] = {
     ),
     "top_fast": TagInfo(
         "Among the fastest models for latency-sensitive work, by output"
-        " speed and time to first token.",
+        " speed and time to first token, or a faster hosted version of a"
+        " strong model.",
         TagKind.set,
         14,
     ),
@@ -89,6 +90,7 @@ MODEL_NOTE_LABELS: Final = (
     "Description:",
     "Lineup:",
     "Superseded by:",
+    "Same weights:",
     "Useful for:",
     "Strengths:",
     "Behavior:",

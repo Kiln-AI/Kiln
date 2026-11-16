@@ -32,7 +32,7 @@ status: complete
   Analysis data, provider notes, the `huggingface` `models_dev_id` check,
   and the sources log. Data only. Follow "The backfill" in the functional
   spec and "Backfill design" in the architecture.
-- [ ] Phase 5: Revision 2 (2026-11-16 audit). Code and skill: add
+- [x] Phase 5: Revision 2 (2026-11-16 audit). Code and skill: add
   `Same weights:` to `MODEL_NOTE_LABELS` (after `Superseded by:`), change
   the superseded test to the revision-2 rule, and update
   `claude-maintain-models` for serving variants, the `recommended` bar,

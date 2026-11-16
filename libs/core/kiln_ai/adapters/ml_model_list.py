@@ -3897,7 +3897,7 @@ built_in_models: List[KilnModel] = [
             "Strengths: Strong coding and agentic benchmarks; competitive with models from higher tiers.\n"
             "Behavior: Fast output speed; good at multi-step software engineering tasks."
         ),
-        tags=["current", "recommended", "top_value", "top_fast"],
+        tags=["current", "top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4342,7 +4342,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: Flash Lite sits below Flash in Google's lineup. Gemini 3.5 Flash Lite replaced 3.1 Flash Lite.\n"
             "Useful for: High-volume lightweight tasks where speed matters more than peak quality."
         ),
-        tags=["current", "recommended", "top_value", "top_fast"],
+        tags=["current", "top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6270,7 +6270,7 @@ built_in_models: List[KilnModel] = [
             "Useful for: Teams that need an open-weight European model.\n"
             "Strengths: Strong at coding and terminal tasks."
         ),
-        tags=["current", "recommended", "top_open", "top_writing"],
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6655,7 +6655,7 @@ built_in_models: List[KilnModel] = [
             "Strengths: Strong reasoning and coding for its size; competitive with much larger models on Arena and coding benchmarks.\n"
             "Deployment: Dense 31B, fits on a single consumer GPU with quantization."
         ),
-        tags=["current", "recommended", "top_open"],
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -6714,7 +6714,7 @@ built_in_models: List[KilnModel] = [
             "Useful for: Self-hosted work where throughput matters more than peak quality.\n"
             "Deployment: MoE architecture gives high throughput at moderate memory cost."
         ),
-        tags=["current", "top_open"],
+        tags=["current", "top_open", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -6769,6 +6769,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemma,
         name=ModelName.gemma_4_e4b,
         friendly_name="Gemma 4 4B",
+        agent_notes=(
+            "Description: A small open-weight model in Google's Gemma 4 generation.\n"
+            "Lineup: Gemma 4 sizes are 2B < 4B < 27B MoE < 31B dense. Gemma is Google's open-weight line, separate from Gemini.\n"
+            "Useful for: Local agents on laptops where the 2B is too limited.\n"
+            "Deployment: Dense 4B, runs on consumer laptops and tablets."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -6784,6 +6791,14 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemma,
         name=ModelName.gemma_4_e2b,
         friendly_name="Gemma 4 2B",
+        agent_notes=(
+            "Description: The smallest open-weight model in Google's Gemma 4 generation.\n"
+            "Lineup: Gemma 4 sizes are 2B < 4B < 27B MoE < 31B dense. Gemma is Google's open-weight line, separate from Gemini.\n"
+            "Useful for: Local or on-device agents, when data must stay on the machine.\n"
+            "Behavior: Follows simple instructions well; unreliable at multi-step tool use.\n"
+            "Deployment: Runs on consumer laptops and high-end phones."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -7223,7 +7238,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: DeepSeek's ladder is Flash < Pro. The 0813 snapshot is newer than the plain V4 Pro.\n"
             "Strengths: Strong open-weight MoE flagship for reasoning and coding."
         ),
-        tags=["current", "recommended", "top_open"],
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8126,7 +8141,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. The 0902 snapshot is the dated release of 3.8 Max.\n"
             "Strengths: Strong at coding, reasoning, and agentic frameworks."
         ),
-        tags=["current", "recommended"],
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10619,9 +10634,10 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: Zhipu AI's open-weight flagship in the GLM 5.3 generation.\n"
             "Lineup: GLM generations progress 4.x < 5 < 5.1 < 5.2 < 5.3. Within 5.3: Flash < FlashX < base < Prime. Replaced GLM 5.2.\n"
+            "Same weights: GLM 5.3 Fast is a faster hosted version.\n"
             "Strengths: Strong at coding and agentic tasks with hybrid reasoning."
         ),
-        tags=["current", "recommended", "top_open"],
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10674,10 +10690,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.glm_5_3_fast,
         friendly_name="GLM 5.3 Fast",
         agent_notes=(
-            "Description: Speed-optimized serving of GLM 5.3 on Fireworks.\n"
-            "Lineup: Same weights as GLM 5.3, served with lower latency."
+            "Description: Speed-optimized serving of GLM 5.3.\n"
+            "Lineup: Within GLM 5.3: Flash < FlashX < base < Prime. Fast is a throughput variant of the base.\n"
+            "Same weights: GLM 5.3 is the standard version; GLM 5.3 Fast is a faster hosted version.\n"
+            "Useful for: Not the fastest model overall, but the faster way to run GLM 5.3."
         ),
-        tags=["current"],
+        tags=["top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -11430,7 +11448,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: Kimi's line: K2 < K3 < K3.1 Pro. K3.1 Pro is a higher-tier update to K3.\n"
             "Strengths: Strong coding and agentic benchmarks."
         ),
-        tags=["current"],
+        tags=["current", "recommended"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11476,10 +11494,11 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: Moonshot AI's open-weight flagship, one of the largest open models.\n"
             "Lineup: Kimi's line: K2 < K3 < K3.1 Pro. K3 is the base flagship.\n"
+            "Same weights: Kimi K3 Fast is a faster hosted version.\n"
             "Strengths: Strong at coding and agentic tasks; competitive with closed models.\n"
             "Deployment: Very large model at 2.8T parameters."
         ),
-        tags=["current", "recommended", "top_open"],
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11543,10 +11562,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.kimi_k3_fast,
         friendly_name="Kimi K3 Fast",
         agent_notes=(
-            "Description: Speed-optimized serving of Kimi K3 on Fireworks.\n"
-            "Lineup: Same weights as K3, served with lower latency."
+            "Description: Speed-optimized serving of Kimi K3.\n"
+            "Lineup: Kimi's line: K2 < K3 < K3.1 Pro. K3 Fast is a throughput variant of K3.\n"
+            "Same weights: Kimi K3 is the standard version; Kimi K3 Fast is a faster hosted version."
         ),
-        tags=["current"],
+        tags=[],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -12565,6 +12585,7 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: Xiaomi's peak-capability open-weight model.\n"
             "Lineup: MiMo's ladder is Flash < Pro. V2.6 Pro replaced V2.5 Pro.\n"
+            "Same weights: MiMo-V2.6-Pro-UltraSpeed is a faster hosted version.\n"
             "Strengths: Top open-weight model on several intelligence indices; strong at coding and agentic tasks."
         ),
         tags=["current", "top_open"],
@@ -12597,9 +12618,11 @@ built_in_models: List[KilnModel] = [
         friendly_name="MiMo-V2.6-Pro-UltraSpeed",
         agent_notes=(
             "Description: Speed-optimized serving of MiMo V2.6 Pro.\n"
-            "Lineup: Same weights as V2.6 Pro, served with lower latency."
+            "Lineup: MiMo's ladder is Flash < Pro. UltraSpeed is a throughput variant of V2.6 Pro.\n"
+            "Same weights: MiMo-V2.6-Pro is the standard version; UltraSpeed is a faster hosted version.\n"
+            "Useful for: Not the fastest model overall, but the faster way to run MiMo-V2.6-Pro."
         ),
-        tags=["current"],
+        tags=["top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -13059,7 +13082,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: InclusionAI's flash-tier model.\n"
             "Useful for: Budget tasks at high volume."
         ),
-        tags=["current", "top_value"],
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,

@@ -284,7 +284,8 @@ A model's `agent_notes` is one string of labeled lines, joined by `\n`, in this 
 |---|---|---|
 | `Description:` | yes | One line: what this model is. |
 | `Lineup:` | yes | Its place on the lab's ladder, and what it replaced. Explains names that do not show the order. |
-| `Superseded by:` | when not `current` | The model that replaced it, and why in a few words. Not present on a `current` model. |
+| `Superseded by:` | when not `current`, except on a serving variant of a `current` model | The model that replaced it, and why in a few words. Not present on a `current` model. |
+| `Same weights:` | on a serving variant and on its standard model | Names the other model that serves the same weights, and how it differs. |
 | `Useful for:` | no | Cases where it is a good choice, when it is not the general pick for its level. |
 | `Strengths:` | no | Its character, not its rank: "strong at agentic coding, weak at factual recall". |
 | `Behavior:` | no | Settings that help or hurt, output quirks, verbosity, tool-call reliability. |
@@ -411,6 +412,9 @@ Rules:
 - Each lab has one `current` model at each price level: the newest release of that line, by release date, whatever its name.
 - A dated snapshot is `current` when it is newer than the plain name (for example, DeepSeek V4.1 Flash 1017 is newer than DeepSeek V4.1 Flash). When a plain alias and a snapshot serve the same weights, only the alias gets the tag.
 - A variant that is a separate product (Pro, Omni) is a line of its own. It is `current` when it is the newest model of that variant line.
+- **One `current` per weight release.** A serving variant serves the same weights as another model, under another name, for example a faster hosted version (GLM 5.3 Fast, Kimi K3 Fast, MiMo-V2.6-Pro-UltraSpeed). A serving variant is never `current`; only the standard model is. Both notes get a `Same weights:` line that names the other: "GLM 5.3 Fast is a faster hosted version" and "GLM 5.3 is the standard version." A serving variant can still be in a set other than `recommended` (for example `top_fast`). When the standard model is superseded, its serving variants get a `Superseded by:` line too.
+
+**Local-only models.** A model whose non-deprecated provider entries are all on local providers (Ollama, Docker Model Runner) is local-only. Local-only models are selected mainly so they can be judged for `top_on_device` (and `top_open`); they are hard to experiment with, so they are never `recommended`, and their notes can be short. They still follow the `current` procedure for their lab and size class.
 
 ### Set tags
 
@@ -423,7 +427,9 @@ Procedure when a model could be in a set:
 
 Rules:
 
+- **The bar for a `top_` set:** when an agent optimizes for that property, it should know about this model. So `top_fast` can hold a serving variant that is not among the fastest models overall, but is the faster way to run a strong model; its note says so.
 - Every `recommended` model is also `current`. When a model loses `current`, it also leaves `recommended`.
+- **The `recommended` bar.** `recommended` is not one model per lab or per level; `current` already gives that. A model is `recommended` only when Artificial Analysis (or, without an AA page, another independent benchmark) shows its quality is high for its cost, compared with the models across all labs at a similar cost. "The lab's flagship" or "the lab's smallest model" is not a reason. A model available only on local providers (Ollama, Docker Model Runner) is never `recommended`: an optimizer cannot easily test it.
 - A model in a set has a note, so a reviewer can read the reason.
 - A set tag is a claim the maintainer would stand behind. Apply it only when a source supports it, as for notes.
 
@@ -432,6 +438,15 @@ Rules:
 - Artificial Analysis first for comparisons across labs: model pages (`https://artificialanalysis.ai/models/<slug>`) give the intelligence index, cost per task, output speed, time to first token and output tokens used.
 - A lab's own release benchmarks are chosen to look good. They can support a claim but are never its only source.
 - Common sense.
+
+### Sources log
+
+When a set changes, update the sources log at `specs/projects/model-agent-info/backfill_sources.md` so a reviewer can answer "why is this model in this set?" without redoing the research:
+
+- **Per set:** one row per member with the AA intelligence index, AA cost per task (or blended price when AA has no cost per task), AA output speed, and the AA page URL. A member with no AA page cites the URL of the source used instead. The reason column states the comparison ("index 52 at $1.10/task; next best at that cost is 44"), not a description ("strong flagship").
+- **Per model:** the source URL behind each line of its note other than `Description:` and `Lineup:` when those come from the lab's own model page, which is cited once.
+- **Per provider:** the source URL behind each line of its note.
+- Every figure in the log is checked against its source; a price is labeled input or output.
 
 ### Adding a tag
 
