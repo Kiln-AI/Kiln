@@ -26,7 +26,7 @@ status: complete
   procedures, the sources rule, the Phase 3 step and the PR section.
   `kiln-model-sweep`: set changes at the top of its PR. Then `docs-sync`
   for anything else that names the old tags.
-- [ ] Phase 4: Backfill (needs web access; Phases 1 to 3 on the branch).
+- [x] Phase 4: Backfill (needs web access; Phases 1 to 3 on the branch).
   Notes in the new format and tags for the selected models, `current` for
   each lab and price level, each set built as one review with Artificial
   Analysis data, provider notes, the `huggingface` `models_dev_id` check,
