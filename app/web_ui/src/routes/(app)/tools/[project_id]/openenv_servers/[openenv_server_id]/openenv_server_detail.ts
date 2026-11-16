@@ -11,7 +11,10 @@ import {
   reset_schema_to_form_schema,
 } from "$lib/utils/openenv_reset_schema"
 import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
-import { load_openenv_server_reset_schema } from "$lib/api/openenv_server_api"
+import {
+  load_openenv_server_reset_schema,
+  openenv_server_error,
+} from "$lib/api/openenv_server_api"
 
 export {
   load_openenv_server,
@@ -100,7 +103,7 @@ export async function set_openenv_server_archived(
     },
   )
   if (error) {
-    throw error
+    throw openenv_server_error(error)
   }
   return data
 }
@@ -119,7 +122,7 @@ export async function save_environment_presets(
     },
   )
   if (error) {
-    throw error
+    throw openenv_server_error(error)
   }
   return data
 }

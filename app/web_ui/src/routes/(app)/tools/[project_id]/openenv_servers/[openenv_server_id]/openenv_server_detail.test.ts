@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { NamedResetKwargs } from "$lib/types"
+import { KilnError } from "$lib/utils/error_handlers"
 import {
   RESET_ARGUMENTS_INVALID_JSON,
   RESET_ARGUMENTS_NOT_OBJECT,
@@ -393,11 +394,13 @@ describe("API calls", () => {
       "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/archive",
       { params: { path }, body: { is_archived: true } },
     )
-    const error = { message: "OpenEnv server not found" }
-    mockPost.mockResolvedValue({ data: undefined, error })
-    await expect(set_openenv_server_archived("p1", "e1", false)).rejects.toBe(
-      error,
-    )
+    mockPost.mockResolvedValue({
+      data: undefined,
+      error: { message: "OpenEnv server not found" },
+    })
+    await expect(
+      set_openenv_server_archived("p1", "e1", false),
+    ).rejects.toMatchObject({ message: "OpenEnv server not found" })
   })
 
   it("loads the reset schema, null when there is none", async () => {
@@ -424,13 +427,13 @@ describe("API calls", () => {
     )
   })
 
-  it("throws the server's error when saving fails", async () => {
-    const error = {
-      message: "An Environment Preset named Acme Tech already exists.",
-    }
-    mockPatch.mockResolvedValue({ data: undefined, error })
-    await expect(save_environment_presets("p1", "e1", PRESETS)).rejects.toBe(
-      error,
+  it("throws the server's message as it is when saving fails", async () => {
+    const message = "An Environment Preset named Acme Tech already exists."
+    mockPatch.mockResolvedValue({ data: undefined, error: { message } })
+    const thrown = await save_environment_presets("p1", "e1", PRESETS).catch(
+      (e: unknown) => e,
     )
+    expect(thrown).toBeInstanceOf(KilnError)
+    expect((thrown as KilnError).getMessage()).toBe(message)
   })
 })

@@ -23,13 +23,35 @@ describe("format_tool_arguments", () => {
     ])
   })
 
-  it("marks an argument with no string type as Unknown", () => {
-    expect(
-      format_tool_arguments({ properties: { value: { type: ["string"] } } }),
-    ).toEqual([
-      { name: "value", type: "Unknown", description: null, is_required: false },
+  it.each([
+    [{ type: ["string", "null"] }, "string"],
+    [{ anyOf: [{ type: "string" }, { type: "null" }] }, "string"],
+    [{ oneOf: [{ type: "integer" }, { type: "null" }] }, "integer"],
+    [
+      { anyOf: [{ type: "string", enum: ["a", "b"] }, { type: "null" }] },
+      "string",
+    ],
+    [{ anyOf: [{ type: "string" }, { type: "integer" }] }, "string | integer"],
+    [{ anyOf: [{ type: ["string", "null"] }, { type: "string" }] }, "string"],
+  ])("reads the type of %j as %s, leaving out null", (schema, type) => {
+    expect(format_tool_arguments({ properties: { value: schema } })).toEqual([
+      { name: "value", type, description: null, is_required: false },
     ])
   })
+
+  it.each([{}, { type: "null" }, { anyOf: [{ $ref: "#/$defs/Startup" }] }])(
+    "marks an argument with no readable type as Unknown: %j",
+    (schema) => {
+      expect(format_tool_arguments({ properties: { value: schema } })).toEqual([
+        {
+          name: "value",
+          type: "Unknown",
+          description: null,
+          is_required: false,
+        },
+      ])
+    },
+  )
 
   it("skips properties whose schema isn't an object", () => {
     expect(
