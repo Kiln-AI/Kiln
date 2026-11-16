@@ -32,3 +32,16 @@ status: complete
   Analysis data, provider notes, the `huggingface` `models_dev_id` check,
   and the sources log. Data only. Follow "The backfill" in the functional
   spec and "Backfill design" in the architecture.
+- [ ] Phase 5: Revision 2 (2026-11-16 audit). Code and skill: add
+  `Same weights:` to `MODEL_NOTE_LABELS` (after `Superseded by:`), change
+  the superseded test to the revision-2 rule, and update
+  `claude-maintain-models` for serving variants, the `recommended` bar,
+  local-only model selection and the sources-log rule. Data: serving
+  variants (GLM 5.3 Fast, Kimi K3 Fast, MiMo V2.6 Pro UltraSpeed) lose
+  `current` and get `Same weights:` lines on both sides, and are judged
+  for `top_fast`; select local-only models (Gemma 4 sizes, more Qwen sizes
+  and others) and rebuild `top_on_device` (and review `top_open`); rebuild
+  `recommended` by the bar (Gemini 3.5 Flash Lite and Mistral Large 4 come
+  out unless AA shows otherwise) and recheck Flash Lite in `top_value` and
+  `top_fast` and Mistral Large 4 in `top_writing`; rebuild the sources log
+  to the new rule.

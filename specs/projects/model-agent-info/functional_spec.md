@@ -31,6 +31,11 @@ committed): the note format, the tag kinds and vocabulary, and the
 maintenance procedures below replace the first version. The code and skill
 from the first version change to match before the backfill runs again.
 
+Revision 2, on 2026-11-16, after an audit of the backfill: one `current`
+per weight release (serving variants get `Same weights:` lines), an
+explicit `recommended` bar, selection of local-only models, and a stricter
+sources log. Phase 5 applies it.
+
 ## Decisions on the overview's questions
 
 ### Where the provider list lives
@@ -133,6 +138,15 @@ fields on provider entries and provider-list items stay, for later use.
   the tag.
 - A variant that is a separate product (Pro, Omni) is a line of its own. It
   is `current` when it is the newest model of that variant line.
+- **One `current` per weight release.** A serving variant serves the same
+  weights as another model, under another name, for example a faster
+  hosted version (GLM 5.3 Fast, Kimi K3 Fast, MiMo V2.6 Pro UltraSpeed).
+  A serving variant is never `current`; only the standard model is. Both
+  notes get a `Same weights:` line that names the other: "GLM 5.3 Fast is a
+  faster hosted version" and "GLM 5.3 is the standard version". A serving
+  variant can still be in a set other than `recommended` (for example
+  `top_fast`). When the standard model is superseded, its serving variants
+  get a `Superseded by:` line too.
 - **When a model is added:** find the `current` model from the same lab at
   the same price level. Remove its `current` tag and add a `Superseded by:`
   line to its note. Skip this if the new model is at a different price
@@ -148,6 +162,14 @@ fields on provider entries and provider-list items stay, for later use.
 - A set never goes over its limit. To add a model to a full set, remove one.
 - Every `recommended` model is also `current`. When a model loses
   `current`, it also leaves `recommended`.
+- **The `recommended` bar.** `recommended` is not one model per lab or per
+  level; `current` already gives that. A model is `recommended` only when
+  Artificial Analysis (or, without an AA page, another independent
+  benchmark) shows its quality is high for its cost, compared with the
+  models across all labs at a similar cost. "The lab's flagship" or "the
+  lab's smallest model" is not a reason. A model available only on local
+  providers (Ollama, Docker Model Runner) is never `recommended`: an
+  optimizer cannot easily test it.
 - A model in a set has a note, so a reviewer can read the reason.
 - Judgments that compare labs use independent data: Artificial Analysis
   first, and common sense. A lab's own release benchmarks are chosen to
@@ -178,7 +200,8 @@ A note is one string of labeled lines, joined by `\n`, in this order:
 |---|---|---|
 | `Description:` | yes | One line: what this model is. |
 | `Lineup:` | yes | Its place on the lab's ladder, and what it replaced. Explains names that do not show the order. |
-| `Superseded by:` | when not `current` | The model that replaced it, and why in a few words. Not present on a `current` model. |
+| `Superseded by:` | when not `current`, except on a serving variant of a `current` model | The model that replaced it, and why in a few words. Not present on a `current` model. |
+| `Same weights:` | on a serving variant and on its standard model | Names the other model that serves the same weights, and how it differs: "GLM 5.3 Fast is a faster hosted version." |
 | `Useful for:` | no | Cases where it is a good choice, when it is not the general pick for its level. |
 | `Strengths:` | no | Its character, not its rank: "strong at agentic coding, weak at factual recall". |
 | `Behavior:` | no | Settings that help or hurt, output quirks, verbosity, tool-call reliability. |
@@ -421,8 +444,9 @@ Data tests, on the built-in lists:
 - Every model note follows the note format: the first line starts with
   `Description:`; every line starts with a known label; labels are in the
   table's order and each is used at most once; `Lineup:` is present.
-- A model with a note has a `Superseded by:` line if and only if it is not
-  `current`.
+- A `current` model has no `Superseded by:` line. A model with a note that
+  is not `current` has a `Superseded by:` line or a `Same weights:` line
+  (a serving variant of a `current` model).
 - Every provider note uses only the provider labels, in order, each at most
   once.
 - The provider list has exactly one item per `ModelProviderName`, in enum
@@ -461,7 +485,15 @@ A model gets `agent_notes` and model tags when either is true:
 To find a release date: for each provider entry that is not deprecated, look
 up models.dev under the provider's `models_dev_id` and the entry's
 `model_id`. Use the earliest `release_date` found. A model with no match on
-any entry is not selected, unless it is featured.
+any entry is not selected, unless it is featured or local-only (below).
+
+**Local-only models.** A model whose entries that are not deprecated are
+all on local providers (Ollama, Docker Model Runner) has no models.dev
+match. It is selected when the lab's model card (Hugging Face or the lab's
+own page) gives a release date within the same 12 months. These models are
+selected mainly so they can be judged for `top_on_device` (and `top_open`);
+they are hard to experiment with, so they are never `recommended`, and
+their notes can be short.
 
 Labs that stopped publishing are not backfilled: a lab with no selected
 model gets no `current` tags.
@@ -488,11 +520,20 @@ model gets no `current` tags.
 - `editorial_notes`, `featured_rank` and every other existing field stay as
   they are.
 - A sources log is committed with the data, at
-  `specs/projects/model-agent-info/backfill_sources.md`. For each model and
-  provider it lists the source URL behind each line of the note, so a
-  reviewer can check a claim without redoing the research. For each set it
-  lists the members, the reason for each, and the Artificial Analysis
-  figures used.
+  `specs/projects/model-agent-info/backfill_sources.md`, so a reviewer can
+  answer "why is this here?" without redoing the research:
+  - **Per set:** one row per member with the AA intelligence index, AA
+    cost per task (or blended price when AA has no cost per task), AA
+    output speed, and the AA page URL. A member with no AA page cites the
+    URL of the source used instead. The reason column states the
+    comparison ("index 52 at $1.10/task; next best at that cost is 44"),
+    not a description ("strong flagship").
+  - **Per model:** the source URL behind each line of its note other than
+    `Description:` and `Lineup:` when those come from the lab's own model
+    page, which is cited once.
+  - **Per provider:** the source URL behind each line of its note.
+  - Every figure in the log is checked against its source; a price is
+    labeled input or output.
 - The PR description lists the members of each set at the top.
 - The data tests pass.
 

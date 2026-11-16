@@ -86,7 +86,7 @@ PROVIDER_LIST_TAGS: Final[Mapping[str, TagInfo]] = {}
 
 # Labels of a model note, in the required order.
 MODEL_NOTE_LABELS: Final = (
-    "Description:", "Lineup:", "Superseded by:", "Useful for:",
+    "Description:", "Lineup:", "Superseded by:", "Same weights:", "Useful for:",
     "Strengths:", "Behavior:", "Deployment:",
 )
 # Labels of a provider note, in the required order.
@@ -259,8 +259,8 @@ the built-in data so a failure names the model or provider.
   each label in `required` is present. For model notes, `labels` is
   `MODEL_NOTE_LABELS`, `required` is `Description:` and `Lineup:`, and the
   first line is `Description:`.
-- `Superseded by:` is present if and only if the model does not have
-  `current`.
+- A `current` model has no `Superseded by:`. A model with a note that is
+  not `current` has `Superseded by:` or `Same weights:` (revision 2).
 - Each set tag is on at most `max_models` models (one test parametrized
   over the set tags, counting across `built_in_models`).
 - Each model with `recommended` also has `current`.
@@ -327,10 +327,11 @@ finding to report, not to regenerate silently.
   5. Tags: the two kinds; "every tag except `current` is a set tag"; read
      each tag's meaning, kind and limit in
      `libs/core/kiln_ai/adapters/model_agent_info.py`.
-  6. The `current` procedure (price level, snapshots, variants, the
-     `Superseded by:` line), as numbered steps.
-  7. The set-review procedure, as numbered steps, with the limits and the
-     `recommended`-is-`current` rule.
+  6. The `current` procedure (price level, snapshots, variants, serving
+     variants and the `Same weights:` line, the `Superseded by:` line), as
+     numbered steps.
+  7. The set-review procedure, as numbered steps, with the limits, the
+     `recommended`-is-`current` rule and the `recommended` bar.
   8. Sources: Artificial Analysis first for comparisons across labs (model
      pages give the intelligence index, cost per task, output speed, time
      to first token and output tokens used); a lab's release benchmarks
@@ -373,8 +374,10 @@ provider-entry or provider-list tags.
    model, its featured rank, and for each provider entry that is not
    deprecated, the models.dev `release_date` under
    (`models_dev_id`, `model_id`). Select by the functional spec's rule,
-   with "today" as the run date. Record the selected list, with dates, at
-   the top of the sources log.
+   with "today" as the run date. For local-only models (only Ollama or
+   Docker Model Runner entries), take the release date from the lab's
+   model card. Record the selected list, with dates and the date source,
+   at the top of the sources log.
 3. Collect Artificial Analysis data for the selected models from their
    model pages (`https://artificialanalysis.ai/models/<slug>`): the
    intelligence index, cost per task, output speed, time to first token,
@@ -387,13 +390,15 @@ provider-entry or provider-list tags.
    its edits and its sources.
 5. Sets: build each set as one review across all selected models, using
    the scratch table, within its limit. `recommended` is built last, from
-   the `current` models.
+   the `current` models, by the functional spec's `recommended` bar: plot
+   AA intelligence index against cost per task and keep the models near
+   the top for their cost, across all labs.
 6. Provider notes from each provider's own documentation, in the provider
    note format.
 7. Run the data tests after each batch.
-8. The sources log has one section per model and per provider (the note,
-   and the source URL or Kiln test behind each line) and one section per
-   set (members, reason for each, AA figures).
+8. The sources log follows the functional spec's sources-log rule: per
+   set, one row per member with AA figures, the AA URL and a comparative
+   reason; per model and per provider, the source URL behind each line.
 
 The PR from this phase lists, at the top, the members of each set. Then
 the counts (models selected, models with notes, models `current`) and any
