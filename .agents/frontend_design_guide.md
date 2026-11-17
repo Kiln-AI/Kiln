@@ -35,6 +35,7 @@ Our colors are named, a Daisy UI convention. For example the color “primary”
 - Background colors:
   - `bg-base-100` - white. Typically don’t set a background color and inherit this.
   - `bg-base-200` - light grey background for cards/blocks/table-headers
+- Chart and data colors: series and category colors come from `CHART_PALETTE` in `lib/utils/chart_palette.ts`. Pass it as an echarts chart's `color` option, and map other data colors (like the Experiment Lineage change kinds) to its entries. Don't hard-code hex colors for a chart's series or categories.
 
 ### Layout and containers
 

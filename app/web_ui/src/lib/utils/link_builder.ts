@@ -34,6 +34,34 @@ export function dataset_item_link(
   return `/dataset/${project_id}/${task_id}/${run_id}/run`
 }
 
+export function experiment_lineage_link(
+  project_id: string,
+  task_id: string,
+  selected_id?: string | null,
+): string {
+  const path = `/optimize/${project_id}/${task_id}/experiment_lineage`
+  if (!selected_id) {
+    return path
+  }
+  const params = new URLSearchParams({ selected: selected_id })
+  return `${path}?${params.toString()}`
+}
+
+// The Compare page reads `models` with URLSearchParams and splits it on ",",
+// with an empty entry for an empty column.
+export function compare_run_configs_link(
+  project_id: string,
+  task_id: string,
+  run_config_ids: (string | null)[],
+): string {
+  const params = new URLSearchParams({
+    from: "optimize",
+    columns: String(run_config_ids.length),
+    models: run_config_ids.map((id) => id ?? "").join(","),
+  })
+  return `/specs/${project_id}/${task_id}/compare?${params.toString()}`
+}
+
 export function tool_link(project_id: string, tool_id: string): string | null {
   if (!project_id || !tool_id) {
     return null

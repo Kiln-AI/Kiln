@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lineage — page content reference</title>
+<style>
+  /* Page content only. In Kiln this sits inside the existing app shell's content card (app_page.svelte). */
+  body { margin: 0; padding: 32px 48px; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #161616; background: #fff; -webkit-font-smoothing: antialiased; }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  a { color: #161616; text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { color: #415CF5; }
+
+  .page { display: flex; flex-direction: column; gap: 24px; }
+  .header { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .header .titles { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 240px; }
+  .eyebrow { font-size: 12px; color: #6b7280; }
+  h1 { margin: 0; font-size: 24px; font-weight: 700; line-height: 1.25; }
+  .subtitle { margin: 0; font-size: 14px; font-weight: 300; color: #6b7280; }
+  .stats { display: flex; gap: 24px; align-items: flex-end; }
+  .stat { display: flex; flex-direction: column; align-items: flex-end; }
+  .stat b { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .stat span { font-size: 12px; color: #6b7280; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filters-label { display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 500; margin-right: 8px; }
+  .info { display: inline-flex; color: #6b7280; cursor: help; }
+  #chips { display: contents; }
+  .chip { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #e5e7eb; background: #fff; font-size: 13px; color: #161616; cursor: pointer; transition: background .15s ease; }
+  .chip:hover { background: #f9fafb; }
+  .chip.on { border-color: #161616; font-weight: 500; }
+  .chip .sw { width: 12px; height: 12px; border-radius: 2px; }
+  .chip .count { color: #6b7280; font-variant-numeric: tabular-nums; }
+  .clear { height: 32px; padding: 0 8px; border: 0; background: none; font-size: 13px; color: #6b7280; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+  .body { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; }
+  .graph-card { flex: 1 1 520px; min-width: 0; display: flex; flex-direction: column; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .graph-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; }
+  .graph-bar .hint { flex: 1; }
+  .zoom { display: flex; align-items: center; gap: 4px; }
+  .zoom button { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #e5e7eb; background: #fff; color: #161616; font-size: 16px; line-height: 1; cursor: pointer; }
+  .zoom button:hover { background: #f9fafb; }
+  #zoom-pct { width: 44px; text-align: center; font-variant-numeric: tabular-nums; color: #161616; }
+  #graph-scroll { height: 560px; overflow: auto; padding: 16px; }
+  #graph-sized { position: relative; }
+  #graph-layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #graph-svg { position: absolute; inset: 0; overflow: visible; }
+  #edges { fill: none; stroke: #d1d5db; stroke-width: 1; }
+  #lineage-path { fill: none; stroke: #161616; stroke-width: 1.5; }
+  .node { position: absolute; cursor: pointer; }
+  #tip { position: absolute; z-index: 5; pointer-events: none; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / .1), 0 2px 4px -2px rgb(0 0 0 / .1); padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; white-space: nowrap; color: #6b7280; }
+  #tip[hidden] { display: none; }
+  #tip .t { font-weight: 500; color: #161616; }
+
+  #panel { position: relative; flex: 0 1 340px; min-width: 300px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+  #panel[hidden] { display: none; }
+  #panel-close { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: #6b7280; cursor: pointer; }
+  #panel-close:hover { background: #f3f4f6; color: #161616; }
+  .p-head { display: flex; gap: 12px; align-items: flex-start; padding-right: 28px; }
+  .p-titles { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+  .p-title-row { display: flex; align-items: center; gap: 8px; }
+  #panel-title { font-size: 16px; font-weight: 500; }
+  #panel-best { font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 9999px; background: #33B79D; color: #fff; }
+  #panel-best[hidden] { display: none; }
+  #panel-sub { font-size: 13px; color: #6b7280; }
+  .p-score { display: flex; align-items: baseline; gap: 8px; }
+  #panel-score { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .p-score .lbl { font-size: 13px; color: #6b7280; }
+  #panel-delta { margin-left: auto; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .p-config { display: flex; flex-direction: column; border-top: 1px solid #e5e7eb; }
+  #panel-summary { font-size: 13px; font-weight: 500; padding: 12px 0 4px; }
+  .row { display: grid; grid-template-columns: 12px 124px minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
+  .row .sw { width: 12px; height: 12px; margin-top: 3px; border-radius: 2px; }
+  .row .lbl { color: #6b7280; }
+  .row .val { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .row .cur { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+  .row .from { font-size: 12px; color: #6b7280; text-decoration: line-through; overflow-wrap: anywhere; }
+  .p-actions { display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap; }
+  .btn { height: 36px; padding: 0 16px; border-radius: 8px; border: 1px solid #e5e7eb; background: #fff; color: #161616; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 1px 2px 0 rgb(0 0 0 / .05); }
+  .btn:hover { background: #f9fafb; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary { background: #415CF5; border-color: #415CF5; color: #fff; box-shadow: none; }
+  .btn-primary:hover { background: #3449D0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div class="titles">
+      <div class="eyebrow">Optimize</div>
+      <h1>Lineage</h1>
+      <p class="subtitle">Every configuration you’ve run, and what changed from its parent.</p>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="stat-total"></b><span>configurations</span></div>
+      <div class="stat"><b id="stat-models"></b><span>models</span></div>
+      <div class="stat"><b id="stat-best"></b><span>best eval score</span></div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <div class="filters-label">Changed from parent
+      <span class="info" title="Each square shows what changed from its parent configuration. One change fills the square. More changes split it, always in the order prompt, tools, skills, model, hyperparameters. Click to filter.">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+      </span>
+    </div>
+    <div id="chips"></div>
+  </div>
+
+  <div class="body">
+    <div class="graph-card">
+      <div class="graph-bar">
+        <span class="hint">Click a configuration to see its details. Hover for a summary.</span>
+        <div class="zoom"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-pct">100%</span><button id="zoom-in" aria-label="Zoom in">+</button></div>
+      </div>
+      <div id="graph-scroll">
+        <div id="graph-sized">
+          <div id="graph-layer">
+            <svg id="graph-svg"><path id="edges"/><path id="lineage-path"/></svg>
+            <div id="graph-nodes"></div>
+          </div>
+          <div id="tip" hidden></div>
+        </div>
+      </div>
+    </div>
+
+    <aside id="panel">
+      <button id="panel-close" aria-label="Close" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <div class="p-head">
+        <div id="panel-tile"></div>
+        <div class="p-titles">
+          <div class="p-title-row"><span id="panel-title"></span><span id="panel-best">Best</span></div>
+          <span id="panel-sub"></span>
+        </div>
+      </div>
+      <div class="p-score"><span id="panel-score"></span><span class="lbl">eval score</span><span id="panel-delta"></span></div>
+      <div class="p-config"><div id="panel-summary"></div><div id="panel-rows"></div></div>
+      <div class="p-actions"><button class="btn btn-primary">Open in Run</button><button class="btn" id="btn-compare">Compare to Parent</button></div>
+    </aside>
+  </div>
+</div>
+<script src="lineage.js"></script>
+</body>
+</html>
