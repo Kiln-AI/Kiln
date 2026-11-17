@@ -73,6 +73,9 @@ jobs:
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
           path: ./app/desktop/WinInnoSetup.iss
+          # Quiet mode: iscc prints one line per bundled file, and the action fails once
+          # that output passes Node's exec buffer limit. Errors still print.
+          options: /Q
 
       - name: Sign Windows Installer exe
         uses: azure/trusted-signing-action@v0.5.1
