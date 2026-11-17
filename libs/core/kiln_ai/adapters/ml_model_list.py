@@ -660,6 +660,14 @@ GEMINI_4_HYDROGEN_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
+# Gemini 4 Hydrogen on the Gemini API and Vertex. Google lists xhigh too, but
+# LiteLLM rejects `xhigh` as a Gemini reasoning_effort, so it is left out here.
+GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
 GEMMA_4_THINKING_LEVELS = {
     "Off": "none",
     "On": "high",
@@ -3750,6 +3758,60 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-4-hydrogen",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-4-hydrogen",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
