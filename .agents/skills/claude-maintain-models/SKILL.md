@@ -251,13 +251,20 @@ If the model supports configurable reasoning effort (not just on/off), add `avai
 
 ### 3g. Agent notes and tags
 
-For each new model, write `agent_notes` and the model `tags`, then run the `current` procedure and the set-review procedure. For each new provider entry, including one added to an existing model, set its `tags` (provider-entry tags are empty today; do not use model tags on a provider entry). Follow [Agent notes and tags](#agent-notes-and-tags). Write only what a source supports. When nothing can be supported, leave `agent_notes` as `None` and the tags empty, and say so in the PR. A run with nobody watching, such as the scheduled model sweep, follows the same rule.
+For each new model, write `agent_notes` and the model `tags`, then run the `current` procedure and the set-review procedure. For each new provider entry, including one added to an existing model, set its `tags` (provider-entry tags are empty today; do not use model tags on a provider entry). Follow [Agent notes and tags](#agent-notes-and-tags).
+
+**Every new model always gets at least:**
+- A minimal note with `Description:` and `Lineup:` from the lab's own model page or announcement. These two lines need no benchmark source.
+- The `current` tag, when it is the newest release at its lab's price level. `current` is mechanical: it needs only the release date, not a benchmark.
+- A `Superseded by:` line on the predecessor, when the `current` tag moves.
+
+Other note lines (Strengths, Behavior, etc.) and set tags (recommended, top_value, etc.) need an independent source. When no source supports a set tag or a judgment line, leave it out and say so in the PR.
 
 Steps for each new model:
 
-1. Write the model's `agent_notes` in the note format below.
-2. Write the model's `tags`.
-3. Run the `current` procedure for its lab and price level.
+1. Write the model's `agent_notes` — at minimum `Description:` + `Lineup:`.
+2. Run the `current` procedure for its lab and price level (always).
+3. Write set tags and judgment note lines where a source supports them.
 4. Run the set-review procedure for each set the model could join.
 
 ### 3h. PR description — set changes
@@ -410,9 +417,12 @@ Procedure when a model is added:
 Rules:
 
 - Each lab has one `current` model at each price level: the newest release of that line, by release date, whatever its name.
-- A dated snapshot is `current` when it is newer than the plain name (for example, DeepSeek V4.1 Flash 1017 is newer than DeepSeek V4.1 Flash). When a plain alias and a snapshot serve the same weights, only the alias gets the tag.
+- `current` is mechanical: it needs only the release date and the lab's product line. No benchmark source is needed.
+- **Snapshots and aliases.** When a plain alias and a dated snapshot serve the same weights, decide with the information available and state the assumption in the PR body. For example, if the lab says the alias tracks the snapshot, the alias is `current`. If not clear, treat both as separate entries — the snapshot gets `current` when it is newer.
 - A variant that is a separate product (Pro, Omni) is a line of its own. It is `current` when it is the newest model of that variant line.
+- **Unclear price levels.** When a lab's naming does not make the price level clear (for example, Qwen 3.8 Max versus Qwen 3.8 Max Prime), decide with the information available and state the assumption in the PR body. For example, treat a variant with its own name as its own line unless the lab says it is an alias.
 - **One `current` per weight release.** A serving variant serves the same weights as another model, under another name, for example a faster hosted version (GLM 5.3 Fast, Kimi K3 Fast, MiMo-V2.6-Pro-UltraSpeed). A serving variant is never `current`; only the standard model is. Both notes get a `Same weights:` line that names the other: "GLM 5.3 Fast is a faster hosted version" and "GLM 5.3 is the standard version." A serving variant can still be in a set other than `recommended` (for example `top_fast`). When the standard model is superseded, its serving variants get a `Superseded by:` line too.
+- **Deprecations.** A model whose provider entries are all deprecated loses all its tags. A successor-slug migration moves `current` to the new entry. Tests skip fully deprecated models for the `Superseded by:` rule.
 
 **Local-only models.** A model whose non-deprecated provider entries are all on local providers (Ollama, Docker Model Runner) is local-only. Local-only models are selected mainly so they can be judged for `top_on_device` (and `top_open`); they are hard to experiment with, so they are never `recommended`, and their notes can be short. They still follow the `current` procedure for their lab and size class.
 
@@ -673,7 +683,7 @@ Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `
 - [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
-- [ ] `agent_notes` and tags written where a source supports them, or left empty and the PR says so (see [Agent notes and tags](#agent-notes-and-tags))
+- [ ] `agent_notes` always written (at minimum `Description:` + `Lineup:`); set tags written where a source supports them, or left out and the PR says so (see [Agent notes and tags](#agent-notes-and-tags))
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
 - [ ] API keys bridged into the test env (see 4a — settings.yaml is NOT used by tests)
 - [ ] Smoke test passed

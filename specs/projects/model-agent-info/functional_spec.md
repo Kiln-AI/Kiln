@@ -36,6 +36,14 @@ per weight release (serving variants get `Same weights:` lines), an
 explicit `recommended` bar, selection of local-only models, and a stricter
 sources log. Phase 5 applies it.
 
+Revision 3, on 2026-11-17, for sweep readiness (PR #2042 review):
+`current` and a minimal note (`Description:` + `Lineup:`) are mandatory
+for every new model, with no benchmark source needed. The sweep applies
+tag and flag changes in its adds PR for human approval. Fully-deprecated
+models lose all tags. A banned-time-words test checks notes. Stacking
+on an open adds PR. `top_value` holds low- and mid-priced models only.
+Rigid alias/snapshot rules replaced with judgment guidance.
+
 ## Decisions on the overview's questions
 
 ### Where the provider list lives
@@ -120,7 +128,7 @@ faster way to run GLM 5.3.").
 |---|---|---|---|
 | `current` | lineage | The lab's best offering at this price level. A model without this tag is superseded: do not choose it for a new run config unless asked. | none |
 | `recommended` | set | A model we recommend as a candidate for new agents. Always also `current`. | 20 |
-| `top_value` | set | Among the best quality for its cost. Look at these first when optimizing for cost. | 14 |
+| `top_value` | set | Among the best quality for its cost, at a low or mid price. A top-price model is never in this set, however good its value. Look at these first when optimizing for cost. | 14 |
 | `top_fast` | set | Among the fastest models for latency-sensitive work, by output speed and time to first token, or a faster hosted version of a strong model. | 14 |
 | `top_on_device` | set | Among the best models that run on consumer laptops or phones. | 14 |
 | `top_open` | set | Among the best open-weight models, across a range of sizes. | 14 |
@@ -138,10 +146,16 @@ fields on provider entries and provider-list items stay, for later use.
   Haiku < Sonnet < Opus < Fable. For open-weight labs, a size class.
 - Each lab has one `current` model at each price level: the newest release
   of that line, by release date, whatever its name.
-- A dated snapshot is `current` when it is newer than the plain name (for
-  example, DeepSeek V4.1 Flash 1017 is newer than DeepSeek V4.1 Flash). When
-  a plain alias and a snapshot serve the same weights, only the alias gets
-  the tag.
+- `current` is mechanical: it needs only the release date and the lab's
+  product line. No benchmark source is needed.
+- **Snapshots and aliases.** When a plain alias and a dated snapshot serve
+  the same weights, decide with the information available and state the
+  assumption in the PR body. (Revision 3; replaces the hard
+  "only the alias gets the tag" rule.)
+- **Unclear price levels.** When a lab's naming does not make the price
+  level clear (for example, Qwen 3.8 Max versus Qwen 3.8 Max Prime),
+  decide with the information available and state the assumption in the PR
+  body. (Revision 3.)
 - A variant that is a separate product (Pro, Omni) is a line of its own. It
   is `current` when it is the newest model of that variant line.
 - **One `current` per weight release.** A serving variant serves the same
@@ -157,6 +171,10 @@ fields on provider entries and provider-list items stay, for later use.
   the same price level. Remove its `current` tag and add a `Superseded by:`
   line to its note. Skip this if the new model is at a different price
   level. No other records change.
+- **Deprecations.** A model whose provider entries are all deprecated loses
+  all its tags. A successor-slug migration moves `current` to the new
+  entry. Tests skip fully deprecated models for the `Superseded by:` rule,
+  and a test checks fully deprecated models have no tags. (Revision 3.)
 
 ### Set tags
 
@@ -251,11 +269,16 @@ These apply to model notes and provider notes.
 
 - `None` means no note. An empty or whitespace-only string is not allowed.
 - At most 2,000 characters. The target is 300 to 600.
-- A note states only what a maintainer can support from the provider's
-  documentation, Artificial Analysis or another public benchmark, or
-  Kiln's own tests. When a maintainer cannot support a claim, they leave it
-  out. When nothing can be supported, the note stays `None` and the tags
-  stay empty.
+- **Minimal note is mandatory.** Every new model gets at least
+  `Description:` and `Lineup:` from the lab's own model page. These two
+  lines need no benchmark source. Other note lines need an independent
+  source; when a maintainer cannot support a claim, they leave it out.
+  (Revision 3; replaces the earlier "when nothing can be supported, the
+  note stays `None`" rule.)
+- A data test fails any model note containing a banned time-relative
+  word from the list in `model_agent_info.BANNED_NOTE_WORDS` ("current",
+  "latest", "newest", "now", "previous", "frontier", "state of the art",
+  "best", "peers"), as whole words, case-insensitive. (Revision 3.)
 
 ### Approved examples
 
@@ -452,7 +475,11 @@ Data tests, on the built-in lists:
   table's order and each is used at most once; `Lineup:` is present.
 - A `current` model has no `Superseded by:` line. A model with a note that
   is not `current` has a `Superseded by:` line or a `Same weights:` line
-  (a serving variant of a `current` model).
+  (a serving variant of a `current` model). Fully deprecated models
+  (all provider entries deprecated) are skipped for this rule.
+- A model whose provider entries are all deprecated has no tags.
+- No model note contains a banned time-relative word from
+  `model_agent_info.BANNED_NOTE_WORDS`.
 - Every provider note uses only the provider labels, in order, each at most
   once.
 - The provider list has exactly one item per `ModelProviderName`, in enum

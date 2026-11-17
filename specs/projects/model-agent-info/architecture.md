@@ -261,6 +261,11 @@ the built-in data so a failure names the model or provider.
   first line is `Description:`.
 - A `current` model has no `Superseded by:`. A model with a note that is
   not `current` has `Superseded by:` or `Same weights:` (revision 2).
+  Fully deprecated models (all provider entries deprecated) are skipped
+  (revision 3).
+- A fully deprecated model has no tags (revision 3).
+- No model note contains a banned time-relative word from
+  `model_agent_info.BANNED_NOTE_WORDS` (revision 3).
 - Each set tag is on at most `max_models` models (one test parametrized
   over the set tags, counting across `built_in_models`).
 - Each model with `recommended` also has `current`.
@@ -353,6 +358,9 @@ finding to report, not to regenerate silently.
 
 `kiln-model-sweep`: add `ml_provider_list.py` to the files its publish check
 diffs (done in Phase 2). Its PR description puts set changes at the top.
+Revision 3 adds: stacking on an open adds PR; `current` and minimal note
+mandatory; tags and flags automated with approval; deprecation clears tags;
+unreachable sources reported in the PR body.
 
 `kiln-conventions/references/core.md`: "Where things go" names
 `ml_provider_list.py` for a provider's info; "Adding a provider" item 3

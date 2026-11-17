@@ -14,6 +14,7 @@ from kiln_ai.adapters.ml_model_list import (
     get_model_by_name,
 )
 from kiln_ai.adapters.model_agent_info import (
+    BANNED_NOTE_WORDS,
     MODEL_NOTE_LABELS,
     MODEL_TAGS,
     PROVIDER_ENTRY_TAGS,
@@ -881,6 +882,9 @@ def test_model_note_format(model: KilnModel):
 def test_superseded_by_iff_not_current(model: KilnModel):
     if model.agent_notes is None:
         return
+    # Revision 3: skip fully-deprecated models (all provider entries deprecated).
+    if all(getattr(p, "deprecated", False) for p in model.providers):
+        return
     lines = model.agent_notes.split("\n")
     has_superseded = any(line.startswith("Superseded by:") for line in lines)
     has_same_weights = any(line.startswith("Same weights:") for line in lines)
@@ -932,3 +936,34 @@ def test_tagged_models_have_notes(model: KilnModel):
     assert model.agent_notes is not None, (
         f"{model.name}: has tags {model.tags} but agent_notes is None"
     )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        m
+        for m in built_in_models
+        if m.providers and all(getattr(p, "deprecated", False) for p in m.providers)
+    ],
+    ids=lambda m: m.name,
+)
+def test_fully_deprecated_models_have_no_tags(model: KilnModel):
+    assert model.tags == [], (
+        f"{model.name}: all provider entries are deprecated but tags={model.tags}"
+    )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [m for m in built_in_models if m.agent_notes is not None],
+    ids=lambda m: m.name,
+)
+def test_note_has_no_banned_time_words(model: KilnModel):
+    import re
+
+    assert model.agent_notes is not None
+    for word in BANNED_NOTE_WORDS:
+        pattern = re.compile(r"\b" + re.escape(word) + r"\b", re.IGNORECASE)
+        assert not pattern.search(model.agent_notes), (
+            f"{model.name}: agent_notes contains banned time-relative word {word!r}"
+        )

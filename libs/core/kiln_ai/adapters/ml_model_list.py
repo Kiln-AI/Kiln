@@ -1089,6 +1089,7 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: OpenAI's mid-tier model in the GPT-6.1 generation.\n"
             "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A large step up from GPT-6 Luna, a step down from GPT-6.1 Sol. Replaced GPT-5.6 Terra.\n"
+            "Useful for: Mid-price pick with near-Sonnet-level quality at much lower cost per task.\n"
             "Strengths: Good speed-to-quality ratio; strong at writing and visual reasoning."
         ),
         tags=["current", "recommended", "top_value", "top_writing"],
@@ -3402,7 +3403,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Replaced Claude Sonnet 5.\n"
             "Strengths: Strong at coding, data analysis, and agentic tool use with fast response times."
         ),
-        tags=["current", "recommended", "top_value", "top_writing"],
+        tags=["current", "recommended", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8280,7 +8281,7 @@ built_in_models: List[KilnModel] = [
             "Description: Qwen's Flash-tier closed model in the 3.8 generation.\n"
             "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. Flash is the budget tier. Replaced Qwen 3.7 Flash."
         ),
-        tags=["current", "top_value"],
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,

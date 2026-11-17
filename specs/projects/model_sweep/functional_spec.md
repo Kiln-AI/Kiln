@@ -53,11 +53,12 @@ A change is **easy** when all of these hold:
 1. The diff touches only `libs/core/kiln_ai/adapters/ml_model_list.py`.
 2. The change is an added `ModelName`, an added `KilnModel`, an added `KilnModelProvider`, or `deprecated=True` on an existing provider entry. Nothing is deleted.
 3. The added entries pass the paid smoke test and the model's full `-k` suite on every provider that can run unattended (see §6).
-4. No `suggested_for_*` or `featured_rank` value changes.
 
-Everything else **needs discussion**, including: any file other than `ml_model_list.py`, a new parameter or adapter change needed to make a test pass, a new provider, a new `ModelFamily` that needs code elsewhere, a test failure that persists after one serial retry, a recommendation-flag change, and any "expiring soon" deprecation.
+Tag changes (`current` moves, set adds/removes) and flag changes (`suggested_for_*`, `featured_rank`) are applied in the adds PR and listed at the top of the PR body for human approval (the human approves by merging). They are not reasons for a needs-discussion PR on their own. (Revised 2026-11-17; the earlier rule excluded flag changes from easy changes and barred the sweep from touching `suggested_for_*` or `featured_rank`.)
 
-One explicit exception: a successor migration, where a provider stops serving a slug and serves a successor checkpoint. The old provider entry gets `deprecated=True` and loses its `suggested_for_*` flags, and the successor is added as a distinct model. Both edits count as one easy change and go in the adds PR for that run, not the deprecations PR, and the flag removal is not a flag change for the purpose of this rule (see §2.3 and the skill's successor-slug gate).
+Everything else **needs discussion**, including: any file other than `ml_model_list.py`, a new parameter or adapter change needed to make a test pass, a new provider, a new `ModelFamily` that needs code elsewhere, a test failure that persists after one serial retry, and any "expiring soon" deprecation.
+
+One explicit exception: a successor migration, where a provider stops serving a slug and serves a successor checkpoint. The old provider entry gets `deprecated=True` and loses its `suggested_for_*` flags, and the successor is added as a distinct model. Both edits count as one easy change and go in the adds PR for that run, not the deprecations PR.
 
 The classification is computed from the diff paths and the test results, not from the model's opinion.
 
@@ -67,7 +68,7 @@ The classification is computed from the diff paths and the test results, not fro
 
 All PRs: semantic-commit title, `chore: ...`; the `WIP:` prefix means draft and is used only on needs-discussion PRs (ruling 2026-10-01; this overrides open-pr's always-WIP rule). A draft that becomes ready loses the prefix. Body: the template's human header pre-populated (ruling 2026-10-01: Description written by the routine, Architecture Review "Small change", Review Style "Mixed", Agentic Code Review "addressed all AI feedback", Key decisions `ML Model Update`, Paths `ml_model_list.py`, UI "No UI"; Author Review left unchecked for the author; no CLA line), then open-pr's Agentic PR Summary with the per-test evidence table from `claude-maintain-models`. No `print(` and no TODO/FIXME in the diff. Branches: `model-sweep/adds-YYYY-MM-DD`, `model-sweep/deprecations-YYYY-MM-DD`, `model-sweep/discuss-<model>-YYYY-MM-DD`.
 
-- **Adds PR**: one per run, every easy add from that run. Body ends with a "Candidates for suggested flags" list for a human; the routine never sets those flags.
+- **Adds PR**: one per run, every easy add from that run. The body lists tag changes (**Set changes**), flag changes (**Flag changes**), and unreachable sources (**Sources**) at the top for human approval. When an earlier adds PR is still open, the next run branches from that PR's branch and opens its PR with that branch as base, so changes build up in order and set limits are counted on the stacked state (revised 2026-11-17).
 - **Deprecations PR**: one per run, every confirmed-dead entry, except entries deprecated as part of a successor migration, which travel with their successor in the adds PR (§3). Recommendation flags and deprecations stay in separate PRs (team ruling of 2026-09-16).
 - **Needs-discussion PR**: one per item, opened as a draft. Its body ends with a bold **Decisions required** section between horizontal rules: what the model needs, why it is not an easy add, and the options. No further code lands on it until a human answers.
 - **Dedup**: if an open `kiln-claude` PR already covers a model, the run pushes to that branch instead of opening another.
@@ -119,7 +120,7 @@ The existing skills stop and ask at several points. The routine answers them as 
 | Which discovered models to add | All verified candidates, newest first |
 | Slug cannot be verified | Skip, list in the run report |
 | Lagging-provider backfill: bundle or separate | Bundle into the adds PR |
-| SOTA "suggested" flag or zero-sum swap | Never; list as candidates in the PR body |
+| SOTA "suggested" flag or zero-sum swap | Apply in the adds PR, listed at top for human approval (revised 2026-11-17; was "never") |
 | Consent to run paid tests | Granted |
 | Vertex needs a Google login | The cloud environment provides one; the sweep runs Vertex when the login check passes. When it fails, the entry gets a ⚠️ untested mark and the sweep posts to the models channel |
 | Bedrock needs `aws` CLI, Ollama and Docker Model Runner need local daemons | Same as Vertex |
@@ -147,12 +148,15 @@ Lives with the skill in `.agents/skills/kiln-model-sweep/`: Slack channel id, pr
 
 ## Out of Scope
 
-- Setting `suggested_for_*` or `featured_rank` flags.
 - Adding a new provider (discussion PR only).
 - Changing default models in kiln_server or elsewhere (staleness report only).
 - Any discussion in Slack.
 - Discord announcements. Dropped on 2026-10-01; no longer needed.
 - Merging PRs.
+
+Note: `suggested_for_*` and `featured_rank` flags were out of scope
+until 2026-11-17 and are now applied by the sweep with human approval
+(see §3 and the skill's gate).
 
 ## Edge Cases
 
@@ -184,3 +188,10 @@ The later target, once the team-level pieces exist. The skill is unchanged; only
 - Staleness covers Kiln and kiln_server, reported in one living GitHub issue.
 - Discord announcement dropped.
 - 07:00 America/Toronto on weekdays, plus a 13:00 comments-only run; quiet days stay silent.
+
+## Decisions Taken (2026-11-17)
+
+- Tags and flags automated with human approval: the sweep applies tag changes (`current` moves, set adds/removes) and flag changes (`suggested_for_*`, `featured_rank`) in its adds PR, listed at the top of the PR body for human approval by merge. Replaces the earlier "never set or change" rule for flags and the "changes no flag" condition in the easy-change rule.
+- Stacking: when an earlier adds PR is still open, the next run branches from that PR's branch and opens its PR with that branch as base. Set limits are counted on the stacked state.
+- `current` and minimal notes are mandatory for every new model, with no benchmark source needed. Only set tags and judgment lines of a note need an independent source.
+- Unreachable sources are reported in the PR body, not treated as "no evidence."

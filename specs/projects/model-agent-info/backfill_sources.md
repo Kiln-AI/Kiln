@@ -4,7 +4,9 @@ Sources for the agent notes and tags. Phase 4 did the initial backfill;
 Phase 5 (revision 2, 2026-11-16) applied the recommended bar, removed
 `current` from serving variants, added local-only models to
 `top_on_device`, added serving variants to `top_fast`, and rebuilt this
-log to the per-set format with comparative reasons.
+log to the per-set format with comparative reasons. Revision 3
+(2026-11-17) narrowed `top_value` to low- and mid-priced models only:
+removed Claude 5.5 Sonnet (top-price) and Qwen 3.8 Flash (no AA source).
 
 ## Data sources
 
@@ -105,22 +107,25 @@ Removals in Phase 5:
 - DeepSeek V4 Pro 0813: AA index 23 at $1.77/task; GPT-6.1 Terra gets index 51 at $0.96/task -- beaten on both quality and cost.
 - Qwen 3.8 Max 0902: AA index 34 at $10.02/task; Claude 5.5 Sonnet gets index 55 at $10.02/task -- beaten on quality at the same cost.
 
-### top_value (10/14)
+### top_value (8/14)
 
-Best quality for cost, by AA cost per task and blended pricing.
+Best quality for cost, at a low or mid price. A top-price model is never
+in this set, however good its value. (Revised 2026-11-17.)
 
 | Model | AA Index | AA $/task | AA tok/s | AA URL | Reason |
 |-------|----------|-----------|----------|--------|--------|
-| GPT-6.1 Terra | 51 | $0.96 | 72 | [link](https://artificialanalysis.ai/models/gpt-6-1-terra) | Index 51 at $0.96/task; highest index below $1/task, next is Haiku (36 at $0.41) |
+| GPT-6.1 Terra | 51 | $0.96 | 72 | [link](https://artificialanalysis.ai/models/gpt-6-1-terra) | Index 51 at $0.96/task; highest index below $1/task, mid-price value pick |
 | GPT-6 Luna | 28 | $0.15 | 104 | [link](https://artificialanalysis.ai/models/gpt-6-luna) | Index 28 at $0.15/task; near Ember (36 at $0.14) with $0.01 gap, different ecosystem |
-| Claude 5.5 Sonnet | 55 | $10.02 | 151 | [link](https://artificialanalysis.ai/models/claude-sonnet-5-5) | Index 55 at $10.02/task; no current model has higher index at lower cost |
 | Claude 5.5 Haiku | 36 | $0.41 | 257 | [link](https://artificialanalysis.ai/models/claude-haiku-5-5) | Index 36 at $0.41/task; matches Ember (36) with wider provider ecosystem |
 | Muse Ember | 36 | $0.14 | 442 | [link](https://artificialanalysis.ai/models/muse-ember) | Index 36 at $0.14/task; best value across all models by cost-per-task |
 | DeepSeek V4.1 Flash 1017 | 33 | $0.60 | 174 | [link](https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017) | Index 33 at $0.60/task; best open-weight flash value, above GLM 5.3 Flash (28 at $0.58) |
-| Qwen 3.8 Flash | -- | -- | -- | No AA page | Alibaba's flash model at $0.47/M output (models.dev); no AA data for direct comparison |
 | GLM 5.3 Flash | 28 | $0.58 | 54 | [link](https://artificialanalysis.ai/models/glm-5-3-flash) | Index 28 at $0.10/M blended; ultra-budget per token ($0.58/task due to verbose reasoning) |
 | Minimax M3.1 Flash | 29 | $0.49 | 142 | [link](https://artificialanalysis.ai/models/minimax-m3-1-flash) | Index 29 at $0.49/task and $0.10/M blended; open-weight at Ember-tier blended cost |
 | MiMo-V2.6-Flash | 27 | $0.13 | 43 | [link](https://artificialanalysis.ai/models/mimo-v2-6-flash) | Index 27 at $0.13/task; cheapest by cost-per-task, below Ember ($0.14) |
+
+Removals in revision 3 (2026-11-17):
+- Claude 5.5 Sonnet: AA index 55 at $10.02/task; top-price, excluded by the revised rule.
+- Qwen 3.8 Flash: no AA page; no independent source for a value comparison.
 
 Removals in Phase 5:
 - Gemini 3.5 Flash Lite: AA index 12 at $0.69/task; Luna (28 at $0.15), Ember (36 at $0.14) and MiMo-Flash (27 at $0.13) all beat it on both index and cost.

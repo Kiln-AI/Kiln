@@ -3,6 +3,7 @@ from typing import Mapping
 import pytest
 
 from kiln_ai.adapters.model_agent_info import (
+    BANNED_NOTE_WORDS,
     MAX_NOTE_CHARS,
     MAX_TAGS_PER_ENTRY,
     MODEL_NOTE_LABELS,
@@ -289,3 +290,15 @@ class TestAssertNoteFormat:
         note = "Unknown: Not a real label."
         with pytest.raises(AssertionError, match="does not start with a known label"):
             assert_note_format(note, MODEL_NOTE_LABELS, ())
+
+
+def test_banned_note_words_well_formed():
+    assert len(BANNED_NOTE_WORDS) >= 1, "BANNED_NOTE_WORDS must not be empty"
+    assert len(BANNED_NOTE_WORDS) == len(set(w.lower() for w in BANNED_NOTE_WORDS)), (
+        "Duplicate entries in BANNED_NOTE_WORDS"
+    )
+    for word in BANNED_NOTE_WORDS:
+        assert word.strip(), "A banned word must be non-blank"
+        assert word == word.lower(), (
+            f"Banned word {word!r} should be lowercase (matching is case-insensitive)"
+        )

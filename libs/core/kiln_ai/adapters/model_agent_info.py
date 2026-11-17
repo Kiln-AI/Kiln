@@ -48,8 +48,9 @@ MODEL_TAGS: Final[Mapping[str, TagInfo]] = {
         20,
     ),
     "top_value": TagInfo(
-        "Among the best quality for its cost. Look at these first when"
-        " optimizing for cost.",
+        "Among the best quality for its cost, at a low or mid price."
+        " A top-price model is never in this set, however good its value."
+        " Look at these first when optimizing for cost.",
         TagKind.set,
         14,
     ),
@@ -84,6 +85,21 @@ PROVIDER_ENTRY_TAGS: Final[Mapping[str, TagInfo]] = {}
 # Tags for KilnProviderInfo.tags: true of the provider as a whole.
 # Empty; kept for later use.
 PROVIDER_LIST_TAGS: Final[Mapping[str, TagInfo]] = {}
+
+# Words that must not appear in a model note, as whole words, case-insensitive.
+# A note must not need edits as it ages. The ``current`` tag and the
+# ``Superseded by:`` line are the only places that show age.
+BANNED_NOTE_WORDS: Final = (
+    "current",
+    "latest",
+    "newest",
+    "now",
+    "previous",
+    "frontier",
+    "state of the art",
+    "best",
+    "peers",
+)
 
 # Labels of a model note, in the required order.
 MODEL_NOTE_LABELS: Final = (
