@@ -37,7 +37,7 @@ fi
 
 # Bake Sentry env/release into the packaged app from CI-provided env vars.
 # Pyinstaller doesn't carry build-time env vars to the user's runtime, so we
-# write a generated python module that desktop.py imports.
+# write a generated python module that desktop_main.py imports.
 python3 - <<'PY'
 import os
 import pathlib
