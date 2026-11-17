@@ -36,7 +36,7 @@
   } from "$lib/utils/run_config_formatters"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import { prompt_link } from "$lib/utils/link_builder"
+  import { experiment_lineage_link, prompt_link } from "$lib/utils/link_builder"
   import { tagFromFilterId } from "../spec_utils"
   import { eval_split, task_run_split_filter_id } from "$lib/utils/eval_splits"
   import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
@@ -879,6 +879,12 @@
   title="Compare Run Configurations"
   subtitle="Find the optimal run configuration for your task using evals"
   {breadcrumbs}
+  action_buttons={[
+    {
+      label: "Experiment Lineage",
+      href: experiment_lineage_link(project_id, task_id),
+    },
+  ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">

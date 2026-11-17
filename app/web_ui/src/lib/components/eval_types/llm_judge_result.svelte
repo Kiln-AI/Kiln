@@ -5,6 +5,7 @@
   import type { EvalConfig, Trace } from "$lib/types"
   import { model_info, model_name } from "$lib/stores"
   import { extractV2Props } from "$lib/utils/eval_types/registry"
+  import { judge_reasoning } from "$lib/utils/eval_types/judge_reasoning"
 
   export let scores: Record<string, number> = {}
   export let score_labels: Record<string, string> = {}
@@ -14,14 +15,24 @@
   export let intermediate_outputs: Record<string, string> | null = null
   /** Fetches the judge's conversation. Null when the run saved none. */
   export let load_judge_trace: (() => Promise<Trace | null>) | null = null
+  /**
+   * Shows the reasoning in the host's own dialog, for a host that links to it.
+   * Null opens this component's dialog.
+   */
+  export let on_view_reasoning: (() => void) | null = null
 
   $: props = extractV2Props(eval_config, "llm_judge")
-  $: reasoning =
-    intermediate_outputs?.reasoning ||
-    intermediate_outputs?.chain_of_thought ||
-    null
+  $: reasoning = judge_reasoning(intermediate_outputs)
 
   let reasoning_dialog: Dialog | null = null
+
+  function view_reasoning() {
+    if (on_view_reasoning) {
+      on_view_reasoning()
+    } else {
+      reasoning_dialog?.show()
+    }
+  }
 </script>
 
 <div class="flex flex-col gap-2">
@@ -48,7 +59,7 @@
         <div>
           <button
             class="text-xs link link-hover text-gray-400"
-            on:click={() => reasoning_dialog?.show()}
+            on:click={view_reasoning}
           >
             View reasoning
           </button>
@@ -58,8 +69,10 @@
   {/if}
 </div>
 
-<Dialog bind:this={reasoning_dialog} title="Judge Reasoning">
-  <div class="font-light text-sm whitespace-pre-wrap">
-    {reasoning}
-  </div>
-</Dialog>
+{#if !on_view_reasoning}
+  <Dialog bind:this={reasoning_dialog} title="Judge Reasoning">
+    <div class="font-light text-sm whitespace-pre-wrap">
+      {reasoning}
+    </div>
+  </Dialog>
+{/if}

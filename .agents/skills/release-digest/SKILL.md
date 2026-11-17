@@ -161,6 +161,26 @@ Rules:
   underscored identifier without it).
 - One **bullet** per change, no per-line emoji: `• <title> (#<number>)`. Keep the
   title; trim trailing noise.
+- **Exception: model-catalog PRs are rolled up, not one per line.** Within each author,
+  collapse their model-catalog PRs (the Task-bucket model adds, provider backfills,
+  thinking-level tweaks and deprecations from Phase 2) into one compact block that
+  still names **exactly which models changed**. Read each PR's title and `body` to pull
+  the model and provider names, then group them by kind, one line per kind, models
+  comma-separated:
+  ```
+  • 43 model catalog updates:
+     ◦ Added: Claude Fable 5.2 #2015, Muse Ember + Nex N2.6 #2014, Gemini 4 Argon #1928, …
+     ◦ New providers: Kimi K3.1 Pro on Together AI, Featherless #1997, Qwen 3.8 27B on Groq, Cerebras #1813, …
+     ◦ Thinking levels: Inkling on OpenRouter #2004, Cloudflare and OpenRouter effort lists #1962, …
+     ◦ Deprecated: GPT-4.1 Nano, o1, o3-mini, o4-mini on OpenAI #1998, MiniMax M1 on OpenRouter #2013, …
+  ```
+  Write every model out (the `…` above is only for this example), and leave out any kind
+  that has no entries. Put each PR's number right after the models it covers, and never
+  give a PR range like `#1813–#2015`: catalog PRs aren't consecutive, so a range implies
+  PRs that aren't in it. A PR that does more than one kind of change (e.g. adds a new
+  model slug and deprecates the old one) goes on every line it applies to. The author's non-catalog PRs (skills, docs, tooling) stay as
+  normal bullets after the block. A count-only rollup ("43 model updates") isn't enough:
+  QA needs to see which models to spot-check.
 - **Direct commits have no PR number** — render them as `• <title>` with nothing in
   parentheses (e.g. `• Version bump`). List them under their author, after the PRs.
 - Within each author, list newest PR first; direct commits last. Don't print the
