@@ -1,5 +1,7 @@
 import os
 import random
+import runpy
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -9,7 +11,7 @@ import requests
 from uvicorn import Config as UvicornConfig
 
 import app.desktop.desktop_server as desktop_server
-from app.desktop.desktop import DesktopApp, DesktopServer
+from app.desktop.desktop_main import DesktopApp, DesktopServer
 
 TEST_PORT = 8123
 UNPATCHED_START_LINUX_SNI_TRAY = DesktopApp.start_linux_sni_tray
@@ -18,7 +20,7 @@ UNPATCHED_START_LINUX_SNI_TRAY = DesktopApp.start_linux_sni_tray
 @pytest.fixture(autouse=True)
 def mock_gui_modules():
     """Mock GUI modules globally to prevent display errors in headless CI."""
-    with patch("app.desktop.desktop.tk.Tk"):
+    with patch("app.desktop.desktop_main.tk.Tk"):
         yield
 
 
@@ -34,7 +36,7 @@ def mock_linux_sni_tray():
 @pytest.fixture
 def mock_tk_root():
     """Mock tkinter root window."""
-    with patch("app.desktop.desktop.tk.Tk") as mock_tk:
+    with patch("app.desktop.desktop_main.tk.Tk") as mock_tk:
         mock_root = Mock()
         mock_tk.return_value = mock_root
         yield mock_root
@@ -43,7 +45,7 @@ def mock_tk_root():
 @pytest.fixture
 def mock_image():
     """Mock PIL Image."""
-    with patch("app.desktop.desktop.Image") as mock_img:
+    with patch("app.desktop.desktop_main.Image") as mock_img:
         mock_image_obj = Mock()
         mock_img.open.return_value = mock_image_obj
         yield mock_image_obj
@@ -52,7 +54,7 @@ def mock_image():
 @pytest.fixture
 def mock_kiln_tray():
     """Mock KilnTray."""
-    with patch("app.desktop.desktop.KilnTray") as mock_tray_class:
+    with patch("app.desktop.desktop_main.KilnTray") as mock_tray_class:
         mock_tray = Mock()
         mock_tray_class.return_value = mock_tray
         yield mock_tray
@@ -61,14 +63,14 @@ def mock_kiln_tray():
 @pytest.fixture
 def mock_webbrowser():
     """Mock webbrowser module."""
-    with patch("app.desktop.desktop.webbrowser") as mock_wb:
+    with patch("app.desktop.desktop_main.webbrowser") as mock_wb:
         yield mock_wb
 
 
 @pytest.fixture
 def mock_kiln_menu_item():
     """Mock pystray module."""
-    with patch("app.desktop.desktop.KilnMenuItem") as mock_menu_item:
+    with patch("app.desktop.desktop_main.KilnMenuItem") as mock_menu_item:
         yield mock_menu_item
 
 
@@ -219,7 +221,7 @@ class TestDesktopApp:
             # Should return early without creating new tray
             mock_resource_path.assert_not_called()
 
-    @patch("app.desktop.desktop.sys.platform", "win32")
+    @patch("app.desktop.desktop_main.sys.platform", "win32")
     def test_run_tray_windows_default(
         self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
     ):
@@ -233,7 +235,7 @@ class TestDesktopApp:
             menu_calls = mock_kiln_menu_item.call_args_list
             assert menu_calls[0][1]["default"] is True
 
-    @patch("app.desktop.desktop.sys.platform", "darwin")
+    @patch("app.desktop.desktop_main.sys.platform", "darwin")
     def test_run_tray_macos_no_default(
         self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
     ):
@@ -247,7 +249,7 @@ class TestDesktopApp:
             menu_calls = mock_kiln_menu_item.call_args_list
             assert menu_calls[0][1]["default"] is False
 
-    @patch("app.desktop.desktop.sys.platform", "linux")
+    @patch("app.desktop.desktop_main.sys.platform", "linux")
     def test_run_tray_linux_uses_sni_tray_when_available(
         self, mock_tk_root, mock_linux_sni_tray
     ):
@@ -255,13 +257,13 @@ class TestDesktopApp:
         mock_linux_sni_tray.return_value = sni_tray
         app = DesktopApp(port=TEST_PORT)
 
-        with patch("app.desktop.desktop.KilnTray") as kiln_tray_class:
+        with patch("app.desktop.desktop_main.KilnTray") as kiln_tray_class:
             app.run_tray()
 
         assert app.tray is sni_tray
         kiln_tray_class.assert_not_called()
 
-    @patch("app.desktop.desktop.sys.platform", "linux")
+    @patch("app.desktop.desktop_main.sys.platform", "linux")
     def test_run_tray_linux_falls_back_to_pystray(
         self,
         mock_tk_root,
@@ -292,7 +294,7 @@ class TestDesktopApp:
         app = DesktopApp(port=TEST_PORT)
 
         with (
-            patch("app.desktop.desktop.sys.platform", platform),
+            patch("app.desktop.desktop_main.sys.platform", platform),
             patch.object(app, "resource_path", return_value="taskbar.png"),
         ):
             app.run_tray()
@@ -300,7 +302,7 @@ class TestDesktopApp:
         mock_linux_sni_tray.assert_not_called()
         assert app.tray == mock_kiln_tray
 
-    @patch("app.desktop.desktop.sys.platform", "linux")
+    @patch("app.desktop.desktop_main.sys.platform", "linux")
     def test_run_tray_linux_pystray_failure_is_not_fatal(
         self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
     ):
@@ -387,7 +389,7 @@ class TestDesktopServer:
 
         with patch.object(app, "on_quit") as mock_on_quit:
             with patch(
-                "app.desktop.desktop.ThreadedServer.run_in_thread"
+                "app.desktop.desktop_main.ThreadedServer.run_in_thread"
             ) as mock_super_run:
                 # Mock the super context manager
                 mock_context = Mock()
@@ -409,3 +411,43 @@ def test_desktop_app_server():
     with uni_server.run_in_thread():
         r = requests.get("http://127.0.0.1:{}/ping".format(port))
         assert r.status_code == 200
+
+
+ENTRY_SCRIPT = Path(__file__).parent / "desktop.py"
+
+
+def test_entry_script_imports_nothing_heavy_outside_main():
+    """A multiprocessing child runs the entry script before its job. In a fresh
+    interpreter, running it as a non-main module must not load the app."""
+    probe = (
+        "import runpy, sys\n"
+        f"runpy.run_path({str(ENTRY_SCRIPT)!r}, run_name='__mp_main__')\n"
+        "heavy = ('app.desktop.desktop_main', 'app.desktop.desktop_server', 'litellm', 'tkinter')\n"
+        "print(','.join(m for m in heavy if m in sys.modules))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    assert result.stdout.strip() == ""
+
+
+def test_entry_script_runs_main_after_freeze_support():
+    calls: list[str] = []
+    with (
+        patch(
+            "multiprocessing.freeze_support",
+            side_effect=lambda: calls.append("freeze_support"),
+        ),
+        patch("multiprocessing.set_start_method") as mock_set_start_method,
+        patch(
+            "app.desktop.desktop_main.main", side_effect=lambda: calls.append("main")
+        ),
+    ):
+        runpy.run_path(str(ENTRY_SCRIPT), run_name="__main__")
+
+    assert calls == ["freeze_support", "main"]
+    mock_set_start_method.assert_called_once_with("spawn", force=True)
