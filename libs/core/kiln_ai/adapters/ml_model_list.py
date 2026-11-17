@@ -12439,6 +12439,23 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="elorian-labs/glimpse-1.0",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
         ],
     ),
     # Xing 4.0 29B A4B
