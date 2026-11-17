@@ -1813,6 +1813,15 @@ async def connect_openllm(key_data: dict):
             return _openllm_connect_error(
                 400, "Base URL must start with http:// or https://"
             )
+        if (
+            api_key
+            and base_url.startswith("http://")
+            and urlparse(base_url).hostname not in OPENLLM_LOOPBACK_HOSTS
+        ):
+            # Plain HTTP would send the API key in the clear to a remote host.
+            return _openllm_connect_error(
+                400, "Use an https:// Base URL when connecting with an API key."
+            )
 
         try:
             response = await _get_openllm_models(base_url, api_key)

@@ -4831,6 +4831,46 @@ async def test_connect_openllm_rejects_base_url_without_scheme(openllm_mocks):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url",
+    ["http://www.openllm.sh/v1", "http://192.168.1.20:8787/v1"],
+)
+async def test_connect_openllm_rejects_plain_http_remote_with_key(
+    openllm_mocks, base_url
+):
+    mock_get, mock_shared = openllm_mocks
+
+    result = await connect_openllm(
+        {"Base URL - Optional": base_url, "API Key - Optional": "sk-llm-test"}
+    )
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to OpenLLM. Use an https:// Base URL when connecting with an API key."
+    }
+    mock_get.assert_not_called()
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url",
+    ["http://127.0.0.1:8787/v1", "http://localhost:8787/v1", "http://[::1]:8787/v1"],
+)
+async def test_connect_openllm_allows_plain_http_loopback_with_key(
+    openllm_mocks, base_url
+):
+    mock_get, _ = openllm_mocks
+
+    result = await connect_openllm(
+        {"Base URL - Optional": base_url, "API Key - Optional": "sk-llm-test"}
+    )
+
+    assert result.status_code == 200
+    mock_get.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_connect_openllm_connection_refused_explains_how_to_start(
     openllm_mocks,
 ):
