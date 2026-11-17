@@ -11334,6 +11334,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.hunyuan,
         name=ModelName.hunyuan_hy4_flash,
         friendly_name="Hunyuan Hy4 Flash",
+        editorial_notes="Tencent's lower-cost Hy4 variant. Text and image input, 1M context. Not recommended as an eval judge: in testing it sometimes gave ratings outside the requested scale.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
