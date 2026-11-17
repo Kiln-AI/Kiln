@@ -64,7 +64,7 @@ Sources are OpenAI's docs, fetched 2026-10-30 (see `openai-responses-api/`).
 
 ## What is known: LiteLLM
 
-Version notes refer to 1.102.0, the version before the Responses API project; 1.105.6, the version that project ships; and 1.106.6, the newest 1.106.x read. Kiln can't move to 1.106.x until it upgrades to `mcp` 2.x. See `litellm-responses-support/`.
+Version notes refer to 1.102.0, the version before the Responses API project; 1.105.7, the version that project ships (notes checked on 1.105.6); and 1.106.6, the newest 1.106.x read. Kiln can't move to 1.106.x until it upgrades to `mcp` 2.x. See `litellm-responses-support/`.
 
 - **Bridge replay.** The bridge replays `msg["reasoning_items"]` from an assistant message, using `id`, `encrypted_content` and `summary`. In 1.105.6 it invents an `rs_<python id>` for an item with no id; 1.106.0 stopped doing that. So on 1.105.6, a saved reasoning item must keep OpenAI's id to replay correctly. It sends earlier function calls by `call_id` only, without OpenAI's `fc_` ids. So history with reasoning left out is accepted.
 - **Native `litellm.aresponses()`.** Kiln would build `input` items and read `output` items directly, so nothing is lost in the bridge's conversion. Specifics:

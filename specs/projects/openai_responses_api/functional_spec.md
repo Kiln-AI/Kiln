@@ -32,7 +32,7 @@ Merging to `main` does not publish the remote model list; only a push to `remote
 
 ### F1. Upgrade LiteLLM (branch 1)
 
-- Move the `litellm` requirement in `libs/core/pyproject.toml` from `>=1.102.0,<1.103` to the newest 1.105.x that passes the repo's 7-day PyPI cooldown (1.105.6 as of 2026-11-03), keeping the tight-range policy: `>=1.105.6,<1.106`. Update `uv.lock` with the repo's tooling.
+- Move the `litellm` requirement in `libs/core/pyproject.toml` from `>=1.102.0,<1.103` to the newest 1.105.x that passes the repo's 7-day PyPI cooldown (1.105.6 as of 2026-11-03), keeping the tight-range policy: `>=1.105.7,<1.106` (1.105.7 is the last 1.105 release). Update `uv.lock` with the repo's tooling.
 - Why this version: 1.103.5 fixed the bug where a reply containing both text and a tool call came back as two choices and Kiln lost the tool call; 1.105.6 has the fix (checked against a local fake server). Not 1.106.x: from 1.106.0, LiteLLM loads `mcp>=2.2` on every tool call, and Kiln is on `mcp` 1.x, so every tool call would fail. 1.106.0's other fix, for invented reasoning ids, doesn't affect Kiln. See [architecture §1](./architecture.md).
 - The upgrade spans four minor versions and affects all 200+ models. All unit tests must pass, and the team runs the full paid suite across all providers before branch 1 merges (see Testing). Any regression found is fixed in branch 1 or reported to the user before merge.
 

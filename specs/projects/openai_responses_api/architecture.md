@@ -35,8 +35,8 @@ These come from running the real libraries on 2026-11-03: the Kiln repo in a scr
 
 ### 3.1 LiteLLM version (`libs/core/pyproject.toml`, `uv.lock`)
 
-- Requirement: `"litellm>=1.105.6,<1.106",`. Directly above it, add a short comment: 1.106.0+ imports `mcp>=2.2` on every tool call (an optional LiteLLM extra), and Kiln is on `mcp` 1.x; raise the cap only together with an `mcp` 2.x upgrade.
-- Lock with `uv lock --upgrade-package "litellm==1.105.6"`. If a newer 1.105.x has passed the cooldown by implementation time, use that instead. The lock also moves `boto3`/`botocore` (1.43.99 to 1.43.120) and `certifi`, and adds `h2`, `hpack` and `hyperframe`. `pyyaml` goes to 6.0.3, and `tiktoken` gains a 0.14.0 entry. Don't edit `uv.lock` by hand.
+- Requirement: `"litellm>=1.105.7,<1.106",`. Directly above it, add a short comment: 1.106.0+ imports `mcp>=2.2` on every tool call (an optional LiteLLM extra), and Kiln is on `mcp` 1.x; raise the cap only together with an `mcp` 2.x upgrade.
+- Lock with `uv lock --upgrade-package "litellm==1.105.7"`. Phase 1 shipped 1.105.6, because 1.105.7 was still inside the cooldown. 1.105.7 is the last 1.105 release, and it replaced 1.105.6 once it passed the cooldown. The lock also moves `boto3`/`botocore` (1.43.99 to 1.43.120) and `certifi`, and adds `h2`, `hpack` and `hyperframe`. `pyyaml` goes to 6.0.3, and `tiktoken` gains a 0.14.0 entry. Don't edit `uv.lock` by hand.
 
 ### 3.2 Provider field (`libs/core/kiln_ai/adapters/ml_model_list.py`)
 
@@ -220,7 +220,7 @@ Fixtures for the Responses bodies and SSE events come from the research probes: 
 
 ## 8. Decisions
 
-1. **LiteLLM version: decided, `>=1.105.6,<1.106`** (finding 1). It has the tool-call fix and lacks only the invented-id fix, which Kiln doesn't hit. Not chosen: 1.106.x with an `mcp` 2.x upgrade (a separate project), and 1.106.x with LiteLLM's private `_skip_mcp_handler` argument.
+1. **LiteLLM version: decided, `>=1.105.7,<1.106`** (finding 1). It has the tool-call fix and lacks only the invented-id fix, which Kiln doesn't hit. Not chosen: 1.106.x with an `mcp` 2.x upgrade (a separate project), and 1.106.x with LiteLLM's private `_skip_mcp_handler` argument.
 2. **Non-streamed calls with summaries stream internally: decided, with an exit.** Implement §3.6 if it stays clean. "Clean" means:
    - the change stays inside `acompletion_checking_response` and `StreamingCompletion`;
    - no other caller or existing test needs reworking;
