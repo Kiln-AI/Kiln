@@ -337,6 +337,7 @@ class ModelName(str, Enum):
     glm_z1_9b_0414 = "glm_z1_9b_0414"
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
     hunyuan_hy4 = "hunyuan_hy4"
+    hunyuan_hy4_flash = "hunyuan_hy4_flash"
     hunyuan_hy3 = "hunyuan_hy3"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
@@ -11313,6 +11314,31 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
                 openrouter_reasoning_object=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Hy4 Flash is Tencent's lower-cost Hy4 variant. OpenRouter lists no reasoning efforts for it, so it has no thinking levels.
+    # reasoning_capable left False: reasoning is on by default but not mandatory, so a response can carry no reasoning.
+    KilnModel(
+        family=ModelFamily.hunyuan,
+        name=ModelName.hunyuan_hy4_flash,
+        friendly_name="Hunyuan Hy4 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="tencent/hy4-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
                 supports_vision=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
