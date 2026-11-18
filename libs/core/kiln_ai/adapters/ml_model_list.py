@@ -9703,6 +9703,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3-VL-30B-A3B-Thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=False,
                 reasoning_capable=True,
@@ -10816,6 +10817,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="zai-org/GLM-4.5V",
+                deprecated=True,
                 supports_structured_output=False,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
@@ -11503,6 +11505,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="tencent/Hunyuan-A13B-Instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
