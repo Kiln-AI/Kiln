@@ -168,6 +168,7 @@ class TestStructuredOutput:
         scripted_model.script(model_reply(json.dumps(result(), ensure_ascii=False)))
         await ground()
         [adapter] = built_adapters
+        assert adapter.base_adapter_config.automatic_prompt_caching
         assert adapter.run_config.structured_output_mode == (  # type: ignore[union-attr]
             StructuredOutputMode.json_schema
         )
@@ -180,7 +181,7 @@ class TestStructuredOutput:
         assert tool_names[:2] == ["start_episode", "read_state"]
 
     async def test_unparseable_reply_is_retried_in_the_same_conversation(
-        self, ground, scripted_model, server_is_free
+        self, ground, scripted_model, server_is_free, built_adapters
     ):
         scripted_model.script(
             model_reply(None, start("a")),
@@ -195,6 +196,9 @@ class TestStructuredOutput:
         assert outcome.openenv_reset.reset_kwargs == {"fixture_id": "a"}
         assert outcome.call_log[-1].tool == "start_episode"
         assert outcome.call_log[-1].output == TOOLS_CLOSED_MESSAGE
+        # The follow-up runs on the same adapter, so it is cached the same way.
+        [adapter] = built_adapters
+        assert adapter.base_adapter_config.automatic_prompt_caching
         # The adapter rejected the first run's answer, so its tokens are missing.
         assert not outcome.usage_complete
         assert outcome.usage is not None and outcome.usage.input_tokens == 20
@@ -429,6 +433,7 @@ class TestSubmitResult:
         assert "Recorded" in sent_text(scripted_model.sent[2][-1])
         [adapter] = built_adapters
         assert adapter.task.output_json_schema is None
+        assert adapter.base_adapter_config.automatic_prompt_caching
         definitions = {
             d["function"]["name"]: d["function"]
             for d in await adapter.litellm_tools()  # type: ignore[attr-defined]

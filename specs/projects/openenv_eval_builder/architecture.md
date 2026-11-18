@@ -197,7 +197,8 @@ async def ground_case(
 2. Builds a `KilnAgentRunConfigProperties` for the given model with
    `structured_output_mode=StructuredOutputMode.default` and no configured tools, and an
    `AdapterConfig(allow_saving=False, unmanaged_tools=session.tools(),
-   open_openenv_session=False)`.
+   open_openenv_session=False, automatic_prompt_caching=True)`. Caching matters here: every
+   tool round re-sends the whole conversation. The follow-up uses the same adapter.
 3. The user message holds the eval context (specification, target task prompt, Data Guide), the
    case, the reset schema (JSON), the readme, and the target tools' names and descriptions. The
    eval context is in the message, not the system prompt, so the system prompt stays fixed.

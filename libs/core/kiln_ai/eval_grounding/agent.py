@@ -166,6 +166,9 @@ def _build_adapter(
             allow_saving=False,
             unmanaged_tools=[*session.tools(), *([submit_tool] if submit_tool else [])],
             open_openenv_session=False,
+            # Each tool round re-sends the whole conversation; caching the prefix
+            # keeps a case from paying full price for it on every call.
+            automatic_prompt_caching=True,
         ),
     )
 
