@@ -37,6 +37,20 @@ const ACME: NamedResetKwargs = {
 const ODD: NamedResetKwargs = { name: "Odd", reset_kwargs: { foo: 1 } }
 
 beforeEach(() => {
+  // jsdom has no ResizeObserver. ClampedText, which cuts long field
+  // descriptions short, and Output in the See all dialog both use one. This
+  // one measures once, when observing starts.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private callback: () => void) {}
+      observe() {
+        this.callback()
+      }
+      unobserve() {}
+      disconnect() {}
+    },
+  )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(HTMLDialogElement.prototype as any).showModal = function (
     this: HTMLDialogElement,
@@ -54,6 +68,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 function render_dialog(
@@ -231,5 +247,31 @@ describe("EnvironmentPresetDialog", () => {
       container.querySelector<HTMLInputElement>("#environment_preset_name")
         ?.value,
     ).toBe("Acme")
+  })
+
+  it("cuts a long reset argument description short, and See all shows it in full", async () => {
+    // jsdom has no layout: make every text measure taller than its box, so
+    // the description reads as cut off.
+    vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(200)
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(40)
+    const long = "Which company's data the world starts from. ".repeat(20)
+    const { component, container } = render_dialog(
+      reset_schema_to_form_schema({
+        type: "object",
+        properties: {
+          company: { type: "string", title: "Company", description: long },
+        },
+      }),
+    )
+    component.show_add()
+    await waitFor(() => expect(form_field(container, "Company")).not.toBeNull())
+
+    await waitFor(() => expect(toggle(container, "See all")).toBeDefined())
+    await fireEvent.click(toggle(container, "See all")!)
+    const see_all_dialog = Array.from(
+      container.querySelectorAll("dialog"),
+    ).find((d) => d.hasAttribute("open") && d.textContent?.includes("Close"))
+    expect(see_all_dialog?.textContent).toContain("Company")
+    expect(see_all_dialog?.textContent).toContain(long.trim())
   })
 })

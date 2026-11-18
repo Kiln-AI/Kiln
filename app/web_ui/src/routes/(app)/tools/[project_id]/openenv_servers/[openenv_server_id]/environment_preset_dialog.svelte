@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import SettingsHeader from "$lib/ui/settings_header.svelte"
@@ -33,6 +34,9 @@
   export let save: (presets: NamedResetKwargs[]) => Promise<void>
 
   let dialog: Dialog
+  // Shows a reset argument's full description. The environment writes these,
+  // so the form cuts long ones short.
+  let see_all_dialog: SeeAllDialog
   // The form is only mounted while the dialog is open, so the code editor
   // starts from each draft and Cmd+Enter can't submit a closed dialog.
   let open = false
@@ -224,9 +228,13 @@
             bind:this={reset_form}
             input_schema={JSON.stringify(form_schema)}
             hide_label
+            on_see_all_description={(title, description) =>
+              see_all_dialog.show(title, description)}
           />
         {/if}
       </div>
     </FormContainer>
   {/if}
 </Dialog>
+
+<SeeAllDialog bind:this={see_all_dialog} />
