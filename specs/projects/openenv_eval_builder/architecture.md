@@ -228,6 +228,7 @@ changes.
 
 ```
 --project <path to project.kiln>
+--task-id <id>                    # the target task: its prompt and schemas go to the planner
 --openenv-server-id <id>          # a saved OpenEnvServer in that project
 --spec <file>                     # the eval's specification text
 --base-guidance <file>            # multiturn_plan_guidance output for that spec, from the UI
@@ -238,9 +239,12 @@ changes.
 
 1. `reset_schema()` and `metadata()`; `reset_arguments_brief(...)` → `brief.txt`, `schema.json`,
    `metadata.json`.
-2. Guidance = base guidance + brief + Data Guide section → `_run_batch_plan_kiln_server(...)` →
-   `plan.json`.
-3. `SyntheticUserClient.generate(...)` on the plan prompts → `users.json`.
+2. Guidance = base guidance + brief + Data Guide section → `guidance.txt` →
+   `_run_batch_plan_kiln_server(...)` → `plan.json`.
+3. `SyntheticUserClient.generate(...)` on the plan prompts, in the same chunks as
+   `generate_cases`, with plan-relative `scenario_index` → `users.json`.
+
+The base guidance file is used as given: the OpenEnv version of the rule-12 line is not swapped in.
 
 **`ground`** grounds the prepared cases:
 
@@ -249,13 +253,19 @@ changes.
 --engine claude | kiln
 --model <name> [--provider <provider>]    # provider for --engine kiln only
 --prompt <file>                            # optional: a grounding prompt to try instead of prompt.py's
---cases <indices>                          # optional: a subset, for quick iteration
+--cases <indices>                          # optional: a subset, e.g. 0,3-5, for quick iteration
+--claude-bin <path>                        # optional: the claude executable (default: claude)
+--claude-bare                              # optional: run claude with --bare
 ```
 
 Writes `outcomes.json` (every outcome with its call log) and `summary.json`: grounded and dropped
-counts, drops by reason, each grounded case's reset arguments (so a person can see which ones used
-a setup argument; the command doesn't guess which argument is setup), and tokens and cost where the
-engine reports them.
+counts, drops by reason, failed cases with their errors, each grounded case's reset arguments (so a
+person can see which ones used a setup argument; the command doesn't guess which argument is setup),
+and tokens and cost where the engine reports them.
+
+A case that fails for a reason that is not its fault (an environment error, a `claude` failure, an
+MCP server that never started) is listed under `failed_cases`; the other cases carry on, and the
+command exits 1. The product's `ground_cases` instead fails the whole step.
 
 The planner guidance is composed in the web UI for the product. The prototype reads the base part
 from a file so it doesn't port `batch_plan_guidance.ts`; the Data Guide framing is a constant in
@@ -267,25 +277,43 @@ Kiln's config, as the studio server does.
 For cheap iteration on the prompt and tool descriptions with a frontier model, before spending on
 the user's model. It tests the approach, not Kiln's adapter loop.
 
-- `dev/grounding_mcp.py`: a stdio FastMCP server (`mcp[cli]` is already a `libs/core` dependency).
+- `dev/grounding_mcp.py`: a stdio MCP server on the low-level `mcp` `Server`, not FastMCP:
+  FastMCP derives each tool's input schema from a Python signature, and these schemas come from
+  the OpenEnv server. It imports only `kiln_ai` and `mcp`, so `claude` starts it by file path.
   On start it loads the project's `OpenEnvServer` and builds one `GroundingSession`. It exposes the
   session's tools (`start_episode`, `read_state`, one per server tool) as MCP tools, with the same
-  limits, rules and call log. On exit it releases the episode and writes the call log and the last
-  reset arguments to a file named by an argument.
-- Per case, `ground` runs
-  `claude -p --model <model> --mcp-config <one server, this case> --strict-mcp-config
-  --allowedTools "mcp__grounding__*" --system-prompt-file <grounding prompt> --output-format json`
-  with the case message on stdin. Only the grounding tools are allowed: no file, shell or web
-  access.
-- The final message must be the result JSON. `ground` parses it like `ground_case` does, takes
-  `openenv_reset` from the MCP server's last reset, and builds the same `GroundingOutcome`.
-- Cases run in parallel up to `CONCURRENCY`, each with its own MCP server process.
+  limits, rules and call log. It writes a run log (call log, last reset, and a stop value) to a file
+  named by an argument after every call and on exit, so the log is current even if `claude` is
+  killed. The stop value is `limit` (the hard stop after a limit) or `error` (anything not the
+  case's fault, such as an unreachable server); after a stop every call is refused. On exit it
+  releases the episode.
+- Per case, in `<run dir>/case_<n>/`, `ground` runs
+  `claude -p --model <model> --output-format json --tools "" --permission-mode dontAsk
+  --system-prompt <grounding prompt text> --mcp-config <one server, this case> --strict-mcp-config
+  --allowedTools "mcp__grounding__*"` with the case message on stdin and the case folder as the
+  working directory. `--tools ""` removes the built-in tools, so only the grounding tools exist: no
+  file, shell or web access. `claude` has no `--system-prompt-file`, so the prompt goes as text.
+- The final message must be the result JSON. `ground` parses it (code fences and prose around the
+  object are tolerated), takes `openenv_reset` from the run log's last reset, and builds the
+  outcome with `GroundingOutcome.from_result`, as `ground_case` will. A `limit` stop or the case's
+  15 minutes running out is a `limit` drop; an `error` stop fails the case.
+- An unusable reply gets one follow-up: `--resume <session>` with `--strict-mcp-config` and no MCP
+  config, so the agent has no tools, can't start another episode, and no new server overwrites the
+  run log. If that reply is unusable too, or `claude` rejects the follow-up, the case drops as
+  `invalid_output`.
+- Cases run in parallel up to `CONCURRENCY`, each with its own MCP server process. `claude` is
+  killed on timeout or cancel.
 - Default model: `claude-opus-5-5`.
+- Limitation: without `--claude-bare`, `claude` still loads the user's own CLAUDE.md and memory, and
+  any CLAUDE.md in the run folder or above it, into the agent's context. `--out` belongs outside any
+  repository; `ground` warns when it finds a CLAUDE.md above the run folder. `--bare` keeps all of
+  it out but authenticates only with `ANTHROPIC_API_KEY`.
 
 ### Engine `kiln`
 
 Calls `ground_cases(...)` with `--model` and `--provider`: the real agent, on the model a user
-would pick. This is the measured run.
+would pick. This is the measured run. Until phase 3 it prints that it is not implemented yet and
+exits 2.
 
 Comparison against the eb3 runs is manual: same specification, same server, same count.
 

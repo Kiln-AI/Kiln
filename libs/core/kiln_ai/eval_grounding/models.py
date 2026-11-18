@@ -144,6 +144,61 @@ class GroundingOutcome(BaseModel):
         )
         return self
 
+    @classmethod
+    def dropped(
+        cls,
+        reason: DropReason,
+        detail: str,
+        *,
+        call_log: list[LoggedCall],
+        usage: Usage | None,
+    ) -> GroundingOutcome:
+        """A dropped case, with the calls made before it was dropped."""
+        return cls(
+            status="dropped",
+            drop_reason=reason,
+            drop_detail=detail,
+            call_log=call_log,
+            usage=usage,
+        )
+
+    @classmethod
+    def from_result(
+        cls,
+        result: GroundingResult,
+        *,
+        openenv_reset: OpenEnvReset | None,
+        call_log: list[LoggedCall],
+        usage: Usage | None,
+    ) -> GroundingOutcome:
+        """The outcome for the model's result. `openenv_reset` is the session's last reset,
+        the environment the reference was observed in; a grounded result without one never
+        looked at the environment, so it is dropped as `invalid_output`."""
+        if result.status == "dropped":
+            assert result.drop_reason is not None and result.drop_detail is not None
+            return cls.dropped(
+                DropReason(result.drop_reason),
+                result.drop_detail,
+                call_log=call_log,
+                usage=usage,
+            )
+        if openenv_reset is None:
+            return cls.dropped(
+                DropReason.invalid_output,
+                "The agent returned a grounded case without starting an environment.",
+                call_log=call_log,
+                usage=usage,
+            )
+        return cls(
+            status="grounded",
+            openenv_reset=openenv_reset,
+            seed_prompt=result.seed_prompt,
+            synthetic_user_info=result.synthetic_user_info,
+            reference=result.reference,
+            call_log=call_log,
+            usage=usage,
+        )
+
 
 def _check_status_fields(
     status: Literal["grounded", "dropped"],

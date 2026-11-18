@@ -17,7 +17,7 @@ ship"). This is local setup, not a phase.
 - [x] Phase 1: Foundations, no model calls. `OpenEnvSessionManager.metadata()`,
   `reset_schema_brief.py`, and `eval_grounding` models, prompt and `GroundingSession` (tools,
   limits, call log, episode lifecycle), with tests against the fake server.
-- [ ] Phase 2: Prompt iteration with `claude -p`. The `prepare` subcommand, the `grounding_mcp`
+- [x] Phase 2: Prompt iteration with `claude -p`. The `prepare` subcommand, the `grounding_mcp`
   server, and `ground --engine claude` (default model `claude-opus-5-5`), with tests that stub the
   kiln_server clients and the `claude` call.
 - [ ] Checkpoint: run `prepare` and `ground --engine claude` on the eb3 eval definitions, compare

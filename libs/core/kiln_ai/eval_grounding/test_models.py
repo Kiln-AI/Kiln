@@ -9,9 +9,11 @@ from kiln_ai.eval_grounding.models import (
     GroundedReference,
     GroundingOutcome,
     GroundingResult,
+    LoggedCall,
     ModelDropReason,
 )
 from kiln_ai.synthetic_user.parser import SyntheticUserInfoParseError
+from kiln_ai.utils.usage import Usage
 
 USER_INFO = "<persona>Dana, a technician</persona><goal>Put #804 on hold</goal>"
 
@@ -140,3 +142,70 @@ def test_model_drop_reasons_are_drop_reasons():
         DropReason.unrepresentable,
         DropReason.rehearsal_failed,
     }
+
+
+def _logged_call():
+    return LoggedCall(
+        tool="start_episode",
+        args={"reset_kwargs": {}},
+        output="{}",
+        is_error=False,
+        episode_id="ep_1",
+    )
+
+
+def test_from_result_takes_the_given_reset_not_the_model_one():
+    reset = OpenEnvReset(openenv_server_id="srv", reset_kwargs={"fixture": "a"})
+    usage = Usage(input_tokens=10, output_tokens=2)
+    outcome = GroundingOutcome.from_result(
+        GroundingResult.model_validate(_grounded_result()),
+        openenv_reset=reset,
+        call_log=[_logged_call()],
+        usage=usage,
+    )
+    assert outcome.status == "grounded"
+    assert outcome.openenv_reset == reset
+    assert outcome.seed_prompt == "Put #804 on hold please"
+    assert outcome.synthetic_user_info == USER_INFO
+    assert outcome.reference is not None
+    assert outcome.reference.expected_outcome == ["#804 is on hold"]
+    assert outcome.call_log == [_logged_call()]
+    assert outcome.usage == usage
+
+
+def test_from_result_without_a_reset_is_an_invalid_output_drop():
+    outcome = GroundingOutcome.from_result(
+        GroundingResult.model_validate(_grounded_result()),
+        openenv_reset=None,
+        call_log=[],
+        usage=None,
+    )
+    assert outcome.status == "dropped"
+    assert outcome.drop_reason == DropReason.invalid_output
+    assert outcome.drop_detail
+    assert outcome.reference is None
+
+
+def test_from_result_keeps_the_model_drop():
+    outcome = GroundingOutcome.from_result(
+        GroundingResult(
+            status="dropped", drop_reason="no_fit", drop_detail="Nothing fits."
+        ),
+        openenv_reset=OpenEnvReset(openenv_server_id="srv"),
+        call_log=[_logged_call()],
+        usage=None,
+    )
+    assert outcome.status == "dropped"
+    assert outcome.drop_reason == DropReason.no_fit
+    assert outcome.drop_detail == "Nothing fits."
+    assert outcome.openenv_reset is None
+    assert outcome.call_log == [_logged_call()]
+
+
+def test_dropped_builds_a_valid_drop():
+    outcome = GroundingOutcome.dropped(
+        DropReason.limit, "Out of time.", call_log=[], usage=None
+    )
+    assert outcome.status == "dropped"
+    assert outcome.drop_reason == DropReason.limit
+    assert outcome.drop_detail == "Out of time."
