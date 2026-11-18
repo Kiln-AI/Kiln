@@ -242,6 +242,14 @@ def _stream_chunk(
     )
 
 
+_TOOL_CALL = {
+    "id": "call_1",
+    "type": "function",
+    "function": {"name": "add", "arguments": "{}"},
+    "index": 0,
+}
+
+
 def _reasoning_item(item_id: str, *texts: str) -> dict[str, Any]:
     return {
         "type": "reasoning",
@@ -267,7 +275,7 @@ def _built_message(response: ModelResponse) -> Message:
     return choice.message
 
 
-class TestReasoningNormalization:
+class TestSummaryPartsOnChoiceZero:
     async def test_reasoning_delta_moves_to_choice_zero(self):
         received, _ = await _stream_with_real_builder(
             [
@@ -298,17 +306,11 @@ class TestReasoningNormalization:
         ]
 
     async def test_content_and_tool_call_deltas_keep_their_index(self):
-        tool_call = {
-            "id": "call_1",
-            "type": "function",
-            "function": {"name": "add", "arguments": "{}"},
-            "index": 0,
-        }
         received, _ = await _stream_with_real_builder(
             [
                 _stream_chunk(index=1, reasoning_content="Thinking."),
                 _stream_chunk(index=2, content="Text", reasoning_content="r"),
-                _stream_chunk(index=3, tool_calls=[tool_call], reasoning_content="r"),
+                _stream_chunk(index=3, tool_calls=[_TOOL_CALL], reasoning_content="r"),
             ]
         )
 
@@ -318,6 +320,31 @@ class TestReasoningNormalization:
             "r",
             "r",
         ]
+
+    @pytest.mark.parametrize(
+        "between",
+        [{"content": "Text."}, {"tool_calls": [_TOOL_CALL]}],
+        ids=["text", "tool_call"],
+    )
+    async def test_part_tracking_carries_over_text_and_tool_call_deltas(
+        self, between: dict[str, Any]
+    ):
+        received, _ = await _stream_with_real_builder(
+            [
+                _stream_chunk(index=0, reasoning_content="Plan A."),
+                _stream_chunk(index=1, reasoning_content="Plan B."),
+                _stream_chunk(**between),
+                _stream_chunk(index=0, reasoning_content="Now check."),
+            ]
+        )
+
+        reasoning_deltas = [
+            choice.delta.reasoning_content
+            for chunk in received
+            for choice in chunk.choices
+            if getattr(choice.delta, "reasoning_content", None)
+        ]
+        assert reasoning_deltas == ["Plan A.", "\n\nPlan B.", "\n\nNow check."]
 
     async def test_part_tracking_resets_on_re_iteration(self):
         first = [_stream_chunk(index=1, reasoning_content="First run.")]

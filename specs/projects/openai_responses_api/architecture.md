@@ -101,7 +101,7 @@ After `stream_chunk_builder`:
 
 Step 3 also restores reasoning replay between tool rounds on the streaming path (finding 7). It's needed so §3.6 doesn't regress replay for non-streamed calls with summaries on. This overlaps one item of the separate "keep reasoning across turns" project. Update its handoff prompt to say that within-run streaming replay is fixed here. Saving reasoning across runs stays with that project.
 
-Put the helpers as private module functions in `litellm_streaming.py`: `_reasoning_items_from_chunk`, `_normalize_reasoning_delta`, `_apply_reasoning_items`. No module-level mutable state; the part-number tracking lives on the `StreamingCompletion` instance.
+Put the helpers as private module functions in `litellm_streaming.py`: `_reasoning_items_from_chunk`, `_move_summary_parts_to_choice_zero`, `_apply_reasoning_items`. No module-level mutable state; the part-number tracking lives on the `StreamingCompletion` instance.
 
 ### 3.8 Unverified-org error (`libs/core/kiln_ai/adapters/errors.py`)
 
