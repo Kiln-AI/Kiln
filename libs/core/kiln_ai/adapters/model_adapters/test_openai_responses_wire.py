@@ -233,16 +233,35 @@ def responses_stream_events(
     return [{**event, "sequence_number": number} for number, event in enumerate(events)]
 
 
-def streamed_responses_reply(
-    output: list[dict[str, Any]], incomplete_reason: str | None = None
-) -> httpx.Response:
+def sse_reply(events: list[dict[str, Any]]) -> httpx.Response:
     sse = "".join(
         f"event: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
-        for event in responses_stream_events(output, incomplete_reason)
+        for event in events
     )
     return httpx.Response(
         200, content=sse.encode(), headers={"content-type": "text/event-stream"}
     )
+
+
+def streamed_responses_reply(
+    output: list[dict[str, Any]], incomplete_reason: str | None = None
+) -> httpx.Response:
+    return sse_reply(responses_stream_events(output, incomplete_reason))
+
+
+def failed_stream_reply(
+    output: list[dict[str, Any]], error: dict[str, str]
+) -> httpx.Response:
+    """A stream that sends every event for `output`, then `response.failed` instead
+    of `response.completed`."""
+    events = responses_stream_events(output)[:-1]
+    failed_body = {**responses_body(output), "status": "failed", "error": error}
+    failed = {
+        "type": "response.failed",
+        "response": failed_body,
+        "sequence_number": len(events),
+    }
+    return sse_reply([*events, failed])
 
 
 def chat_completion_reply(text: str) -> httpx.Response:
@@ -437,6 +456,7 @@ async def test_summaries_off_sends_no_summary(plain_task):
     assert run.output.output == "The answer is [4]"
     body = request_body(route, 0)
     assert body["reasoning_effort"] == "medium"
+    assert body["store"] is False
     for key in ("reasoning_summary", "reasoning", "stream"):
         assert key not in body
 
@@ -561,6 +581,40 @@ async def test_streamed_tool_loop_replays_reasoning_items(
     ]
     input_types = [item.get("type") for item in round_two_input]
     assert input_types.index("reasoning") < input_types.index("function_call")
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "error,litellm_error",
+    [
+        (
+            {"code": "server_error", "message": "The server had an error."},
+            litellm.ServiceUnavailableError,
+        ),
+        (
+            {"code": "invalid_prompt", "message": "Invalid prompt."},
+            litellm.BadRequestError,
+        ),
+    ],
+)
+async def test_failed_stream_with_partial_text_raises(
+    plain_task, summaries_on, error, litellm_error
+):
+    # The answer text has already streamed when OpenAI reports the failure.
+    respx.post(RESPONSES_URL).mock(
+        side_effect=lambda _: failed_stream_reply(
+            [REASONING_ITEM, FINAL_MESSAGE], error
+        )
+    )
+    adapter = openai_adapter(plain_task, ModelName.gpt_6_1_sol, thinking_level="medium")
+
+    with pytest.raises(KilnRunError) as exc_info:
+        await adapter.invoke("what is 2+2")
+    assert isinstance(exc_info.value.original, litellm_error)
+    assert error["message"] in str(exc_info.value.original)
+
+    with pytest.raises(litellm_error, match=error["message"]):
+        await run_streamed(adapter, "what is 2+2")
 
 
 @respx.mock

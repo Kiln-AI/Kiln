@@ -1047,6 +1047,7 @@
               inputType="checkbox"
               label={option.label}
               info_description={option.info}
+              disabled={api_key_submitting}
               bind:value={api_key_option_values[option.id]}
             />
           {/each}

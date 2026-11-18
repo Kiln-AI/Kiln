@@ -412,6 +412,36 @@ describe("ConnectProviders OpenAI reasoning summaries option", () => {
     },
   )
 
+  it("disables the option while the key is being checked", async () => {
+    let finish_key_check: (response: Response) => void = () => {}
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes("/api/provider/connect_api_key")) {
+          return new Promise<Response>((resolve) => {
+            finish_key_check = resolve
+          })
+        }
+        return mock_fetch(url, init)
+      }),
+    )
+    await render_connect_providers()
+    await open_provider_dialog("OpenAI")
+
+    await submit_api_key("sk-key")
+    await waitFor(() =>
+      expect(reasoning_summaries_checkbox().disabled).toBe(true),
+    )
+
+    finish_key_check({
+      status: 401,
+      json: async () => ({ message: invalid_key_message }),
+    } as unknown as Response)
+    await waitFor(() =>
+      expect(reasoning_summaries_checkbox().disabled).toBe(false),
+    )
+  })
+
   it("starts the option unchecked when the dialog is reopened", async () => {
     await render_connect_providers()
     await open_provider_dialog("OpenAI")

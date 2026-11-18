@@ -1290,6 +1290,16 @@ def test_lite_llm_core_config_openai_reads_reasoning_summaries(enabled):
     assert config.openai_reasoning_summaries is enabled
 
 
+def test_lite_llm_core_config_openai_stored_null_summaries_is_off():
+    with open(Config.settings_path(), "w") as f:
+        f.write("open_ai_reasoning_summaries: null\n")
+
+    config = lite_llm_core_config_for_provider(ModelProviderName.openai)
+
+    assert config is not None
+    assert config.openai_reasoning_summaries is False
+
+
 def test_lite_llm_core_config_non_openai_ignores_reasoning_summaries():
     Config.shared().open_ai_reasoning_summaries = True
 
