@@ -13,6 +13,7 @@ The following controls are commonly used in our design language:
 - `app_page.svelte` - a page of our app including title, subtitle, and action buttons in standard position/size
 - `property_list.svelte` - a list of properties in a grid with name, value and optional tooltips/links. Optional list title.
 - `form_element.svelte`/`form_container.svelte`/`form_list.svelte` - a series of controls for building forms with submit buttons, spinners, errors, validation, input controls, etc.
+  - When field descriptions come from a schema someone else wrote, set `on_see_all_description` (on `FormElement`, or on `run_input_form.svelte` for every field): descriptions are cut to three lines with a See all link, and the callback gets the label and full text to show in a `SeeAllDialog` placed outside the form.
 - `info_tooltip.svelte` - a way to display a tooltip from an “i” info icon, and uses floating_ui to not break doc flow.
 - `warning.svelte` - show message box with icon and text. Can be a warning, informational or success.
 - `intro.svelte` - used for empty screens before data is added. Teaches user about concept, and has buttons guiding them to an action.
