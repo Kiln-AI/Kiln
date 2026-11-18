@@ -18,9 +18,9 @@ def test_nltk_hook_adds_bundled_data_path_without_importing_nltk(tmp_path):
         "import runpy, sys\n"
         f"sys._MEIPASS = {str(tmp_path)!r}\n"
         f"runpy.run_path({str(NLTK_HOOK)!r})\n"
-        "print('nltk' in sys.modules)\n"
+        "sys.stdout.write(f\"{'nltk' in sys.modules}\\n\")\n"
         "import nltk\n"
-        "print(nltk.data.path[0])\n"
+        "sys.stdout.write(f'{nltk.data.path[0]}\\n')\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", probe],
