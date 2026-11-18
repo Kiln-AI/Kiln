@@ -1,7 +1,8 @@
 """Offline wire tests for OpenAI models that LiteLLM routes to /v1/responses.
 
-These run real LiteLLM through LiteLlmAdapter, with respx standing in for OpenAI,
-so they catch LiteLLM upgrades that change what reaches the wire.
+These run real LiteLLM, through LiteLlmAdapter or StreamingCompletion, with respx
+standing in for OpenAI, so they catch LiteLLM upgrades that change what reaches the
+wire.
 """
 
 import json
@@ -12,12 +13,14 @@ import httpx
 import litellm
 import pytest
 import respx
+from litellm.types.utils import Choices, ModelResponse
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.errors import (
     REASONING_SUMMARY_VERIFICATION_ERROR_MESSAGE,
     KilnRunError,
 )
+from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.ml_model_list import (
     ModelName,
     ModelProviderName,
@@ -83,6 +86,11 @@ ONE_PART_ITEM = {
     "summary": [{"type": "summary_text", "text": "One more thought."}],
     "encrypted_content": "ENC_ONE_PART",
 }
+TRUNCATED_MESSAGE = {
+    **FINAL_MESSAGE,
+    "status": "incomplete",
+    "content": [{"type": "output_text", "text": "The answer", "annotations": []}],
+}
 
 SUMMARY_PROVIDER_MODELS = [
     model.name
@@ -128,8 +136,14 @@ def responses_body(output: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def responses_stream_events(output: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The Responses SSE events OpenAI sends for `output`, each text split in two deltas."""
+def responses_stream_events(
+    output: list[dict[str, Any]], incomplete_reason: str | None = None
+) -> list[dict[str, Any]]:
+    """The Responses SSE events OpenAI sends for `output`, each text split in two deltas.
+
+    With `incomplete_reason`, the stream ends with `response.incomplete` instead of
+    `response.completed`, as when the output-token limit is hit.
+    """
     events: list[dict[str, Any]] = [
         {
             "type": "response.created",
@@ -205,14 +219,26 @@ def responses_stream_events(output: list[dict[str, Any]]) -> list[dict[str, Any]
                 }
             )
         events.append({"type": "response.output_item.done", **at, "item": item})
-    events.append({"type": "response.completed", "response": responses_body(output)})
+    if incomplete_reason is None:
+        events.append(
+            {"type": "response.completed", "response": responses_body(output)}
+        )
+    else:
+        incomplete_body = {
+            **responses_body(output),
+            "status": "incomplete",
+            "incomplete_details": {"reason": incomplete_reason},
+        }
+        events.append({"type": "response.incomplete", "response": incomplete_body})
     return [{**event, "sequence_number": number} for number, event in enumerate(events)]
 
 
-def streamed_responses_reply(output: list[dict[str, Any]]) -> httpx.Response:
+def streamed_responses_reply(
+    output: list[dict[str, Any]], incomplete_reason: str | None = None
+) -> httpx.Response:
     sse = "".join(
         f"event: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
-        for event in responses_stream_events(output)
+        for event in responses_stream_events(output, incomplete_reason)
     )
     return httpx.Response(
         200, content=sse.encode(), headers={"content-type": "text/event-stream"}
@@ -464,6 +490,42 @@ async def test_streamed_reasoning_deltas_on_one_choice_with_part_breaks(
         "**Plan**\n\nFirst part.\n\n**Check**\n\nSecond part.\n\nOne more thought."
     )
     assert run.intermediate_outputs == {"reasoning": streamed_text}
+
+
+@respx.mock
+async def test_incomplete_stream_keeps_reasoning_items():
+    # The one-part item comes first, so only text rebuilt from the items has a break
+    # between the two items.
+    respx.post(RESPONSES_URL).mock(
+        return_value=streamed_responses_reply(
+            [ONE_PART_ITEM, TWO_PART_ITEM, TRUNCATED_MESSAGE],
+            incomplete_reason="max_output_tokens",
+        )
+    )
+    stream = StreamingCompletion(
+        model="openai/gpt-6.1-sol",
+        messages=[{"role": "user", "content": "what is 2+2"}],
+        api_key=API_KEY,
+        reasoning_effort="medium",
+        reasoning_summary="auto",
+        store=False,
+    )
+
+    async for _ in stream:
+        pass
+
+    assert isinstance(stream.response, ModelResponse)
+    choice = stream.response.choices[0]
+    assert isinstance(choice, Choices)
+    assert choice.finish_reason == "length"
+    assert choice.message.content == "The answer"
+    assert [item["id"] for item in choice.message.reasoning_items] == [
+        "rs_one_part",
+        "rs_two_parts",
+    ]
+    assert choice.message.reasoning_content == (
+        "One more thought.\n\n**Plan**\n\nFirst part.\n\n**Check**\n\nSecond part."
+    )
 
 
 @respx.mock
