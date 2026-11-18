@@ -423,7 +423,7 @@ def test_entry_script_imports_nothing_heavy_outside_main():
         "import runpy, sys\n"
         f"runpy.run_path({str(ENTRY_SCRIPT)!r}, run_name='__mp_main__')\n"
         "heavy = ('app.desktop.desktop_main', 'app.desktop.desktop_server', 'litellm', 'tkinter')\n"
-        "print(','.join(m for m in heavy if m in sys.modules))\n"
+        "sys.stdout.write(','.join(m for m in heavy if m in sys.modules))\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", probe],
