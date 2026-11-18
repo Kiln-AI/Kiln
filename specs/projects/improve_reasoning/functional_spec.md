@@ -157,10 +157,9 @@ For each must-work provider, plus Groq, streamed and not streamed:
 
 - **Output:** the run's trace holds native reasoning in the right fields.
 - **Input:** the request actually sent on the next turn, captured through LiteLLM's logging hook, carries that reasoning back. This is checked for a new user turn and for a `return_on_tool_call` resume.
-- **Caching:** turn 2's cached input tokens cover all of turn 1's request.
-  - The system prompt and tools total at least about 4,000 tokens, so every provider's minimum cacheable prefix is cleared.
-  - "All" means the whole turn-1 request, with no general tolerance. The only allowance is the fixed number of tokens a provider adds at the end of every prompt, which therefore never appear in the next request's cached prefix. On OpenAI that measured as exactly 3 tokens. Phase 1 measures it per provider, and the test uses that exact constant.
-  - Providers that don't report cached tokens skip the caching assertion and still run the reasoning tests.
+- **Sent tokens:** the captured turn-2 request is exactly turn 1's full request history, including its reasoning, plus the new turn. Nothing is dropped, reordered or changed.
+- **Caching:** turn 2's cached input tokens are at least 95% of turn 1's request input tokens. The system prompt and tools total at least about 4,000 tokens, so every provider's minimum cacheable prefix is cleared. The threshold allows for providers' small end-of-prompt differences (3 tokens on OpenAI) and for caches counted in blocks.
+- Providers that don't report cached tokens skip the caching assertion and still run the reasoning tests.
 - **Retries:** a test retries only when its check fails, with a 5-second wait, up to 4 times. Caching is best-effort on every provider.
 
 ### Pre-release subset (`@pytest.mark.prerelease`)
@@ -197,4 +196,3 @@ Phase 1 of implementation is paid confirmation, before design changes that depen
 - Confirming or ruling out the four errors above.
 - What Groq accepts on input for reasoning (`reasoning` or `reasoning_content`).
 - The exact field name and form OpenRouter needs for `reasoning_details`, for Gemini, Claude and OpenAI models.
-- The per-provider end-of-prompt token constant used by the caching test.
