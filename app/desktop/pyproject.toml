@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "kiln-studio-desktop"
 version = "1.2.1"
 description = "The Kiln Desktop App. Download from https://kiln.tech"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "kiln-server",
     "pillow>=11.0.0",
@@ -16,16 +16,12 @@ dependencies = [
     "pyinstaller==6.22.3",
     # scipy 1.15.x ships a _propack extension whose Mach-O has a zero-fill
     # __DATA/__thread_bss section with a non-zero offset, which macOS 27's dyld
-    # refuses to load. 1.16.0 is the first release that loads there. scipy 1.16
-    # requires Python >= 3.11, so 3.10 stays on 1.15.x (macOS 27 + Python 3.10
-    # remains affected; other platforms are unaffected).
-    "scipy>=1.15.2; python_version < '3.11'",
-    "scipy>=1.16.0; python_version >= '3.11'",
+    # refuses to load. 1.16.0 is the first release that loads there.
+    "scipy>=1.16.0",
     # The macOS app bundle shares pygit2's vendored libcrypto.3.dylib with Python's ssl module,
     # so it must be at least as new as Python's OpenSSL or `import ssl` fails at launch.
-    # pygit2 1.19.3 ships OpenSSL 3.5.4 but requires Python >= 3.11, so 3.10 stays on 1.18.x.
-    "pygit2>=1.17.0,<2; python_version < '3.11'",
-    "pygit2>=1.19.3,<2; python_version >= '3.11'",
+    # pygit2 1.21.0 ships OpenSSL 3.5.9.
+    "pygit2>=1.21.0,<2",
     "sentry-sdk>=2.0.0",
 ]
 

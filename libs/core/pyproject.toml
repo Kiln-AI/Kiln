@@ -1,7 +1,7 @@
 [project]
 name = "kiln-ai"
 version = "1.2.1"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 description = 'Kiln AI'
 authors = [
@@ -10,10 +10,10 @@ authors = [
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Intended Audience :: Developers",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
 
 
@@ -21,7 +21,6 @@ dependencies = [
     "boto3>=1.37.10",
     "coverage>=7.6.4",
     "httpx>=0.24.0",
-    "exceptiongroup>=1.0.0; python_version<'3.11'",
     "google-cloud-aiplatform>=1.84.0",
     "google-genai>=1.21.1",
     "jinja2>=3.1.0",
@@ -40,6 +39,9 @@ dependencies = [
     "typing-extensions>=4.12.2",
     "vertexai>=1.43.0",
     "llama-index>=0.13.3",
+    # llama-index-core before 0.14.12 imports eval_type_backport whenever it is installed
+    # (together depends on it), and that import fails on Python 3.14+.
+    "llama-index-core>=0.14.12",
     "anyio>=4.10.0",
     "pypdfium2>=4.30.0",
     "pillow>=11.1.0",
@@ -72,7 +74,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [tool.uv]
 exclude-newer = "7 days"
