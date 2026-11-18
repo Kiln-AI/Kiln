@@ -50,8 +50,9 @@ GEMINI_ADAPTIVE_THINKING_MODELS = {
     ModelName.gemini_3_6_flash.value,
     ModelName.gemini_3_8_flash.value,
     ModelName.gemini_3_5_flash_lite.value,
-    # On gemini_api, Gemini 4 Argon returns no reasoning at low or medium.
+    # On gemini_api, Gemini 4 Argon and Carbon return no reasoning at low or medium.
     ModelName.gemini_4_argon.value,
+    ModelName.gemini_4_carbon.value,
 }
 
 
