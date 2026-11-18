@@ -78,7 +78,8 @@ When a provider change below alters what the in-run tool loop sends, the saved t
 
 ### 5. Prompt caching
 
-- `automatic_prompt_caching` turns on by default for every run, including the first turn of a conversation. A turn can only read a cache that an earlier call wrote, so the first turn must write it too. For Anthropic, that adds the cache marker the provider needs. OpenAI and Gemini cache automatically, so their cost doesn't change.
+- `automatic_prompt_caching` turns on by default for every run, including the first turn of a conversation. A turn can only read a cache that an earlier call wrote, so the first turn must write it too.
+- **Cache markers go to Claude models only:** on Anthropic direct, and through OpenRouter. Every other provider uses its own automatic caching, and Kiln sends no markers. Today Kiln asks LiteLLM to add markers on every provider. LiteLLM then switches OpenAI GPT-5.6+ to "explicit" cache mode, and a paid check on GPT-5.6 Luna measured 0 cached tokens on turns 2 and 3 there, against a full hit with no markers. On Gemini and Vertex, LiteLLM uses the markers to create a separate stored context cache, found by reading LiteLLM's code. That cache is billed for storage and changes the request body. The synthetic user, which sets this flag today, gets both of those problems. This fix removes them.
 - Cost on Anthropic: writing the cache costs 1.25× the normal input price for the cached part, and reading it costs 0.1×. A run that is never continued and has no tool loop pays the extra 25% on its input for nothing. Any second call (a tool round or a later turn) more than pays it back.
 - Callers can still turn it off explicitly.
 
