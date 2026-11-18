@@ -254,6 +254,7 @@ class ModelName(str, Enum):
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
+    qwen_4_max = "qwen_4_max"
     qwen_3p8_max_0902 = "qwen_3p8_max_0902"
     qwen_3p8_max = "qwen_3p8_max"
     qwen_3p8_max_prime = "qwen_3p8_max_prime"
@@ -862,6 +863,13 @@ QWEN_3P6_GROQ_THINKING_LEVELS = {
 MUSE_SPARK_OPEN_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+QWEN_4_MAX_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
     "High": "high",
     "Extra High": "xhigh",
 }
@@ -7829,6 +7837,36 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Qwen 4 Max
+    # reasoning_capable left False: reasoning is on by default but can be turned off with the "none" effort.
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_4_max,
+        friendly_name="Qwen 4 Max",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen4-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_4_MAX_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
