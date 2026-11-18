@@ -1,0 +1,56 @@
+# LiteLLM Responses support
+
+## Bottom Line
+
+LiteLLM 1.102.0, the version Kiln pins, already sends gpt-5.4+/gpt-6 OpenAI and Azure chat calls that carry function tools to `/v1/responses` on its own, unless `reasoning_effort` is exactly `"none"`. It does this through its chat-to-responses conversion layer, the "bridge". The bridge works, but in 1.102.x it has real defects:
+
+- A non-streamed reply with text plus a tool call comes back as two choices, so a caller reading `choices[0]` loses the tool call.
+- Streamed reasoning summary deltas use `summary_index` as the choice index.
+- Function tools without `strict` are sent as `"strict": null`; `text.format.strict` becomes `false` when absent.
+- `store` and `include` are never set.
+- Several chat parameters are silently dropped.
+
+The two-choice and tool-index bugs are fixed from v1.103.5 (2026-10-17), but no 1.102.x release has the fix, so Kiln's pin `<1.103` excludes it. The other defects remain in every version checked, up to 1.108.0rc1 (2026-10-29). The native `litellm.aresponses()` call avoids most of them because the caller builds the Responses input and reads the output items itself. Its own quirks are rewritten response ids, untyped reasoning-summary events, and fake streaming for unknown Azure deployment names.
+
+## Key Findings
+
+- **Routing rules (1.102.0).** A chat call goes to `/v1/responses` when any of these hold: `litellm.route_all_chat_openai_to_responses` (OpenAI only); `mode: "responses"` in the model map (Pro, Codex and deep-research models); an `openai/responses/` or `azure/responses/` prefix; or a gpt-5/gpt-6 name with `reasoning_effort` plus a reasoning-summary alias. The automatic rule covers gpt-5.4+ or gpt-6 names with a `type: "function"` tool and reasoning not `"none"`. When `reasoning_effort` is unset, that rule only fires on `api.openai.com` hosts and Azure. Names like `gpt-7` are never auto-routed. Azure is matched on the deployment name, and `base_model` is ignored. The same model goes to Chat Completions when no tools are attached. Details and observed tables: [routing-rules.md](./routing-rules.md). Source: `litellm/main.py:1047-1143`; PR [#39587](https://github.com/BerriAI/litellm/pull/39587).
+- **Model map is fetched at import** from BerriAI's GitHub `main` unless `LITELLM_LOCAL_MODEL_COST_MAP=true`, so `mode: responses` routing and effort checks can change without a LiteLLM upgrade (`litellm/__init__.py:422-426,557`).
+- **Request mapping.** Chat params are first validated by the OpenAI GPT-5 chat config (temperature and logprobs errors, `max_tokens` renamed), then filtered to Responses keys. The bridge sends tools with `"strict": null` when absent, which matters because the OpenAI SDK documents Responses function tools as "Default `true`". `response_format` becomes `text.format` with `strict` defaulting to `false`. `reasoning_effort` (string or dict) and summary aliases become `reasoning`. `store` and `include` are passed only when the caller sets them. `n`, `seed`, `stop`, `logprobs`, `verbosity`, unknown `extra_body` keys and `allowed_openai_params` are silently dropped. `include` leaks to `/v1/chat/completions` when the same call is not bridged. Wire captures: [request-mapping.md](./request-mapping.md).
+- **Reply mapping.** The `[reasoning, message, function_call]` output gives two choices in 1.102.x. Only the last of consecutive reasoning items is kept. `reasoning_content` is the summary joined with spaces, and `reasoning_items` carries `id`, `encrypted_content` and `summary` for replay. Usage maps cached and reasoning tokens correctly, and cost was right ($0.0061 for the test case on both paths). The reply id is the upstream `resp_...` and the model is the requested name. [reply-and-streaming-mapping.md](./reply-and-streaming-mapping.md).
+- **Streaming translation.** Text and tool calls stay on one choice. Reasoning deltas for summary part N arrive on choice index N, with no separator between parts. `reasoning_items` arrive only on the terminal chunk, and `litellm.stream_chunk_builder` drops them. Usage with `cost` arrives on the last chunk. `response.failed` raises `MidStreamFallbackError`.
+- **Native `aresponses()`.** It takes OpenAI Responses parameters by name and returns `ResponsesAPIResponse` or a typed event iterator, with `completed_response` holding the terminal event. Response ids are rewritten to `resp_<base64(provider;model_id;id)>` and decoded again on `previous_response_id`. Cost is in `_hidden_params["response_cost"]` and, when streamed, in `usage.cost`. It is native for OpenAI, Azure, xAI, OpenRouter, Databricks (gpt), vLLM, Fireworks, Perplexity and others; every other provider goes through a separate reverse bridge. [native-responses-api.md](./native-responses-api.md).
+- **Azure.** It uses the same bridge, at `/openai/responses?api-version=...` or `/openai/v1/responses?api-version=preview` by default. Only deployments named like the model auto-route; others need `azure/responses/<deployment>`. Deployment names missing from the map are fake-streamed (one blocking request). [azure.md](./azure.md).
+- **Defect status by version** (fixed in 1.103.5 / 1.106.0 / still open in 1.108.0rc1), with issue and PR links: [known-defects.md](./known-defects.md). Key upstream references: issue [#43316](https://github.com/BerriAI/litellm/issues/43316) (two choices), [v1.103.5 release notes](https://docs.litellm.ai/release_notes/v1.103.5/v1-103-5), [v1.106.0 release notes](https://docs.litellm.ai/release_notes/v1.106.0/v1-106-0) (PR #44132, minted reasoning ids).
+- **Other LiteLLM users patch the bridge.** Onyx carries monkey patches for summary separators, the non-streamed summary join, Azure fake streaming and usage formatting ([onyx#13192](https://github.com/onyx-dot-app/onyx/pull/13192)).
+
+## Details
+
+- [routing-rules.md](./routing-rules.md): every rule that sends a chat call to `/v1/responses`, the model-name and host checks, reasoning-summary aliases, observed routing for 27 cases, and changes in later versions.
+- [request-mapping.md](./request-mapping.md): parameter-by-parameter mapping table with wire captures, silent drops, `strict`/`store`/`include` behavior, and leaks onto the chat path.
+- [reply-and-streaming-mapping.md](./reply-and-streaming-mapping.md): how output items become choices, reasoning round trip, usage and cost, streaming event translation, `stream_chunk_builder`, failure exceptions, fixes in later versions.
+- [native-responses-api.md](./native-responses-api.md): `responses()`/`aresponses()` signature, return and event types, id rewriting, usage and cost, provider coverage, fake streaming, and a bridge-versus-native comparison table.
+- [azure.md](./azure.md): Azure routing, URLs and api-version, body changes, o-series config, fake streaming.
+- [known-defects.md](./known-defects.md): 19 defects with evidence and status per release; read this before choosing between bridge and native.
+- [experiments.md](./experiments.md): the fake-server scripts, how to rerun them, and their limits.
+
+## Open Questions / Gaps
+
+- **How OpenAI treats `"strict": null`** on a Responses function tool (strict, non-strict, or default true), and whether it accepts `include` on `/v1/chat/completions`. Both need OpenAI docs or a paid call. No API key was used.
+- **Whether OpenAI accepts a replayed reasoning item that has both an `id` and `encrypted_content` when `store` is false.** That is what the bridge sends. Third-party reports conflict ([bifrost#5410](https://github.com/maximhq/bifrost/issues/5410) vs [LangChain #38372](https://github.com/langchain-ai/langchain/pull/38372)). This belongs to the OpenAI subtopic.
+- **No upstream issue or PR found** for the `summary_index` choice index, the `"strict": null` tool default, or a `store` default in the bridge. I searched GitHub via Exa and Tavily; the GitHub API for BerriAI/litellm was not reachable from this session.
+- **The 1.103.x line was checked at 1.103.0, 1.103.4, 1.103.5 and 1.103.10 only.** The fix first appears at 1.103.5, matching the release notes.
+- **Azure behavior was only observed against a fake server.** The claim that Azure rejects tools with reasoning on Chat Completions for gpt-5.4+ comes from LiteLLM code comments and PRs, not from an Azure call.
+
+## Sources
+
+- LiteLLM 1.102.0 source, installed at `/home/user/Kiln/.venv/lib/python3.13/site-packages/litellm/`: `main.py`, `completion_extras/litellm_responses_transformation/{handler,transformation}.py`, `responses/{main,utils,streaming_iterator}.py`, `llms/openai/responses/transformation.py`, `llms/azure/responses/*.py`, `llms/openai/chat/gpt_5_transformation.py`, `utils.py`, `types/llms/openai.py`. Primary for all behavior claims (published 2026-09-20).
+- LiteLLM wheels 1.102.4 to 1.108.0rc1 from [PyPI](https://pypi.org/project/litellm/) (release dates from the PyPI JSON API, read 2026-10-30). Primary for "fixed in" claims.
+- [LiteLLM OpenAI provider docs](https://docs.litellm.ai/docs/providers/openai): bridge, `route_all_chat_openai_to_responses`, reasoning_items round trip (reflects `main`, read 2026-10-30).
+- [LiteLLM /responses docs](https://docs.litellm.ai/docs/response_api) and [native passthrough docs](https://docs.litellm.ai/docs/response_api_native_passthrough): native call, reverse bridge, provider support.
+- [LiteLLM reasoning content docs](https://docs.litellm.ai/docs/reasoning_content): `reasoning_auto_summary`.
+- Release notes [v1.103.5](https://docs.litellm.ai/release_notes/v1.103.5/v1-103-5), [v1.106.0](https://docs.litellm.ai/release_notes/v1.106.0/v1-106-0), [v1.106.1](https://docs.litellm.ai/release_notes/v1.106.1/v1-106-1), [v1.106.2](https://docs.litellm.ai/release_notes/v1.106.2/v1-106-2), [changelog index](https://docs.litellm.ai/release_notes/): what was fixed when (October 2026).
+- BerriAI/litellm issues and PRs: [#43316](https://github.com/BerriAI/litellm/issues/43316) (two choices, 2026-09/10), [#33931](https://github.com/BerriAI/litellm/pull/33931), [#39587](https://github.com/BerriAI/litellm/pull/39587) (host check, 2026-09-03), [#33237](https://github.com/BerriAI/litellm/pull/33237), [#23576](https://github.com/BerriAI/litellm/pull/23576) (route instead of drop, 2026-03), [#25359](https://github.com/BerriAI/litellm/pull/25359) (global flag), [#24557](https://github.com/BerriAI/litellm/pull/24557) (reasoning_items round trip, 2026-03), [#40654](https://github.com/BerriAI/litellm/issues/40654) (raw reasoning dropped), [#40887](https://github.com/BerriAI/litellm/issues/40887) (streamed reasoning items), [#17246](https://github.com/BerriAI/litellm/issues/17246), [#21331](https://github.com/BerriAI/litellm/issues/21331), [#12666](https://github.com/BerriAI/litellm/pull/12666), [#36768](https://github.com/BerriAI/litellm/issues/36768).
+- [onyx-dot-app/onyx#13192](https://github.com/onyx-dot-app/onyx/pull/13192): a downstream project's list of LiteLLM bridge monkey patches.
+- OpenAI Python SDK 2.41.0 type docstrings in Kiln's virtualenv (`openai/types/responses/function_tool_param.py`): `strict` "Default `true`".
+- Experiment scripts and raw outputs live in the session scratchpad (`litellm_wire/`), not in the repo; [experiments.md](./experiments.md) describes how to rerun them.

@@ -839,6 +839,15 @@ def connect_provider_api(app: FastAPI):
             )
         return api_key
 
+    def parse_connect_options(payload: dict) -> dict[str, bool]:
+        options = payload.get("options", {})
+        if not isinstance(options, dict) or not all(
+            isinstance(name, str) and isinstance(value, bool)
+            for name, value in options.items()
+        ):
+            raise HTTPException(status_code=400, detail="Invalid options")
+        return options
+
     @app.post(
         "/api/provider/connect_api_key",
         summary="Connect Provider API Key",
@@ -853,6 +862,7 @@ def connect_provider_api(app: FastAPI):
                 status_code=400,
                 content={"message": "Invalid key_data or provider"},
             )
+        options = parse_connect_options(payload)
 
         # Wandb is not a typical AI provider, but it's a provider you can connect through this UI/API
         if provider == "wandb":
@@ -883,7 +893,10 @@ def connect_provider_api(app: FastAPI):
 
         match typed_provider:
             case ModelProviderName.openai:
-                return await connect_openai(parse_api_key(key_data))
+                return await connect_openai(
+                    parse_api_key(key_data),
+                    reasoning_summaries=options.get("reasoning_summaries", False),
+                )
             case ModelProviderName.groq:
                 return await connect_groq(parse_api_key(key_data))
             case ModelProviderName.openrouter:
@@ -963,6 +976,7 @@ def connect_provider_api(app: FastAPI):
             match typed_provider_id:
                 case ModelProviderName.openai:
                     Config.shared().open_ai_api_key = None
+                    Config.shared().open_ai_reasoning_summaries = False
                 case ModelProviderName.groq:
                     Config.shared().groq_api_key = None
                 case ModelProviderName.openrouter:
@@ -1240,7 +1254,7 @@ async def connect_fireworks(key_data: dict):
         )
 
 
-async def connect_openai(key: str):
+async def connect_openai(key: str, reasoning_summaries: bool):
     try:
         headers = {
             "Authorization": f"Bearer {key}",
@@ -1263,6 +1277,7 @@ async def connect_openai(key: str):
         )
 
     Config.shared().open_ai_api_key = key
+    Config.shared().open_ai_reasoning_summaries = reasoning_summaries
 
     return JSONResponse(
         status_code=200,

@@ -280,6 +280,7 @@ describe("ConnectProviders Cloudflare", () => {
           [cloudflare_token_field]: "token",
           [cloudflare_account_field]: "account",
         },
+        options: {},
       },
     ])
     expect(within(cloudflare_row()).getByAltText("Connected")).toBeTruthy()
@@ -309,6 +310,7 @@ describe("ConnectProviders Cloudflare", () => {
         [cloudflare_account_field]: "account",
         [cloudflare_gateway_field]: "default",
       },
+      options: {},
     })
     expect(within(cloudflare_row()).getByAltText("Connected")).toBeTruthy()
   })
@@ -356,4 +358,71 @@ describe("ConnectProviders Cloudflare", () => {
       ).toBeTruthy()
     },
   )
+})
+
+const reasoning_summaries_label =
+  "Show reasoning summaries (requires Org verification)"
+
+function reasoning_summaries_checkbox(): HTMLInputElement {
+  return screen.getByRole("checkbox", {
+    name: reasoning_summaries_label,
+  }) as HTMLInputElement
+}
+
+describe("ConnectProviders OpenAI reasoning summaries option", () => {
+  it("shows the option unchecked in the OpenAI dialog, with a verification link", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("OpenAI")
+
+    expect(reasoning_summaries_checkbox().checked).toBe(false)
+    expect(
+      screen.getByText("organization verification").getAttribute("href"),
+    ).toBe("https://platform.openai.com/settings/organization/general")
+  })
+
+  it("does not show the option for other providers", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("OpenRouter.ai")
+
+    expect(
+      screen.queryByRole("checkbox", { name: reasoning_summaries_label }),
+    ).toBeNull()
+  })
+
+  it.each([
+    [true, { reasoning_summaries: true }],
+    [false, { reasoning_summaries: false }],
+  ])(
+    "sends the option with the OpenAI key when checked is %s",
+    async (checked, expected_options) => {
+      await render_connect_providers()
+      await open_provider_dialog("OpenAI")
+
+      if (checked) {
+        await fireEvent.click(reasoning_summaries_checkbox())
+      }
+      await submit_api_key("sk-key")
+
+      await waitFor(() => expect(connect_request_bodies()).toHaveLength(1))
+      expect(connect_request_bodies()[0]).toEqual({
+        provider: "openai",
+        key_data: { "API Key": "sk-key" },
+        options: expected_options,
+      })
+    },
+  )
+
+  it("starts the option unchecked when the dialog is reopened", async () => {
+    await render_connect_providers()
+    await open_provider_dialog("OpenAI")
+    await fireEvent.click(reasoning_summaries_checkbox())
+    expect(reasoning_summaries_checkbox().checked).toBe(true)
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Cancel setting up OpenAI" }),
+    )
+    await open_provider_dialog("OpenAI")
+
+    expect(reasoning_summaries_checkbox().checked).toBe(false)
+  })
 })
