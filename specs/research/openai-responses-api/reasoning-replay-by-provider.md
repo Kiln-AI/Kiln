@@ -22,7 +22,7 @@ None of the problems below were caused by #2001. They come from Kiln's trace for
   - Each scenario ran both non-streamed (`invoke`) and streamed (`invoke_openai_stream`). The AI SDK stream uses the same `AdapterStream` / `StreamingCompletion` path.
   - The probe scripts aren't in the repo. To rebuild them, use the same `respx` setup with each provider's native reply shape. That means OpenAI Responses `output` items with `encrypted_content`, Anthropic `thinking` blocks with `signature`, and Gemini parts with `thoughtSignature`.
 - **Provider docs.** Each provider's own docs, for how it says reasoning must be replayed.
-- **No paid calls.** Anything that depends on a provider's real validation is unverified.
+- **No paid calls in the probes.** Anything that depends on a provider's real validation is unverified, except what the paid run in [Paid results, 2026-11-18](#paid-results-2026-11-18) checked.
 
 Evidence tags:
 
@@ -33,6 +33,7 @@ Evidence tags:
 | **D** | provider docs |
 | **3P** | third-party report, such as a GitHub issue |
 | **I** | inferred |
+| **P** | paid call with real keys, 2026-11-18 |
 
 ## How Kiln sends history back
 
@@ -91,7 +92,7 @@ If a conversation switches models, summaries saved from OpenAI, Claude or Gemini
 
 - **Anthropic manual-thinking models** (Sonnet 4.5, Haiku 4.5, Opus 4.5, with thinking not `none`): possibly a 400. The resumed request has thinking enabled, and `[text, tool_use]` with no thinking block before the `tool_result` (O). The evidence conflicts:
   - For a 400: the docs say manual mode enforces a leading thinking block (D). There are 2025 reports of "Expected `thinking` or `redacted_thinking`, but found `tool_use`" through LiteLLM, including on Bedrock (3P).
-  - Against: the same docs say mid-turn conflicts "degrade gracefully … silently disables thinking". Kiln also has a paid test for this exact case, `test_invoke_with_return_on_tool_call_and_resume[claude_4_5_haiku-anthropic-medium]` (`test_litellm_adapter_streaming.py:43-48`), added 2026-03-18, which presumably passed then.
+  - Against: the same docs say mid-turn conflicts "degrade gracefully … silently disables thinking". Kiln also has a paid test for this exact case, `test_invoke_with_return_on_tool_call_and_resume[claude_4_5_haiku-anthropic-medium]` (`test_litellm_adapter_streaming.py:43-48`), added 2026-03-18. It passed in the 2026-11-18 paid run. (P)
   - Either way, thinking is lost for that turn.
 - **Anthropic adaptive models:** no error per the docs ("Adaptive mode relaxes this"). But Anthropic requires thinking blocks to be passed back within a tool-use turn, so the resumed call loses its reasoning. (D)
 - **Gemini 3 direct:** works. The signature survives inside the saved tool-call id. (O)
@@ -102,7 +103,7 @@ If a conversation switches models, summaries saved from OpenAI, Claude or Gemini
 
 ## Possible errors today
 
-None of these are confirmed, because confirming them needs paid calls. All four exist before #2001.
+None of these are confirmed. The 2026-11-18 paid run reproduced none of them, but it didn't cover all of them. See [Paid results, 2026-11-18](#paid-results-2026-11-18). All four exist before #2001.
 
 1. **Streamed Anthropic tool loops send the thinking text twice under its original signature.** (O, and checked in code)
    - When the `signature_delta` event arrives, LiteLLM's Anthropic stream handler re-emits a thinking block holding the full accumulated thinking text (`llms/anthropic/chat/handler.py:703-715`).
@@ -130,10 +131,24 @@ This one is within a run on the Responses bridge. It came from the code review o
 - **LiteLLM's chat-to-Responses converter changes the order.** It puts every reasoning item of an assistant message first, then the text, then the tool calls (`completion_extras/litellm_responses_transformation/transformation.py:495-549`).
 - **The streamed path replays every item, moved to the front.** It uses `StreamingCompletion`, which since #2001 puts all the terminal chunk's reasoning items back on the message. So `[reasoning A, tool call 1, reasoning B, tool call 2]` is replayed as `[A, B, call 1, call 2]`. (O, from the code review's runs)
 - **The non-streamed path keeps only the last reasoning item, also moved to the front.** A later reasoning item overwrites the pending one while the reply is converted to a message (`transformation.py:763-771`). So the same reply is replayed as `[B, call 1, call 2]`. (R) This is already on `main` for GPT-5.4 Pro and GPT-5.2 Pro. #2001's companion PR, Kiln-AI/Kiln#2003, extends it to the ten models it turns tools on for.
-- **Unverified:** whether OpenAI rejects either order. There are public reports of a 400 "Item 'rs_…' of type 'reasoning' was provided without its required following item" (3P). Settle it with a paid call before designing around it, and check whether #2001's final paid run already did.
+- **Unverified:** whether OpenAI rejects either order. There are public reports of a 400 "Item 'rs_…' of type 'reasoning' was provided without its required following item" (3P). Settle it with a paid call before designing around it. #2001's paid run on 2026-11-18 didn't include this probe.
 - **Why Kiln can't fix the order in place:** a chat-format assistant message can't express the original order, and LiteLLM's stream drops `item_id` and `output_index`. So restoring the order probably needs LiteLLM's native Responses path or an upstream LiteLLM fix.
 
+## Paid results, 2026-11-18
+
+These come from a paid run with real keys, on the same branch and LiteLLM 1.105.7. It was a partial run of the full paid suite plus targeted OpenAI tests.
+
+- **Anthropic streaming with tools** (possible error 1, question 1): 62 passed. No error was reproduced. So either Anthropic tolerates the doubled thinking text, or the passing runs didn't produce it; the run didn't check which. (P)
+- **Anthropic manual-thinking resume** (possible error 3, question 2): Haiku 4.5 passed. Sonnet 4.5 and Opus 4.5 weren't covered. (P)
+- **OpenRouter Gemini 3.x with tools** (possible error 2, question 3): not covered.
+- **OpenRouter Claude with thinking on** (possible error 4, question 4): 36 passed. "Invalid `signature` in `thinking` block" wasn't reproduced. (P)
+- **OpenAI Responses bridge with tools:** every thinking level passed on the ten GPT-5.4+/GPT-6 models, including GPT-6.1 Terra at `none`. (P)
+- **OpenAI narration plus a tool call:** passed on all ten. This confirms the lost-tool-call fix against the real API: a reply holding text and a tool call keeps its tool call. For the bug, see [summary.md](./summary.md). (P)
+- **Interleaved reasoning replay** (question 9): the probe didn't run, so the question is still open.
+
 ## Questions that need a paid call
+
+The 2026-11-18 paid run partly answered questions 1, 2 and 4, and didn't cover 3 or 9. See [Paid results, 2026-11-18](#paid-results-2026-11-18).
 
 1. Does Anthropic reject the doubled thinking text? Run the paid `STREAMING_MODELS` tests, or one streamed tool call on Sonnet 4.5 and Opus 4.8.
 2. Does a manual-thinking resume on Anthropic (Haiku 4.5, Sonnet 4.5, Opus 4.5) return a 400, or silently disable thinking? Run `RETURN_ON_TOOL_CALL_MODELS` and check the response for thinking blocks.
