@@ -600,17 +600,6 @@ GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
     "Max": "max",
 }
 
-# GPT-6.1 Sol on OpenAI direct. The model page lists `max` as well, but
-# /v1/chat/completions (which Kiln uses) rejects it with a 400; only
-# /v1/responses accepts it. `none` and `minimal` are rejected on both.
-# https://developers.openai.com/api/docs/models/gpt-6.1-sol
-GPT_6_1_SOL_OPENAI_THINKING_LEVELS = {
-    "Low": "low",
-    "Medium": "medium",
-    "High": "high",
-    "Extra High": "xhigh",
-}
-
 # GPT-6 Sol and Luna support the same levels as Astra plus `none`, and default
 # to medium. https://developers.openai.com/api/docs/models/gpt-6-sol
 GPT_6_OPENAI_THINKING_LEVELS = {
@@ -620,6 +609,35 @@ GPT_6_OPENAI_THINKING_LEVELS = {
     "High": "high",
     "Extra High": "xhigh",
     "Max": "max",
+}
+
+# OpenAI direct hides `max` on GPT-6 Astra, Sol and Luna and on GPT-6.1 Sol and Terra.
+# /v1/chat/completions rejects `max` for these models with a 400; only /v1/responses
+# accepts it. LiteLLM sends a call to Responses only when tools are attached or a
+# reasoning summary is requested, so a `max` run without either fails. Restore `max`
+# once every call to these models goes to Responses.
+GPT_6_ASTRA_OPENAI_DIRECT_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+GPT_6_OPENAI_DIRECT_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+# GPT-6.1 Sol also rejects `none` and `minimal` on both endpoints.
+# https://developers.openai.com/api/docs/models/gpt-6.1-sol
+GPT_6_1_SOL_OPENAI_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
 }
 
 GPT_5_1_OPENAI_THINKING_LEVELS = {
@@ -1015,10 +1033,6 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4+. Disable function calling until Kiln routes these
-                # models to /v1/responses.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1099,15 +1113,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-6.1-terra",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                # /v1/chat/completions accepts none through xhigh for this
-                # model and rejects max with a 400.
+                # `max` is hidden for the reason given above
+                # GPT_6_ASTRA_OPENAI_DIRECT_THINKING_LEVELS.
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4+. Disable function calling until Kiln routes these
-                # models to /v1/responses.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1156,13 +1166,9 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 model_id="gpt-6-astra",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_DIRECT_THINKING_LEVELS,
                 default_thinking_level="medium",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4+. Disable function calling until Kiln routes these
-                # models to /v1/responses.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1247,13 +1253,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-6-sol",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                available_thinking_levels=GPT_6_OPENAI_DIRECT_THINKING_LEVELS,
                 default_thinking_level="medium",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4+. Disable function calling until Kiln routes these
-                # models to /v1/responses.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1339,13 +1341,9 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 model_id="gpt-6-luna",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
+                available_thinking_levels=GPT_6_OPENAI_DIRECT_THINKING_LEVELS,
                 default_thinking_level="medium",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4+. Disable function calling until Kiln routes these
-                # models to /v1/responses.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1400,10 +1398,6 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4+. Disable function calling until Kiln routes these
-                # models to /v1/responses.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1460,10 +1454,6 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4+. Disable function calling until Kiln routes these
-                # models to /v1/responses.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1520,10 +1510,6 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4+. Disable function calling until Kiln routes these
-                # models to /v1/responses.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1577,10 +1563,6 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4+. Disable function calling until Kiln routes these
-                # models to /v1/responses.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1680,10 +1662,6 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
                 openai_reasoning_summary="auto",
-                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
-                # for gpt-5.4 direct. Disable function calling until Kiln routes
-                # these models to /v1/responses. The OpenRouter route is unaffected.
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
