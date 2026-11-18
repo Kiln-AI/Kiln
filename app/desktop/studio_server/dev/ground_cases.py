@@ -46,6 +46,7 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.eval_grounding.models import (
     DropReason,
+    EvalContext,
     GroundingCase,
     GroundingOutcome,
     GroundingResult,
@@ -97,6 +98,8 @@ ENGINE_KILN_NOT_IMPLEMENTED = (
 )
 
 PREPARED_FILES = (
+    "specification.txt",
+    "task_prompt.txt",
     "schema.json",
     "metadata.json",
     "brief.txt",
@@ -104,7 +107,10 @@ PREPARED_FILES = (
     "plan.json",
     "users.json",
 )
-"""What `prepare` writes to its output folder."""
+"""What `prepare` always writes to its output folder."""
+
+DATA_GUIDE_FILE = "data_guide.txt"
+"""Written by `prepare` only when it was given a Data Guide."""
 
 
 class CaseFailedError(Exception):
@@ -153,6 +159,14 @@ async def prepare(args: PrepareArgs, *, copilot_api_key: str) -> None:
     base_guidance = await _read_text(args.base_guidance)
     data_guide = await _read_text(args.data_guide) if args.data_guide else None
     await asyncio.to_thread(args.out.mkdir, parents=True, exist_ok=True)
+    # A rerun that fails part way must leave a folder load_prepared refuses, not this
+    # run's inputs beside an earlier run's plan and users.
+    for name in (*PREPARED_FILES, DATA_GUIDE_FILE):
+        await asyncio.to_thread((args.out / name).unlink, missing_ok=True)
+    await _write_text(args.out / "specification.txt", spec_text)
+    await _write_text(args.out / "task_prompt.txt", task.instruction)
+    if data_guide and data_guide.strip():
+        await _write_text(args.out / DATA_GUIDE_FILE, data_guide)
 
     session_manager = OpenEnvSessionManager()
     try:
@@ -234,6 +248,7 @@ class PreparedInputs:
     """What `prepare` wrote, as `ground` reads it."""
 
     cases: list[GroundingCase]
+    eval_context: EvalContext
     reset_schema: dict[str, JsonValue] | None
     readme: str | None
 
@@ -243,7 +258,8 @@ def load_prepared(in_dir: Path) -> PreparedInputs:
     missing = [name for name in PREPARED_FILES if not (in_dir / name).is_file()]
     if missing:
         raise GroundingSetupError(
-            f"{in_dir} is not a prepare folder: missing {', '.join(missing)}."
+            f"{in_dir} is not a complete prepare folder: missing {', '.join(missing)}. "
+            "Run prepare again, or write the missing files into the folder."
         )
     plan = json.loads((in_dir / "plan.json").read_text(encoding="utf-8"))
     users = json.loads((in_dir / "users.json").read_text(encoding="utf-8"))
@@ -257,8 +273,17 @@ def load_prepared(in_dir: Path) -> PreparedInputs:
         )
         for user in users
     ]
+    data_guide_path = in_dir / DATA_GUIDE_FILE
+    data_guide = (
+        data_guide_path.read_text(encoding="utf-8") if data_guide_path.is_file() else ""
+    )
     return PreparedInputs(
         cases=cases,
+        eval_context=EvalContext(
+            specification=(in_dir / "specification.txt").read_text(encoding="utf-8"),
+            target_task_prompt=(in_dir / "task_prompt.txt").read_text(encoding="utf-8"),
+            data_guide=data_guide if data_guide.strip() else None,
+        ),
         reset_schema=json.loads((in_dir / "schema.json").read_text(encoding="utf-8")),
         readme=metadata.get("readme_content"),
     )
@@ -628,6 +653,7 @@ async def ground(args: GroundArgs, *, claude_runner: ClaudeRunner = run_claude) 
         nonlocal finished
         message = case_message(
             prepared.cases[case_index],
+            eval_context=prepared.eval_context,
             reset_schema=prepared.reset_schema,
             readme=prepared.readme,
             target_tools=target_tools,

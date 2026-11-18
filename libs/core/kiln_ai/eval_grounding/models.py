@@ -21,6 +21,21 @@ class GroundingCase(BaseModel):
     )
 
 
+class EvalContext(BaseModel):
+    """What the eval is for. The same for every case in a run."""
+
+    specification: str = Field(
+        description="The eval's specification: what the eval tests."
+    )
+    target_task_prompt: str = Field(
+        description="The target task's prompt: what the agent under test is told."
+    )
+    data_guide: str | None = Field(
+        default=None,
+        description="Who uses the agent under test and what they ask. None when the eval has none.",
+    )
+
+
 class Evidence(BaseModel):
     """The call the grounding agent made to learn a fact, so a person can re-run it. Not
     the path the agent under test must take."""

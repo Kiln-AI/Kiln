@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -12,7 +13,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from kiln_ai.datamodel.openenv import OpenEnvReset
 from kiln_ai.datamodel.task import Task
-from kiln_ai.eval_grounding.models import DropReason, LoggedCall
+from kiln_ai.eval_grounding.models import DropReason, EvalContext, LoggedCall
 from kiln_ai.eval_grounding.prompt import system_prompt
 from kiln_ai.openenv.reset_schema_brief import RESET_ARGUMENTS_FRAMING
 from kiln_ai.utils.usage import Usage
@@ -45,6 +46,7 @@ from app.desktop.studio_server.dev.grounding_mcp import GroundingRunLog
 
 PREPARED_SCHEMA = {"type": "object", "properties": {"level": {"type": "integer"}}}
 PREPARED_README = "Prepared readme."
+PREPARED_SPEC = "The agent adds only the note the member asks for."
 
 USER_INFO = "<persona>Sam, a member</persona><goal>Add a note</goal>"
 
@@ -199,6 +201,63 @@ async def test_prepare_writes_every_input(
     users = json.loads((out / "users.json").read_text())
     assert [u["scenario_index"] for u in users] == list(range(23))
 
+    assert load_prepared(out).eval_context == EvalContext(
+        specification="The agent adds notes correctly.",
+        target_task_prompt="Help members with notes.",
+        data_guide="Members ask to add notes.",
+    )
+
+
+def prepare_args(project, task, openenv_server, inputs, out, data_guide=None):
+    return PrepareArgs(
+        project=project.path,
+        task_id=str(task.id),
+        openenv_server_id=str(openenv_server.id),
+        spec=inputs / "spec.txt",
+        base_guidance=inputs / "guidance.txt",
+        data_guide=data_guide,
+        count=2,
+        out=out,
+    )
+
+
+@pytest.mark.parametrize("guide_text", [None, "  \n"])
+async def test_prepare_without_a_data_guide_removes_an_earlier_one(
+    project, task, openenv_server, inputs, kiln_server_stubs, tmp_path, guide_text
+):
+    guide_path = None
+    if guide_text is not None:
+        guide_path = inputs / "blank_guide.txt"
+        guide_path.write_text(guide_text)
+    out = tmp_path / "prepared"
+    out.mkdir()
+    (out / "data_guide.txt").write_text("From an earlier run.")
+    await prepare(
+        prepare_args(project, task, openenv_server, inputs, out, guide_path),
+        copilot_api_key="key",
+    )
+    assert not (out / "data_guide.txt").exists()
+    assert load_prepared(out).eval_context.data_guide is None
+
+
+async def test_a_failed_prepare_rerun_leaves_a_folder_ground_refuses(
+    project, task, openenv_server, inputs, kiln_server_stubs, tmp_path
+):
+    out = tmp_path / "prepared"
+    await prepare(
+        prepare_args(project, task, openenv_server, inputs, out),
+        copilot_api_key="key",
+    )
+    plan, _, _ = kiln_server_stubs
+    plan.side_effect = RuntimeError("planner down")
+    with pytest.raises(RuntimeError, match="planner down"):
+        await prepare(
+            prepare_args(project, task, openenv_server, inputs, out),
+            copilot_api_key="key",
+        )
+    with pytest.raises(GroundingSetupError, match=r"missing plan\.json, users\.json"):
+        load_prepared(out)
+
 
 def test_prepare_from_the_command_line_reports_a_missing_key(
     project, task, openenv_server, inputs, tmp_path, capsys
@@ -255,6 +314,9 @@ async def test_prepare_with_an_unknown_task(project, openenv_server, inputs, tmp
 
 def write_prepared(folder: Path, case_count: int = 2) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
+    (folder / "specification.txt").write_text(PREPARED_SPEC)
+    (folder / "task_prompt.txt").write_text("Help members with notes.")
+    (folder / "data_guide.txt").write_text("Members ask to add notes.")
     (folder / "schema.json").write_text(json.dumps(PREPARED_SCHEMA))
     (folder / "metadata.json").write_text(
         json.dumps({"name": "n", "readme_content": PREPARED_README})
@@ -287,13 +349,29 @@ def test_load_prepared_joins_users_to_their_scenarios(tmp_path):
     ]
     assert prepared.reset_schema == PREPARED_SCHEMA
     assert prepared.readme == PREPARED_README
+    assert prepared.eval_context == EvalContext(
+        specification=PREPARED_SPEC,
+        target_task_prompt="Help members with notes.",
+        data_guide="Members ask to add notes.",
+    )
 
 
-def test_load_prepared_names_missing_files(tmp_path):
+@pytest.mark.parametrize("name", ["users.json", "specification.txt", "task_prompt.txt"])
+def test_load_prepared_names_missing_files(tmp_path, name):
     folder = write_prepared(tmp_path / "in")
-    (folder / "users.json").unlink()
-    with pytest.raises(GroundingSetupError, match=r"missing users\.json"):
+    (folder / name).unlink()
+    with pytest.raises(GroundingSetupError, match=rf"missing {re.escape(name)}\."):
         load_prepared(folder)
+
+
+@pytest.mark.parametrize("guide_text", [None, " \n\t"])
+def test_load_prepared_without_a_data_guide(tmp_path, guide_text):
+    folder = write_prepared(tmp_path / "in")
+    if guide_text is None:
+        (folder / "data_guide.txt").unlink()
+    else:
+        (folder / "data_guide.txt").write_text(guide_text)
+    assert load_prepared(folder).eval_context.data_guide is None
 
 
 def test_parse_case_indices():
@@ -471,6 +549,10 @@ def test_ground_runs_claude_with_only_the_grounding_tools(
     assert call["timeout_s"] > 0
 
     assert call["stdin"] == (case_dir / "message.txt").read_text()
+    assert call["stdin"].startswith(
+        f"<specification>\n{PREPARED_SPEC}\n</specification>"
+    )
+    assert "<data_guide>\nMembers ask to add notes.\n</data_guide>" in call["stdin"]
     assert "<case_scenario>\nscenario 0\n</case_scenario>" in call["stdin"]
     assert "- append_note:" in call["stdin"]
     assert PREPARED_README in call["stdin"]

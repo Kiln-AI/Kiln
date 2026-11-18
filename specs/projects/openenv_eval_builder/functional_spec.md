@@ -121,6 +121,9 @@ kinds, never records.
 
 ### Input
 
+- The eval's specification text, so the case keeps testing what the specification tests.
+- The target task's prompt: what the agent under test is told.
+- The Data Guide text, when there is one, for who the user plausibly is.
 - The approved plan item's prompt.
 - kiln_server's simulated user for it: `seed_prompt`, `<persona>`, `<goal>`, optional
   `<behavior_guidance>`.
@@ -135,12 +138,16 @@ kinds, never records.
 
 ### Behavior
 
-1. Picks reset arguments whose starting state fits the scenario. If an argument chooses who the
-   session acts as, sets it to someone whose role matches the persona. It finds that argument from
-   the schema's descriptions, not by name. A server without one skips this.
+1. Picks reset arguments whose starting state fits the scenario; a starting state the scenario names
+   is only a hint. If an argument chooses who the session acts as, sets it to someone whose role
+   matches the persona, using the Data Guide for who the user plausibly is without overriding the
+   persona. It finds that argument from the schema's descriptions, not by name. A server without
+   one skips this. If the schema has a `seed` argument, it always passes one (a value the schema
+   allows) and keeps it in the final reset, so the case replays the same way.
 2. Finds what the scenario needs with whatever tools show the environment's state. Prefers what the
-   starting state already has, then other starting states. An environment with nothing to read goes
-   straight to step 4.
+   starting state already has, then other starting states whose descriptions suggest they have it,
+   keeping resets in reserve for setup and the final reset. An environment with nothing to read
+   goes straight to step 4.
 3. If nothing fits and a setup argument's description (or the readme) says what it accepts, writes
    the smallest setup that adds it, consistent with the data around it, then resets and checks. If
    nothing says how, it does not guess: it drops the case.
@@ -154,7 +161,9 @@ kinds, never records.
 ### Output
 
 Either `grounded`, with `openenv_reset.reset_kwargs`, the edited simulated user and `reference`;
-or `dropped`, with a one-sentence reason. Drop when nothing fits after a reasonable search, the
+or `dropped`, with a one-sentence reason. The case keeps testing what the specification tests: the
+agent never switches it to a different feature or kind of object to make it fit. Drop when nothing
+fits after checking the likely starting states and setup, the
 scenario needs something the server can't represent, or the rehearsal fails for a reason the agent
 under test couldn't avoid.
 

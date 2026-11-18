@@ -79,7 +79,7 @@ The framing text is a module constant, so the prototype and the product use the 
 
 ```
 libs/core/kiln_ai/eval_grounding/
-  models.py      # GroundingCase, GroundedReference, GroundingOutcome, DropReason
+  models.py      # EvalContext, GroundingCase, GroundedReference, GroundingOutcome, DropReason
   prompt.py      # system prompt and the per-case user message
   session.py     # GroundingSession: the agent's tools, episode lifecycle, limits, call log
   agent.py       # ground_case(): one case, end to end
@@ -89,6 +89,11 @@ libs/core/kiln_ai/eval_grounding/
 ### Models
 
 ```python
+class EvalContext(BaseModel):        # the same for every case in a run
+    specification: str               # the eval's specification text
+    target_task_prompt: str          # the target task's prompt (task.instruction)
+    data_guide: str | None
+
 class GroundingCase(BaseModel):
     scenario: str                    # the approved plan item's prompt
     seed_prompt: str
@@ -173,6 +178,7 @@ for one episode per run.
 async def ground_case(
     case: GroundingCase,
     *,
+    eval_context: EvalContext,
     openenv_server: OpenEnvServer,
     session_manager: OpenEnvSessionManager,
     model_name: str,
@@ -191,8 +197,9 @@ async def ground_case(
    `structured_output_mode=StructuredOutputMode.default` and no configured tools, and an
    `AdapterConfig(allow_saving=False, unmanaged_tools=session.tools(),
    open_openenv_session=False)`.
-3. The user message holds the case, the reset schema (JSON), the readme, and the target tools'
-   names and descriptions.
+3. The user message holds the eval context (specification, target task prompt, Data Guide), the
+   case, the reset schema (JSON), the readme, and the target tools' names and descriptions. The
+   eval context is in the message, not the system prompt, so the system prompt stays fixed.
 4. Runs `adapter.invoke(...)` under `asyncio.timeout(time_limit_s)`.
 5. Parses the result. On a parse or validation failure it asks once more in the same trace, then
    drops with `invalid_output`.
@@ -237,16 +244,20 @@ changes.
 --out <dir>
 ```
 
-1. `reset_schema()` and `metadata()`; `reset_arguments_brief(...)` → `brief.txt`, `schema.json`,
+1. The specification, the target task's prompt (`task.instruction`, as sent to simulated-user
+   generation) and the Data Guide, when given → `specification.txt`, `task_prompt.txt`,
+   `data_guide.txt`. `ground` reads them as the `EvalContext`.
+2. `reset_schema()` and `metadata()`; `reset_arguments_brief(...)` → `brief.txt`, `schema.json`,
    `metadata.json`.
-2. Guidance = base guidance + brief + Data Guide section → `guidance.txt` →
+3. Guidance = base guidance + brief + Data Guide section → `guidance.txt` →
    `_run_batch_plan_kiln_server(...)` → `plan.json`.
-3. `SyntheticUserClient.generate(...)` on the plan prompts, in the same chunks as
+4. `SyntheticUserClient.generate(...)` on the plan prompts, in the same chunks as
    `generate_cases`, with plan-relative `scenario_index` → `users.json`.
 
 The base guidance file is used as given: the OpenEnv version of the rule-12 line is not swapped in.
 
-**`ground`** grounds the prepared cases:
+**`ground`** grounds the prepared cases. A prepare folder without `specification.txt` or
+`task_prompt.txt` is refused with the missing names, rather than grounded without them.
 
 ```
 --project <path> --openenv-server-id <id> --in <prepare's dir> --out <run dir>
