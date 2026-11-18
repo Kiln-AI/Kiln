@@ -22,6 +22,10 @@
   export let path: string = ""
   export let hideHeaderAndIndent: boolean = false
   export let parentOptional: boolean = false
+  // Passed to each field's FormElement. See its on_see_all_description.
+  export let on_see_all_description:
+    | ((title: string, description: string) => void)
+    | null = null
 
   // Trigger onInputChange when value changes
   $: void (value, onInputChange?.())
@@ -323,6 +327,7 @@
         label={property.title}
         inputType="header_only"
         description={property.description}
+        {on_see_all_description}
         info_msg={describe_type(property)}
         info_description={getInfoDescription(property)}
         value=""
@@ -341,6 +346,7 @@
             level={level + 1}
             path={`${path}.${nestedProp.id}`}
             parentOptional={parentOptional || !property.required}
+            {on_see_all_description}
             on:ref={(e) => {
               // Workaround for svelte 4 to capture the ref
               const { inst } = e.detail
@@ -358,6 +364,7 @@
           level={level + 1}
           {path}
           parentOptional={parentOptional || !property.required}
+          {on_see_all_description}
         />
       {/if}
     </div>
@@ -369,6 +376,7 @@
     inputType={get_input_type(property)}
     height={getHeight(property)}
     description={property.description || "No description"}
+    {on_see_all_description}
     optional={is_optional(property)}
     fancy_select_options={get_select_options(property)}
     {...empty_label_prop(property)}

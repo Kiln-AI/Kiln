@@ -18,6 +18,7 @@
   import { onMount, onDestroy, getContext } from "svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import FancySelect from "$lib/ui/fancy_select.svelte"
+  import ClampedText from "$lib/ui/clamped_text.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
 
   export let inputType:
@@ -34,6 +35,14 @@
   export let label: string = ""
   export let value: unknown
   export let description: string = ""
+  // For a form whose descriptions come from someone else's schema and can be
+  // any length. When set, the description is cut to a few lines with a See
+  // all link, which calls this with the label and the full text so the caller
+  // can show it in a SeeAllDialog. A dialog can't open from here: the field
+  // sits inside its FormContainer's <form>, and Dialog brings its own forms.
+  export let on_see_all_description:
+    | ((title: string, description: string) => void)
+    | null = null
   export let info_description: string = ""
   export let placeholder: string | null = null
   export let optional: boolean = false
@@ -223,7 +232,15 @@
             {/if}
           </div>
         {/if}
-        {#if description}
+        {#if description && on_see_all_description}
+          <ClampedText
+            content={description}
+            max_lines={3}
+            text_class="font-sans whitespace-normal break-words text-xs text-gray-500"
+            on:see_all={() =>
+              on_see_all_description?.(label || "Description", description)}
+          />
+        {:else if description}
           <div class="text-xs text-gray-500">
             {description}
           </div>

@@ -21,6 +21,11 @@
   // Height of the plaintext textarea. Defaults to the tall input used on the
   // /run page; the multiturn composer overrides it with a shorter box.
   export let height: "base" | "compact" | "medium" | "large" | "xl" = "large"
+  // Set when the schema's descriptions can run long, such as one an
+  // environment serves. See on_see_all_description in FormElement.
+  export let on_see_all_description:
+    | ((title: string, description: string) => void)
+    | null = null
   let plaintext_input: string = ""
   $: void (plaintext_input, onInputChange?.())
 
@@ -110,6 +115,7 @@
       level={0}
       path="root"
       hideHeaderAndIndent={true}
+      {on_see_all_description}
       bind:this={rootFormElement}
     />
   {/key}

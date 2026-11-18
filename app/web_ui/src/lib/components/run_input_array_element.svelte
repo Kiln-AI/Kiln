@@ -10,6 +10,10 @@
   export let level: number = 0
   export let path: string = ""
   export let parentOptional: boolean = false
+  // Passed on to each item's RunInputFormElement.
+  export let on_see_all_description:
+    | ((title: string, description: string) => void)
+    | null = null
   let content: unknown[] = []
 
   let arrayComponents = new Map<unknown, RunInputFormElement>()
@@ -87,6 +91,7 @@
       level={level + 1}
       path={path + "[" + item_index + "]"}
       parentOptional={parentOptional || !property.required}
+      {on_see_all_description}
       on:ref={(e) => {
         const { inst } = e.detail
         if (inst instanceof RunInputFormElement) {
