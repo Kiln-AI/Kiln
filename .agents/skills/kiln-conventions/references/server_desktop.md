@@ -37,7 +37,7 @@
 
 | Entry point | What it sets up |
 |---|---|
-| `app/desktop/desktop.py` (`__main__`, the shipped app) | At import: `setup_certs()` and the `LLAMA_INDEX_CACHE_DIR` / `NLTK_DATA` env vars. In `__main__`: multiprocessing start method, Sentry (when `SENTRY_DSN` is set), `setup_resource_limits()`, then the tray app and a `DesktopServer` thread running `desktop_server.make_app` via `server_config`. |
+| `app/desktop/desktop.py` (`__main__`, the shipped app) → `app/desktop/desktop_main.py` | `desktop.py` is stdlib only: `freeze_support()`, the multiprocessing start method, then `desktop_main.main()`. Every multiprocessing child of the packaged app runs `desktop.py` before its job, so an import added there loads in each child. At import of `desktop_main`: `setup_certs()` and the `LLAMA_INDEX_CACHE_DIR` / `NLTK_DATA` env vars. In `main()`: Sentry (when `SENTRY_DSN` is set), `setup_resource_limits()`, then the tray app and a `DesktopServer` thread running `desktop_server.make_app` via `server_config`. |
 | `app/desktop/dev_server.py` (`__main__`) → `app/desktop/dev_app.py` | `set_dev_env_vars()` at import of both modules, `setup_resource_limits()`, then uvicorn with reload on `app.desktop.dev_app:dev_app` (`make_app()` at import of `dev_app`). |
 | `desktop_server.make_app` (used by both above) | `setup_litellm_logging()`, the remote model-list refresh, all routers, `GitSyncMiddleware`. Its `lifespan` sets strict mode, starts and stops background git syncs, and closes the job event bus. |
 | `kiln_server` script (`kiln_server.server:main`) | Writes host/port CLI args to `os.environ`, then runs uvicorn on `kiln_server.server:app`. No lifespan, strict mode or litellm logging. |
