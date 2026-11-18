@@ -18,7 +18,7 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenSampleTaskInput,
     DataGenSingleInputTask,
     DataGenSingleInputTaskInput,
-    wrap_task_with_guidance,
+    prompt_builder_with_guidance,
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -431,19 +431,19 @@ async def _generate_one_output(
     tags: list[str] | None,
 ) -> TaskRun:
     """Run the task on a single input to produce an (unsaved) output run."""
-    # Reload the task per call: generate_sample mutates task.instruction, so a
-    # shared instance would race across concurrent jobs.
     task = task_from_id(project_id, task_id)
-
-    g = guidance or ""
-    if g.strip() != "":
-        task.instruction = wrap_task_with_guidance(task.instruction, g)
 
     skills = load_skills_for_task(task, run_config_properties)
     adapter = adapter_for_task(
         task,
         run_config_properties=run_config_properties,
-        base_adapter_config=AdapterConfig(allow_saving=False, skills=skills),
+        base_adapter_config=AdapterConfig(
+            allow_saving=False,
+            skills=skills,
+            prompt_builder=prompt_builder_with_guidance(
+                task, run_config_properties, guidance
+            ),
+        ),
     )
 
     properties: dict[str, str | int | float] = {
@@ -743,14 +743,17 @@ def connect_data_gen_api(app: FastAPI):
 The topic path for this sample is:
 [{", ".join(f'"{topic}"' for topic in sample.topic_path)}]"""
 
-        if guidance.strip() != "":
-            task.instruction = wrap_task_with_guidance(task.instruction, guidance)
-
         skills = load_skills_for_task(task, sample.run_config_properties)
         adapter = adapter_for_task(
             task,
             run_config_properties=sample.run_config_properties,
-            base_adapter_config=AdapterConfig(allow_saving=False, skills=skills),
+            base_adapter_config=AdapterConfig(
+                allow_saving=False,
+                skills=skills,
+                prompt_builder=prompt_builder_with_guidance(
+                    task, sample.run_config_properties, guidance
+                ),
+            ),
         )
 
         properties: dict[str, str | int | float] = {
