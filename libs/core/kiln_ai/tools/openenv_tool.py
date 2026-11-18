@@ -15,6 +15,7 @@ from typing import Any
 
 from kiln_ai.datamodel.openenv import OpenEnvTool
 from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.openenv.session_manager import ToolCallOutcome
 from kiln_ai.run_context import EpisodeContext
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
@@ -74,22 +75,25 @@ class OpenEnvToolProxy(KilnToolInterface):
         outcome = await self._ctx.session_manager.call_tool(
             self._ctx.episode, self._tool.name, dict(kwargs)
         )
-        if outcome.error is not None:
-            # Every error on the observation is a failed call. OpenEnv's `error_type`
-            # is the only structure the field carries, and its whole vocabulary --
-            # `execution_error` included -- means the call did not work. An
-            # environment that wants an error of its own read as an ordinary answer
-            # returns it as a result, which is what `result` is for.
-            output = render_tool_error(
-                outcome.error_code, outcome.error, outcome.error_details
-            )
-            return ToolCallResult(
-                output=output, is_error=True, error_message=outcome.error
-            )
-        output = render_tool_result(outcome.result)
-        if isinstance(outcome.result, dict) and outcome.result.get("is_error") is True:
-            return ToolCallResult(output=output, is_error=True, error_message=output)
-        return ToolCallResult(output=output)
+        return tool_call_result(outcome)
+
+
+def tool_call_result(outcome: ToolCallOutcome) -> ToolCallResult:
+    """What the model gets back for one call of an environment's tool."""
+    if outcome.error is not None:
+        # Every error on the observation is a failed call. OpenEnv's `error_type`
+        # is the only structure the field carries, and its whole vocabulary --
+        # `execution_error` included -- means the call did not work. An
+        # environment that wants an error of its own read as an ordinary answer
+        # returns it as a result, which is what `result` is for.
+        output = render_tool_error(
+            outcome.error_code, outcome.error, outcome.error_details
+        )
+        return ToolCallResult(output=output, is_error=True, error_message=outcome.error)
+    output = render_tool_result(outcome.result)
+    if isinstance(outcome.result, dict) and outcome.result.get("is_error") is True:
+        return ToolCallResult(output=output, is_error=True, error_message=output)
+    return ToolCallResult(output=output)
 
 
 def render_tool_error(code: str | None, message: str, details: Any) -> str:

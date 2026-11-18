@@ -15,6 +15,7 @@ from kiln_ai.openenv.conversations import HeldSession
 from kiln_ai.openenv.session_manager import (
     OpenEnvCapacityError,
     OpenEnvError,
+    OpenEnvMetadata,
     OpenEnvRejectedError,
     OpenEnvSessionLostError,
     OpenEnvSessionManager,
@@ -684,3 +685,63 @@ class TestResetSchema:
     async def test_no_url_is_an_error(self, session_manager, project):
         with pytest.raises(OpenEnvError, match="has no url"):
             await session_manager.reset_schema(self._server(project, None))
+
+
+class TestMetadata:
+    def _server(self, project, url: str | None) -> OpenEnvServer:
+        return OpenEnvServer(name="described", parent=project, url=url)
+
+    async def test_reads_readme_and_description(self, session_manager, project):
+        metadata = {
+            "name": "helpdesk",
+            "version": "2.1.0",
+            "description": "A helpdesk.",
+            "readme_content": "# Helpdesk\nStart from a fixture.",
+        }
+        with serve_in_thread(metadata=metadata) as base_url:
+            result = await session_manager.metadata(self._server(project, base_url))
+        assert result == OpenEnvMetadata(
+            name="helpdesk",
+            version="2.1.0",
+            description="A helpdesk.",
+            readme_content="# Helpdesk\nStart from a fixture.",
+        )
+
+    async def test_missing_fields_are_none(self, session_manager, project):
+        with serve_in_thread(metadata={}) as base_url:
+            result = await session_manager.metadata(self._server(project, base_url))
+        assert result == OpenEnvMetadata(
+            name="described", version=None, description=None, readme_content=None
+        )
+
+    async def test_non_string_text_is_none(self, session_manager, project):
+        metadata = {
+            "name": "n",
+            "version": 3,
+            "description": ["not", "text"],
+            "readme_content": {"not": "text"},
+        }
+        with serve_in_thread(metadata=metadata) as base_url:
+            result = await session_manager.metadata(self._server(project, base_url))
+        assert result.version == "3"
+        assert result.description is None
+        assert result.readme_content is None
+
+    async def test_read_fresh_and_not_cached(self, session_manager, project):
+        with serve_in_thread() as base_url:
+            await session_manager.metadata(self._server(project, base_url))
+        assert session_manager._servers == {}
+
+    async def test_unreachable_url_is_an_error(self, session_manager, project):
+        openenv_server = self._server(project, f"http://127.0.0.1:{free_port()}")
+        with pytest.raises(OpenEnvError, match="did not answer /metadata"):
+            await session_manager.metadata(openenv_server)
+
+    async def test_non_object_is_an_error(self, session_manager, project):
+        with serve_in_thread(metadata=[1]) as base_url:
+            with pytest.raises(OpenEnvError, match="not a JSON object"):
+                await session_manager.metadata(self._server(project, base_url))
+
+    async def test_no_url_is_an_error(self, session_manager, project):
+        with pytest.raises(OpenEnvError, match="has no url"):
+            await session_manager.metadata(self._server(project, None))

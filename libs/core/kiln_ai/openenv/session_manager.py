@@ -16,6 +16,7 @@ An env author writes OpenEnv code and no Kiln code. Every Kiln-side value derive
 what OpenEnv already exposes:
 
     openenv_version the environment's reported name and version
+    metadata        everything `/metadata` reports, including the readme
     refresh         re-read `/metadata`, so a new version on the same URL is seen
     reset_schema    the `reset` JSON schema from `/schema`
     start_episode   open a `/ws` session and `reset(**reset_kwargs)`
@@ -172,6 +173,17 @@ class ToolCallOutcome:
     error_details: Any = None
 
 
+@dataclass(frozen=True)
+class OpenEnvMetadata:
+    """What an environment reports about itself at `/metadata`. `version` is None when
+    the server reports none."""
+
+    name: str
+    version: str | None
+    description: str | None
+    readme_content: str | None
+
+
 @dataclass
 class _ServerInfo:
     base_url: str
@@ -229,6 +241,15 @@ class OpenEnvSessionManager:
         if not openenv_server.url:
             raise OpenEnvError(_no_url_message(openenv_server))
         await self._connect_remote(openenv_server, openenv_server.url.rstrip("/"))
+
+    async def metadata(self, openenv_server: OpenEnvServer) -> OpenEnvMetadata:
+        """What the environment reports at `/metadata`, read fresh on every call.
+
+        Raises OpenEnvError when the record has no url or the server doesn't answer."""
+        if not openenv_server.url:
+            raise OpenEnvError(_no_url_message(openenv_server))
+        meta = await self._read_metadata(openenv_server, openenv_server.url.rstrip("/"))
+        return _parse_metadata(meta, openenv_server)
 
     async def list_tools(
         self, openenv_server: OpenEnvServer, fresh: bool = False
@@ -428,6 +449,17 @@ class OpenEnvSessionManager:
     async def _connect_remote(
         self, openenv_server: OpenEnvServer, base_url: str
     ) -> _ServerInfo:
+        metadata = _parse_metadata(
+            await self._read_metadata(openenv_server, base_url), openenv_server
+        )
+        return _ServerInfo(
+            base_url=base_url,
+            openenv_version=_compose_openenv_version(metadata.name, metadata.version),
+        )
+
+    async def _read_metadata(
+        self, openenv_server: OpenEnvServer, base_url: str
+    ) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT_S) as client:
             try:
                 response = await client.get(f"{base_url}/metadata")
@@ -443,14 +475,7 @@ class OpenEnvSessionManager:
                 f"OpenEnv server '{openenv_server.name}' points at {base_url}, whose /metadata is not "
                 f"a JSON object: {_preview(meta)}"
             )
-        name = str(meta.get("name") or openenv_server.name)
-        version = meta.get("version")
-        return _ServerInfo(
-            base_url=base_url,
-            openenv_version=_compose_openenv_version(
-                name, str(version) if version is not None else None
-            ),
-        )
+        return meta
 
     # ---- sessions ----
 
@@ -653,6 +678,22 @@ async def _reset_schema_at(
         return None
     reset = body.get("reset") if isinstance(body, dict) else None
     return reset if isinstance(reset, dict) else None
+
+
+def _parse_metadata(
+    meta: dict[str, Any], openenv_server: OpenEnvServer
+) -> OpenEnvMetadata:
+    version = meta.get("version")
+    return OpenEnvMetadata(
+        name=str(meta.get("name") or openenv_server.name),
+        version=str(version) if version is not None else None,
+        description=_string_or_none(meta.get("description")),
+        readme_content=_string_or_none(meta.get("readme_content")),
+    )
+
+
+def _string_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 def _preview(value: Any) -> str:
