@@ -39,4 +39,4 @@ Phases 1–3 go on **branch 1**, which merges before the app release. Phase 4 go
   - Add the branch 2 paid tests: tools at every thinking level, narration then a tool call, and the ten models added to the streaming and `return_on_tool_call` lists.
   - Finish the rest of the maintainer docs.
   - After the team's paid run, apply F6 to GPT-6.1 Terra only if tools at `none` fail. Any other `none` failure goes to the user.
-  - **Open:** F6 waits on the team's paid run of `test_openai_tools_every_thinking_level_paid[gpt_6_1_terra-none]`. GPT-6.1 Terra still offers `none`.
+  - **Resolved (paid run, 2026-11-18):** `test_openai_tools_every_thinking_level_paid[gpt_6_1_terra-none]` passed, so F6 isn't needed. GPT-6.1 Terra keeps `none`. Tools passed at every level on all ten models.
