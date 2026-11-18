@@ -676,7 +676,9 @@ def lite_llm_core_config_for_provider(
                 additional_body_options={
                     "api_key": Config.shared().open_ai_api_key,
                 },
-                openai_reasoning_summaries=Config.shared().open_ai_reasoning_summaries,
+                openai_reasoning_summaries=(
+                    Config.shared().open_ai_reasoning_summaries is True
+                ),
             )
         case ModelProviderName.groq:
             return LiteLlmCoreConfig(

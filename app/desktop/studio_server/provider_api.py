@@ -975,8 +975,9 @@ def connect_provider_api(app: FastAPI):
 
             match typed_provider_id:
                 case ModelProviderName.openai:
-                    Config.shared().open_ai_api_key = None
-                    Config.shared().open_ai_reasoning_summaries = False
+                    Config.shared().update_settings(
+                        {"open_ai_api_key": None, "open_ai_reasoning_summaries": False}
+                    )
                 case ModelProviderName.groq:
                     Config.shared().groq_api_key = None
                 case ModelProviderName.openrouter:
@@ -1276,8 +1277,9 @@ async def connect_openai(key: str, reasoning_summaries: bool):
             content={"message": f"Failed to connect to OpenAI. Error: {e!s}"},
         )
 
-    Config.shared().open_ai_api_key = key
-    Config.shared().open_ai_reasoning_summaries = reasoning_summaries
+    Config.shared().update_settings(
+        {"open_ai_api_key": key, "open_ai_reasoning_summaries": reasoning_summaries}
+    )
 
     return JSONResponse(
         status_code=200,

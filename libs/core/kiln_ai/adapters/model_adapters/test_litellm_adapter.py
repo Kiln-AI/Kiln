@@ -843,7 +843,10 @@ def test_build_extra_body_reasoning_summary_needs_field_and_setting(
 
     extra_body = adapter.build_extra_body(provider)
 
-    assert extra_body.get("reasoning_summary") == expected
+    if expected is None:
+        assert "reasoning_summary" not in extra_body
+    else:
+        assert extra_body["reasoning_summary"] == expected
 
 
 async def _async_chunks(chunks):

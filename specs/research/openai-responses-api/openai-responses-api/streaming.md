@@ -10,7 +10,7 @@ Fetched 2026-10-30. The full streaming-events reference page is too large to fet
 > "The Responses API uses semantic events for streaming. Each event is typed with a predefined schema, so you can listen for events you care about."
 > — [Streaming API responses guide](https://developers.openai.com/api/docs/guides/streaming-responses)
 
-Every event carries `type` and `sequence_number`. Item-scoped events also carry `output_index` (position of the item in `response.output`) and `item_id`. Content-scoped events add `content_index`; reasoning-summary events add `summary_index`.
+Every event carries `type` and `sequence_number`. Item-scoped events also carry `output_index` (position of the item in `response.output`) and `item_id`. `response.output_item.added` and `response.output_item.done` carry `output_index` and the whole item instead of `item_id`, so their id is in `item.id`. Content-scoped events add `content_index`; reasoning-summary events add `summary_index`.
 
 OpenAI lists "Adding new event types in streaming APIs" as a backwards-compatible change ([API Overview](https://developers.openai.com/api/reference/overview)). A consumer must ignore unknown event types rather than fail.
 

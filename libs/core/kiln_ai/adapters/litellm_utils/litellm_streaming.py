@@ -111,33 +111,21 @@ def _move_summary_parts_to_choice_zero(
     line when its summary part differs from ``previous_part``. Returns the summary
     part of the last reasoning delta seen, to pass in with the next chunk.
 
-    This undoes how LiteLLM bridges OpenAI Responses reasoning summaries into
-    Chat Completions chunks. OpenAI streams a summary as
-    ``response.reasoning_summary_text.delta`` events, each carrying ``item_id``,
-    ``output_index``, ``summary_index`` and ``delta``. LiteLLM puts each delta on
-    ``StreamingChoices(index=summary_index)`` and drops ``item_id`` and
-    ``output_index``. See the ``response.reasoning_summary_text.delta`` branch of
-    ``translate_responses_chunk_to_openai_stream``, in class
-    ``OpenAiResponsesToChatCompletionStreamIterator`` of
-    ``litellm/completion_extras/litellm_responses_transformation/transformation.py``
-    (about line 1627 in LiteLLM 1.105.7). So summary part N arrives on choice N,
-    and nothing separates the parts. A consumer that builds one message per choice
-    would see reasoning spread over choices that carry no text or tool calls.
+    LiteLLM streams an OpenAI Responses reasoning summary with part N on choice N,
+    nothing between parts, and no reasoning item id. The cause is the
+    ``response.reasoning_summary_text.delta`` branch of
+    ``OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream``
+    in LiteLLM's
+    ``completion_extras/litellm_responses_transformation/transformation.py``.
+    Other providers stream reasoning on choice 0, so this changes nothing for them.
 
-    This applies only to OpenAI Responses reasoning summaries. With one choice per
-    request, every other provider streams reasoning on choice 0, so this changes
-    nothing for them.
+    Known limit: without the item id, the first part of a new item looks like more
+    of the previous part when both are part 0. So a one-part item followed by
+    another item gets no blank line on the live stream. The saved text has it,
+    because ``_apply_reasoning_items`` rebuilds it from the reasoning items.
 
-    Known limit: a new reasoning item restarts at part 0, and without ``item_id``
-    its first delta looks like more of the previous part. So a one-part item
-    followed by another item gets no blank line on the live stream.
-    The saved text still has that blank line, because ``_apply_reasoning_items``
-    rebuilds it from the reasoning items.
-
-    Tests: ``TestSummaryPartsOnChoiceZero`` in ``test_litellm_streaming.py``, and
-    ``test_streamed_reasoning_deltas_on_one_choice_with_part_breaks`` and
-    ``test_multi_part_summary_saved_in_full`` in ``test_openai_responses_wire.py``.
-    The wire tests run real LiteLLM, so they fail if an upgrade changes this.
+    Pinned by ``TestSummaryPartsOnChoiceZero`` in ``test_litellm_streaming.py`` and by
+    the wire tests in ``test_openai_responses_wire.py``, which run real LiteLLM.
     """
     for choice in chunk.choices:
         delta = choice.delta

@@ -374,7 +374,9 @@ def test_connect_openai_success(mock_config_shared, mock_requests_get, client):
 
     assert response.status_code == 200
     assert response.json() == {"message": "Connected to OpenAI"}
-    assert mock_config.open_ai_api_key == "test_key"
+    mock_config.update_settings.assert_called_once_with(
+        {"open_ai_api_key": "test_key", "open_ai_reasoning_summaries": False}
+    )
 
 
 @patch("app.desktop.studio_server.provider_api.requests.get")
@@ -466,8 +468,9 @@ def test_connect_openai_without_option_turns_reasoning_summaries_off(
     ],
 )
 def test_connect_openai_failed_key_check_saves_nothing(
-    client, models_call, expected_status
+    client, monkeypatch, models_call, expected_status
 ):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with patch("app.desktop.studio_server.provider_api.requests.get", **models_call):
         response = client.post(
             "/api/provider/connect_api_key",
@@ -2401,14 +2404,16 @@ async def test_disconnect_api_key_openai(client, mock_config_all_providers):
 
         assert response.status_code == 200
         assert response.json() == {"message": "Provider disconnected"}
-        assert mock_config_all_providers.open_ai_api_key is None
-        assert mock_config_all_providers.open_ai_reasoning_summaries is False
+        mock_config_all_providers.update_settings.assert_called_once_with(
+            {"open_ai_api_key": None, "open_ai_reasoning_summaries": False}
+        )
 
         # Check it didn't unset the other providers
         assert mock_config_all_providers.groq_api_key is not None
 
 
-def test_disconnect_api_key_openai_turns_reasoning_summaries_off(client):
+def test_disconnect_api_key_openai_turns_reasoning_summaries_off(client, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     Config.shared().open_ai_api_key = "test_key"
     Config.shared().open_ai_reasoning_summaries = True
 

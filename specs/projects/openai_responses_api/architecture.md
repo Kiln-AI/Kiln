@@ -52,7 +52,7 @@ These come from running the real libraries on 2026-11-03: the Kiln repo in a scr
 
 `libs/core` code may not add new `Config.shared()` reads (conventions rule D11, gate check `core-config-shared`). `lite_llm_core_config_for_provider` already reads the OpenAI key there, so the setting is read in the same place:
 
-- `LiteLlmCoreConfig` (`adapters/provider_tools.py`) gets `openai_reasoning_summaries: bool = False`. In the `ModelProviderName.openai` case, set it from `Config.shared().open_ai_reasoning_summaries`. This is the one new `Config.shared()` read. It FAILs the gate as an H24 case ("waits on provider config injection", the same as every case in that function). Don't allowlist it; report it in the PR.
+- `LiteLlmCoreConfig` (`adapters/provider_tools.py`) gets `openai_reasoning_summaries: bool = False`. In the `ModelProviderName.openai` case, set it to `Config.shared().open_ai_reasoning_summaries is True`, so a stored `null` reads as off. This is the one new `Config.shared()` read. It FAILs the gate as an H24 case ("waits on provider config injection", the same as every case in that function). Don't allowlist it; report it in the PR.
 - `LiteLlmConfig` (`model_adapters/litellm_config.py`) gets `openai_reasoning_summaries: bool = False`.
 - `litellm_core_provider_config` (`adapters/adapter_registry.py`) copies the value into the `LiteLlmConfig` it builds.
 - Embeddings, extractors and rerankers ignore the new field.
@@ -80,6 +80,7 @@ Finding 5 means non-streamed calls can't return the full summary. When the kwarg
 - Usage and cost come from the built response's `usage`. `usage_from_response` already falls back to `usage.cost`. (Observed: cost present on the built response.)
 - Unit tests that mock `acompletion_checking_response` are unaffected.
 - This change has an exit (§8 decision 2). If it doesn't stay clean, stop and propose punting before going further.
+- With summaries off, non-streamed calls keep finding 5: a tool round after a reply with several consecutive reasoning items replays only the last one. This is accepted (§8 decision 4).
 
 ### 3.7 Streaming fixes (`adapters/litellm_utils/litellm_streaming.py`, `StreamingCompletion.__aiter__`)
 
@@ -112,8 +113,8 @@ Put the helpers as private module functions in `litellm_streaming.py`: `_reasoni
 
 - `connect_api_key` reads an optional `options` object from the payload. It must be a dict with string keys and bool values; otherwise return a 400 with "Invalid options". Default `{}`.
 - For OpenAI it calls `connect_openai(parse_api_key(key_data), reasoning_summaries=options.get("reasoning_summaries") is True)`.
-- `connect_openai(key: str, reasoning_summaries: bool)` saves the key and the setting only after the key check succeeds.
-- The OpenAI disconnect case also sets `Config.shared().open_ai_reasoning_summaries = False`.
+- `connect_openai(key: str, reasoning_summaries: bool)` saves the key and the setting in one `update_settings` call, only after the key check succeeds.
+- The OpenAI disconnect case clears the key and sets `open_ai_reasoning_summaries` to `False` in one `update_settings` call.
 - The payload is an untyped `dict`, so the OpenAPI schema doesn't change and `generate_schema.sh` isn't needed. Confirm this with `check_schema.sh`.
 
 ### 3.10 Web UI (`app/web_ui/src/routes/(fullscreen)/setup/(setup)/connect_providers/connect_providers.svelte`)
@@ -124,7 +125,7 @@ Use the `kiln-ui` skill for this change.
   - `id: "reasoning_summaries"`, `label: "Show reasoning summaries (requires Org verification)"`;
   - `info`: "Shows a summary of the model's reasoning for newer GPT models. OpenAI requires [organization verification](https://platform.openai.com/settings/organization/general) for this; runs fail if your organization isn't verified."
 - New state `api_key_option_values: Record<string, boolean>`, reset to `{}` when the key dialog opens.
-- Render the options below the fields-and-Connect row, **outside** `#api-key-fields`. `submit_api_key` reads every `<input>` in that div as a text value. Each option is a `FormElement` with `inputType="checkbox"`, `label={option.label}`, `info_description={option.info}` and `bind:value`, so the house control owns the input, label and tooltip.
+- Render the options below the fields-and-Connect row, **outside** `#api-key-fields`. `submit_api_key` reads every `<input>` in that div as a text value. Each option is a `FormElement` with `inputType="checkbox"`, `label={option.label}`, `info_description={option.info}`, `disabled={api_key_submitting}` and `bind:value`, so the house control owns the input, label and tooltip, and the option can't change while the key check runs.
 - `submit_api_key` adds `options: api_key_option_values` to the POST body.
 - The dialog only opens while the provider is disconnected, and disconnecting turns the setting off, so the checkbox always starts unchecked. No current-value fetch is needed. Update the functional spec's "the dialog shows the current value" line to say this.
 
@@ -228,3 +229,7 @@ Fixtures for the Responses bodies and SSE events come from the research probes: 
 
    If it isn't clean, the coding agent stops and proposes punting instead. Punting means shipping non-streamed summaries with only the last reasoning item, documenting that in a code comment, and filing the LiteLLM bug upstream.
 3. **Attach the streamed reasoning items to the rebuilt message (§3.7, step 3): decided, yes.** It restores reasoning replay between tool rounds inside one run, on the streaming path. §3.6 needs it to avoid a regression. It does not carry reasoning across runs (saved conversations, `return_on_tool_call` resume, synthetic-user turns); that stays with the separate reasoning project, whose handoff prompt now notes this fix.
+4. **Non-streamed calls with summaries off keep LiteLLM's last-item replay: decided, accepted.** These calls stay on `litellm.acompletion` (§3.6). After a reply with several reasoning items, the next tool round replays only the last one (finding 5), even when tool calls sit between them.
+   - This is LiteLLM's existing behavior. It is already on `main` for GPT-5.4 Pro and GPT-5.2 Pro. This project doesn't change how LiteLLM replays, but branch 2 (§4) extends the case to the ten models it turns tools on for, and GPT-5.6 and later often split reasoning into several items (finding 5).
+   - Reasoning replay belongs to the separate reasoning project. Its [handoff prompt](../../research/openai-responses-api/handoff_reasoning_across_turns.md) (item 3) and [reasoning-replay-by-provider.md](../../research/openai-responses-api/reasoning-replay-by-provider.md) already describe this case.
+   - No paid test for it here: no prompt reliably makes OpenAI return several reasoning items, so a test can't count on reaching the case. The pending interleaved-reasoning probe (question 9 in reasoning-replay-by-provider.md) checks whether OpenAI accepts this partial replay.

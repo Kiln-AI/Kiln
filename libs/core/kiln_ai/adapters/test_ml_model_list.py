@@ -484,8 +484,9 @@ def test_suggested_for_synthetic_user():
 
 
 def test_openai_reasoning_summary_only_on_responses_capable_openai_providers():
-    """OpenAI returns reasoning summaries for GPT-5.4+ and GPT-6+ on OpenAI direct.
-    Pinned by name, so setting the field on any other provider has to update this list."""
+    """Exactly these OpenAI-direct providers request the "auto" summary mode, and no
+    other provider sets openai_reasoning_summary. Setting it anywhere else changes this
+    contract, not just the list."""
     expected = {
         ModelName.gpt_6_1_sol,
         ModelName.gpt_6_1_terra,
