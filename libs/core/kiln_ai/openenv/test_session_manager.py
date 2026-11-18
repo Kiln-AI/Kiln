@@ -646,20 +646,8 @@ class TestResetSchema:
         openenv_server.save_to_file()
         return openenv_server
 
-    @pytest.mark.parametrize(
-        "routes",
-        [
-            {"/schema": {"action": {}, "reset": RESET_SCHEMA}},
-            {
-                "/schema": {"action": {}},
-                "/seahaven/schemas": {"reset": RESET_SCHEMA},
-            },
-            {"/seahaven/schemas": {"reset": RESET_SCHEMA}},
-            {"/schema": {"reset": [1]}, "/seahaven/schemas": {"reset": RESET_SCHEMA}},
-        ],
-        ids=["schema", "seahaven_fallback", "no_schema_route", "non_object_reset"],
-    )
-    async def test_reads_the_reset_schema(self, session_manager, project, routes):
+    async def test_reads_the_reset_schema(self, session_manager, project):
+        routes = {"/schema": {"action": {}, "reset": RESET_SCHEMA}}
         with serve_in_thread(extra_routes=routes) as base_url:
             schema = await session_manager.reset_schema(self._server(project, base_url))
         assert schema == RESET_SCHEMA
@@ -668,11 +656,18 @@ class TestResetSchema:
         "routes",
         [
             {},
-            {"/schema": {"action": {}}, "/seahaven/schemas": {"action": {}}},
+            {"/schema": {"action": {}}},
             {"/schema": ["not", "an", "object"]},
-            {"/schema": {"reset": "nope"}, "/seahaven/schemas": {"reset": None}},
+            {"/schema": {"reset": "nope"}},
+            {"/schema": {"reset": [1]}},
         ],
-        ids=["neither_route", "no_reset_key", "non_object_body", "non_object_resets"],
+        ids=[
+            "no_schema_route",
+            "no_reset_key",
+            "non_object_body",
+            "string_reset",
+            "list_reset",
+        ],
     )
     async def test_no_schema_is_none(self, session_manager, project, routes):
         with serve_in_thread(extra_routes=routes) as base_url:

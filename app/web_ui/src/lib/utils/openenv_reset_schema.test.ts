@@ -6,7 +6,7 @@ import {
 } from "./openenv_reset_schema"
 import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
 
-// The shape Seahaven serves at /seahaven/schemas, trimmed to one of each construct.
+// The shape of the `reset` key Seahaven serves at /schema, trimmed to one of each construct.
 const SEAHAVEN_RESET_SCHEMA = {
   $defs: {
     Startup: {

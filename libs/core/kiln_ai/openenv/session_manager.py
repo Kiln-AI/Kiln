@@ -266,15 +266,7 @@ class OpenEnvSessionManager:
             raise OpenEnvError(_no_url_message(openenv_server))
         base_url = openenv_server.url.rstrip("/")
         async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT_S) as client:
-            schema = await _reset_schema_at(client, openenv_server, base_url, "/schema")
-            if schema is not None:
-                return schema
-            # Seahaven serves its reset schema here until it moves to an OpenEnv
-            # release whose /schema has a `reset` key (openenv/OpenEnv#1270). Delete
-            # this fallback once it does.
-            return await _reset_schema_at(
-                client, openenv_server, base_url, "/seahaven/schemas"
-            )
+            return await _reset_schema_at(client, openenv_server, base_url, "/schema")
 
     async def start_episode(
         self, openenv_server: OpenEnvServer, reset_kwargs: dict[str, JsonValue]

@@ -92,7 +92,7 @@ Rules:
 
 An OpenEnv server can publish a JSON schema for its reset arguments. When it does, the Environment Preset dialog shows a form built from that schema instead of a JSON editor.
 
-- **Where the schema comes from:** Kiln reads the `reset` key of the server's `GET /schema` answer (OpenEnv 0.11 and later, from openenv/OpenEnv#1270). If that answer has no `reset` key, Kiln reads the `reset` key of `GET /seahaven/schemas`, which Seahaven serves until it moves to an OpenEnv version with #1270. If neither has one, or the server can't be reached, there is no schema.
+- **Where the schema comes from:** Kiln reads the `reset` key of the server's `GET /schema` answer (OpenEnv 0.11 and later, from openenv/OpenEnv#1270). If that answer has no `reset` key, or the server can't be reached, there is no schema.
 - **No schema:** the dialog is the JSON editor, as before, with no error or notice.
 - **The form:** one field per schema property, using Kiln's own form controls: a dropdown for an enum, number inputs for numbers and integers, a text input for strings, and a nested group for an object. Each field shows the schema's title and description, and is marked optional unless the schema requires it.
 - **Raw JSON:** a toggle switches between the form and the JSON editor. Values carry across in both directions.

@@ -349,7 +349,7 @@ Python uses pytest, following `python_test_guide.md`. Web uses vitest, following
 | Run API multi-turn | Three turns share one episode. Each turn's `openenv_episode.final_state` comes from `read_state`. The run delete hook releases the session. |
 | `available_tools` | An OpenEnv set is listed. An offline or archived environment is skipped. The timeout is respected. |
 | Web | `tool_options` rank, `drop_unselectable_tools` keeping env ids and dropping archived ones, all four `environment_preset_field` states and its place in Advanced Options, optional enums leading with "Not Set", the component prop defaults (each new prop off renders as before), and the request body including `openenv_reset_kwargs` |
-| Reset schema (phase 8) | Core: `/schema` with `reset`, fallback to `/seahaven/schemas`, neither, a non-object `reset`, unreachable. Endpoint: no url, 502, null and a schema. Web: the converter on the Seahaven schema shape (nullable `anyOf`, `$ref` to `$defs`, enums, defaults) and each unsupported construct returning null; `kwargs_fit_form` true and false cases; empty fields left out; the dialog's three states (no schema, form, Raw JSON locked on) and the toggle round trip. |
+| Reset schema (phase 8) | Core: `/schema` with `reset`, no `/schema`, no `reset` key, a non-object body or `reset`, unreachable. Endpoint: no url, 502, null and a schema. Web: the converter on the Seahaven schema shape (nullable `anyOf`, `$ref` to `$defs`, enums, defaults) and each unsupported construct returning null; `kwargs_fit_form` true and false cases; empty fields left out; the dialog's three states (no schema, form, Raw JSON locked on) and the toggle round trip. |
 
 After each phase, run `uv run ./checks.sh --agent-mode`, and regenerate the API schema when an endpoint changes.
 
@@ -374,9 +374,7 @@ Behaviour is in the functional spec (Reset argument forms) and `ui_design.md` (R
 
 - Uses `httpx.AsyncClient` with `CONNECT_TIMEOUT_S`, as `_connect_remote` does for `/metadata`. It is always fresh: nothing is cached.
 - `GET {url}/schema`. If the answer is a JSON object whose `reset` is a JSON object, return that.
-- Otherwise `GET {url}/seahaven/schemas` and do the same. A 404 there means no schema.
-- Return `None` when neither has one. Raise `OpenEnvError` with the existing "can't reach" wording when the server can't be reached, as `list_tools` does.
-- The Seahaven fallback is one clearly commented block, so it can be deleted once Seahaven serves `reset` on `/schema`.
+- Return `None` otherwise, including for a 404. Raise `OpenEnvError` with the existing "can't reach" wording when the server can't be reached, as `list_tools` does.
 
 ### Endpoint (`studio/openenv_server_api.py`)
 
