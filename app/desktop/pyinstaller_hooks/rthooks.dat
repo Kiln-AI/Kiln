@@ -1,0 +1,3 @@
+{
+    'nltk': ['pyi_rth_nltk_data_path.py'],
+}

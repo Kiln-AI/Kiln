@@ -13,14 +13,13 @@ test.describe("Prompts management", () => {
   ## Hints
   - Route is /prompts/{project_id}/{task_id}
   - Page title is "Prompts" with subtitle "Manage prompts for this task."
-  - Action buttons: "Optimizer Jobs" and "Create Prompt"
+  - Action button: "Create Prompt"
   - Empty state shows "No saved prompts yet."
   - "Read the Docs" link points to https://docs.kiln.tech/docs/prompts
 
   ## Assertions
   - Page heading "Prompts" is visible.
   - "Manage prompts for this task." text is visible.
-  - "Optimizer Jobs" link is visible.
   - "Create Prompt" link is visible.
   - "No saved prompts yet." text is visible.
   - "Read the Docs" link has correct href.
@@ -40,10 +39,6 @@ test.describe("Prompts management", () => {
     ).toBeVisible()
 
     await expect(page.getByText("Manage prompts for this task.")).toBeVisible()
-
-    await expect(
-      page.getByRole("button", { name: "Optimizer Jobs" }),
-    ).toBeVisible()
 
     await expect(
       page.getByRole("button", { name: "Create Prompt" }),
@@ -100,47 +95,6 @@ test.describe("Prompts management", () => {
     ).toBeVisible()
 
     await expect(page.getByText("View & Edit")).toBeVisible()
-  })
-
-  /* @act
-  ## Goals
-  The prompts list page shows the optimizer banner with a call to action to
-  automatically optimize the prompt.
-
-  ## Fixtures
-  - registeredUser
-  - seededProjectWithTask
-
-  ## Hints
-  - Route is /prompts/{project_id}/{task_id}
-  - The Banner component shows "Automatically Optimize Your Prompt" title
-  - The banner has a "Create Optimized Prompt" button/link
-
-  ## Assertions
-  - "Automatically Optimize Your Prompt" text is visible.
-  - "Create Optimized Prompt" link is visible.
-  */
-  test("prompts list shows optimize banner", async ({
-    page,
-    registeredUser,
-    seededProjectWithTask,
-  }) => {
-    void registeredUser
-    const { project, task } = seededProjectWithTask
-
-    await page.goto(`/prompts/${project.id}/${task.id}`)
-
-    await expect(
-      page.getByRole("heading", { name: "Prompts", exact: true }),
-    ).toBeVisible()
-
-    await expect(
-      page.getByText("Automatically Optimize Your Prompt"),
-    ).toBeVisible()
-
-    await expect(
-      page.getByRole("link", { name: "Create Optimized Prompt" }),
-    ).toBeVisible()
   })
 
   /* @act
@@ -293,8 +247,9 @@ test.describe("Prompts management", () => {
 
   /* @act
   ## Goals
-  The prompt generators page loads and shows all three generator categories:
-  Automatic Optimization, Prompt Generators, and Manual.
+  The prompt generators page loads and shows the generator categories:
+  Prompt Generators and Manual. The retired "Kiln Optimized" generator and its
+  "Automatic Optimization" category are not offered.
 
   ## Fixtures
   - registeredUser
@@ -303,18 +258,15 @@ test.describe("Prompts management", () => {
   ## Hints
   - Route is /prompts/{project_id}/{task_id}/prompt_generators
   - Page title is "Create Prompt"
-  - Categories rendered via CarouselSection: "Automatic Optimization",
-    "Prompt Generators", "Manual"
-  - Items include "Kiln Optimized", "Few-Shot", "Many-Shot", "Custom", etc.
-  - "Kiln Optimized" is recommended
+  - Categories rendered via CarouselSection: "Prompt Generators", "Manual"
+  - Items include "Few-Shot", "Many-Shot", "Custom", etc.
 
   ## Assertions
   - Page heading "Create Prompt" is visible.
-  - "Automatic Optimization" heading is visible.
   - "Prompt Generators" heading is visible.
   - "Manual" heading is visible.
-  - "Kiln Optimized" text is visible.
   - "Custom" text is visible.
+  - "Automatic Optimization" and "Kiln Optimized" are not shown.
   */
   test("prompt generators page shows generator categories", async ({
     page,
@@ -330,17 +282,16 @@ test.describe("Prompts management", () => {
       page.getByRole("heading", { name: "Create Prompt", exact: true }),
     ).toBeVisible()
 
-    await expect(page.getByText("Automatic Optimization")).toBeVisible()
-
     await expect(
       page.getByText("Prompt Generators", { exact: true }),
     ).toBeVisible()
 
     await expect(page.getByText("Manual", { exact: true })).toBeVisible()
 
-    await expect(page.getByText("Kiln Optimized")).toBeVisible()
-
     await expect(page.getByText("Custom")).toBeVisible()
+
+    await expect(page.getByText("Automatic Optimization")).toHaveCount(0)
+    await expect(page.getByText("Kiln Optimized")).toHaveCount(0)
   })
 
   /* @act

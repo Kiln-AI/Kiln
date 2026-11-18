@@ -410,7 +410,7 @@ class TestAdapterStreamToolCalls:
             ),
             pytest.param(
                 {
-                    "content": "World error: E42 rate limited, details...",
+                    "content": "Environment error: E42 rate limited, details...",
                     "is_error": True,
                     "error_message": "rate limited",
                 },
