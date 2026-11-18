@@ -10,7 +10,7 @@ import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_sche
 const SEAHAVEN_RESET_SCHEMA = {
   $defs: {
     Startup: {
-      additionalProperties: false,
+      additionalProperties: true,
       properties: {
         acting_user: {
           anyOf: [{ type: "string" }, { type: "null" }],
@@ -114,12 +114,16 @@ describe("reset_schema_to_form_schema", () => {
     ["an array", object_schema({ a: { type: "array", items: {} } })],
     ["a free-form object", object_schema({ a: { type: "object" } })],
     [
-      "additional properties",
+      "a free-form object that allows extra keys",
+      object_schema({ a: { type: "object", additionalProperties: true } }),
+    ],
+    [
+      "additional properties with a schema",
       object_schema({
         a: {
           type: "object",
           properties: { b: { type: "string" } },
-          additionalProperties: true,
+          additionalProperties: { type: "string" },
         },
       }),
     ],
@@ -171,7 +175,7 @@ describe("kwargs_fit_form", () => {
   it.each([
     ["an unknown key", { foo: 1 }, "unknown field 'foo'"],
     [
-      "an unknown nested key",
+      "an extra key in an object that allows extra keys",
       { startup: { foo: 1 } },
       "unknown field 'startup.foo'",
     ],
