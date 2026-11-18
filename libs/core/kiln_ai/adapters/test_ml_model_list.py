@@ -3,6 +3,7 @@ from collections import Counter
 import pytest
 
 from kiln_ai.adapters.ml_model_list import (
+    KilnModel,
     KilnModelProvider,
     ModelAdapterId,
     ModelName,
@@ -12,7 +13,19 @@ from kiln_ai.adapters.ml_model_list import (
     default_thinking_level_for_model_provider,
     get_model_by_name,
 )
+from kiln_ai.adapters.model_agent_info import (
+    BANNED_NOTE_WORDS,
+    MODEL_NOTE_LABELS,
+    MODEL_TAGS,
+    PROVIDER_ENTRY_TAGS,
+    TagKind,
+)
 from kiln_ai.adapters.pytest_prerelease_whitelist import PRERELEASE_CHAT_MODELS
+from kiln_ai.adapters.test_model_agent_info import (
+    assert_note_format,
+    assert_valid_note,
+    assert_valid_tags,
+)
 from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 
@@ -837,3 +850,120 @@ def test_fireworks_thinking_levels(
     assert provider.available_thinking_levels == expected_levels
     assert provider.default_thinking_level == expected_default
     assert provider.litellm_allowed_openai_params == expected_allowed_params
+
+
+@pytest.mark.parametrize("model", built_in_models, ids=lambda m: m.name)
+def test_agent_notes_and_tags_follow_rules(model: KilnModel):
+    assert_valid_note(model.agent_notes)
+    assert_valid_tags(model.tags, MODEL_TAGS)
+    for provider in model.providers:
+        assert_valid_tags(provider.tags, PROVIDER_ENTRY_TAGS)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [m for m in built_in_models if m.agent_notes is not None],
+    ids=lambda m: m.name,
+)
+def test_model_note_format(model: KilnModel):
+    assert model.agent_notes is not None
+    assert_note_format(
+        model.agent_notes,
+        MODEL_NOTE_LABELS,
+        ("Description:", "Lineup:"),
+    )
+    lines = model.agent_notes.split("\n")
+    assert lines[0].startswith("Description:"), (
+        f"{model.name}: first line must start with 'Description:'"
+    )
+
+
+@pytest.mark.parametrize("model", built_in_models, ids=lambda m: m.name)
+def test_superseded_by_iff_not_current(model: KilnModel):
+    if model.agent_notes is None:
+        return
+    # Revision 3: skip fully-deprecated models (all provider entries deprecated).
+    if all(getattr(p, "deprecated", False) for p in model.providers):
+        return
+    lines = model.agent_notes.split("\n")
+    has_superseded = any(line.startswith("Superseded by:") for line in lines)
+    has_same_weights = any(line.startswith("Same weights:") for line in lines)
+    is_current = "current" in model.tags
+    if is_current:
+        assert not has_superseded, (
+            f"{model.name}: a current model must not have a 'Superseded by:' line"
+        )
+    else:
+        # Revision 2: a serving variant of a current model has Same weights:
+        # instead of Superseded by:.
+        assert has_superseded or has_same_weights, (
+            f"{model.name}: a non-current model with a note must have"
+            " a 'Superseded by:' or 'Same weights:' line"
+        )
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [tag for tag, info in MODEL_TAGS.items() if info.kind == TagKind.set],
+    ids=lambda t: t,
+)
+def test_set_tag_limits(tag: str):
+    info = MODEL_TAGS[tag]
+    assert info.max_models is not None
+    count = sum(1 for m in built_in_models if tag in m.tags)
+    assert count <= info.max_models, (
+        f"Tag {tag!r} is on {count} models, exceeding its limit of {info.max_models}"
+    )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [m for m in built_in_models if "recommended" in m.tags],
+    ids=lambda m: m.name,
+)
+def test_recommended_is_current(model: KilnModel):
+    assert "current" in model.tags, (
+        f"{model.name}: tagged 'recommended' but not 'current'"
+    )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [m for m in built_in_models if m.tags],
+    ids=lambda m: m.name,
+)
+def test_tagged_models_have_notes(model: KilnModel):
+    assert model.agent_notes is not None, (
+        f"{model.name}: has tags {model.tags} but agent_notes is None"
+    )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        m
+        for m in built_in_models
+        if m.providers and all(getattr(p, "deprecated", False) for p in m.providers)
+    ],
+    ids=lambda m: m.name,
+)
+def test_fully_deprecated_models_have_no_tags(model: KilnModel):
+    assert model.tags == [], (
+        f"{model.name}: all provider entries are deprecated but tags={model.tags}"
+    )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [m for m in built_in_models if m.agent_notes is not None],
+    ids=lambda m: m.name,
+)
+def test_note_has_no_banned_time_words(model: KilnModel):
+    import re
+
+    assert model.agent_notes is not None
+    for word in BANNED_NOTE_WORDS:
+        pattern = re.compile(r"\b" + re.escape(word) + r"\b", re.IGNORECASE)
+        assert not pattern.search(model.agent_notes), (
+            f"{model.name}: agent_notes contains banned time-relative word {word!r}"
+        )
