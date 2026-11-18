@@ -6,8 +6,12 @@
 # packaged app, which costs over a second of CPU in each multiprocessing worker.
 # This hook adds the bundled `nltk_data` folder to `nltk.data.path` only when
 # `nltk.data` is first imported.
+#
+# The build log says "Runtime hooks for nltk have already been defined.
+# Skipping the runtime hooks for nltk that are defined in
+# .../_pyinstaller_hooks_contrib/rthooks". That warning is expected: it is this
+# override taking effect.
 import importlib.abc
-import importlib.util
 import os
 import sys
 
@@ -17,6 +21,10 @@ class _BundledNltkDataLoader(importlib.abc.Loader):
         self._loader = loader
 
     def __getattr__(self, name):
+        # Forward the other loader methods (get_source, get_filename, ...). A
+        # copy or an unpickle looks up attributes before `_loader` is set.
+        if name == "_loader":
+            raise AttributeError(name)
         return getattr(self._loader, name)
 
     def create_module(self, spec):
@@ -28,22 +36,20 @@ class _BundledNltkDataLoader(importlib.abc.Loader):
 
 
 class _BundledNltkDataFinder(importlib.abc.MetaPathFinder):
-    def __init__(self):
-        self._finding = False
-
     def find_spec(self, fullname, path=None, target=None):
-        if fullname != "nltk.data" or self._finding:
+        if fullname != "nltk.data":
             return None
-        # The import system iterates sys.meta_path while it calls this method,
-        # so the finder stays in the list and skips its own nested lookup.
-        self._finding = True
-        try:
-            spec = importlib.util.find_spec(fullname)
-        finally:
-            self._finding = False
-        if spec is not None and spec.loader is not None:
-            spec.loader = _BundledNltkDataLoader(spec.loader)
-        return spec
+        # Ask the other finders, as the import system would, and wrap the loader
+        # of the spec they find.
+        for finder in sys.meta_path:
+            if finder is self or not hasattr(finder, "find_spec"):
+                continue
+            spec = finder.find_spec(fullname, path, target)
+            if spec is not None:
+                if spec.loader is not None:
+                    spec.loader = _BundledNltkDataLoader(spec.loader)
+                return spec
+        return None
 
 
 sys.meta_path.insert(0, _BundledNltkDataFinder())
