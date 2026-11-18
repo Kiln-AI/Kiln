@@ -60,7 +60,9 @@ GEMINI_ADAPTIVE_THINKING_MODELS = {
 }
 
 
-LOGIC_PUZZLE_PROMPT = "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
+LOGIC_PUZZLE_PROMPT = "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n7) B does not own the fish.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
+
+FACTORIAL_ZEROS_PROMPT = "What is the smallest positive integer n such that n! ends in exactly 25 zeros? Answer with just the number."
 
 
 def build_thinking_level_test_task(tmp_path: Path) -> datamodel.Task:
@@ -212,6 +214,30 @@ def openai_reasoning_summary_models() -> list[str]:
     ]
 
 
+# OpenAI's "auto" summary mode sometimes returns no summary, on any model and call
+# type. One empty run isn't a Kiln failure: the test checks that Kiln saves a summary
+# when OpenAI returns one, so each case gets a few tries.
+REASONING_SUMMARY_TRIES = 3
+
+
+async def run_reasoning_summary_try(
+    adapter: LiteLlmAdapter, streamed: bool
+) -> datamodel.TaskRun:
+    if streamed:
+        stream = adapter.invoke_openai_stream(FACTORIAL_ZEROS_PROMPT)
+        async for _ in stream:
+            pass
+        return stream.task_run
+    return await adapter.invoke(FACTORIAL_ZEROS_PROMPT)
+
+
+def has_saved_reasoning_summary(run: datamodel.TaskRun) -> bool:
+    if run.intermediate_outputs is None:
+        return False
+    reasoning = run.intermediate_outputs.get("reasoning")
+    return isinstance(reasoning, str) and bool(reasoning.strip())
+
+
 # Needs an OpenAI organization that is verified for reasoning summaries; unverified
 # organizations get a 400 on every case.
 @pytest.mark.paid
@@ -238,18 +264,14 @@ async def test_openai_reasoning_summaries_paid(
         kiln_task=task,
     )
 
-    if streamed:
-        stream = adapter.invoke_openai_stream(LOGIC_PUZZLE_PROMPT)
-        async for _ in stream:
-            pass
-        run = stream.task_run
-    else:
-        run = await adapter.invoke(LOGIC_PUZZLE_PROMPT)
+    for _ in range(REASONING_SUMMARY_TRIES):
+        run = await run_reasoning_summary_try(adapter, streamed)
+        if has_saved_reasoning_summary(run):
+            return
 
-    assert run.intermediate_outputs is not None
-    reasoning = run.intermediate_outputs.get("reasoning")
-    assert isinstance(reasoning, str) and reasoning.strip(), (
-        f"Expected a reasoning summary from {model_name} (streamed={streamed})"
+    pytest.fail(
+        f"Expected a reasoning summary from {model_name} (streamed={streamed}) "
+        f"in at least one of {REASONING_SUMMARY_TRIES} tries"
     )
 
 
@@ -286,7 +308,7 @@ async def test_openai_reasoning_summaries_at_none_paid(tmp_path, model_name: str
         kiln_task=task,
     )
 
-    run = await adapter.invoke(LOGIC_PUZZLE_PROMPT)
+    run = await adapter.invoke(FACTORIAL_ZEROS_PROMPT)
 
     assert run.output.output
     assert reasoning_content_from_run(run) is None
