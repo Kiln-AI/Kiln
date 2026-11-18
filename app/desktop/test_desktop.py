@@ -416,23 +416,36 @@ def test_desktop_app_server():
 ENTRY_SCRIPT = Path(__file__).parent / "desktop.py"
 
 
-def test_entry_script_imports_nothing_heavy_outside_main():
-    """A multiprocessing child runs the entry script before its job. In a fresh
-    interpreter, running it as a non-main module must not load the app."""
+def test_entry_script_imports_only_stdlib_before_freeze_support():
+    """A child of the packaged app runs the entry script as `__main__`, and
+    `freeze_support()` runs its job and exits. Everything the script imports
+    before that call is loaded again in each child, so it must be stdlib only.
+
+    The probe runs the script in a fresh interpreter, with a `freeze_support`
+    that writes the non-stdlib modules loaded so far and exits, as a packaged
+    child does."""
     probe = (
-        "import runpy, sys\n"
-        f"runpy.run_path({str(ENTRY_SCRIPT)!r}, run_name='__mp_main__')\n"
-        "heavy = ('app.desktop.desktop_main', 'app.desktop.desktop_server', 'litellm', 'tkinter')\n"
-        "sys.stdout.write(','.join(m for m in heavy if m in sys.modules))\n"
+        "import multiprocessing, runpy, sys\n"
+        "before = set(sys.modules)\n"
+        "def stop():\n"
+        "    loaded = sorted(\n"
+        "        m for m in set(sys.modules) - before\n"
+        "        if m.split('.')[0] not in sys.stdlib_module_names\n"
+        "    )\n"
+        "    sys.stdout.write(','.join(loaded))\n"
+        "    sys.exit(0)\n"
+        "multiprocessing.freeze_support = stop\n"
+        f"runpy.run_path({str(ENTRY_SCRIPT)!r}, run_name='__main__')\n"
+        "sys.exit('the entry script did not call freeze_support()')\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", probe],
         capture_output=True,
         text=True,
         timeout=60,
-        check=True,
     )
-    assert result.stdout.strip() == ""
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "", f"non-stdlib modules loaded: {result.stdout}"
 
 
 def test_entry_script_runs_main_after_freeze_support():
@@ -442,12 +455,15 @@ def test_entry_script_runs_main_after_freeze_support():
             "multiprocessing.freeze_support",
             side_effect=lambda: calls.append("freeze_support"),
         ),
-        patch("multiprocessing.set_start_method") as mock_set_start_method,
+        patch(
+            "multiprocessing.set_start_method",
+            side_effect=lambda *args, **kwargs: calls.append("set_start_method"),
+        ) as mock_set_start_method,
         patch(
             "app.desktop.desktop_main.main", side_effect=lambda: calls.append("main")
         ),
     ):
         runpy.run_path(str(ENTRY_SCRIPT), run_name="__main__")
 
-    assert calls == ["freeze_support", "main"]
+    assert calls == ["freeze_support", "set_start_method", "main"]
     mock_set_start_method.assert_called_once_with("spawn", force=True)

@@ -220,7 +220,9 @@ def desktop_release_name() -> str:
 def main() -> None:
     """Start the desktop app: Sentry, the API server in a thread, the tray and the Tk main loop.
 
-    Called by `app/desktop/desktop.py`, the entry script, after its `freeze_support()`.
+    Called by `app/desktop/desktop.py`, the entry script, after its `freeze_support()`
+    and `set_start_method("spawn", force=True)`. A caller must do both first: PDF
+    conversion uses the default start method, which is not spawn on Linux.
     """
     # Sentry is gated on DSN presence: CI bakes it into _sentry_config.py for
     # release builds, dev/test builds leave it None and init is skipped.

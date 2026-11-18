@@ -4,6 +4,7 @@
 # conversion) runs this script first, and `freeze_support()` hands the child
 # its job and exits. Anything imported above that call is loaded again in each
 # child, so keep this file to the stdlib and import the app inside `__main__`.
+# PyInstaller's runtime hooks also run in each child, before this script.
 import multiprocessing
 
 if __name__ == "__main__":
