@@ -51,6 +51,15 @@ def task_from_id(project_id: str, task_id: str) -> Task:
     )
 
 
+def _reject_save_location_fields(task_payload: Dict[str, Any]) -> None:
+    locations = Task.find_save_location_fields(task_payload)
+    if locations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Fields that control where data is saved cannot be set by client: {', '.join(locations)}.",
+        )
+
+
 class RatingOption(BaseModel):
     """A rating requirement with display rules."""
 
@@ -93,6 +102,7 @@ def connect_task_api(app: FastAPI):
                 status_code=400,
                 detail="Task ID cannot be set by client.",
             )
+        _reject_save_location_fields(task_data)
         parent_project = project_from_id(project_id)
 
         task = Task.validate_and_save_with_subrelations(
@@ -141,6 +151,7 @@ def connect_task_api(app: FastAPI):
                 status_code=400,
                 detail="Task ID cannot be changed by client in a patch.",
             )
+        _reject_save_location_fields(task_updates)
         original_task = task_from_id(project_id, task_id)
         if (
             "turn_mode" in task_updates
@@ -154,7 +165,9 @@ def connect_task_api(app: FastAPI):
             task_updates["turn_mode"] = TurnMode(task_updates["turn_mode"])
         updated_task_data = original_task.model_copy(update=task_updates)
         updated_task = Task.validate_and_save_with_subrelations(
-            updated_task_data.model_dump(), parent=original_task.parent
+            updated_task_data.model_dump(),
+            path=original_task.path,
+            parent=original_task.parent,
         )
         if updated_task is None:
             raise HTTPException(

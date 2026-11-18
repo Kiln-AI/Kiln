@@ -204,3 +204,41 @@ def test_validation_error_in_c_level_length():
         ModelA.validate_and_save_with_subrelations(data)
 
     assert "String should match pattern" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "data, expected",
+    [
+        ({"name": "Root", "bs": [{"value": 1, "cs": [{"code": "ABC"}]}]}, []),
+        ({"name": "Root", "path": "a.kiln", "parent": None}, ["path", "parent"]),
+        (
+            {
+                "name": "Root",
+                "bs": [
+                    {"value": 1},
+                    {
+                        "value": 2,
+                        "path": "b.kiln",
+                        "cs": [{"code": "ABC"}, {"code": "DEF", "parent": {}}],
+                    },
+                ],
+            },
+            ["bs[1].path", "bs[1].cs[1].parent"],
+        ),
+        # A child's id names its folder; the top-level id is left to the caller.
+        (
+            {
+                "name": "Root",
+                "id": "root",
+                "bs": [{"value": 1, "id": "../b", "cs": [{"code": "ABC", "id": "/c"}]}],
+            },
+            ["bs[0].id", "bs[0].cs[0].id"],
+        ),
+        # Malformed relationships are left for the save to reject.
+        ({"name": "Root", "bs": "not a list"}, []),
+        ({"name": "Root", "bs": ["not a dict"]}, []),
+        ({"name": "Root", "not_a_relationship": [{"path": "x.kiln"}]}, []),
+    ],
+)
+def test_find_save_location_fields(data, expected):
+    assert ModelA.find_save_location_fields(data) == expected
