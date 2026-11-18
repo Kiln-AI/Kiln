@@ -20,9 +20,9 @@ ship"). This is local setup, not a phase.
 - [x] Phase 2: Prompt iteration with `claude -p`. The `prepare` subcommand, the `grounding_mcp`
   server, and `ground --engine claude` (default model `claude-opus-5-5`), with tests that stub the
   kiln_server clients and the `claude` call.
-- [ ] Checkpoint: run `prepare` and `ground --engine claude` on the eb3 eval definitions, compare
-  with the eb3 runs, and iterate on the grounding prompt until the cases are comparable. Each paid
-  run needs Sam's go-ahead.
+- [x] Checkpoint: run `prepare` and `ground --engine claude` on the eb3 eval definitions, compare
+  with the eb3 runs, and iterate on the grounding prompt until the cases are comparable. Results in
+  `prototype_results.md`: 36 of 38 grounded across three worlds.
 - [ ] Phase 3: The real agent. `ground_case`, `ground_cases` and `ground --engine kiln`, with the
   prompt from the checkpoint, and both final-answer styles (structured output and a
   `submit_result` tool), with tests.

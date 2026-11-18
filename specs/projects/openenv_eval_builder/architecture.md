@@ -4,8 +4,8 @@ status: complete
 
 # Architecture: Eval Builder cases grounded in an OpenEnv server
 
-Backend only. The UI (Data Guide field, progress line, Review Cases, dropped cases, the grounding
-model's control) is designed after the phase 1 prototype, in `ui_design.md`, and added here then.
+Backend only. The UI (the project's multi-turn synthetic user guide, progress line, Review Cases, dropped cases, the judge lane's tool filter)
+is designed after the phase 1 prototype, in `ui_design.md`, and added here then.
 
 ## Components
 
@@ -108,7 +108,7 @@ class Fact(BaseModel):
     text: str
     evidence: Evidence
 
-class GroundedReference(BaseModel):  # written to EvalInput.reference via model_dump()
+class GroundedReference(BaseModel):  # rendered to markdown, saved as reference["judge_guidance"]
     starting_point: str
     facts: list[Fact]
     expected_outcome: list[str]
@@ -331,12 +331,13 @@ Comparison against the eb3 runs is manual: same specification, same server, same
 ## After the prototype (outline, finished with `ui_design.md`)
 
 - **Brief endpoint.** `GET /api/projects/{project_id}/openenv_servers/{id}/reset_arguments_brief`
-  returns `reset_arguments_brief(...)` or null. `batch_plan_guidance.ts` appends it and the Data
-  Guide section.
+  returns `reset_arguments_brief(...)` or null. `batch_plan_guidance.ts` appends it, the
+  synthetic user guide section and, on a Retry after drops, the dropped cases section (each
+  dropped scenario with its `drop_detail`).
 - **Grounding in `generate_cases`.** `GenerateCasesApiInput` gains `target_run_config_id`. When
   the run config reaches one OpenEnv server (`single_openenv_server_id`), the route runs
   `ground_cases` after kiln_server returns and streams progress. The case dict gains
-  `openenv_reset`, `reference` and `drop`.
+  `openenv_reset`, `reference` (the typed form, rendered at save) and `drop`.
 - **Driving.** Today's multi-turn pipeline leaves `open_openenv_session` on, so on an OpenEnv run
   config each case's first turn opens its own episode with `{}` reset arguments and nothing ends
   it. The pipeline takes the episode over, as `eval_runner._run_v2_job_in_openenv` does: start the
@@ -344,10 +345,15 @@ Comparison against the eb3 runs is manual: same specification, same server, same
   `end_episode` and store `openenv_episode` with `final_state`. Drive with
   `open_openenv_session=False`, as `synthetic_user/eval_drive.py` does. The shared helper is
   extracted from `eval_runner` so both paths start, bind and end episodes the same way.
-- **Judge.** `build_judge_prompt_template(judge_prompt, multi_turn)` adds `reference_data` and
-  `openenv_episode.final_state` blocks, which the Jinja namespace already carries.
+- **Judge.** `build_judge_prompt_template(judge_prompt, multi_turn)` adds
+  `{{ reference_data.judge_guidance }}` and `openenv_episode.final_state` blocks, which the Jinja
+  namespace already carries, and the judge's `reference_keys` is `["judge_guidance"]`.
   `run_judge_for_trace` and `build_claims_for_trace` take the `openenv_episode`.
-- **Save.** `build_multi_turn_eval_inputs` writes `openenv_reset` and `reference`.
+- **Save.** `build_multi_turn_eval_inputs` writes `openenv_reset` and
+  `reference={"judge_guidance": render_judge_guidance(grounded_reference)}`. The renderer is in
+  `eval_grounding/judge_guidance.py`, with a test per section and for empty lists. The builder sets
+  `Eval.openenv_server_id` (new, `ID_TYPE | None`) from the step 1 run config's server, and
+  `Eval` validates nothing more about it in v1.
 - **Step 2.** `_collect_task_capabilities` uses `list_tools` for OpenEnv tool ids.
 - **Driver prompt.** `synthetic_user/prompt.py` renders without the accept-not-found bullet when
   the case has a reference.

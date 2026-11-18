@@ -11,11 +11,14 @@ of Kiln.
 
 | Where | Branch | What | State |
 |---|---|---|---|
-| Kiln | `worktree-openenv-eval-builder` | This spec, and the builder work to come | Draft, uncommitted. Branched from `worktree-openenv-run-page-spec` at `cb650560e` |
+| Kiln | `worktree-openenv-eval-builder` | This spec, phases 1 and 2, and the grounding-input change | Committed (`97bbca26a`, `46eef6c2b`, `6c448ca8b`), not pushed. Branched from `worktree-openenv-run-page-spec` at `cb650560e`. Prototype results in `prototype_results.md` |
+| Seahaven (local) | `sfierro/local-51-52` in `~/Repos/Seahaven-local-51-52` | #51 and #52 merged for testing | Local commits only. Never push |
+| Worlds (local) | `sfierro/local-seahaven-51-52` worktrees of the customer world, a payments world and a commerce world | Each points at the local Seahaven and OpenEnv 0.13 | One uncommitted `pyproject.toml` change each. Never commit |
 | Kiln | `worktree-openenv-run-page-spec` | The OpenEnv run page work the builder depends on (reset-schema forms and more) | 37 commits ahead of `main`, no PR yet |
 | Kiln | `worktree-openenv-run-page-spec` | Preset dialog cuts long reset-argument descriptions | Committed on the branch |
 | Seahaven | `claude/openenv-0.13-schema` | OpenEnv 0.13; reset schema on the standard `/schema` (Kiln now reads only that) | PR open: Kiln-AI/Seahaven#51 |
-| Seahaven | `sfierro/fixture-descriptions-in-reset-schema` | Fixture descriptions published in the reset schema | PR open: Kiln-AI/Seahaven#52 |
+| Seahaven | `sfierro/fixture-descriptions-in-reset-schema` | Fixture descriptions published in the reset schema, and `World(setup_sql_notes=...)` appended to the `setup_sql` description | PR open: Kiln-AI/Seahaven#52 |
+| Customer world | `sfierro/setup-sql-notes` | Its setup notes, passed as `setup_sql_notes` | Committed locally (`ef6d1655`), not pushed. Needs a Seahaven release with #52 before the pin moves |
 | Customer world | `main` | `acting_user` startup keyword gets a description | Merged: `d2d2f322` |
 
 ## Kiln
@@ -90,8 +93,9 @@ value, because Kiln's reset form refuses `oneOf`.
 - Checks: `ruff` passes. The full suite has 26 failures on this branch and the same 26 on clean
   `main` (2,630 passed here, 2,627 on main: the three new tests). `ty` flags two errors in
   `tools/bench/harness.py`, which this change does not touch. PR: https://github.com/Kiln-AI/Seahaven/pull/52
-- Not started: put the world's table names and a short example in the `setup_sql` description, so
-  the grounding agent can write setup data without guessing.
+- Also in #52: `World(setup_sql_notes=...)`, appended to the `setup_sql` description after
+  Seahaven's own sentence. The prototype showed the customer world needs them
+  (`prototype_results.md`, finding 2). Served locally from the customer world's branch.
 - After merge, the customer world needs a Seahaven version that has this change before its
   fixture descriptions show up.
 
@@ -100,7 +104,12 @@ value, because Kiln's reset form refuses `oneOf`.
 The prototype and any UI testing need #51 and #52 together. They conflict in `fill_fixture_ids` in
 `src/seahaven/openenv/env.py` and in `tests/test_reset_schema.py`, so a local branch merges them.
 The customer world pins Seahaven to a commit and OpenEnv to `<0.6`; serving it on that branch
-needs a local override to the checkout and OpenEnv 0.13, not committed. Not set up yet.
+needs a local override to the checkout and OpenEnv 0.13, not committed.
+
+Set up 2026-11-17. The merge keeps #51's handling of an unreadable fixtures folder and #52's
+descriptions; the 33 reset-schema tests pass. Each world runs from a worktree whose `pyproject.toml`
+points at `~/Repos/Seahaven-local-51-52`. Rebase #52 onto #51 once #51 lands, and this branch goes
+away.
 
 ## Customer world
 
@@ -132,7 +141,9 @@ objectId and role. It reaches the reset schema once the Seahaven change above is
   models.
 - Follow-up ticket: notes a Kiln user writes for a server they can't change. Environment preset
   descriptions are a possible place to start.
-- Seahaven: the `setup_sql` description with the world's tables (above).
-- Grounding agent prototype, measuring drop rate and how often it needs a setup argument.
-- Data Guide text kept between evals: a save button on the task, or prefill from the last build.
-  Decided: retyping it is fine for v1.
+- The customer world: push `sfierro/setup-sql-notes` and move its Seahaven pin once #52 is released.
+- kiln_server production: the batch planner returned 500 for every request on 2026-11-17 (trace ids
+  `85a56d1c-64a3-4c65-b641-dcdc989093d0`, `104072f4-33b9-45b8-b149-c48c8cb1ba0c`,
+  `0fcea80e-9baa-4c4a-b35c-390ba28f0d2e`). The prototype used a local kiln_server.
+- A project-wide multi-turn synthetic user guide replaces the per-build Data Guide field
+  (decided 2026-11-18). Sam is scoping its UI.
