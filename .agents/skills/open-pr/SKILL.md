@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open a pull request on the Kiln repo for a human to complete. The title gets a `WIP: ` prefix and a semantic-commit type. The description keeps the human-only header of the PR template as empty placeholders, and the agent writes only the Agentic PR Summary below it (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples). The agent sends screenshots to the user in chat and does not upload them to GitHub. The agent never signs the CLA. Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
+description: Open a pull request on the Kiln repo for a human to complete. The title gets a `WIP: ` prefix and a semantic-commit type. The description keeps the human-only header of the PR template as empty placeholders, and the agent writes only the Agentic PR Summary below it, inside a `<details>` panel that is collapsed by default (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples). The agent sends screenshots to the user in chat and does not upload them to GitHub. The agent never signs the CLA. Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
 ---
 
 # Open a Pull Request
@@ -23,7 +23,8 @@ The PR template at `.github/pull_request_template.md` has two parts:
    architecture review, the review requested from the code reviewer, the agentic code
    review, what to review, the UI review, and the Contributor License Agreement (CLA).
 2. **The Agentic PR Summary.** This is all the text below the `# Agentic PR Summary`
-   heading. An agent writes this part.
+   heading. An agent writes this part. It sits in a `<details>` panel, so it is
+   collapsed by default and a reviewer sees the human header first.
 
 Only a human fills in the human header. An agent must never fill it in, even when the
 user asks for it, and even when the agent knows the answer. The header records what a
@@ -214,10 +215,15 @@ Build the description in this order:
 
 1. The human header. Copy it from the template exactly as Rule 0 says. Remove the CLA
    section only when Rule 1 says to.
-2. The `----` line and the `# Agentic PR Summary` heading, exactly as in the template.
+2. The `----` line, the `# Agentic PR Summary` heading, and the `<details>` and
+   `<summary>` lines, exactly as in the template.
 3. Your summary, in place of the
-   `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder. Write
-   the parts in 4.1 to 4.7.
+   `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `` placeholder,
+   inside the `<details>` panel. Write the parts in 4.1 to 4.7.
+4. The closing `</details>` line, exactly as in the template.
+
+Keep the empty line after `</summary>` and the empty line before `</details>`. GitHub
+renders the Markdown inside the panel only when those empty lines are there.
 
 Do not copy the hidden `<!-- ... -->` comment at the end of the template. It is for
 agents only.
@@ -298,7 +304,8 @@ Do not add a diagram that only repeats the bullet points.
 ### 4.6 Examples (collapsible, at the end)
 
 Put examples and command output in a collapsible panel. Put the panels at the end of the
-Agentic PR Summary.
+Agentic PR Summary, inside the outer `<details>` panel. GitHub supports a panel inside a
+panel.
 
 ````html
 <details>
@@ -326,7 +333,7 @@ the ones that they want to the PR.
   only work that you did.
 - Add a `**Docs and skills updated**` line with the files that the `docs-sync` skill
   changed, or "none needed" and the reason.
-- Put these lines in the Agentic PR Summary, before the collapsible panels. They never go
+- Put these lines in the Agentic PR Summary, before the example panels. They never go
   in the human header.
 
 ---
@@ -388,7 +395,8 @@ different words wastes the time of each reviewer who reads the PR again.
 
 When you update:
 
-- Edit the sections that are wrong. Keep the structure from Step 4.
+- Edit the sections that are wrong. Keep the structure from Step 4, including the
+  `<details>` panel around the summary.
 - Rewrite the TLDR only when the intent, the target branch, or a companion branch changes.
   Keep it to one line.
 - Change the title when the subject or the type is no longer correct. Keep the `WIP: `
@@ -401,7 +409,7 @@ Use `mcp__github__update_pull_request` to write the new title and the new body.
 If the user asks you to write or rewrite the description of a PR that a human opened,
 use the same rules. Write only the Agentic PR Summary. If the body has no
 `# Agentic PR Summary` heading, add the `----` line and the heading at the end of the
-body, then your summary below it.
+body, then the `<details>` panel from the template with your summary in it.
 
 ---
 
@@ -504,6 +512,8 @@ as Rule 0 says. Only a human fills it in.
 
 ----
 # Agentic PR Summary
+<details>
+<summary>Show the agent summary</summary>
 
 **TLDR:** Two tools with the same `tool_name` were rejected for a full project, which
 blocked a second version of a tool. This PR moves the check to the run config, where the
@@ -541,6 +551,8 @@ flowchart LR
 **Checks:** `checks.sh` green. New tests for the save-time check in `libs/server`.
 
 **Docs and skills updated:** none needed, no doc names the changed check.
+
+</details>
 ````
 
 ---
@@ -555,7 +567,8 @@ flowchart LR
       in a placeholder, no added note.
 - [ ] The CLA is not signed. The CLA section is removed only when the author is
       `scosman`, `sfierro`, `leonardmq`, `tawnymanticore`, or `chiang-daniel`.
-- [ ] All of your text is below the `# Agentic PR Summary` heading.
+- [ ] All of your text is below the `# Agentic PR Summary` heading, inside the
+      `<details>` panel.
 - [ ] The first line of the summary is a TLDR with the intent, the change, and the
       target branch.
 - [ ] The companion branches and the merge order are named.

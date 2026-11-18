@@ -75,6 +75,7 @@ from kiln_ai.datamodel.eval_splits import (
     resolve_split,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
@@ -83,7 +84,6 @@ from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.usage import Usage
-from kiln_ai.datamodel.world import World, WorldReset
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -874,9 +874,9 @@ class CreateEvalInputRequest(BaseModel):
         default_factory=list,
         description="Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).",
     )
-    world_reset: WorldReset | None = Field(
+    openenv_reset: OpenEnvReset | None = Field(
         default=None,
-        description="Optional world to run this item in: a world in this project, plus the keyword arguments its environment's reset() is called with. A run config that lists that world's tools runs the item in the episode the reset starts; omit it and the item runs against the project's own tools. Like the scenario, it cannot be changed afterwards — send a new item instead.",
+        description="Optional environment to run this item in: an environment in this project, plus the keyword arguments its reset() is called with. A run config that lists that environment's tools runs the item in the episode the reset starts; omit it and the item runs against the project's own tools. Like the scenario, it cannot be changed afterwards — send a new item instead.",
     )
 
     _tags_must_be_filterable = field_validator("tags")(
@@ -893,13 +893,13 @@ class CreateEvalInputRequest(BaseModel):
 class UpdateEvalInputRequest(BaseModel):
     """Partial update of an eval input item. Omitted fields are left unchanged.
 
-    `data` and `world_reset` are deliberately absent, and `extra="forbid"` turns an
+    `data` and `openenv_reset` are deliberately absent, and `extra="forbid"` turns an
     attempt to send either into a 422 rather than a silent no-op the caller reads as
     success. They are what genuinely cannot be edited in place: trace reuse
-    (`TraceIndex`) keys on `(source_type, item_id, run_config_id, world_version)`, and
+    (`TraceIndex`) keys on `(source_type, item_id, run_config_id, openenv_version)`, and
     the item id stands for the item's whole content, so a later eval would hand a judge
-    a conversation generated from the scenario this item *used to* have — or, for a
-    world item, one recorded in an episode the environment was reset into differently.
+    a conversation generated from the scenario this item *used to* have — or, for an
+    OpenEnv item, one recorded in an episode the environment was reset into differently.
     Changing either means POSTing a new item.
 
     `reference` does not have that problem and is editable. It keys nothing: stored
@@ -1766,12 +1766,11 @@ def require_dataset_run_test_split_or_400(
     once per job at run time, where every job raises inside `_run_legacy_job` and
     `AsyncJobRunner` reports them as a bare error count with no reason.
 
-    Phrased as "present but not usable" rather than "is an EvalInputSplit" — the same
-    choice, for the same reason, as `reject_unusable_train_splits` in
-    prompt_optimization_job_api: a SplitRef variant added later is refused by default
-    instead of slipping through into the failure this exists to prevent. A missing test
-    split is left alone: `Eval.validate_splits` already requires one, and this guard is
-    not where that is re-litigated.
+    Phrased as "present but not usable" rather than "is an EvalInputSplit", so a
+    SplitRef variant added later is refused by default instead of slipping through
+    into the failure this exists to prevent. A missing test split is left alone:
+    `Eval.validate_splits` already requires one, and this guard is not where that
+    is re-litigated.
     """
     if not judge_scores_dataset_runs(config_type):
         return
@@ -2180,8 +2179,8 @@ def connect_evals_api(app: FastAPI):
         if request.status is not None:
             eval.status = request.status
 
-        # legacy evals (not created with Specs) do not have a train split, but we need one
-        # for some features such as prompt optimization
+        # legacy evals (not created with Specs) do not have a train split, but we need one:
+        # it is the split agents may optimize against
         if request.train_set_filter_id is not None:
             # if the eval already has a train split, we do not allow changing it because it
             # would make comparing results before and after the change very confusing
@@ -2348,32 +2347,32 @@ def connect_evals_api(app: FastAPI):
     ) -> EvalInput:
         """Create an eval input item. Evals pick it up via their eval_input_filter_id, so tag it accordingly."""
         task = task_from_id(project_id, task_id)
-        if request.world_reset is not None:
-            # A world the project doesn't have fails at run time, on every job the item
+        if request.openenv_reset is not None:
+            # An environment the project doesn't have fails at run time, on every job the item
             # is part of, with the eval already running. Refuse the item instead, the
             # same way a structured input that can't match the task schema is refused.
             # What reset_kwargs may contain is the environment's business, checked when
             # it resets, so nothing here looks inside them.
             project = task.parent_project()
-            world = (
+            openenv_server = (
                 None
                 if project is None
-                else World.from_id_and_parent_path(
-                    request.world_reset.world_id, project.path
+                else OpenEnvServer.from_id_and_parent_path(
+                    request.openenv_reset.openenv_server_id, project.path
                 )
             )
-            if world is None:
+            if openenv_server is None:
                 raise HTTPException(
                     status_code=422,
-                    detail=f"World {request.world_reset.world_id} not found in this "
-                    "project. Create the world first, or omit world_reset to run this "
+                    detail=f"OpenEnv server {request.openenv_reset.openenv_server_id} not found in this "
+                    "project. Create the OpenEnv server first, or omit openenv_reset to run this "
                     "item against the project's own tools.",
                 )
         eval_input = EvalInput(
             data=request.data,
             reference=request.reference,
             tags=request.tags,
-            world_reset=request.world_reset,
+            openenv_reset=request.openenv_reset,
             parent=task,
         )
         eval_input.save_to_file()

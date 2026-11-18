@@ -2985,51 +2985,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/worlds": {
+    "/api/projects/{project_id}/openenv_servers": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Worlds */
-        get: operations["list_worlds_api_projects__project_id__worlds_get"];
+        /** List OpenEnv Servers */
+        get: operations["list_openenv_servers_api_projects__project_id__openenv_servers_get"];
         put?: never;
-        /** Create World */
-        post: operations["create_world_api_projects__project_id__worlds_post"];
+        /** Create OpenEnv Server */
+        post: operations["create_openenv_server_api_projects__project_id__openenv_servers_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/worlds/{world_id}": {
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get World */
-        get: operations["get_world_api_projects__project_id__worlds__world_id__get"];
+        /** Get OpenEnv Server */
+        get: operations["get_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__get"];
         put?: never;
         post?: never;
         /**
-         * Delete World
-         * @description Delete a world, if no saved eval input still resets into it.
+         * Delete OpenEnv Server
+         * @description Delete an OpenEnv server, if no saved eval input still resets into it.
          *
-         *     409 when one does. An eval input names its world by id, so a delete that went
-         *     through would leave every eval run on it failing to resolve the world.
-         *     Traces made in the world keep their own copy of the episode, and stay readable.
+         *     409 when one does. An eval input names its OpenEnv server by id, so a delete
+         *     that went through would leave every eval run on it failing to resolve the
+         *     OpenEnv server. Traces made on the server keep their own copy of the episode,
+         *     and stay readable.
          */
-        delete: operations["delete_world_api_projects__project_id__worlds__world_id__delete"];
+        delete: operations["delete_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__delete"];
         options?: never;
         head?: never;
-        /** Update World */
-        patch: operations["update_world_api_projects__project_id__worlds__world_id__patch"];
+        /** Update OpenEnv Server */
+        patch: operations["update_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__patch"];
         trace?: never;
     };
-    "/api/projects/{project_id}/worlds/{world_id}/tools": {
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/tools": {
         parameters: {
             query?: never;
             header?: never;
@@ -3037,10 +3038,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List World Tools
-         * @description The tools the world's OpenEnv environment serves, read fresh from the running server at env_url.
+         * List OpenEnv Server Tools
+         * @description The tools the OpenEnv server's environment serves, read fresh from the running server at url.
          */
-        get: operations["list_world_tools_api_projects__project_id__worlds__world_id__tools_get"];
+        get: operations["list_openenv_server_tools_api_projects__project_id__openenv_servers__openenv_server_id__tools_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3113,152 +3114,6 @@ export interface paths {
         put?: never;
         /** Open Skill Enclosing Folder */
         post: operations["open_skill_enclosing_folder_api_projects__project_id__skills__skill_id__open_enclosing_folder_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check Run Config
-         * @description Check if a run config is valid for a Prompt Optimization job by validating the model is supported.
-         */
-        get: operations["check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check Eval
-         * @description Check if an eval is valid for a Prompt Optimization job.
-         *     Validates that the eval has a default config and that the model is supported.
-         */
-        get: operations["check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start Prompt Optimization Job
-         * @description Start a prompt optimization job by zipping the project and sending it to the Kiln server.
-         *     Creates and saves a PromptOptimizationJob datamodel to track the job.
-         */
-        post: operations["start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Prompt Optimization Jobs
-         * @description List all Prompt Optimization jobs for a task.
-         *     Optionally update the status of non-final jobs from the remote server.
-         */
-        get: operations["list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Prompt Optimization Job
-         * @description Get a specific Prompt Optimization job and update its status from the remote server.
-         *     If the job has succeeded, create a prompt if one doesn't exist yet.
-         *     If the job is already in a settled state (succeeded, failed, cancelled),
-         *     skip the status update and return the cached model.
-         */
-        get: operations["get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/prompt_optimization_jobs/{job_id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Prompt Optimization Job Status
-         * @description Get the status of a Prompt Optimization job.
-         */
-        get: operations["get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/prompt_optimization_jobs/{job_id}/result": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Prompt Optimization Job Result
-         * @description Get the result of a prompt optimization job (includes status and output if completed).
-         */
-        get: operations["get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4222,17 +4077,17 @@ export interface paths {
          *     someone resumes it, so check `status` and call
          *     `POST /api/jobs/{id}/resume` if the job must run. Poll
          *     `GET /api/jobs/{id}` or `POST /api/jobs/wait` for progress and the
-         *     result. An item with a `world_reset` runs in a fresh episode of its world
-         *     when the run config lists that world's tools. A 404 means that the eval,
+         *     result. An item with an `openenv_reset` runs in a fresh episode of its environment
+         *     when the run config lists that environment's tools. A 404 means that the eval,
          *     the eval config or the run config does not exist. A 422 means that the
          *     eval has no such split, or that `item_ids` names an item outside it. A 400
          *     means that the job cannot run as requested: a V1 judge on items it cannot
          *     score, multi-turn items that cannot be driven, or, with a V2 judge, items
-         *     that the run config's world tools cannot run, or a world that the project
-         *     does not have while the run config lists tools. World problems that need
-         *     the world's environment fail item by item, in `GET /api/jobs/{id}/errors`:
+         *     that the run config's environment tools cannot run, or an environment that the project
+         *     does not have while the run config lists tools. Problems that need
+         *     the running server fail item by item, in `GET /api/jobs/{id}/errors`:
          *     an environment that cannot be reached or refuses a reset, and a run config
-         *     that lists the project's own version of a tool that the world serves. A
+         *     that lists the project's own version of a tool that the environment serves. A
          *     503 means that a project file was not readable, for example while another
          *     job wrote it. Send the request again.
          *
@@ -4412,7 +4267,6 @@ export interface components {
             tool_servers: components["schemas"]["AgentOverviewToolServers"];
             run_configs: components["schemas"]["AgentOverviewRunConfigs"];
             fine_tunes: components["schemas"]["AgentOverviewFineTunes"];
-            prompt_optimization_jobs: components["schemas"]["AgentOverviewPromptOptimizationJobs"];
             skills: components["schemas"]["AgentOverviewSkills"];
             /** Connected Providers */
             connected_providers: {
@@ -4529,11 +4383,6 @@ export interface components {
              * @description Type label (e.g. 'Custom', 'Frozen', 'Fine-Tune').
              */
             type: string;
-        };
-        /** AgentOverviewPromptOptimizationJobs */
-        AgentOverviewPromptOptimizationJobs: {
-            /** Total Count */
-            total_count: number;
         };
         /**
          * AgentOverviewPrompts
@@ -5392,28 +5241,6 @@ export interface components {
          */
         ChatStrategy: "final_only" | "final_and_intermediate" | "two_message_cot" | "final_and_intermediate_r1_compatible";
         /**
-         * CheckEvalResponse
-         * @description Response model for check_eval endpoint.
-         */
-        CheckEvalResponse: {
-            /** Has Default Config */
-            has_default_config: boolean;
-            /** Has Train Set */
-            has_train_set: boolean;
-            /** Model Is Supported */
-            model_is_supported: boolean;
-            /** Unsupported Reason */
-            unsupported_reason?: string | null;
-        };
-        /**
-         * CheckRunConfigResponse
-         * @description Response model for check_run_config endpoint.
-         */
-        CheckRunConfigResponse: {
-            /** Is Supported */
-            is_supported: boolean;
-        };
-        /**
          * ChunkerConfig
          * @description Configuration for chunking extracted documents into smaller pieces.
          */
@@ -6008,8 +5835,8 @@ export interface components {
              * @description Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).
              */
             tags?: string[];
-            /** @description Optional world to run this item in: a world in this project, plus the keyword arguments its environment's reset() is called with. A run config that lists that world's tools runs the item in the episode the reset starts; omit it and the item runs against the project's own tools. Like the scenario, it cannot be changed afterwards — send a new item instead. */
-            world_reset?: components["schemas"]["WorldReset"] | null;
+            /** @description Optional environment to run this item in: an environment in this project, plus the keyword arguments its reset() is called with. A run config that lists that environment's tools runs the item in the episode the reset starts; omit it and the item runs against the project's own tools. Like the scenario, it cannot be changed afterwards — send a new item instead. */
+            openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
         };
         /**
          * CreateEvaluatorRequest
@@ -7471,8 +7298,8 @@ export interface components {
              * @description Tags for filtering eval inputs.
              */
             tags?: string[];
-            /** @description Reset this world with these keyword arguments before the run; the reset starts the episode the trace records. A run config that lists the world's tools runs the input in that episode; a run config listing the project's own version of a tool the world serves is refused. None runs against the project tools. */
-            world_reset?: components["schemas"]["WorldReset"] | null;
+            /** @description Start a new episode on the OpenEnv server named by openenv_server_id before the run, by calling the environment's reset() with these keyword arguments. The trace records that episode. A run config that lists the OpenEnv server's tools runs the input in that episode; a run config listing the project's own version of a tool the environment serves is refused. None runs against the project tools. */
+            openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7575,7 +7402,7 @@ export interface components {
             item_ids?: string[] | null;
             /**
              * Judge
-             * @description Whether to judge the items. False drives each item exactly as a judged job does (a fresh episode for an item with a world_reset, the synthetic user for a multi-turn item) and saves its trace as a task run with its usage, but runs no judge and stores no score. Every item is driven again, scored or not, so the usage is of this job. `result.driven_runs` names the task runs. A later judged job on the same items and run config reuses these traces instead of driving again. For an item in a world, only while the item's world_reset and the world's version are unchanged: a trace is reused only for the reset and version it ran with. Needs a V2 eval config. A drive-only job is never deduplicated and cannot be paused: each one is a new measurement.
+             * @description Whether to judge the items. False drives each item exactly as a judged job does (a fresh episode for an item with an openenv_reset, the synthetic user for a multi-turn item) and saves its trace as a task run with its usage, but runs no judge and stores no score. Every item is driven again, scored or not, so the usage is of this job. `result.driven_runs` names the task runs. A later judged job on the same items and run config reuses these traces instead of driving again. For an item in an environment, only while the item's openenv_reset and the environment's version are unchanged: a trace is reused only for the reset and version it ran with. Needs a V2 eval config. A drive-only job is never deduplicated and cannot be paused: each one is a new measurement.
              * @default true
              */
             judge: boolean;
@@ -8001,8 +7828,8 @@ export interface components {
              * @description The original task input text.
              */
             task_input?: string | null;
-            /** @description The world episode the trace's world tools ran in, when the run used a world: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ world_episode.final_state }}); code scorers receive it as the `world_episode` argument. */
-            world_episode?: components["schemas"]["WorldEpisode"] | null;
+            /** @description The OpenEnv episode the trace's OpenEnv tools ran in, when the run used an OpenEnv server: the reset it started from, what the environment reported at reset, and the environment's final state. Judges reference it in their prompt template (e.g. {{ openenv_episode.final_state }}); code scorers receive it as the `openenv_episode` argument. */
+            openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
         };
         /**
          * EvalTemplateId
@@ -9418,11 +9245,6 @@ export interface components {
              */
             ended_at?: string | null;
         };
-        /**
-         * JobStatus
-         * @enum {string}
-         */
-        JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
         JsonValue: unknown;
         /**
          * JudgeConfig
@@ -10611,6 +10433,176 @@ export interface components {
             api_key: string;
         };
         /**
+         * OpenEnvEpisode
+         * @description One reset-to-close run on an environment, recorded on the trace of the
+         *     task run that used it. The environment's tools ran inside the episode; any other tools
+         *     in the run config ran as themselves, outside the environment.
+         *
+         *     Persisted on `TaskRun.openenv_episode` so graders (including judges added later,
+         *     which reuse the same trace) can read what the run left behind. The live session is
+         *     closed when the episode ends; `final_state` is the durable record.
+         */
+        OpenEnvEpisode: {
+            /** @description The OpenEnv server and reset() keyword arguments this episode was started from: the input's openenv_reset. */
+            reset: components["schemas"]["OpenEnvReset"];
+            /**
+             * Episode Id
+             * @description Kiln's id for this episode, passed to the environment's reset() as `episode_id`.
+             */
+            episode_id: string;
+            /**
+             * Openenv Version
+             * @description The environment's name@version as its server reported it when the episode started (not the version of the openenv package): what produced this state. Kiln trusts a version to be immutable.
+             */
+            openenv_version: string;
+            /**
+             * Reset Metadata
+             * @description What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.
+             */
+            reset_metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Final State
+             * @description The environment's state() after generation, read when the episode ends. Whatever the environment chooses to report: a diff against its starting state, counters, an episode summary.
+             */
+            final_state?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /**
+         * OpenEnvReset
+         * @description Start a new episode on the OpenEnv server named by `openenv_server_id`, by calling the
+         *     environment's `reset()` with these keyword arguments before the run. The trace records
+         *     that episode.
+         *
+         *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
+         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
+         *     trace key carries a digest of the whole reset, so an input whose reset is edited
+         *     after its trace was made generates a new one rather than reusing it.
+         */
+        OpenEnvReset: {
+            /**
+             * Openenv Server Id
+             * @description ID of the OpenEnv server to start the episode on.
+             */
+            openenv_server_id: string;
+            /**
+             * Reset Kwargs
+             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.
+             */
+            reset_kwargs?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /**
+         * OpenEnvServerCreateRequest
+         * @description A new OpenEnv server: Kiln's saved pointer to a running OpenEnv environment.
+         */
+        OpenEnvServerCreateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes about the OpenEnv server.
+             */
+            description?: string | null;
+            /**
+             * Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
+             */
+            url?: string | null;
+        };
+        /**
+         * OpenEnvServerResponse
+         * @description An OpenEnv server: Kiln's saved pointer to a running OpenEnv environment.
+         */
+        OpenEnvServerResponse: {
+            /**
+             * Id
+             * @description The OpenEnv server's id.
+             */
+            id?: string | null;
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes about the OpenEnv server.
+             */
+            description?: string | null;
+            /**
+             * Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
+             */
+            url?: string | null;
+            /**
+             * Created At
+             * @description When the OpenEnv server was created.
+             */
+            created_at?: string | null;
+            /**
+             * Created By
+             * @description Who created the OpenEnv server.
+             */
+            created_by?: string | null;
+        };
+        /**
+         * OpenEnvServerUpdateRequest
+         * @description Changes to an OpenEnv server. Only the fields sent are changed.
+         */
+        OpenEnvServerUpdateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description User-facing notes about the OpenEnv server.
+             */
+            description?: string | null;
+            /**
+             * Url
+             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
+             */
+            url?: string | null;
+        };
+        /**
+         * OpenEnvToolResponse
+         * @description One tool the OpenEnv server's environment serves.
+         */
+        OpenEnvToolResponse: {
+            /**
+             * Tool Id
+             * @description The id a run config uses to list this tool directly: kiln_tool::openenv::<openenv_server_id>::<tool_name>.
+             */
+            tool_id: string;
+            /**
+             * Name
+             * @description The tool's function name, as the model sees it.
+             */
+            name: string;
+            /**
+             * Description
+             * @description The tool's description, as the model sees it.
+             * @default
+             */
+            description: string;
+            /**
+             * Input Schema
+             * @description JSON schema of the tool's arguments.
+             */
+            input_schema?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * OpenFileResponse
          * @description Response containing the filesystem path to a file.
          */
@@ -10993,87 +10985,6 @@ export interface components {
             leakage_examples: string;
         };
         /**
-         * PromptOptimizationJob
-         * @description The Kiln prompt optimization job datamodel.
-         */
-        PromptOptimizationJob: {
-            /**
-             * V
-             * @description Schema version for migration support.
-             * @default 1
-             */
-            v: number;
-            /**
-             * Id
-             * @description Unique identifier for this record.
-             */
-            id?: string | null;
-            /**
-             * Path
-             * @description File system path where the record is stored.
-             */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
-             */
-            created_at?: string;
-            /**
-             * Created By
-             * @description User ID of the creator.
-             */
-            created_by?: string;
-            /**
-             * Name
-             * @description The name of the prompt optimization job.
-             */
-            name: string;
-            /**
-             * Description
-             * @description A description of the prompt optimization job for you and your team.
-             */
-            description?: string | null;
-            /**
-             * Job Id
-             * @description The ID of the job on the remote Kiln server.
-             */
-            job_id: string;
-            /**
-             * Target Run Config Id
-             * @description The ID of the run configuration used for this job.
-             */
-            target_run_config_id: string;
-            /**
-             * Latest Status
-             * @description The latest known status of this prompt optimization job (pending, running, succeeded, failed, cancelled). Not updated in real time.
-             * @default pending
-             */
-            latest_status: string;
-            /**
-             * Optimized Prompt
-             * @description The optimized prompt result when the job succeeds.
-             */
-            optimized_prompt?: string | null;
-            /**
-             * Created Prompt Id
-             * @description The ID of the prompt created from this job's result, if any.
-             */
-            created_prompt_id?: string | null;
-            /**
-             * Created Run Config Id
-             * @description The ID of the run config created from this job's result, if any.
-             */
-            created_run_config_id?: string | null;
-            /**
-             * Eval Ids
-             * @description List of eval IDs used for this job.
-             */
-            eval_ids?: string[];
-            /** Model Type */
-            readonly model_type: string;
-        };
-        /**
          * PromptResponse
          * @description The available prompt generators and saved prompts for a task.
          */
@@ -11132,23 +11043,6 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
-        };
-        /**
-         * PublicPromptOptimizationJobResultResponse
-         * @description Public response model for prompt optimization job result containing only the optimized prompt.
-         */
-        PublicPromptOptimizationJobResultResponse: {
-            /** Optimized Prompt */
-            optimized_prompt: string;
-        };
-        /**
-         * PublicPromptOptimizationJobStatusResponse
-         * @description Public response model for prompt optimization job status.
-         */
-        PublicPromptOptimizationJobStatusResponse: {
-            /** Job Id */
-            job_id: string;
-            status: components["schemas"]["JobStatus"];
         };
         /** Question */
         Question: {
@@ -12815,13 +12709,6 @@ export interface components {
              */
             job_id: string;
         };
-        /** StartPromptOptimizationJobRequest */
-        StartPromptOptimizationJobRequest: {
-            /** Target Run Config Id */
-            target_run_config_id: string;
-            /** Eval Ids */
-            eval_ids: string[];
-        };
         /**
          * StatisticsRequest
          * @description Input for ``POST /api/statistics``. Set ``operation`` and the params it needs.
@@ -13518,8 +13405,8 @@ export interface components {
             parent_task_run_id?: string | null;
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
-            /** @description Set when this run used a world: the episode its world tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the world. */
-            world_episode?: components["schemas"]["WorldEpisode"] | null;
+            /** @description Set when this run used an environment: the episode its environment tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the environment. */
+            openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
         };
         /**
          * TaskRun
@@ -13603,8 +13490,8 @@ export interface components {
             parent_task_run_id?: string | null;
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
-            /** @description Set when this run used a world: the episode its world tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the world. */
-            world_episode?: components["schemas"]["WorldEpisode"] | null;
+            /** @description Set when this run used an environment: the episode its environment tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the environment. */
+            openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -14243,13 +14130,13 @@ export interface components {
          * UpdateEvalInputRequest
          * @description Partial update of an eval input item. Omitted fields are left unchanged.
          *
-         *     `data` and `world_reset` are deliberately absent, and `extra="forbid"` turns an
+         *     `data` and `openenv_reset` are deliberately absent, and `extra="forbid"` turns an
          *     attempt to send either into a 422 rather than a silent no-op the caller reads as
          *     success. They are what genuinely cannot be edited in place: trace reuse
-         *     (`TraceIndex`) keys on `(source_type, item_id, run_config_id, world_version)`, and
+         *     (`TraceIndex`) keys on `(source_type, item_id, run_config_id, openenv_version)`, and
          *     the item id stands for the item's whole content, so a later eval would hand a judge
-         *     a conversation generated from the scenario this item *used to* have — or, for a
-         *     world item, one recorded in an episode the environment was reset into differently.
+         *     a conversation generated from the scenario this item *used to* have — or, for an
+         *     OpenEnv item, one recorded in an episode the environment was reset into differently.
          *     Changing either means POSTing a new item.
          *
          *     `reference` does not have that problem and is editable. It keys nothing: stored
@@ -14622,175 +14509,6 @@ export interface components {
              * @default 600
              */
             timeout: number;
-        };
-        /**
-         * WorldCreateRequest
-         * @description A new world: a pointer to a running OpenEnv environment.
-         */
-        WorldCreateRequest: {
-            /**
-             * Name
-             * @description User-facing display name.
-             */
-            name: string;
-            /**
-             * Description
-             * @description User-facing notes about the world.
-             */
-            description?: string | null;
-            /**
-             * Env Url
-             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this world send their tool calls to it.
-             */
-            env_url?: string | null;
-        };
-        /**
-         * WorldEpisode
-         * @description One reset-to-close run on a world's environment, recorded on the trace of the
-         *     task run that used it. The world's tools ran inside the episode; any other tools
-         *     in the run config ran as themselves, outside the world.
-         *
-         *     Persisted on `TaskRun.world_episode` so graders (including judges added later,
-         *     which reuse the same trace) can read what the run left behind. The live session is
-         *     closed when the episode ends; `final_state` is the durable record.
-         */
-        WorldEpisode: {
-            /** @description The world and reset() keyword arguments this episode was started from: the input's world_reset. */
-            reset: components["schemas"]["WorldReset"];
-            /**
-             * Episode Id
-             * @description Kiln's id for this episode, passed to the environment's reset() as `episode_id`.
-             */
-            episode_id: string;
-            /**
-             * World Version
-             * @description The environment's name@version as its server reported it when the episode started: what produced this state. Kiln trusts a version to be immutable.
-             */
-            world_version: string;
-            /**
-             * Reset Metadata
-             * @description What the environment reported in the observation metadata when the episode was reset: facts about the starting state that judges may want, such as the scenario it started from or the clock it runs on.
-             */
-            reset_metadata?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-            /**
-             * Final State
-             * @description The environment's state() after generation, read when the episode ends. Whatever the environment chooses to report: a diff against its starting state, counters, an episode summary.
-             */
-            final_state?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-        };
-        /**
-         * WorldReset
-         * @description Reset this world with these keyword arguments before the run; the reset starts
-         *     the episode the trace records.
-         *
-         *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
-         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
-         *     trace key carries a digest of the whole reset, so an input whose reset is edited
-         *     after its trace was made generates a new one rather than reusing it.
-         */
-        WorldReset: {
-            /**
-             * World Id
-             * @description The World to run in.
-             */
-            world_id: string;
-            /**
-             * Reset Kwargs
-             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.
-             */
-            reset_kwargs?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-        };
-        /**
-         * WorldResponse
-         * @description A world: a pointer to a running OpenEnv environment.
-         */
-        WorldResponse: {
-            /**
-             * Id
-             * @description The world's id.
-             */
-            id?: string | null;
-            /**
-             * Name
-             * @description User-facing display name.
-             */
-            name: string;
-            /**
-             * Description
-             * @description User-facing notes about the world.
-             */
-            description?: string | null;
-            /**
-             * Env Url
-             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this world send their tool calls to it.
-             */
-            env_url?: string | null;
-            /**
-             * Created At
-             * @description When the world was created.
-             */
-            created_at?: string | null;
-            /**
-             * Created By
-             * @description Who created the world.
-             */
-            created_by?: string | null;
-        };
-        /**
-         * WorldToolResponse
-         * @description One tool the world's environment serves.
-         */
-        WorldToolResponse: {
-            /**
-             * Tool Id
-             * @description The id a run config uses to list this tool directly: kiln_tool::world::<world_id>::<tool_name>.
-             */
-            tool_id: string;
-            /**
-             * Name
-             * @description The tool's function name, as the model sees it.
-             */
-            name: string;
-            /**
-             * Description
-             * @description The tool's description, as the model sees it.
-             * @default
-             */
-            description: string;
-            /**
-             * Input Schema
-             * @description JSON schema of the tool's arguments.
-             */
-            input_schema?: {
-                [key: string]: unknown;
-            };
-        };
-        /**
-         * WorldUpdateRequest
-         * @description Changes to a world. Only the fields sent are changed.
-         */
-        WorldUpdateRequest: {
-            /**
-             * Name
-             * @description User-facing display name.
-             */
-            name?: string | null;
-            /**
-             * Description
-             * @description User-facing notes about the world.
-             */
-            description?: string | null;
-            /**
-             * Env Url
-             * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this world send their tool calls to it.
-             */
-            env_url?: string | null;
         };
     };
     responses: never;
@@ -21864,7 +21582,7 @@ export interface operations {
             };
         };
     };
-    list_worlds_api_projects__project_id__worlds_get: {
+    list_openenv_servers_api_projects__project_id__openenv_servers_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -21882,7 +21600,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorldResponse"][];
+                    "application/json": components["schemas"]["OpenEnvServerResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -21896,7 +21614,7 @@ export interface operations {
             };
         };
     };
-    create_world_api_projects__project_id__worlds_post: {
+    create_openenv_server_api_projects__project_id__openenv_servers_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -21908,7 +21626,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WorldCreateRequest"];
+                "application/json": components["schemas"]["OpenEnvServerCreateRequest"];
             };
         };
         responses: {
@@ -21918,7 +21636,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorldResponse"];
+                    "application/json": components["schemas"]["OpenEnvServerResponse"];
                 };
             };
             /** @description Validation Error */
@@ -21932,15 +21650,15 @@ export interface operations {
             };
         };
     };
-    get_world_api_projects__project_id__worlds__world_id__get: {
+    get_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The unique identifier of the world. */
-                world_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
             };
             cookie?: never;
         };
@@ -21952,7 +21670,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorldResponse"];
+                    "application/json": components["schemas"]["OpenEnvServerResponse"];
                 };
             };
             /** @description Validation Error */
@@ -21966,15 +21684,15 @@ export interface operations {
             };
         };
     };
-    delete_world_api_projects__project_id__worlds__world_id__delete: {
+    delete_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The unique identifier of the world. */
-                world_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
             };
             cookie?: never;
         };
@@ -22000,21 +21718,21 @@ export interface operations {
             };
         };
     };
-    update_world_api_projects__project_id__worlds__world_id__patch: {
+    update_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__patch: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The unique identifier of the world. */
-                world_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WorldUpdateRequest"];
+                "application/json": components["schemas"]["OpenEnvServerUpdateRequest"];
             };
         };
         responses: {
@@ -22024,7 +21742,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorldResponse"];
+                    "application/json": components["schemas"]["OpenEnvServerResponse"];
                 };
             };
             /** @description Validation Error */
@@ -22038,15 +21756,15 @@ export interface operations {
             };
         };
     };
-    list_world_tools_api_projects__project_id__worlds__world_id__tools_get: {
+    list_openenv_server_tools_api_projects__project_id__openenv_servers__openenv_server_id__tools_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-                /** @description The unique identifier of the world. */
-                world_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
             };
             cookie?: never;
         };
@@ -22058,7 +21776,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorldToolResponse"][];
+                    "application/json": components["schemas"]["OpenEnvToolResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -22267,255 +21985,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenFileResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get: {
-        parameters: {
-            query: {
-                /** @description The unique identifier of the run configuration. */
-                run_config_id: string;
-            };
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CheckRunConfigResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get: {
-        parameters: {
-            query: {
-                /** @description The unique identifier of the evaluation. */
-                eval_id: string;
-            };
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CheckEvalResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StartPromptOptimizationJobRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptOptimizationJob"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get: {
-        parameters: {
-            query?: {
-                /** @description Whether to update the status of non-final jobs from the remote server. */
-                update_status?: boolean;
-            };
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptOptimizationJob"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-                /** @description The unique identifier of the prompt optimization job. */
-                prompt_optimization_job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptOptimizationJob"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the job. */
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicPromptOptimizationJobStatusResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the job. */
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicPromptOptimizationJobResultResponse"];
                 };
             };
             /** @description Validation Error */
