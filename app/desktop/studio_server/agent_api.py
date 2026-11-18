@@ -185,10 +185,6 @@ class AgentOverviewFineTunes(BaseModel):
     total_count: int
 
 
-class AgentOverviewPromptOptimizationJobs(BaseModel):
-    total_count: int
-
-
 class AgentOverviewSkill(BaseModel):
     id: ID_TYPE
     name: str
@@ -212,7 +208,6 @@ class AgentOverview(BaseModel):
     tool_servers: AgentOverviewToolServers
     run_configs: AgentOverviewRunConfigs
     fine_tunes: AgentOverviewFineTunes
-    prompt_optimization_jobs: AgentOverviewPromptOptimizationJobs
     skills: AgentOverviewSkills
     connected_providers: dict[str, dict[str, bool]]
 
@@ -531,12 +526,6 @@ def _fine_tunes_block(task: Task) -> AgentOverviewFineTunes:
     )
 
 
-def _prompt_optimization_jobs_block(task: Task) -> AgentOverviewPromptOptimizationJobs:
-    return AgentOverviewPromptOptimizationJobs(
-        total_count=sum(1 for _ in task.prompt_optimization_jobs(readonly=True))
-    )
-
-
 # --- Route ---
 
 
@@ -590,7 +579,6 @@ def connect_agent_api(app: FastAPI):
             tool_servers=_tool_servers_block(project),
             run_configs=_run_configs_block(task, task_run_configs),
             fine_tunes=_fine_tunes_block(task),
-            prompt_optimization_jobs=_prompt_optimization_jobs_block(task),
             skills=_skills_block(project),
             connected_providers=await _connected_providers_block(),
         )
