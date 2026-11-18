@@ -40,7 +40,6 @@ The "Custom Tools" `KilnSection` gains an item, worded like the two MCP items:
 
 - **Name:** "OpenEnv Servers", plural like "Remote MCP Servers".
 - **Description:** "Connect to OpenEnv servers to add tools to your project."
-- **Link:** "Learn more", on its own line under the description, linking to the OpenEnv docs page (to be written; https://docs.kiln.tech/docs/tools-and-mcp until then). `settings_item.svelte` gains an optional link for this.
 - **Button:** "Connect".
 
 ## Connect OpenEnv Server and Edit OpenEnv Server
@@ -178,7 +177,7 @@ New strings not already given above. The mockups' "All copy" section lists every
 | Where | Text |
 |---|---|
 | Connect OpenEnv Server subtitle | Connect to a running OpenEnv server to add its tools to your project. |
-| Read the Docs and Learn more links | https://docs.kiln.tech/docs/tools-and-mcp, until an OpenEnv docs page exists |
+| Read the Docs link | https://docs.kiln.tech/docs/tools-and-mcp/openenv (to be written before merge) |
 | Kiln Seahaven callout title | Build an OpenEnv Server with Kiln Seahaven |
 | Kiln Seahaven callout description | Kiln Seahaven is an open-source framework for building realistic copies of your product's tools and data, served as an OpenEnv server. |
 | Kiln Seahaven callout button | Learn More |

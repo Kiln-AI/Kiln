@@ -5,8 +5,10 @@ import type {
   RunOpenEnvServer,
 } from "$lib/types"
 
-// There's no OpenEnv docs page yet, so this links the tools docs.
-export const OPENENV_DOCS_URL = "https://docs.kiln.tech/docs/tools-and-mcp"
+// TODO: publish this page on docs.kiln.tech before merging. It doesn't exist
+// yet, so the link 404s until it does.
+export const OPENENV_DOCS_URL =
+  "https://docs.kiln.tech/docs/tools-and-mcp/openenv"
 export const SEAHAVEN_URL = "https://github.com/Kiln-AI/Seahaven"
 
 /**
