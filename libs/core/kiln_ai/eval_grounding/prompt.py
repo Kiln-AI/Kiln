@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 from pydantic import JsonValue
 
@@ -10,9 +11,17 @@ from kiln_ai.eval_grounding.models import EvalContext, GroundingCase
 from kiln_ai.eval_grounding.session import (
     DEFAULT_LIMITS,
     DEFAULT_TIME_LIMIT_S,
+    SUBMIT_RESULT_TOOL,
     GroundingLimits,
 )
 from kiln_ai.tools.base_tool import ToolCallDefinition
+
+AnswerStyle = Literal["reply_json", "structured_output", "submit_result"]
+"""How the agent hands back its result: as its final reply's text (`claude -p`), in the
+JSON response format Kiln sets, or through the `submit_result` tool."""
+
+KilnAnswerStyle = Literal["structured_output", "submit_result"]
+"""The answer styles a run on a Kiln model can use."""
 
 _SYSTEM_PROMPT_TEMPLATE = """You prepare one eval case so it can run against an OpenEnv server. The case was planned and its simulated user drafted without anyone looking at the server's environment. Your job is to make the case true for that environment, or to drop it.
 
@@ -44,12 +53,15 @@ Steps:
 
 The case is saved with the reset arguments of your last start_episode call. Make that the environment you found the facts in and rehearsed in: if you reset again after rehearsing, the saved case starts from that later reset. Keep the same `seed` value in that last reset.
 
-Write the reference about results, not steps. The agent under test may reach the same result with other tools or in another order, and that is fine. Name a route under must_not_happen only when taking it is itself the failure (for example, deleting something instead of archiving it).
+Write the reference about results, not steps. The agent under test may reach the same result with other tools or in another order, and that is fine. Name a route under must_not_happen only when taking it is itself the failure (for example, deleting something instead of archiving it). Don't forbid the way the server records the expected change: check in your rehearsal what actually changed. For example, if the server records a delete as an update, must_not_happen can't forbid updating that record.
 
 Drop the case, and say why in one sentence, when nothing fits after checking the likely starting states and any setup (no_fit), when the scenario needs something the server can't represent (unrepresentable), or when the rehearsal fails for a reason the agent under test couldn't avoid (rehearsal_failed).
 
-When you are done, reply with only this JSON object:
-{{
+A case that expects the agent under test to refuse is unrepresentable when the server itself doesn't refuse the request or enforce the rule behind it. Drop it, and say in drop_detail that the server doesn't enforce it.
+
+{final_answer}"""
+
+_RESULT_SKELETON = """{{
   "status": "grounded" | "dropped",
   "drop_reason": "no_fit" | "unrepresentable" | "rehearsal_failed" | null,
   "drop_detail": "one sentence on why the case was dropped" | null,
@@ -57,7 +69,7 @@ When you are done, reply with only this JSON object:
   "synthetic_user_info": "<persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>" | null,
   "reference": {{
     "starting_point": "what is true before the conversation, in a sentence or two",
-    "facts": [{{"text": "a fact", "evidence": {{"tool": "the tool you called", "args": {{}}, "result_excerpt": "the part of its result that shows the fact"}}}}],
+    "facts": [{{"text": "a fact", "evidence": {{"tool": "the tool you called", "args": {args}, "result_excerpt": "the part of its result that shows the fact"}}}}],
     "expected_outcome": ["what must be true at the end, or what the agent must tell the user"],
     "allowed": ["acceptable alternatives, e.g. asking a clarifying question first"],
     "must_not_happen": ["changes or claims that fail the case"]
@@ -65,16 +77,51 @@ When you are done, reply with only this JSON object:
 }}
 A grounded case fills seed_prompt, synthetic_user_info and reference, and leaves drop_reason and drop_detail null. A dropped case fills drop_reason and drop_detail. Leave behavior_guidance out of synthetic_user_info only when the draft had none."""
 
+_FINAL_ANSWER: dict[AnswerStyle, str] = {
+    "reply_json": "When you are done, reply with only this JSON object:\n{skeleton}",
+    "structured_output": (
+        "When you are done, reply with your result as this JSON object:\n{skeleton}\n"
+        "In each fact's evidence, args is a string that holds the JSON object of "
+        'arguments you called the tool with, e.g. "{{\\"id\\": 7}}".'
+    ),
+    "submit_result": (
+        f"When you are done, call {SUBMIT_RESULT_TOOL} once with your result:\n"
+        "{skeleton}\n"
+        f"If {SUBMIT_RESULT_TOOL} reports a problem, fix it and call it again. Once it "
+        "accepts your result, reply with only the word done."
+    ),
+}
+
 
 def system_prompt(
     limits: GroundingLimits = DEFAULT_LIMITS,
     time_limit_s: float = DEFAULT_TIME_LIMIT_S,
+    answer_style: AnswerStyle = "reply_json",
 ) -> str:
-    """The grounding agent's instructions, with the limits it runs under."""
+    """The grounding agent's instructions, with the limits it runs under and how it
+    hands back its result."""
+    skeleton = _RESULT_SKELETON.format(
+        args='"{\\"id\\": 7}"' if answer_style == "structured_output" else "{}"
+    )
     return _SYSTEM_PROMPT_TEMPLATE.format(
         max_resets=limits.max_resets,
         max_tool_calls=limits.max_tool_calls,
         time_limit_minutes=f"{time_limit_s / 60:g}",
+        final_answer=_FINAL_ANSWER[answer_style].format(skeleton=skeleton),
+    )
+
+
+def follow_up_message(error: str, answer_style: AnswerStyle) -> str:
+    """The one follow-up, in the same conversation, after a result that could not be
+    used. The agent's environment tools are closed by then."""
+    if answer_style == "submit_result":
+        return (
+            f"{error}\n\nCall {SUBMIT_RESULT_TOOL} with your result now. Your other "
+            "tools are closed."
+        )
+    return (
+        f"Your last reply could not be used: {error}\n\n"
+        "Reply with only the JSON object your instructions describe, and nothing else."
     )
 
 

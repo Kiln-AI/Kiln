@@ -1,8 +1,12 @@
+import copy
+import json
 from typing import get_args
 
+import jsonschema
 import pytest
 from pydantic import ValidationError
 
+from kiln_ai.datamodel.json_schema import close_object_schemas
 from kiln_ai.datamodel.openenv import OpenEnvReset
 from kiln_ai.eval_grounding.models import (
     DropReason,
@@ -11,6 +15,7 @@ from kiln_ai.eval_grounding.models import (
     GroundingResult,
     LoggedCall,
     ModelDropReason,
+    result_json_schema,
 )
 from kiln_ai.synthetic_user.parser import SyntheticUserInfoParseError
 from kiln_ai.utils.usage import Usage
@@ -209,3 +214,98 @@ def test_dropped_builds_a_valid_drop():
     assert outcome.status == "dropped"
     assert outcome.drop_reason == DropReason.limit
     assert outcome.drop_detail == "Out of time."
+
+
+def _with_encoded_args(result: dict) -> dict:
+    facts = [
+        {
+            **fact,
+            "evidence": {
+                **fact["evidence"],
+                "args": json.dumps(fact["evidence"]["args"], ensure_ascii=False),
+            },
+        }
+        for fact in result["reference"]["facts"]
+    ]
+    return {**result, "reference": {**result["reference"], "facts": facts}}
+
+
+def _as_the_model_answers(result: dict) -> dict:
+    """`result` with every field present, as the schema requires."""
+    return {"drop_reason": None, "drop_detail": None, **result}
+
+
+DROPPED_RESULT = {
+    "status": "dropped",
+    "drop_reason": "no_fit",
+    "drop_detail": "No open work order.",
+    "seed_prompt": None,
+    "synthetic_user_info": None,
+    "reference": None,
+}
+
+
+class TestResultJsonSchema:
+    @pytest.mark.parametrize("encoded", [True, False])
+    def test_names_every_field(self, encoded):
+        schema = result_json_schema(args_as_json_string=encoded)
+        assert list(schema["properties"]) == list(GroundingResult.model_fields)
+        reference = schema["properties"]["reference"]["anyOf"][0]
+        assert list(reference["properties"]) == list(GroundedReference.model_fields)
+        assert schema["properties"]["drop_reason"]["enum"] == [
+            *get_args(ModelDropReason),
+            None,
+        ]
+
+    def test_results_validate_under_strict_closing(self):
+        schema = close_object_schemas(
+            result_json_schema(args_as_json_string=True), strict=True
+        )
+        jsonschema.validate(
+            _as_the_model_answers(_with_encoded_args(_grounded_result())), schema
+        )
+        jsonschema.validate(DROPPED_RESULT, schema)
+
+    def test_strict_closing_would_empty_object_args(self):
+        schema = close_object_schemas(
+            result_json_schema(args_as_json_string=False), strict=True
+        )
+        with pytest.raises(jsonschema.ValidationError, match="Additional properties"):
+            jsonschema.validate(_as_the_model_answers(_grounded_result()), schema)
+
+    def test_object_args_validate_when_not_closed(self):
+        jsonschema.validate(
+            _as_the_model_answers(_grounded_result()),
+            result_json_schema(args_as_json_string=False),
+        )
+
+
+class TestFromModelOutput:
+    def test_decodes_args_strings(self):
+        result = GroundingResult.from_model_output(
+            _with_encoded_args(_grounded_result()), args_as_json_string=True
+        )
+        assert result.reference is not None
+        assert result.reference.facts[0].evidence.args == {"status": "open", "limit": 5}
+
+    @pytest.mark.parametrize(
+        "args, message", [("[1]", "must be a JSON object"), ("{oops", "not valid JSON")]
+    )
+    def test_rejects_args_that_are_not_an_object(self, args, message):
+        output = copy.deepcopy(_grounded_result())
+        output["reference"]["facts"][0]["evidence"]["args"] = args
+        with pytest.raises(ValueError, match=message):
+            GroundingResult.from_model_output(output, args_as_json_string=True)
+
+    def test_object_args_pass_through_when_not_encoded(self):
+        result = GroundingResult.from_model_output(
+            _grounded_result(), args_as_json_string=False
+        )
+        assert result.reference is not None
+        assert result.reference.facts[0].evidence.args["limit"] == 5
+
+    def test_a_drop_has_no_facts_to_decode(self):
+        result = GroundingResult.from_model_output(
+            DROPPED_RESULT, args_as_json_string=True
+        )
+        assert result.drop_reason == "no_fit"

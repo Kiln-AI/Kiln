@@ -132,6 +132,7 @@ class GroundingOutcome(BaseModel):
     reference: GroundedReference | None
     call_log: list[LoggedCall]       # every tool call, for the prototype and debugging
     usage: Usage | None              # tokens and cost, summed over the run
+    usage_complete: bool             # False when a stop, timeout or rejected answer left model calls out of usage
 ```
 
 The model returns a smaller JSON (`status`, `drop_reason`, `drop_detail`, `seed_prompt`,
@@ -221,8 +222,9 @@ async def ground_cases(
 
 Runs `ground_case` through `AsyncJobRunner` with the same `CONCURRENCY` as
 `synthetic_user/runner.py`. Yields a progress event per finished case (index, outcome) and a final
-summary. A raised error cancels the remaining cases and is re-raised after they release their
-episodes. The reset schema, metadata and tool list are read once, before the first case.
+summary. A raised error cancels the remaining cases and, after they release their episodes, is raised as
+`GroundingCaseError(case_index, error)`, chained from the original error (`.error` and `__cause__`),
+so callers that map error types must unwrap it. The reset schema, metadata and tool list are read once, before the first case.
 
 ## Prototype command
 

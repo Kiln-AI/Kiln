@@ -11,11 +11,25 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.openenv import OpenEnvReset
 from kiln_ai.datamodel.task import Task
-from kiln_ai.eval_grounding.models import DropReason, EvalContext, LoggedCall
+from kiln_ai.eval_grounding.batch import (
+    CaseGrounded,
+    GroundingCaseError,
+    GroundingFinished,
+)
+from kiln_ai.eval_grounding.models import (
+    DropReason,
+    EvalContext,
+    GroundingOutcome,
+    GroundingResult,
+    LoggedCall,
+)
 from kiln_ai.eval_grounding.prompt import system_prompt
 from kiln_ai.openenv.reset_schema_brief import RESET_ARGUMENTS_FRAMING
+from kiln_ai.openenv.session_manager import OpenEnvTransientError
 from kiln_ai.utils.usage import Usage
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
@@ -26,7 +40,6 @@ from app.desktop.studio_server.dev import ground_cases, grounding_mcp
 from app.desktop.studio_server.dev.ground_cases import (
     DATA_GUIDE_FRAMING,
     DEFAULT_CLAUDE_MODEL,
-    ENGINE_KILN_NOT_IMPLEMENTED,
     CaseRun,
     ClaudeReply,
     ClaudeRunError,
@@ -630,6 +643,8 @@ def test_a_timeout_is_a_limit_drop(project, openenv_server, prepared_dir, tmp_pa
     assert outcome["outcome"]["drop_reason"] == "limit"
     assert "minute limit" in outcome["outcome"]["drop_detail"]
     assert len(outcome["outcome"]["call_log"]) == 2
+    assert outcome["outcome"]["usage_complete"] is False
+    assert read_json(out / "summary.json")["cases_with_incomplete_usage"] == 1
 
 
 def test_an_unusable_reply_is_retried_once_then_dropped(
@@ -767,17 +782,177 @@ def test_ground_runs_only_the_chosen_cases(project, openenv_server, tmp_path):
     assert sorted(p.name for p in out.glob("case_*")) == ["case_001", "case_003"]
 
 
-def test_engine_kiln_is_not_implemented_yet(
-    project, openenv_server, prepared_dir, tmp_path, capsys
-):
-    out = tmp_path / "run"
-    argv = ground_argv(project, openenv_server, prepared_dir, out)
+# ---- ground --engine kiln ----
+
+
+def kiln_argv(project, openenv_server, in_dir: Path, out: Path, *extra: str):
+    argv = ground_argv(project, openenv_server, in_dir, out, *extra)
     argv[argv.index("claude")] = "kiln"
-    fake = FakeClaude([])
-    assert main([*argv, "--model", "m", "--provider", "p"], claude_runner=fake) == 2
-    assert ENGINE_KILN_NOT_IMPLEMENTED in capsys.readouterr().err
-    assert not out.exists()
-    assert fake.calls == []
+    return argv
+
+
+def grounded_outcome() -> GroundingOutcome:
+    return GroundingOutcome.from_result(
+        GroundingResult.model_validate(GROUNDED_REPLY),
+        openenv_reset=OpenEnvReset(
+            openenv_server_id="srv", reset_kwargs={"fixture_id": "beta"}
+        ),
+        call_log=[logged("start_episode")],
+        usage=Usage(input_tokens=100, output_tokens=10, total_tokens=110, cost=0.25),
+    )
+
+
+class FakeGroundCases:
+    """Stands in for `ground_cases`: grounds every case it is given, in reverse order,
+    or raises `error` after the first."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.calls: list[dict[str, Any]] = []
+
+    async def __call__(self, cases, **kwargs):
+        self.calls.append({"cases": list(cases), **kwargs})
+        for position in reversed(range(len(cases))):
+            yield CaseGrounded(position, grounded_outcome())
+            if self.error is not None:
+                raise self.error
+        yield GroundingFinished(
+            grounded=len(cases), dropped=0, usage=None, usage_complete=True
+        )
+
+
+def test_engine_kiln_grounds_through_ground_cases(project, openenv_server, tmp_path):
+    in_dir = write_prepared(tmp_path / "in", case_count=4)
+    out = tmp_path / "run"
+    fake = FakeGroundCases()
+    with patch.object(ground_cases, "ground_cases", fake):
+        code = main(
+            kiln_argv(
+                project,
+                openenv_server,
+                in_dir,
+                out,
+                "--model",
+                "gpt-4",
+                "--provider",
+                "openai",
+                "--answer-style",
+                "submit_result",
+                "--cases",
+                "1,3",
+            )
+        )
+
+    assert code == 0
+    [call] = fake.calls
+    # Case indices count users.json, which write_prepared writes in reverse plan order.
+    assert [c.scenario for c in call["cases"]] == ["scenario 2", "scenario 0"]
+    assert call["model_name"] == "gpt-4"
+    assert call["model_provider"] == ModelProviderName.openai
+    assert call["answer_style"] == "submit_result"
+    assert call["eval_context"].specification == PREPARED_SPEC
+    assert call["system_prompt_text"] == system_prompt(answer_style="submit_result")
+    assert [t["function"]["name"] for t in call["target_tools"]] == [
+        "append_note",
+        "read_notes",
+        "explode",
+        "sleep",
+    ]
+    assert (out / "system_prompt.txt").read_text() == call["system_prompt_text"]
+    outcomes = read_json(out / "outcomes.json")
+    assert [o["case_index"] for o in outcomes] == [1, 3]
+    summary = read_json(out / "summary.json")
+    assert summary["engine"] == "kiln"
+    assert summary["model"] == "gpt-4"
+    assert summary["provider"] == "openai"
+    assert summary["answer_style"] == "submit_result"
+    assert summary["error"] is None
+    assert summary["grounded"] == 2
+    assert summary["usage"]["cost"] == 0.5
+
+
+def test_engine_kiln_defaults_to_structured_output(
+    project, openenv_server, prepared_dir, tmp_path
+):
+    fake = FakeGroundCases()
+    with patch.object(ground_cases, "ground_cases", fake):
+        main(
+            kiln_argv(
+                project,
+                openenv_server,
+                prepared_dir,
+                tmp_path / "run",
+                "--model",
+                "gpt-4",
+                "--provider",
+                "openai",
+            )
+        )
+    assert fake.calls[0]["answer_style"] == "structured_output"
+
+
+def test_an_error_from_ground_cases_keeps_the_outcomes_so_far(
+    project, openenv_server, tmp_path, capsys
+):
+    in_dir = write_prepared(tmp_path / "in", case_count=3)
+    out = tmp_path / "run"
+    fake = FakeGroundCases(
+        error=GroundingCaseError(
+            1,
+            KilnRunError(
+                "Something went wrong.",
+                partial_trace=None,
+                original=OpenEnvTransientError("the environment went away"),
+            ),
+        )
+    )
+    with patch.object(ground_cases, "ground_cases", fake):
+        code = main(
+            kiln_argv(
+                project,
+                openenv_server,
+                in_dir,
+                out,
+                "--model",
+                "m",
+                "--provider",
+                "openai",
+            )
+        )
+
+    assert code == 1
+    assert [o["case_index"] for o in read_json(out / "outcomes.json")] == [2]
+    summary = read_json(out / "summary.json")
+    assert summary["error"] == (
+        "case 1: OpenEnvTransientError: the environment went away"
+    )
+    assert summary["cases"] == 3
+    assert "Grounding stopped: case 1: OpenEnvTransientError" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("extra", [(), ("--model", "m"), ("--provider", "openai")])
+def test_engine_kiln_needs_a_model_and_provider(
+    project, openenv_server, prepared_dir, tmp_path, extra
+):
+    with pytest.raises(SystemExit):
+        main(kiln_argv(project, openenv_server, prepared_dir, tmp_path / "run", *extra))
+
+
+def test_answer_style_is_refused_for_engine_claude(
+    project, openenv_server, prepared_dir, tmp_path
+):
+    with pytest.raises(SystemExit):
+        main(
+            ground_argv(
+                project,
+                openenv_server,
+                prepared_dir,
+                tmp_path / "run",
+                "--answer-style",
+                "submit_result",
+            ),
+            claude_runner=FakeClaude([]),
+        )
 
 
 def test_provider_is_refused_for_engine_claude(
@@ -831,7 +1006,10 @@ def test_summarize_sums_usage_across_cases():
         )
 
     summary = summarize(
-        [dropped(0.5), dropped(0.25), dropped(None)], engine="claude", model="m"
+        [dropped(0.5), dropped(0.25), dropped(None)],
+        engine="claude",
+        model="m",
+        case_count=3,
     )
     assert summary["usage"] == {"input_tokens": 2, "cost": 0.75}
     assert summary["drops_by_reason"] == {"no_fit": 3}
@@ -951,6 +1129,7 @@ def test_a_retry_that_claude_rejects_is_an_invalid_output_drop(
     [outcome] = read_json(out / "outcomes.json")
     assert outcome["outcome"]["drop_reason"] == "invalid_output"
     assert outcome["outcome"]["usage"]["cost"] == 0.5
+    assert outcome["outcome"]["usage_complete"] is False
 
 
 def test_a_timeout_after_an_environment_error_fails_the_case(

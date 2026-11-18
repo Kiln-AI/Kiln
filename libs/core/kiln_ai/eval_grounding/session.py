@@ -43,7 +43,10 @@ START_EPISODE_TOOL = "start_episode"
 """The session tool that starts a fresh environment from reset arguments."""
 READ_STATE_TOOL = "read_state"
 """The session tool that reads the current environment's state."""
-_SESSION_TOOL_NAMES = (START_EPISODE_TOOL, READ_STATE_TOOL)
+SUBMIT_RESULT_TOOL = "submit_result"
+"""The tool the agent may return its result through (`agent.py`). Reserved here so a
+server tool of the same name is renamed rather than shadowed."""
+_RESERVED_TOOL_NAMES = (START_EPISODE_TOOL, READ_STATE_TOOL, SUBMIT_RESULT_TOOL)
 
 NO_EPISODE_MESSAGE = "Call start_episode first."
 """The tool error for an environment tool called before any environment started."""
@@ -53,6 +56,11 @@ LIMIT_MESSAGE = (
     "You have used up your {limit}. Stop calling tools and return your result now."
 )
 """The tool error for every call once a limit is passed; `{limit}` names the limit."""
+TOOLS_CLOSED_MESSAGE = (
+    "Your work in the environment is over. Don't call any more tools: return your "
+    "result now."
+)
+"""The tool error for every call after `close_tools()`."""
 
 DEFAULT_TIME_LIMIT_S = 900.0
 """How long the grounding agent may spend on one case, in seconds."""
@@ -106,7 +114,10 @@ class GroundingSession:
         self._tool_calls = 0
         self._resets = 0
         self._exhausted_limit: str | None = None
+        self._tools_closed = False
         self._refused_after_limit = 0
+        self._stop_error: BaseException | None = None
+        self._stopped = asyncio.Event()
         self._call_log: list[LoggedCall] = []
         self._tools = self._build_tools(server_tools)
 
@@ -128,6 +139,28 @@ class GroundingSession:
     def limit_reached(self) -> bool:
         """True once a call or reset limit has been passed."""
         return self._exhausted_limit is not None
+
+    @property
+    def stop_error(self) -> BaseException | None:
+        """The first error a tool raised instead of returning to the model: the hard stop
+        after a limit (`GroundingLimitReached`), or an environment failure that is not
+        the case's fault. None while the agent may carry on."""
+        return self._stop_error
+
+    async def wait_until_stopped(self) -> None:
+        """Returns once a tool has raised `stop_error`. Kiln's adapter shows such an
+        error to the model as a failed call and keeps running, so the caller races its
+        run against this to end it."""
+        await self._stopped.wait()
+
+    async def close_tools(self) -> None:
+        """Release the current episode and refuse every later call, so a follow-up that
+        asks only for the agent's result can't change the environment it describes.
+        `last_reset` keeps the reset the agent worked in. Refusals count toward the
+        hard stop as they do after a limit."""
+        async with self._lock:
+            self._tools_closed = True
+            await self._release_current()
 
     async def close(self) -> None:
         """Release the current episode, if any. Safe to call more than once."""
@@ -153,16 +186,16 @@ class GroundingSession:
                     },
                     "required": ["reset_kwargs"],
                 },
-                lambda kwargs: self._start_episode(kwargs),
+                self._watched(self._start_episode),
             ),
             _GroundingTool(
                 READ_STATE_TOOL,
                 "Read the current environment's state, as the server reports it.",
                 {"type": "object", "properties": {}},
-                lambda kwargs: self._read_state(kwargs),
+                self._watched(self._read_state),
             ),
         ]
-        taken = set(_SESSION_TOOL_NAMES)
+        taken = set(_RESERVED_TOOL_NAMES)
         for server_tool in server_tools:
             exposed_name = server_tool.name
             while exposed_name in taken:
@@ -173,7 +206,9 @@ class GroundingSession:
                     exposed_name,
                     server_tool.description,
                     _object_schema(server_tool.input_schema),
-                    self._server_tool_handler(exposed_name, server_tool.name),
+                    self._watched(
+                        self._server_tool_handler(exposed_name, server_tool.name)
+                    ),
                 )
             )
         return tools
@@ -182,6 +217,25 @@ class GroundingSession:
         self, exposed_name: str, server_name: str
     ) -> Callable[[dict[str, Any]], Awaitable[ToolCallResult]]:
         return lambda kwargs: self._call_server_tool(exposed_name, server_name, kwargs)
+
+    def _watched(
+        self, handler: Callable[[dict[str, Any]], Awaitable[ToolCallResult]]
+    ) -> Callable[[dict[str, Any]], Awaitable[ToolCallResult]]:
+        """`handler`, recording as `stop_error` the first exception it raises that isn't
+        meant for the model."""
+
+        async def run(kwargs: dict[str, Any]) -> ToolCallResult:
+            try:
+                return await handler(kwargs)
+            except ToolCallError:
+                raise
+            except Exception as e:
+                if self._stop_error is None:
+                    self._stop_error = e
+                    self._stopped.set()
+                raise
+
+        return run
 
     async def _start_episode(self, kwargs: dict[str, Any]) -> ToolCallResult:
         reset_kwargs = kwargs.get("reset_kwargs", {})
@@ -279,14 +333,24 @@ class GroundingSession:
                 self._tool_calls >= self._limits.max_tool_calls
             ):
                 self._exhausted_limit = f"{self._limits.max_tool_calls} tool calls"
-        if self._exhausted_limit is not None:
+        if self._tools_closed or self._exhausted_limit is not None:
             self._refused_after_limit += 1
             if self._refused_after_limit > self._limits.calls_after_limit:
-                message = f"The grounding agent kept calling tools after using up its {self._exhausted_limit}."
+                message = (
+                    "The grounding agent kept calling tools after it was asked only "
+                    "for its result."
+                    if self._tools_closed
+                    else "The grounding agent kept calling tools after using up its "
+                    f"{self._exhausted_limit}."
+                )
                 self._log(tool, kwargs, message, is_error=True)
                 raise GroundingLimitReached(message)
             raise self._refusal(
-                tool, kwargs, LIMIT_MESSAGE.format(limit=self._exhausted_limit)
+                tool,
+                kwargs,
+                TOOLS_CLOSED_MESSAGE
+                if self._tools_closed
+                else LIMIT_MESSAGE.format(limit=self._exhausted_limit),
             )
         if counts_as_reset:
             self._resets += 1

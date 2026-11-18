@@ -18,7 +18,15 @@ spec, saved to a file.
 
 `ground --engine claude` runs `claude -p` once per case, with the grounding tools served by
 `grounding_mcp.py`. Each case's files (MCP config, message, raw `claude` output, run log) are
-kept in `<run dir>/case_<n>/`; `outcomes.json` and `summary.json` sum the run up.
+kept in `<run dir>/case_<n>/`.
+
+`ground --engine kiln --model <name> --provider <provider>` runs the grounding agent on a Kiln
+model through `ground_cases`, the way the product will, with the user's own API keys from
+Kiln's settings. `--answer-style` picks how the agent hands back its result: a JSON response
+format (`structured_output`, the default) or a `submit_result` tool.
+
+Both engines write `system_prompt.txt`, `outcomes.json` (every outcome with its call log) and
+`summary.json` to the run folder.
 
 `claude` runs in the case folder. Without `--claude-bare` it still loads the user's own
 CLAUDE.md and memory, and any CLAUDE.md in the case folder's parents, into the grounding
@@ -41,9 +49,17 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import HTTPException
+from kiln_ai.adapters.retry_classification import unwrap_kiln_run_error
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.openenv import OpenEnvServer, OpenEnvTool
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
+from kiln_ai.eval_grounding.agent import time_limit_detail
+from kiln_ai.eval_grounding.batch import (
+    CaseGrounded,
+    GroundingCaseError,
+    ground_cases,
+)
 from kiln_ai.eval_grounding.models import (
     DropReason,
     EvalContext,
@@ -51,7 +67,12 @@ from kiln_ai.eval_grounding.models import (
     GroundingOutcome,
     GroundingResult,
 )
-from kiln_ai.eval_grounding.prompt import case_message, system_prompt
+from kiln_ai.eval_grounding.prompt import (
+    KilnAnswerStyle,
+    case_message,
+    follow_up_message,
+    system_prompt,
+)
 from kiln_ai.eval_grounding.session import DEFAULT_TIME_LIMIT_S
 from kiln_ai.openenv.reset_schema_brief import reset_arguments_brief
 from kiln_ai.openenv.session_manager import OpenEnvError, OpenEnvSessionManager
@@ -85,17 +106,6 @@ DATA_GUIDE_FRAMING = """## Who uses this agent
 
 The user wrote the guide below about who talks to this agent and what they ask. Take the people in your scenarios, and the kinds of requests they make, from it. Where it says how common something is, follow that in the batch. Where it is silent, use your judgment as usual. It describes users, not test goals: the specification above still decides what each scenario stresses."""
 """The planner's framing for the Data Guide text, which follows it in `<data_guide>` tags."""
-
-INVALID_REPLY_MESSAGE = (
-    "Your last reply could not be used: {error}\n\n"
-    "Reply with only the JSON object your instructions describe, and nothing else."
-)
-"""The follow-up sent once, in the same `claude` session, when a reply doesn't parse."""
-
-ENGINE_KILN_NOT_IMPLEMENTED = (
-    "--engine kiln is not implemented yet: it runs the grounding agent on a Kiln model "
-    "through ground_cases(), which does not exist yet. Use --engine claude."
-)
 
 PREPARED_FILES = (
     "specification.txt",
@@ -520,9 +530,10 @@ class ClaudeEngine:
             _raise_if_session_failed(run_log)
             return GroundingOutcome.dropped(
                 DropReason.limit,
-                f"The agent ran past the {self.time_limit_s / 60:g} minute limit.",
+                time_limit_detail(self.time_limit_s),
                 call_log=run_log.call_log,
                 usage=None,
+                usage_complete=False,
             )
         await _write_text(case_dir / "claude_output.json", reply.raw)
 
@@ -536,7 +547,7 @@ class ClaudeEngine:
                 usage=reply.usage,
             )
 
-        result, parse_error, usage = await self._result_with_one_retry(
+        result, parse_error, usage, usage_complete = await self._result_with_one_retry(
             reply, case_dir, deadline
         )
         if result is None:
@@ -545,41 +556,44 @@ class ClaudeEngine:
                 f"The agent's reply was not a usable result: {parse_error}",
                 call_log=run_log.call_log,
                 usage=usage,
+                usage_complete=usage_complete,
             )
         return GroundingOutcome.from_result(
             result,
             openenv_reset=run_log.last_reset,
             call_log=run_log.call_log,
             usage=usage,
+            usage_complete=usage_complete,
         )
 
     async def _result_with_one_retry(
         self, reply: ClaudeReply, case_dir: Path, deadline: float
-    ) -> tuple[GroundingResult | None, str | None, Usage]:
+    ) -> tuple[GroundingResult | None, str | None, Usage, bool]:
         """The reply's result, or, when it doesn't parse, the result of one follow-up in
-        the same session. Returns the first parse error when neither parses, and the
-        usage of every call made."""
+        the same session. Returns the first parse error when neither parses, the usage
+        of every call made, and whether that usage is complete: a follow-up that timed
+        out or failed reports none."""
         try:
-            return parse_grounding_result(reply.result), None, reply.usage
+            return parse_grounding_result(reply.result), None, reply.usage, True
         except ValueError as e:
             parse_error = _first_line(e)
         if reply.session_id is None:
-            return None, parse_error, reply.usage
+            return None, parse_error, reply.usage, True
         try:
             retry = await self._run(
                 self.retry_argv(reply.session_id),
-                INVALID_REPLY_MESSAGE.format(error=parse_error),
+                follow_up_message(parse_error, "reply_json"),
                 case_dir,
                 deadline,
             )
         except (TimeoutError, ClaudeRunError):
-            return None, parse_error, reply.usage
+            return None, parse_error, reply.usage, False
         await _write_text(case_dir / "claude_retry_output.json", retry.raw)
         usage = reply.usage + retry.usage
         try:
-            return parse_grounding_result(retry.result), None, usage
+            return parse_grounding_result(retry.result), None, usage, True
         except ValueError:
-            return None, parse_error, usage
+            return None, parse_error, usage, True
 
     async def _run(
         self, argv: list[str], stdin: str, cwd: Path, deadline: float
@@ -598,7 +612,8 @@ class GroundArgs:
     out: Path
     engine: Literal["claude", "kiln"]
     model: str | None
-    provider: str | None
+    provider: ModelProviderName | None
+    answer_style: KilnAnswerStyle
     prompt: Path | None
     cases: str | None
     claude_bin: str
@@ -614,18 +629,82 @@ class CaseRun:
 
 async def ground(args: GroundArgs, *, claude_runner: ClaudeRunner = run_claude) -> int:
     """Ground the prepared cases; returns the process exit code."""
-    if args.engine == "kiln":
-        _progress(ENGINE_KILN_NOT_IMPLEMENTED)
-        return 2
-
     openenv_server = load_openenv_server(args.project, args.openenv_server_id)
     prepared = await asyncio.to_thread(load_prepared, args.in_dir)
     indices = parse_case_indices(args.cases, len(prepared.cases))
     target_tools = target_tool_definitions(await _list_server_tools(openenv_server))
     prompt_text = (
-        await _read_text(args.prompt) if args.prompt is not None else system_prompt()
+        await _read_text(args.prompt)
+        if args.prompt is not None
+        else system_prompt(
+            answer_style="reply_json" if args.engine == "claude" else args.answer_style
+        )
     )
-    model = args.model or DEFAULT_CLAUDE_MODEL
+    await asyncio.to_thread(args.out.mkdir, parents=True, exist_ok=True)
+    await _write_text(args.out / "system_prompt.txt", prompt_text)
+
+    if args.engine == "kiln":
+        if args.model is None or args.provider is None:
+            raise GroundingSetupError("--engine kiln needs --model and --provider.")
+        model = args.model
+        runs, batch_error = await _ground_with_kiln(
+            args,
+            prepared,
+            indices,
+            model=model,
+            provider=args.provider,
+            openenv_server=openenv_server,
+            target_tools=target_tools,
+            prompt_text=prompt_text,
+        )
+    else:
+        model = args.model or DEFAULT_CLAUDE_MODEL
+        runs = await _ground_with_claude(
+            args,
+            prepared,
+            indices,
+            target_tools=target_tools,
+            prompt_text=prompt_text,
+            model=model,
+            claude_runner=claude_runner,
+        )
+        batch_error = None
+
+    runs = sorted(runs, key=lambda run: run.case_index)
+    await _write_json(
+        args.out / "outcomes.json",
+        [
+            {
+                "case_index": run.case_index,
+                "outcome": run.outcome.model_dump(mode="json"),
+            }
+            for run in runs
+            if run.outcome is not None
+        ],
+    )
+    summary = summarize(runs, engine=args.engine, model=model, case_count=len(indices))
+    if args.engine == "kiln":
+        summary["provider"] = args.provider
+        summary["answer_style"] = args.answer_style
+        summary["error"] = batch_error
+    await _write_json(args.out / "summary.json", summary)
+    _progress(
+        f"{summary['grounded']} grounded, {summary['dropped']} dropped, "
+        f"{len(summary['failed_cases'])} failed. Results in {args.out}."
+    )
+    return 1 if summary["failed_cases"] or batch_error else 0
+
+
+async def _ground_with_claude(
+    args: GroundArgs,
+    prepared: PreparedInputs,
+    indices: list[int],
+    *,
+    target_tools: list[ToolCallDefinition],
+    prompt_text: str,
+    model: str,
+    claude_runner: ClaudeRunner,
+) -> list[CaseRun]:
     engine = ClaudeEngine(
         claude_bin=args.claude_bin,
         model=model,
@@ -635,8 +714,6 @@ async def ground(args: GroundArgs, *, claude_runner: ClaudeRunner = run_claude) 
         bare=args.claude_bare,
         runner=claude_runner,
     )
-    await asyncio.to_thread(args.out.mkdir, parents=True, exist_ok=True)
-    await _write_text(args.out / "system_prompt.txt", prompt_text)
     if not args.claude_bare:
         claude_mds = await asyncio.to_thread(claude_md_files_above, args.out)
         if claude_mds:
@@ -672,29 +749,68 @@ async def ground(args: GroundArgs, *, claude_runner: ClaudeRunner = run_claude) 
         )
         return run
 
-    runs = await asyncio.gather(*(run_case(i) for i in indices))
-    await _write_json(
-        args.out / "outcomes.json",
-        [
-            {
-                "case_index": run.case_index,
-                "outcome": run.outcome.model_dump(mode="json"),
-            }
-            for run in runs
-            if run.outcome is not None
-        ],
-    )
-    summary = summarize(runs, engine="claude", model=model)
-    await _write_json(args.out / "summary.json", summary)
-    _progress(
-        f"{summary['grounded']} grounded, {summary['dropped']} dropped, "
-        f"{len(summary['failed_cases'])} failed. Results in {args.out}."
-    )
-    return 1 if summary["failed_cases"] else 0
+    return list(await asyncio.gather(*(run_case(i) for i in indices)))
 
 
-def summarize(runs: Sequence[CaseRun], *, engine: str, model: str) -> dict[str, Any]:
-    """The run's counts, each grounded case's reset arguments, and its token use."""
+async def _ground_with_kiln(
+    args: GroundArgs,
+    prepared: PreparedInputs,
+    indices: list[int],
+    *,
+    model: str,
+    provider: ModelProviderName,
+    openenv_server: OpenEnvServer,
+    target_tools: list[ToolCallDefinition],
+    prompt_text: str,
+) -> tuple[list[CaseRun], str | None]:
+    """The grounded cases, and the error that stopped the batch, if one did. Like the
+    product, one case's error stops every case, so the cases after it have no run."""
+    runs: list[CaseRun] = []
+    session_manager = OpenEnvSessionManager()
+    try:
+        async for event in ground_cases(
+            [prepared.cases[i] for i in indices],
+            eval_context=prepared.eval_context,
+            openenv_server=openenv_server,
+            session_manager=session_manager,
+            model_name=model,
+            model_provider=provider,
+            target_tools=target_tools,
+            answer_style=args.answer_style,
+            system_prompt_text=prompt_text,
+        ):
+            if isinstance(event, CaseGrounded):
+                run = CaseRun(indices[event.case_index], event.outcome, None)
+                runs.append(run)
+                _progress(
+                    f"[{len(runs)}/{len(indices)}] case {run.case_index}: "
+                    f"{_describe_run(run)}"
+                )
+    except Exception as e:
+        error = _describe_batch_error(e, indices)
+        _progress(f"Grounding stopped: {error}")
+        return runs, error
+    finally:
+        await session_manager.shutdown()
+    return runs, None
+
+
+def _describe_batch_error(error: Exception, indices: list[int]) -> str:
+    """The error that stopped a kiln batch, with the case that raised it and the
+    underlying error's type, which KilnRunError's own message hides."""
+    case = ""
+    if isinstance(error, GroundingCaseError):
+        case = f"case {indices[error.case_index]}: "
+        error = error.error
+    cause = unwrap_kiln_run_error(error)
+    return f"{case}{type(cause).__name__}: {cause}"
+
+
+def summarize(
+    runs: Sequence[CaseRun], *, engine: str, model: str, case_count: int
+) -> dict[str, Any]:
+    """The run's counts, each grounded case's reset arguments, and its token use.
+    `case_count` is the cases asked for, which a stopped batch has fewer runs for."""
     outcomes = [(run.case_index, run.outcome) for run in runs if run.outcome]
     grounded = [(i, o) for i, o in outcomes if o.status == "grounded"]
     drops = Counter(
@@ -707,7 +823,7 @@ def summarize(runs: Sequence[CaseRun], *, engine: str, model: str) -> dict[str, 
     return {
         "engine": engine,
         "model": model,
-        "cases": len(runs),
+        "cases": case_count,
         "grounded": len(grounded),
         "dropped": len(outcomes) - len(grounded),
         "drops_by_reason": dict(sorted(drops.items())),
@@ -726,6 +842,10 @@ def summarize(runs: Sequence[CaseRun], *, engine: str, model: str) -> dict[str, 
             for i, o in grounded
         ],
         "usage": usage.model_dump(mode="json", exclude_none=True),
+        # Usage misses some model calls on these cases, so it is not a full total.
+        "cases_with_incomplete_usage": sum(
+            1 for _, o in outcomes if not o.usage_complete
+        ),
     }
 
 
@@ -847,7 +967,17 @@ def build_argument_parser() -> argparse.ArgumentParser:
     grd.add_argument(
         "--model", help=f"Default for --engine claude: {DEFAULT_CLAUDE_MODEL}."
     )
-    grd.add_argument("--provider", help="The model's provider, for --engine kiln.")
+    grd.add_argument(
+        "--provider",
+        choices=[provider.value for provider in ModelProviderName],
+        help="The model's provider, for --engine kiln.",
+    )
+    grd.add_argument(
+        "--answer-style",
+        choices=["structured_output", "submit_result"],
+        help="For --engine kiln: how the agent hands back its result. Default: "
+        "structured_output.",
+    )
     grd.add_argument(
         "--prompt",
         type=Path,
@@ -894,8 +1024,12 @@ def main(
                 )
             )
             return 0
-        if args.engine == "claude" and args.provider is not None:
-            parser.error("--provider applies to --engine kiln only.")
+        if args.engine == "claude" and (
+            args.provider is not None or args.answer_style is not None
+        ):
+            parser.error("--provider and --answer-style apply to --engine kiln only.")
+        if args.engine == "kiln" and (args.model is None or args.provider is None):
+            parser.error("--engine kiln needs --model and --provider.")
         return asyncio.run(
             ground(
                 GroundArgs(
@@ -905,7 +1039,10 @@ def main(
                     out=args.out,
                     engine=args.engine,
                     model=args.model,
-                    provider=args.provider,
+                    provider=ModelProviderName(args.provider)
+                    if args.provider is not None
+                    else None,
+                    answer_style=args.answer_style or "structured_output",
                     prompt=args.prompt,
                     cases=args.cases,
                     claude_bin=args.claude_bin,

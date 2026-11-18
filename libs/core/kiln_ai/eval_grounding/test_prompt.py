@@ -4,7 +4,11 @@ import re
 import pytest
 
 from kiln_ai.eval_grounding.models import EvalContext, GroundingCase, GroundingResult
-from kiln_ai.eval_grounding.prompt import case_message, system_prompt
+from kiln_ai.eval_grounding.prompt import (
+    case_message,
+    follow_up_message,
+    system_prompt,
+)
 from kiln_ai.eval_grounding.session import (
     READ_STATE_TOOL,
     START_EPISODE_TOOL,
@@ -100,8 +104,11 @@ def test_system_prompt_states_the_limits():
     assert "Limits: 3 resets, 12 tool calls, 5 minutes." in prompt
 
 
-def test_system_prompt_names_the_tools_and_every_result_field():
-    prompt = system_prompt()
+@pytest.mark.parametrize(
+    "answer_style", ["reply_json", "structured_output", "submit_result"]
+)
+def test_system_prompt_names_the_tools_and_every_result_field(answer_style):
+    prompt = system_prompt(answer_style=answer_style)
     assert "Limits: 10 resets, 40 tool calls, 15 minutes." in prompt
     for tool in (START_EPISODE_TOOL, READ_STATE_TOOL):
         assert f"{tool}(" in prompt
@@ -119,3 +126,42 @@ def test_system_prompt_lists_every_case_message_section():
     for tag in re.findall(r"^<(\w+)>$", message, flags=re.MULTILINE):
         if tag != "seed_prompt":
             assert f"\n<{tag}> " in prompt
+
+
+def test_each_answer_style_says_how_to_hand_back_the_result():
+    assert "reply with only this JSON object:\n{" in system_prompt()
+    assert '"args": {}' in system_prompt()
+
+    structured = system_prompt(answer_style="structured_output")
+    assert "reply with your result as this JSON object:\n{" in structured
+    assert '"args": "{\\"id\\": 7}"' in structured
+    assert "args is a string that holds the JSON object" in structured
+
+    submit = system_prompt(answer_style="submit_result")
+    assert "call submit_result once with your result:\n{" in submit
+    assert '"args": {}' in submit
+    assert submit.endswith("reply with only the word done.")
+
+
+def test_system_prompt_has_the_refusal_and_recorded_change_rules():
+    prompt = system_prompt()
+    assert (
+        "A case that expects the agent under test to refuse is unrepresentable when "
+        "the server itself doesn't refuse the request or enforce the rule behind it."
+    ) in prompt
+    assert "say in drop_detail that the server doesn't enforce it" in prompt
+    assert "Don't forbid the way the server records the expected change" in prompt
+
+
+def test_follow_up_message_per_answer_style():
+    assert follow_up_message("bad JSON", "reply_json") == (
+        "Your last reply could not be used: bad JSON\n\n"
+        "Reply with only the JSON object your instructions describe, and nothing else."
+    )
+    assert follow_up_message("bad JSON", "structured_output") == follow_up_message(
+        "bad JSON", "reply_json"
+    )
+    assert follow_up_message("You ended early.", "submit_result") == (
+        "You ended early.\n\nCall submit_result with your result now. Your other "
+        "tools are closed."
+    )

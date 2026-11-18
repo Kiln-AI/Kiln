@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field, JsonValue, model_validator
 from typing_extensions import Self
@@ -128,6 +129,133 @@ class GroundingResult(BaseModel):
             parse_synthetic_user_info(self.synthetic_user_info)
         return self
 
+    @classmethod
+    def from_model_output(
+        cls, data: dict[Any, Any], *, args_as_json_string: bool
+    ) -> GroundingResult:
+        """The result from the object the model returned in the shape of
+        `result_json_schema(args_as_json_string=...)`. Raises ValueError (including
+        pydantic's ValidationError) when it isn't a valid result."""
+        if not args_as_json_string:
+            return cls.model_validate(data)
+        reference = data.get("reference")
+        facts = reference.get("facts") if isinstance(reference, dict) else None
+        if not isinstance(facts, list):
+            return cls.model_validate(data)
+        decoded_facts = [_decode_fact_args(fact) for fact in facts]
+        return cls.model_validate(
+            {**data, "reference": {**reference, "facts": decoded_facts}}
+        )
+
+
+def result_json_schema(*, args_as_json_string: bool) -> dict[str, Any]:
+    """The JSON schema of `GroundingResult` that the model answers in. Written out with
+    every property required and no `$ref`, so it holds under strict structured output.
+
+    Strict output closes every object to the properties it lists, which would force the
+    free-form `Evidence.args` to `{}`. With `args_as_json_string` it is a string holding
+    the JSON object instead, and `GroundingResult.from_model_output` decodes it."""
+    args_schema: dict[str, Any] = (
+        {
+            "type": "string",
+            "description": "The arguments you called the tool with: a JSON object, "
+            'written as a string, e.g. "{\\"id\\": 7}".',
+        }
+        if args_as_json_string
+        else {
+            "type": "object",
+            "description": "The arguments you called the tool with.",
+        }
+    )
+    evidence = _object_schema(
+        {
+            "tool": {"type": "string", "description": "The tool you called."},
+            "args": args_schema,
+            "result_excerpt": {
+                "type": "string",
+                "description": "The part of its result that shows the fact.",
+            },
+        }
+    )
+    string_list = {"type": "array", "items": {"type": "string"}}
+    reference = _object_schema(
+        {
+            "starting_point": {
+                "type": "string",
+                "description": "What is true before the conversation.",
+            },
+            "facts": {
+                "type": "array",
+                "items": _object_schema(
+                    {"text": {"type": "string"}, "evidence": evidence}
+                ),
+            },
+            "expected_outcome": {
+                **string_list,
+                "description": "What must be true at the end, or what the agent "
+                "must tell the user.",
+            },
+            "allowed": {
+                **string_list,
+                "description": "Acceptable alternatives, e.g. asking a clarifying "
+                "question first.",
+            },
+            "must_not_happen": {
+                **string_list,
+                "description": "Changes or claims that fail the case.",
+            },
+        }
+    )
+    return _object_schema(
+        {
+            "status": {"type": "string", "enum": ["grounded", "dropped"]},
+            "drop_reason": {
+                "type": ["string", "null"],
+                "enum": [*get_args(ModelDropReason), None],
+            },
+            "drop_detail": {
+                "type": ["string", "null"],
+                "description": "One sentence on why the case was dropped.",
+            },
+            "seed_prompt": {
+                "type": ["string", "null"],
+                "description": "The filled-in opening message.",
+            },
+            "synthetic_user_info": {
+                "type": ["string", "null"],
+                "description": "<persona>...</persona><goal>...</goal>, then "
+                "<behavior_guidance>...</behavior_guidance> when the draft had one.",
+            },
+            "reference": {"anyOf": [reference, {"type": "null"}]},
+        }
+    )
+
+
+def _object_schema(properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+def _decode_fact_args(fact: Any) -> Any:
+    """`fact` with its evidence `args` string decoded; any other shape is left for
+    validation to report."""
+    if not isinstance(fact, dict):
+        return fact
+    evidence = fact.get("evidence")
+    if not isinstance(evidence, dict) or not isinstance(evidence.get("args"), str):
+        return fact
+    try:
+        args = json.loads(evidence["args"])
+    except json.JSONDecodeError as e:
+        raise ValueError(f"A fact's evidence args is not valid JSON: {e}") from e
+    if not isinstance(args, dict):
+        raise ValueError("A fact's evidence args must be a JSON object.")
+    return {**fact, "evidence": {**evidence, "args": args}}
+
 
 class GroundingOutcome(BaseModel):
     """One case's grounding, ready to save or to show as a drop."""
@@ -142,6 +270,12 @@ class GroundingOutcome(BaseModel):
     call_log: list[LoggedCall] = Field(default_factory=list)
     usage: Usage | None = Field(
         default=None, description="Tokens and cost, summed over the run."
+    )
+    usage_complete: bool = Field(
+        default=True,
+        description="False when some model calls' tokens and cost are missing from "
+        "`usage`: a run cut short by a stop or the time limit, or one whose answer the "
+        "adapter rejected, reports none.",
     )
 
     @model_validator(mode="after")
@@ -167,6 +301,7 @@ class GroundingOutcome(BaseModel):
         *,
         call_log: list[LoggedCall],
         usage: Usage | None,
+        usage_complete: bool = True,
     ) -> GroundingOutcome:
         """A dropped case, with the calls made before it was dropped."""
         return cls(
@@ -175,6 +310,7 @@ class GroundingOutcome(BaseModel):
             drop_detail=detail,
             call_log=call_log,
             usage=usage,
+            usage_complete=usage_complete,
         )
 
     @classmethod
@@ -185,6 +321,7 @@ class GroundingOutcome(BaseModel):
         openenv_reset: OpenEnvReset | None,
         call_log: list[LoggedCall],
         usage: Usage | None,
+        usage_complete: bool = True,
     ) -> GroundingOutcome:
         """The outcome for the model's result. `openenv_reset` is the session's last reset,
         the environment the reference was observed in; a grounded result without one never
@@ -196,6 +333,7 @@ class GroundingOutcome(BaseModel):
                 result.drop_detail,
                 call_log=call_log,
                 usage=usage,
+                usage_complete=usage_complete,
             )
         if openenv_reset is None:
             return cls.dropped(
@@ -203,6 +341,7 @@ class GroundingOutcome(BaseModel):
                 "The agent returned a grounded case without starting an environment.",
                 call_log=call_log,
                 usage=usage,
+                usage_complete=usage_complete,
             )
         return cls(
             status="grounded",
@@ -212,6 +351,7 @@ class GroundingOutcome(BaseModel):
             reference=result.reference,
             call_log=call_log,
             usage=usage,
+            usage_complete=usage_complete,
         )
 
 

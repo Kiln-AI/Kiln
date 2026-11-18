@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from kiln_ai.datamodel.openenv import OpenEnvServer, OpenEnvTool
-from kiln_ai.datamodel.project import Project
 from kiln_ai.eval_grounding.session import (
     CLOSED_EPISODE_MESSAGE,
     NO_EPISODE_MESSAGE,
+    TOOLS_CLOSED_MESSAGE,
     GroundingLimitReached,
     GroundingLimits,
     GroundingSession,
@@ -22,39 +22,7 @@ from kiln_ai.openenv.session_manager import (
     OpenEnvSessionManager,
     OpenEnvTransientError,
 )
-from kiln_ai.openenv.testing import serve_in_thread
 from kiln_ai.tools.base_tool import ToolCallError
-
-
-@pytest.fixture
-def project(tmp_path):
-    p = Project(name="proj", path=tmp_path / "proj" / "project.kiln")
-    p.path.parent.mkdir(parents=True)
-    p.save_to_file()
-    return p
-
-
-@pytest.fixture
-def one_session_url():
-    """A server that holds one session, so a leaked episode blocks the next reset."""
-    with serve_in_thread(max_sessions=1) as base_url:
-        yield base_url
-
-
-@pytest.fixture
-def openenv_server(project, one_session_url):
-    server = OpenEnvServer(name="counter", parent=project, url=one_session_url)
-    server.save_to_file()
-    return server
-
-
-@pytest.fixture
-async def session_manager():
-    manager = OpenEnvSessionManager()
-    try:
-        yield manager
-    finally:
-        await manager.shutdown()
 
 
 @pytest.fixture
@@ -85,16 +53,6 @@ async def call(session: GroundingSession, tool_name: str, **kwargs):
     raise AssertionError(f"no tool {tool_name}")
 
 
-async def assert_server_is_free(openenv_server):
-    """The one-session server accepts a new episode only if no episode was left open."""
-    manager = OpenEnvSessionManager()
-    try:
-        episode = await manager.start_episode(openenv_server, {})
-        await manager.release(episode)
-    finally:
-        await manager.shutdown()
-
-
 class TestTools:
     async def test_session_tools_then_server_tools(self, make_session):
         session = await make_session()
@@ -123,6 +81,7 @@ class TestTools:
                 OpenEnvTool(name="start_episode", description="server's own"),
                 OpenEnvTool(name="env_start_episode", description="another"),
                 OpenEnvTool(name="read_state", input_schema={"type": "object"}),
+                OpenEnvTool(name="submit_result", description="server's submit"),
             ]
         )
         definitions = [await t.toolcall_definition() for t in session.tools()]
@@ -132,6 +91,7 @@ class TestTools:
             "env_start_episode",
             "env_env_start_episode",
             "env_read_state",
+            "env_submit_result",
         ]
         assert definitions[4]["function"]["parameters"] == {
             "type": "object",
@@ -226,17 +186,17 @@ class TestEpisodes:
         assert state["notes"] == ["hello"]
         assert state["fixture_id"] == "f"
 
-    async def test_close_releases_and_is_idempotent(self, make_session, openenv_server):
+    async def test_close_releases_and_is_idempotent(self, make_session, server_is_free):
         session = await make_session()
         await call(session, "start_episode", reset_kwargs={})
         await session.close()
         await session.close()
-        await assert_server_is_free(openenv_server)
+        await server_is_free()
         with pytest.raises(ToolCallError, match=NO_EPISODE_MESSAGE):
             await call(session, "read_notes")
 
     async def test_concurrent_calls_run_one_at_a_time(
-        self, make_session, openenv_server
+        self, make_session, server_is_free
     ):
         session = await make_session()
         await call(session, "start_episode", reset_kwargs={"fixture_id": "a"})
@@ -247,7 +207,7 @@ class TestEpisodes:
         )
         assert [r.is_error for r in results] == [False, False, False]
         await session.close()
-        await assert_server_is_free(openenv_server)
+        await server_is_free()
 
 
 class TestFailures:
@@ -412,3 +372,64 @@ class TestCallLog:
         await call(session, "start_episode", reset_kwargs={})
         session.call_log.clear()
         assert len(session.call_log) == 1
+
+
+class TestCloseTools:
+    async def test_refuses_later_calls_and_keeps_the_last_reset(
+        self, make_session, server_is_free
+    ):
+        session = await make_session()
+        await call(session, "start_episode", reset_kwargs={"fixture_id": "a"})
+        await session.close_tools()
+        await server_is_free()
+        for tool_name in ("read_notes", "read_state", "start_episode"):
+            with pytest.raises(ToolCallError, match=TOOLS_CLOSED_MESSAGE):
+                await call(session, tool_name, reset_kwargs={})
+        assert session.last_reset is not None
+        assert session.last_reset.reset_kwargs == {"fixture_id": "a"}
+        assert session.call_log[-1].output == TOOLS_CLOSED_MESSAGE
+
+    async def test_calls_after_closing_reach_the_hard_stop(self, make_session):
+        session = await make_session(limits=GroundingLimits(calls_after_limit=1))
+        await session.close_tools()
+        with pytest.raises(ToolCallError):
+            await call(session, "read_notes")
+        with pytest.raises(GroundingLimitReached, match="asked only for its result"):
+            await call(session, "read_notes")
+        assert isinstance(session.stop_error, GroundingLimitReached)
+
+
+class TestStop:
+    async def test_the_hard_stop_is_recorded(self, make_session):
+        session = await make_session(
+            limits=GroundingLimits(max_tool_calls=0, calls_after_limit=0)
+        )
+        assert session.stop_error is None
+        with pytest.raises(GroundingLimitReached) as raised:
+            await call(session, "read_state")
+        assert session.stop_error is raised.value
+        await asyncio.wait_for(session.wait_until_stopped(), timeout=1)
+
+    async def test_an_environment_failure_is_recorded(
+        self, make_session, session_manager
+    ):
+        session = await make_session()
+        await call(session, "start_episode", reset_kwargs={})
+        with patch.object(
+            session_manager,
+            "call_tool",
+            AsyncMock(side_effect=OpenEnvTransientError("connection dropped")),
+        ):
+            with pytest.raises(OpenEnvTransientError):
+                await call(session, "read_notes")
+        assert isinstance(session.stop_error, OpenEnvTransientError)
+
+    async def test_errors_meant_for_the_model_are_not_a_stop(self, make_session):
+        session = await make_session()
+        with pytest.raises(ToolCallError):
+            await call(session, "read_notes")
+        await call(session, "start_episode", reset_kwargs={})
+        await call(session, "explode")
+        assert session.stop_error is None
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(session.wait_until_stopped(), timeout=0.05)
