@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import type { OpenEnvServer } from "$lib/types"
 import {
+  matching_preset_name,
   RESET_ARGUMENTS_INVALID_JSON,
   RESET_ARGUMENTS_NOT_OBJECT,
   OPENENV_SERVER_URL_ERROR,
@@ -319,5 +320,48 @@ describe("reset_kwargs_for", () => {
       named_reset_kwargs: [{ name: "Default" }],
     }
     expect(reset_kwargs_for(env, "Default")).toEqual({})
+  })
+})
+
+describe("matching_preset_name", () => {
+  const server = (
+    presets: { name: string; reset_kwargs?: Record<string, unknown> }[],
+  ): OpenEnvServer =>
+    ({
+      id: "s1",
+      name: "S",
+      named_reset_kwargs: presets,
+    }) as unknown as OpenEnvServer
+
+  it("finds the preset with exactly these arguments, in any key order, nested too", () => {
+    const s = server([
+      { name: "Small", reset_kwargs: { fixture: "small" } },
+      {
+        name: "Agency",
+        reset_kwargs: { startup: { user: "u1", mode: "a" }, fixture: "agency" },
+      },
+    ])
+    expect(
+      matching_preset_name(s, {
+        fixture: "agency",
+        startup: { mode: "a", user: "u1" },
+      }),
+    ).toBe("Agency")
+  })
+
+  it("is null when no preset matches exactly", () => {
+    const s = server([{ name: "Agency", reset_kwargs: { fixture: "agency" } }])
+    expect(matching_preset_name(s, { fixture: "agency", seed: 1 })).toBeNull()
+    expect(matching_preset_name(s, { fixture: "small" })).toBeNull()
+  })
+
+  it("matches empty arguments to a preset with none", () => {
+    const s = server([{ name: "Default", reset_kwargs: {} }])
+    expect(matching_preset_name(s, null)).toBe("Default")
+  })
+
+  it("is null with no OpenEnv server or no presets", () => {
+    expect(matching_preset_name(null, { a: 1 })).toBeNull()
+    expect(matching_preset_name(server([]), { a: 1 })).toBeNull()
   })
 })

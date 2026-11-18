@@ -84,6 +84,36 @@ export function format_reset_arguments(
   return JSON.stringify(reset_kwargs ?? {}, null, 2)
 }
 
+// JSON with every object's keys sorted, so two argument sets that differ only
+// in key order give the same string.
+function canonical_json(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : v,
+  )
+}
+
+/**
+ * The name of the OpenEnv server's preset whose reset arguments are exactly
+ * these, or null when none is. A run stores the arguments, not the preset, so
+ * this is how its sidebar names the preset it started from.
+ */
+export function matching_preset_name(
+  openenv_server: OpenEnvServer | null,
+  reset_kwargs: ResetKwargs | null | undefined,
+): string | null {
+  const target = canonical_json(reset_kwargs ?? {})
+  const preset = openenv_server?.named_reset_kwargs?.find(
+    (p) => canonical_json(p.reset_kwargs ?? {}) === target,
+  )
+  return preset?.name ?? null
+}
+
 export type ParsedResetArguments =
   | { reset_kwargs: ResetKwargs; error: null }
   | { reset_kwargs: null; error: string }
