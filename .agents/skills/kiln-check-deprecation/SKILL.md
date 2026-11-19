@@ -175,7 +175,7 @@ Then add `deprecated=True,` after the `model_id=` line in the matching `KilnMode
 
 **Rules:**
 - Only mark a provider deprecated if its model_id is confirmed missing from that provider's model list
-- If ALL providers for a `KilnModel` are deprecated, note this to the user — they may want to consider removing the model entirely
+- If ALL providers for a `KilnModel` are deprecated, note this to the user — they may want to consider removing the model entirely. In the same change, remove the model's tags (a fully-deprecated model carries no tags), and if its `ModelName` is in `MODELS_WITHOUT_NOTES` in `libs/core/kiln_ai/adapters/test_ml_model_list.py`, delete it from that list: the list holds only live models without notes, and `test_models_without_notes_list_is_exact` fails until it is removed
 - For "expiring soon" models, inform the user but don't mark deprecated yet — let them decide. **Exception: Cloudflare.** When Cloudflare retires a model it may silently alias the old ID to a different model, and the response still echoes the requested ID, so a stale entry keeps "working" while running something else. Propose marking every Cloudflare entry with a `planned_deprecation_date` deprecated now, before that date, and flag it as urgent in the report
 - For Bedrock `LEGACY` status, mark deprecated (the model still works but is on its way out)
 
@@ -191,7 +191,11 @@ After marking providers deprecated, run a quick sanity check:
 grep -c "deprecated=True" libs/core/kiln_ai/adapters/ml_model_list.py
 ```
 
-Ensure the count matches what you expect (previous count + newly marked).
+Ensure the count matches what you expect (previous count + newly marked). Then run the model-list tests, which catch a fully-deprecated model left in `MODELS_WITHOUT_NOTES` or still carrying tags:
+
+```bash
+uv run pytest -q libs/core/kiln_ai/adapters/test_ml_model_list.py libs/core/kiln_ai/adapters/test_model_agent_info.py
+```
 
 ---
 
@@ -206,3 +210,4 @@ Ensure the count matches what you expect (previous count + newly marked).
 - [ ] User confirmed changes before marking deprecated
 - [ ] `deprecated=True` set on confirmed entries
 - [ ] Deprecation count verified
+- [ ] Fully-deprecated models: tags removed and taken out of `MODELS_WITHOUT_NOTES`; model-list tests pass
