@@ -45,7 +45,7 @@ ship"). This is local setup, not a phase.
   OpenEnv rule-12 wording; the checking-cases phase and its progress; the dropped-cases screen;
   the judge lane's tool requirement and tooltip; the read-only section in review; the save
   payload; the cached-cases key. With tests.
-- [ ] Phase 7: The judge hint on the judge creation form, and Kiln's OpenEnv docs on writing
+- [x] Phase 7: The judge hint on the judge creation form, and Kiln's OpenEnv docs on writing
   reset-schema descriptions for models.
 - [ ] Later, once its UI is scoped: the project-wide multi-turn synthetic user guide, wired into
   the planner's section and the grounding request.

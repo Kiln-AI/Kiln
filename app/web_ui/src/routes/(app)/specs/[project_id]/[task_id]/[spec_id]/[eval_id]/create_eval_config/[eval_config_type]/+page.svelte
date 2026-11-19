@@ -10,6 +10,7 @@
   import EvalConfigBuilder from "$lib/components/eval_types/eval_config_builder.svelte"
   import { buildCreateEvalBreadcrumbs } from "../breadcrumbs"
   import { getCreateEvalLayoutContext } from "../context"
+  import Warning from "$lib/ui/warning.svelte"
 
   const ctx = getCreateEvalLayoutContext()
 
@@ -34,6 +35,13 @@
     ? (raw_type as V2EvalType)
     : null
   $: type_metadata = valid_type ? getV2EvalTypeMetadata(valid_type) : null
+
+  // An eval the Eval Builder grounded in an OpenEnv server carries judge
+  // guidance on every case. The note tells a prompt-based judge where it is.
+  $: show_judge_guidance_hint =
+    valid_type === "llm_judge" && !!evaluator?.openenv_server_id
+  const JUDGE_GUIDANCE_HINT =
+    "This eval's cases were checked against your OpenEnv server. Each one has judge guidance: the facts the agent should get right and what must not happen. Use it in your prompt as {{ reference_data.judge_guidance }}."
 
   $: agentInfo.set({
     name: "Create Eval Config",
@@ -79,6 +87,15 @@
       subtitle={type_metadata?.pageSubtitle ?? ""}
       {breadcrumbs}
     >
+      {#if show_judge_guidance_hint}
+        <div class="mb-6">
+          <Warning
+            warning_color="gray"
+            warning_icon="info"
+            warning_message={JUDGE_GUIDANCE_HINT}
+          />
+        </div>
+      {/if}
       <EvalConfigBuilder
         eval_config_type={valid_type}
         {evaluator}

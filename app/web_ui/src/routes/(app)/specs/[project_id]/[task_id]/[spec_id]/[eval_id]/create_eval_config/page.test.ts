@@ -345,6 +345,7 @@ async function renderBuilder(evalType: string = "code_eval") {
 async function renderBuilderRoutePage(
   evalConfigType: string,
   spec_id: string = "spec1",
+  evaluator_fields: Record<string, unknown> = {},
 ) {
   onMountCallbacks.length = 0
 
@@ -369,6 +370,7 @@ async function renderBuilderRoutePage(
       id: "eval1",
       name: "Test Eval",
       output_scores: [],
+      ...evaluator_fields,
     }),
     task: writable({
       id: "task1",
@@ -835,6 +837,34 @@ describe("builder route page ([eval_config_type])", () => {
   it("does not render sub_subtitle (Read the Docs link removed)", async () => {
     const { container } = await renderBuilderRoutePage("exact_match")
     expect(container.textContent).not.toContain("Read the Docs")
+  })
+
+  describe("judge guidance hint", () => {
+    const hint = "{{ reference_data.judge_guidance }}"
+
+    it("tells an LLM judge on an OpenEnv eval where the guidance is", async () => {
+      const { container } = await renderBuilderRoutePage("llm_judge", "spec1", {
+        openenv_server_id: "server1",
+      })
+      expect(container.textContent).toContain(
+        "This eval's cases were checked against your OpenEnv server.",
+      )
+      expect(container.textContent).toContain(hint)
+    })
+
+    it("is hidden on an eval without an OpenEnv server", async () => {
+      const { container } = await renderBuilderRoutePage("llm_judge")
+      expect(container.textContent).not.toContain(hint)
+    })
+
+    it("is hidden for judge types without a prompt", async () => {
+      const { container } = await renderBuilderRoutePage(
+        "exact_match",
+        "spec1",
+        { openenv_server_id: "server1" },
+      )
+      expect(container.textContent).not.toContain(hint)
+    })
   })
 })
 

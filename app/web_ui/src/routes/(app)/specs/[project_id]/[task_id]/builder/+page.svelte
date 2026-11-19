@@ -372,6 +372,7 @@
     if (current_step === "generate" && batch_plan === null) {
       data_guide_skipped = false
     }
+    pending_retry_drops = []
     current_step = step
   }
   $: sync_step_from_history(
@@ -1225,7 +1226,10 @@
       })
     | null = null
   // A Retry from that screen: the dropped scenarios and their reasons, added
-  // to the next plan's guidance. Cleared once a plan lands.
+  // to the next plan's guidance. They belong to that Retry's plan alone:
+  // cleared once a plan lands, and by any other new plan (Refine Plan, or
+  // leaving the step to edit the spec). The error screen's Retry keeps them,
+  // since it re-tries the same plan.
   let pending_retry_drops: GroundingDrop[] = []
   // The steer the plan on screen was drafted under. pending_plan_steer is
   // spent when a plan lands, and a Retry re-plans with the same steer. Rides
@@ -2237,6 +2241,7 @@
     // Off plus Refine Plan re-plans without the guide; the mint follows the
     // plan, since both send the same value.
     use_data_guide = use_data_guide_draft
+    pending_retry_drops = []
     new_plan_dialog?.close()
     void on_plan_batch()
   }

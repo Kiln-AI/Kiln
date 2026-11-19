@@ -1318,6 +1318,34 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     )
   })
 
+  // The dropped cases guide only the plan their Retry starts. A failed Retry
+  // plan leaves them in place for the error screen's Retry, which re-tries
+  // that plan; any other new plan must not inherit them.
+  describe("the dropped cases a Retry adds to the plan", () => {
+    const clear = "pending_retry_drops = []"
+
+    it("are cleared once a plan lands, not when one starts", () => {
+      const plan = function_body("async function on_plan_batch() {")
+      expect(plan.indexOf(clear)).toBeGreaterThan(
+        plan.indexOf("batch_plan = { prompts, summary: data.summary }"),
+      )
+    })
+
+    it("are cleared when the user leaves the step", () => {
+      expect(function_body("function sync_step_from_history(")).toContain(clear)
+    })
+
+    it("are cleared by Refine Plan", () => {
+      expect(function_body("function submit_new_plan() {")).toContain(clear)
+    })
+
+    it("survive the error screen's Retry of a failed plan", () => {
+      expect(
+        function_body("function on_continue_from_generate_step() {"),
+      ).not.toContain("pending_retry_drops")
+    })
+  })
+
   it("discards the batch's cases on Cancel", () => {
     const cancel = function_body("function on_cancel_grounding() {")
     expect(cancel).toContain("cached_su_cases = null")
