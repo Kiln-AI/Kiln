@@ -87,7 +87,7 @@ at a similar cost.
 |-------|----------|-----------|----------|--------|--------|
 | GPT-6.1 Sol | 55 | $1.27 | 49 | [link](https://artificialanalysis.ai/models/gpt-6-1-sol) | Index 55 at $1.27/task; next closest quality at similar cost is Terra (51 at $0.96) |
 | GPT-6.1 Terra | 51 | $0.96 | 72 | [link](https://artificialanalysis.ai/models/gpt-6-1-terra) | Index 51 at $0.96/task; next best at sub-$1 cost is Haiku (36 at $0.41) |
-| GPT-6 Astra | 57 | $6.24 | 42 | [link](https://artificialanalysis.ai/models/gpt-6-astra) | Index 57 at $6.24/task; highest quality below Opus/Fable tier |
+| GPT-6 Astra | 57 | $6.24 | 42 | [link](https://artificialanalysis.ai/models/gpt-6-astra) | Index 57 at $6.24/task; below Gemini 4 Neon (61 at $6.44) at a similar cost, and below Opus/Fable |
 | GPT-6 Luna | 28 | $0.15 | 104 | [link](https://artificialanalysis.ai/models/gpt-6-luna) | Index 28 at $0.15/task; comparable to Ember (36 at $0.14) but different ecosystem |
 | Claude Fable 5.2 | 65 | $26.54 | 110 | [link](https://artificialanalysis.ai/models/claude-fable-5-2) | Index 65; highest on AA, no model at any cost scores higher |
 | Claude Opus 5.5 | 59 | $10.04 | 117 | [link](https://artificialanalysis.ai/models/claude-opus-5-5) | Index 59 at $10.04/task; below Fable (65) and Gemini 4 Neon (61) |
