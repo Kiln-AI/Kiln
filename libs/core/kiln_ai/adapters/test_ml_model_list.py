@@ -488,6 +488,8 @@ def test_openai_reasoning_summary_only_on_responses_capable_openai_providers():
     other provider sets openai_reasoning_summary. Setting it anywhere else changes this
     contract, not just the list."""
     expected = {
+        ModelName.gpt_6_2_astra,
+        ModelName.gpt_6_2_sol,
         ModelName.gpt_6_1_sol,
         ModelName.gpt_6_1_terra,
         ModelName.gpt_6_astra,
