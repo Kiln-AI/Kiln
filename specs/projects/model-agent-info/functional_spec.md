@@ -437,8 +437,16 @@ section says, with these details:
 - Phase 3 (code changes) gets a step for each new model: write its note and
   tags, run the `current` procedure for its lab and price level, and run
   the set-review procedure for each set it could join. A run with nobody
-  watching (the scheduled model sweep) follows the same rules: when nothing
-  can be supported, it leaves the fields empty and says so in the PR.
+  watching (the scheduled model sweep) follows the same rules. The set
+  review is required: it fetches the model's Artificial Analysis page,
+  compares it with the member tables in the sources log within a 1.5x
+  cost band, and writes a **Set review** section in the PR even when no
+  set changes. Removals other than a lost `current` or a full set are
+  listed as candidates for a human, not applied. Set tags are left out
+  only when the model has no AA page. (Revision 4, 2026-11-19.)
+- A data test (`test_live_models_have_notes`) fails any live model without
+  a note, except the older models frozen in `MODELS_WITHOUT_NOTES`, which
+  only shrinks. (Revision 4, 2026-11-19.)
 - The PR description: when a set changes, a section at the top lists each
   addition and removal, per set, with a short reason for each.
 - "Adding a Net-New Provider": the touchpoint checklist replaces the

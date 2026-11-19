@@ -3840,6 +3840,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_4_carbon,
         friendly_name="Gemini 4 Carbon",
+        agent_notes=(
+            "Description: Google's Gemini 4 model for long-horizon agentic work in knowledge work, engineering, cybersecurity and scientific reasoning.\n"
+            "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon and Argon for deep, long-horizon reasoning. Carbon is based on Gemini 4 Argon and uses more thinking tokens than Argon."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4138,6 +4143,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_4_hydrogen,
         friendly_name="Gemini 4 Hydrogen",
+        agent_notes=(
+            "Description: Google's Gemini 4 model for rapid execution in everyday coding and agentic workflows, adapted from Gemini 4 Carbon.\n"
+            "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon and Argon for deep, long-horizon reasoning."
+        ),
+        tags=["current", "recommended", "top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8475,6 +8485,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_4_max,
         friendly_name="Qwen 4 Max",
+        agent_notes=(
+            "Description: The flagship model of Alibaba's Qwen4 series.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. Qwen 4 Max replaced Qwen 3.8 Max 0902 at the Max level."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8508,9 +8523,10 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: Qwen's flagship closed-weight model in the 3.8 generation.\n"
             "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. The 0902 snapshot is the dated release of 3.8 Max.\n"
+            "Superseded by: Qwen 4 Max, the Max model of the Qwen4 series.\n"
             "Strengths: Strong at coding, reasoning, and agentic frameworks."
         ),
-        tags=["current"],
+        tags=[],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12282,7 +12298,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.ernie,
         name=ModelName.ernie_light_dt_1_0,
         friendly_name="Ernie Light DT 1.0",
+        agent_notes=(
+            "Description: Baidu's light model built on open-source GLM models, with the Baidu Sparse Attention mechanism from Baidu Search's Lightning model.\n"
+            "Lineup: A light model in Baidu's ERNIE family. The sources checked do not place it against Baidu's larger ERNIE models."
+        ),
         editorial_notes="Baidu's ERNIE-Light-DT-1.0, built on open GLM models with Baidu Sparse Attention. Text only, 1M context. Not recommended as an eval judge: in testing it sometimes gave ratings outside the requested scale.",
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12358,7 +12379,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.hunyuan,
         name=ModelName.hunyuan_hy4_flash,
         friendly_name="Hunyuan Hy4 Flash",
+        agent_notes=(
+            "Description: Tencent's cost-efficient variant of Hunyuan Hy4, for code assistance and agent workloads.\n"
+            "Lineup: Below Hunyuan Hy4, with about a quarter of Hy4's parameters. It has its own weights, so it is not a serving variant of Hy4."
+        ),
         editorial_notes="Tencent's lower-cost Hy4 variant. Text and image input, 1M context. Not recommended as an eval judge: in testing it sometimes gave ratings outside the requested scale.",
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -13199,7 +13225,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.thinking_machines,
         name=ModelName.inkling_2_small,
         friendly_name="Inkling 2 Small",
+        agent_notes=(
+            "Description: Thinking Machines' small multimodal reasoning model, the first model of the Inkling 2 generation.\n"
+            "Lineup: Thinking Machines ships Inkling and a Small variant. Inkling 2 Small replaced Inkling Small.\n"
+            "Deployment: Mixture of experts with 17B active parameters out of 594B total."
+        ),
         editorial_notes="The first model of Thinking Machines' second Inkling generation (Apache 2.0). A 594B-parameter MoE (17B active) with image input, a 1M-token context and configurable reasoning.",
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -13287,9 +13319,10 @@ built_in_models: List[KilnModel] = [
         editorial_notes="The smaller sibling of Thinking Machines' Inkling (Apache 2.0). A 276B-parameter MoE (12B active) with image and audio input and configurable reasoning.",
         agent_notes=(
             "Description: Smaller variant of Inkling for lighter workloads.\n"
-            "Lineup: Below Inkling in size and capability."
+            "Lineup: Below Inkling in size and capability.\n"
+            "Superseded by: Inkling 2 Small, which scores far higher on Artificial Analysis (index 31 vs 10)."
         ),
-        tags=["current"],
+        tags=[],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,

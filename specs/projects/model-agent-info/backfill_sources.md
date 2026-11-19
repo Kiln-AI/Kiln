@@ -46,21 +46,22 @@ are never `current`; they carry a `Same weights:` line instead.
 |-----|----------------|
 | OpenAI (gpt) | GPT-6.1 Sol Pro, GPT-6.1 Sol, GPT-6.1 Terra Pro, GPT-6.1 Terra, GPT-6 Astra, GPT-6 Luna Pro, GPT-6 Luna |
 | Anthropic (claude) | Claude Fable 5.2, Claude Opus 5.5, Claude 5.5 Sonnet, Claude 5.5 Haiku |
-| Google (gemini) | Gemini 4 Argon, Gemini 3.8 Flash, Gemini 3.5 Flash Lite |
+| Google (gemini) | Gemini 4 Carbon, Gemini 4 Argon, Gemini 4 Neon, Gemini 4 Hydrogen, Gemini 3.8 Flash, Gemini 3.5 Flash Lite |
 | Google (gemma) | Gemma 4 31B, Gemma 4 27B, Gemma 4 4B, Gemma 4 2B |
 | NVIDIA (nemotron) | Nemotron 3.5 Super VL, Nemotron 3.5 Lightning, Nemotron 3 Ultra |
 | Meta (muse) | Muse Wonder 1.0, Muse Spark Open, Muse Spark 1.2, Muse Ember, Muse Glimmer 30B |
 | Mistral (mistral) | Mistral Large 4, Mistral Medium 3.5, Mistral Small 4, Ministral 3 14B/8B/3B 2512 |
 | DeepSeek (deepseek) | DeepSeek V4.1 Flash 1017, DeepSeek V4 Pro 0813 |
 | xAI (grok) | Grok 4.7 |
-| Alibaba (qwen) | Qwen 3.8 Max 0902, Qwen 3.8 Max Prime, Qwen 3.8 2.4T A95B, Qwen 3.8 Flash, Qwen 3.8 Omni Flash, Qwen 3.8 27B, Qwen 3.7 Plus, Qwen 3.6 35B A3B, Qwen 3.5 397B, Qwen 3.5 122B, Qwen 3.5 9B |
+| Alibaba (qwen) | Qwen 4 Max, Qwen 3.8 Max Prime, Qwen 3.8 2.4T A95B, Qwen 3.8 Flash, Qwen 3.8 Omni Flash, Qwen 3.8 27B, Qwen 3.7 Plus, Qwen 3.6 35B A3B, Qwen 3.5 397B, Qwen 3.5 122B, Qwen 3.5 9B |
 | ZhipuAI (glm) | GLM 5.3, GLM 5.3 Prime, GLM 5.3 Flash, GLM 5.3 FlashX, GLM 5.3 FlashX Legal |
 | Moonshot (kimi) | Kimi K3.1 Pro, Kimi K3 |
-| Tencent (hunyuan) | Hunyuan Hy4 |
+| Tencent (hunyuan) | Hunyuan Hy4, Hunyuan Hy4 Flash |
 | MiniMax (minimax) | Minimax M3.1 Flash |
 | StepFun (stepfun) | StepFun Step 5 Preview, StepFun Step 3.7 Flash |
 | Xiaomi (mimo) | MiMo-V2.6-Pro, MiMo-V2.6-Flash |
-| Thinking Machines (thinking_machines) | Inkling, Inkling Small |
+| Thinking Machines (thinking_machines) | Inkling, Inkling 2 Small |
+| Baidu (ernie) | Ernie Light DT 1.0 |
 | Sakana (sakana) | Fugu Max, Fugu Ultra v2 |
 | Liquid (liquid) | LFM 2.5 24B A2B |
 | Reflection (reflection) | Beam 1.0 |
@@ -77,7 +78,7 @@ MiMo-V2.6-Pro-UltraSpeed.
 
 ## Set membership
 
-### recommended (12/20)
+### recommended (13/20)
 
 Models recommended as candidates for new agents.  Each is `current` and
 its AA quality is high for its cost compared with models across all labs
@@ -94,9 +95,15 @@ at a similar cost.
 | Claude 5.5 Sonnet | 55 | $10.02 | 151 | [link](https://artificialanalysis.ai/models/claude-sonnet-5-5) | Index 55 at $10.02/task; matches Sol (55) at Sonnet-tier pricing |
 | Claude 5.5 Haiku | 36 | $0.41 | 257 | [link](https://artificialanalysis.ai/models/claude-haiku-5-5) | Index 36 at $0.41/task; best quality at budget tier, above Luna (28) and matching Ember (36 at $0.14) |
 | Gemini 4 Neon | 61 | $6.44 | 110 | [link](https://artificialanalysis.ai/models/gemini-4-neon) | Index 61 at $6.44/task (Xhigh); above GPT-6 Astra (57 at $6.24) at a similar cost, and above Claude Opus 5.5 (59 at $10.04) at a lower cost |
+| Gemini 4 Hydrogen | 54 | $3.16 | 170 | [link](https://artificialanalysis.ai/models/gemini-4-hydrogen) | Index 54 at $3.16/task (Xhigh); highest index within 1.5x of its cost (Kimi K3.1 Pro 46 at $3.68, Qwen 4 Max 43 at $3.27) |
 | Gemini 4 Argon | 50 | $4.97 | 66 | [link](https://artificialanalysis.ai/models/gemini-4-argon) | Index 50 at $4.97/task; best Google model, below Astra (57 at $6.24) |
 | DeepSeek V4.1 Flash 1017 | 33 | $0.60 | 174 | [link](https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017) | Index 33 at $0.60/task; best open-weight flash, above Minimax (29 at $0.49) and GLM Flash (28 at $0.58) |
 | Kimi K3.1 Pro | 46 | $3.68 | 30 | [link](https://artificialanalysis.ai/models/kimi-k3-1-pro) | Index 46 at $3.68/task; below Argon (50 at $4.97) in quality but 26% cheaper |
+
+Changes on 2026-11-19 (backfill of models added after Phase 4):
+- Added Gemini 4 Hydrogen: AA index 54 at $3.16/task (Xhigh), 170 tok/s.
+- Candidate removal, not applied (a human decides): Kimi K3.1 Pro (46 at $3.68/task). Gemini 4 Hydrogen beats it on index and cost within its cost band. Gemini 4 Argon (50 at $4.97) is also beaten on both, but sits just outside 1.5x of Hydrogen's cost.
+- Not added: Gemini 4 Carbon (60 at $7.76/task; Gemini 4 Neon gets 61 at $6.44), Qwen 4 Max (43 at $3.27; Gemini 4 Hydrogen gets 54 at $3.16), Inkling 2 Small (31 at $1.18; GPT-6.1 Sol gets 55 at $1.27 and GPT-6.1 Terra 51 at $0.96). Hunyuan Hy4 Flash and Ernie Light DT 1.0 have no AA page.
 
 Changes on 2026-11-19 (model sweep, Gemini 4 Neon):
 - Added Gemini 4 Neon: AA index 61 at $6.44/task (Xhigh), 110 tok/s. Highest index among models within 1.5x of its cost per task (GPT-6 Astra 57 at $6.24, Gemini 4 Carbon 60 at $7.76, Gemini 4 Argon 50 at $4.97).
@@ -137,7 +144,7 @@ Removals in Phase 5:
 - Gemini 3.8 Flash: AA index 31 at $7.77/task; Haiku (36 at $0.41) beats it on both index and cost.
 - Ling 3.1 Flash: AA index 30 at $3.19/task (blended $0.19/M); Haiku (36 at $0.41) beats it on both index and cost.
 
-### top_fast (8/14)
+### top_fast (9/14)
 
 Fastest models for latency-sensitive work, by output speed and time to
 first token, or a faster hosted version of a strong model.
@@ -146,12 +153,15 @@ first token, or a faster hosted version of a strong model.
 |-------|----------|-----------|----------|---------|--------|--------|
 | GPT-6 Luna | 28 | $0.15 | 104 | 71.94s | [link](https://artificialanalysis.ai/models/gpt-6-luna) | 104 tok/s at index 28; fastest OpenAI model, above Gemini 3.8 Flash (116 tok/s) in quality-to-speed |
 | Claude 5.5 Haiku | 36 | $0.41 | 257 | 182.37s | [link](https://artificialanalysis.ai/models/claude-haiku-5-5) | 257 tok/s; fastest Anthropic model, 2.5x Luna's speed despite higher TTFT |
+| Gemini 4 Hydrogen | 54 | $3.16 | 170 | 45.22s | [link](https://artificialanalysis.ai/models/gemini-4-hydrogen) | 170 tok/s at index 54; faster than Gemini 3.8 Flash (116) and GPT-6 Luna (104) at a much higher index |
 | Gemini 3.8 Flash | 31 | $7.77 | 116 | 19.79s | [link](https://artificialanalysis.ai/models/gemini-3-8-flash) | 116 tok/s, 19.79s TTFT; lowest TTFT among mid-index models, below Lite (4.82s) |
 | Gemini 3.5 Flash Lite | 12 | $0.69 | 312 | 4.82s | [link](https://artificialanalysis.ai/models/gemini-3-5-flash-lite) | 312 tok/s, 4.82s TTFT; second fastest overall after Ember (442 tok/s), lowest TTFT in set |
 | Nemotron 3.5 Lightning | 6 | $0.31 | 271 | 9.78s | [link](https://artificialanalysis.ai/models/nemotron-3-5-lightning) | 271 tok/s, 9.78s TTFT; third fastest, 3B active MoE optimised for speed |
 | Muse Ember | 36 | $0.14 | 442 | 4.91s | [link](https://artificialanalysis.ai/models/muse-ember) | 442 tok/s, 4.91s TTFT; fastest model on AA by output speed, 1.4x faster than Lite (312) |
 | GLM 5.3 Fast | -- | -- | -- | -- | Same weights as [GLM 5.3](https://artificialanalysis.ai/models/glm-5-3) | Not the fastest overall, but the faster way to run GLM 5.3 (top_open); speed-optimised Fireworks serving |
 | MiMo-V2.6-Pro-UltraSpeed | -- | -- | -- | -- | Same weights as [MiMo-V2.6-Pro](https://artificialanalysis.ai/models/mimo-v2-6-pro) | Not the fastest overall, but the faster way to run MiMo-V2.6-Pro (top_open); speed-optimised OpenRouter serving |
+
+Addition on 2026-11-19: Gemini 4 Hydrogen (170 tok/s at index 54).
 
 Additions in Phase 5: GLM 5.3 Fast and MiMo-V2.6-Pro-UltraSpeed as
 serving variants whose standard models are in `top_open`.
@@ -188,7 +198,7 @@ model list; adding new models is out of scope for this phase.  Most
 on-device models are local-only (Ollama/Docker Model Runner) and have no
 AA page.
 
-### top_open (13/14)
+### top_open (14/14)
 
 Best open-weight models across a range of sizes.
 
@@ -207,6 +217,11 @@ Best open-weight models across a range of sizes.
 | Kimi K3 | -- | -- | 48 | [link](https://artificialanalysis.ai/models/kimi-k3) | Moonshot open-weight flagship at 2.8T; deprecated on AA but competitive on Arena |
 | Minimax M3.1 Flash | 29 | $0.49 | 142 | [link](https://artificialanalysis.ai/models/minimax-m3-1-flash) | Index 29 at $0.49/task; open-weight flash, above DS V4 Pro (23) at lower cost |
 | MiMo-V2.6-Pro | 30 | $0.26 | 53 | [link](https://artificialanalysis.ai/models/mimo-v2-6-pro) | Index 30 at $0.26/task; Xiaomi open-weight, best open-model value after MiMo-Flash |
+| Inkling 2 Small | 31 | $1.18 | 118 | [link](https://artificialanalysis.ai/models/inkling-2-small) | Index 31 at $1.18/task; open weights (Apache 2.0); above DeepSeek V4 Pro 0813 (23 at $1.77) and Mistral Large 4 (26 at $2.06) |
+
+Changes on 2026-11-19:
+- Added Inkling 2 Small: AA index 31 at $1.18/task, 118 tok/s. The set is now full: the next addition must remove a member.
+- Candidate removals, not applied (a human decides): DeepSeek V4 Pro 0813 (23 at $1.77/task) and Mistral Large 4 (26 at $2.06/task). Inkling 2 Small beats both on index and cost; Mistral Large 4 also stands for a European lab.
 
 ### top_writing (9/14)
 
@@ -235,6 +250,12 @@ after the Phase 4 backfill, and behind any other note line.
 
 | Model | Source |
 |-------|--------|
+| Gemini 4 Carbon | deepmind.google/models/model-cards/gemini-4-carbon/ ("based on Gemini 4 Argon", "more thinking tokens than Gemini 4 Argon"); tier wording from the Gemini 4 Hydrogen card |
+| Gemini 4 Hydrogen | deepmind.google/models/model-cards/gemini-4-hydrogen/ ("our frontier models, Gemini 4 Carbon and Gemini 4 Argon", "built for rapid execution", "adapted from Gemini 4 Carbon") |
+| Qwen 4 Max | openrouter.ai/qwen/qwen4-max description ("the flagship model in Alibaba's Qwen4 series"); qwen.ai and huggingface.co were unreachable from the sweep sandbox |
+| Hunyuan Hy4 Flash | openrouter.ai/tencent/hy4-flash description ("a cost-efficient variant of Hy4", "roughly a quarter of the flagship's parameter count"); huggingface.co was unreachable |
+| Ernie Light DT 1.0 | openrouter.ai/baidu/ernie-light-dt-1.0-intl description ("based on open-source GLM models", "Baidu Sparse Attention"); no Baidu page was found |
+| Inkling 2 Small | openrouter.ai/thinkingmachines/inkling-2-small description ("17B active parameters out of 594B total"); AA lists Inkling Small as deprecated and suggests Inkling 2 Small; huggingface.co was unreachable |
 | Gemini 4 Neon | deepmind.google/models/model-cards/gemini-4-neon/ ("adapted from Gemini 4 Carbon", "balances depth and efficiency") |
 
 ## Serving variant notes
