@@ -48,6 +48,10 @@
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
+  import {
+    create_openenv_server_loader,
+    openenv_server_property,
+  } from "$lib/utils/openenv_server_property"
 
   // ### Spec Details Page ###
 
@@ -76,6 +80,9 @@
   let evaluator: Eval | null = null
   let eval_error: KilnError | null = null
   let eval_loading = false
+
+  const eval_openenv_server = create_openenv_server_loader()
+  $: eval_openenv_server.load(project_id, evaluator?.openenv_server_id)
 
   let task: Task | null = null
   let task_error: KilnError | null = null
@@ -652,6 +659,15 @@
                     )
                   : undefined,
               },
+              ...(evaluator?.openenv_server_id
+                ? [
+                    openenv_server_property(
+                      project_id,
+                      evaluator.openenv_server_id,
+                      $eval_openenv_server,
+                    ),
+                  ]
+                : []),
               {
                 name: "Created At",
                 value: spec.created_at

@@ -37,6 +37,11 @@
     task_run_split_filter_id,
   } from "$lib/utils/eval_splits"
   import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
+  import {
+    create_openenv_server_loader,
+    openenv_server_property,
+    type LoadedOpenEnvServer,
+  } from "$lib/utils/openenv_server_property"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -56,6 +61,9 @@
   let evaluator: Eval | null = null
   let eval_error: KilnError | null = null
   let eval_loading = true
+
+  const eval_openenv_server = create_openenv_server_loader()
+  $: eval_openenv_server.load(project_id, evaluator?.openenv_server_id)
 
   let eval_progress_loading = true
   let eval_progress: EvalProgress | null = null
@@ -253,6 +261,7 @@
     spec: Spec | null,
     eval_progress: EvalProgress | null,
     modelInfo: ProviderModels | null,
+    openenv_server: LoadedOpenEnvServer,
   ): UiProperty[] {
     if (!evaluator) {
       return []
@@ -362,6 +371,17 @@
         ? linkFromFilterId(project_id, task_id, golden_filter_id)
         : undefined,
     })
+
+    if (evaluator.openenv_server_id) {
+      properties.push({
+        ...openenv_server_property(
+          project_id,
+          evaluator.openenv_server_id,
+          openenv_server,
+        ),
+        tooltip: "The OpenEnv server this eval's cases run in.",
+      })
+    }
 
     if (eval_progress?.current_eval_method) {
       if (eval_progress.current_eval_method.config_type === "v2") {
@@ -984,6 +1004,7 @@
               spec,
               eval_progress,
               $model_info,
+              $eval_openenv_server,
             )}
             title="Evaluator Properties"
           />

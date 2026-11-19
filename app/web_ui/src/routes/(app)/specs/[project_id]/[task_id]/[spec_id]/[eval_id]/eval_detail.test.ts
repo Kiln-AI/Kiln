@@ -71,6 +71,17 @@ const {
   }
 
   const mockClientGET = vi.fn().mockImplementation((path: string) => {
+    if (path.includes("/openenv_servers/")) {
+      return Promise.resolve({
+        data: {
+          id: "openenv_1",
+          name: "Shop Sim",
+          is_archived: false,
+          named_reset_kwargs: [],
+        },
+        error: null,
+      })
+    }
     if (path.includes("/evals/") && path.includes("/progress")) {
       return Promise.resolve({ data: progress_response, error: null })
     }
@@ -705,5 +716,40 @@ describe("eval detail page — eval data goals", () => {
       "You only have 5 test dataset items and 2 golden items. We suggest at least 25 test dataset items and 12 golden items.",
     )
     expect(text).not.toContain("items in each set")
+  })
+})
+
+describe("eval detail page — OpenEnv server row", () => {
+  afterEach(() => {
+    cleanup()
+    setEvalResponse(null)
+  })
+
+  it("names a grounded eval's server and links it, after the dataset rows", async () => {
+    setEvalResponse({
+      id: "eval1",
+      name: "Test Eval",
+      eval_set_filter_id: "tag::test",
+      eval_configs_filter_id: "tag::golden",
+      openenv_server_id: "openenv_1",
+      eval_configs: [],
+      output_scores: [{ name: "accuracy", type: "five_star" }],
+    })
+
+    const properties = await rendered_properties()
+
+    const server_row = row(properties, "OpenEnv Server")
+    expect(server_row?.value).toBe("Shop Sim")
+    expect(server_row?.link).toBe("/tools/proj1/openenv_servers/openenv_1")
+    const names = properties.map((property) => property.name)
+    expect(names.indexOf("OpenEnv Server")).toBe(
+      names.indexOf("Golden Dataset") + 1,
+    )
+  })
+
+  it("has no OpenEnv server row for an eval without one", async () => {
+    const properties = await rendered_properties()
+
+    expect(row(properties, "OpenEnv Server")).toBeUndefined()
   })
 })

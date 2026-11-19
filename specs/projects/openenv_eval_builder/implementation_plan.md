@@ -47,7 +47,7 @@ ship"). This is local setup, not a phase.
   payload; the cached-cases key. With tests.
 - [x] Phase 7: The judge hint on the judge creation form, and Kiln's OpenEnv docs on writing
   reset-schema descriptions for models.
-- [ ] Phase 8: The eval's OpenEnv server on the spec page's Properties and the eval page's
+- [x] Phase 8: The eval's OpenEnv server on the spec page's Properties and the eval page's
   Evaluator Properties, read-only (`functional_spec.md`, "Follow-ups after v1").
 - [ ] Phase 9: Run configs that don't fit a grounded eval's server: one fit rule in libs/core,
   the runner errors instead of running without the environment, `run_comparison` refuses or
