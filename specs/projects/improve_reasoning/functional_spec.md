@@ -165,19 +165,21 @@ For each must-work provider, plus Groq, streamed and not streamed:
 
 ### Pre-release subset (`@pytest.mark.prerelease`)
 
+Models default to the newest generation. An older model is used only where the behaviour under test exists only there, and the reason is noted.
+
 The pre-release subset gets a new whitelist in `libs/core/kiln_ai/adapters/pytest_prerelease_whitelist.py`. Each model runs the output, input and caching tests on a new user turn:
 
 | # | Provider | Model | Why |
 |---|---|---|---|
-| 1 | OpenAI | `gpt_5_6_luna` | Cheap; uses earlier-turn reasoning by default |
+| 1 | OpenAI | `gpt_6_luna` | Newest Luna; cheap |
 | 2 | OpenAI | `gpt_6_1_sol` | Newest family |
 | 3 | Anthropic | `claude_sonnet_5_5` | Signed thinking |
 | 4 | Anthropic | `claude_haiku_5_5` | Second Anthropic tier |
-| 5 | Gemini API | `gemini_3_8_flash` | Thought signatures |
-| 6 | Vertex | `gemini_3_8_flash` | Same model, Vertex path. Skips without a Vertex project. |
-| 7 | OpenRouter | `gemini_3_8_flash` | `reasoning_details` with Gemini signatures |
+| 5 | Gemini API | `gemini_4_argon` | Thought signatures |
+| 6 | Vertex | `gemini_4_argon` | Same model, Vertex path. Skips without a Vertex project. |
+| 7 | OpenRouter | `gemini_4_argon` | `reasoning_details` with Gemini signatures |
 | 8 | OpenRouter | `claude_sonnet_5_5` | `reasoning_details` with Claude signatures |
-| 9 | OpenRouter | `gpt_5_6_luna` | `reasoning_details` with OpenAI encrypted reasoning |
+| 9 | OpenRouter | `gpt_6_luna` | `reasoning_details` with OpenAI encrypted reasoning |
 | 10 | Groq | `qwen_3p8_27b` | Groq reasoning fix |
 | 11 | Fireworks | `glm_5_3_flash` | DeepSeek-style, no regression |
 | 12 | Together | `muse_spark_open` | DeepSeek-style, no regression |
@@ -185,6 +187,10 @@ The pre-release subset gets a new whitelist in `libs/core/kiln_ai/adapters/pytes
 | 14 | Ollama | `qwen_3_8b` | Ollama fix. Skips unless a local Ollama server is running. |
 
 The pre-release skill documentation (`.agents/skills/kiln-prerelease-check/SKILL.md`) is updated to list the new whitelist.
+
+### Existing caching test
+
+`libs/core/kiln_ai/adapters/model_adapters/test_prompt_caching.py` switches its OpenAI direct and OpenRouter cases from `gpt_5_4_mini` to `gpt_6_luna`. GPT-5.4 is older than the GPT-5.6 cutoff where LiteLLM starts using OpenAI's explicit cache mode, so the test couldn't catch that problem. Its assertion moves from "any cached tokens on a repeated request" to the 95% turn-2 check above.
 
 ### Manual check before merge
 
