@@ -72,6 +72,15 @@
   } from "./grounding_flow"
   import DroppedCasesScreen from "./dropped_cases_screen.svelte"
   import {
+    interrupted_replacement,
+    kept_scenarios,
+    merge_cases,
+    merge_drops,
+    place_replacement_cases,
+    plan_replacements,
+    type CommittedReplacement,
+  } from "./replace_flow"
+  import {
     load_openenv_server_reset_arguments_brief,
     lookup_run_openenv_server,
   } from "$lib/api/openenv_server_api"
@@ -112,6 +121,7 @@
     dropped_cases_section,
     grounding_data_guide,
     join_data_guides,
+    kept_scenarios_section,
     multiturn_plan_guidance,
     reset_arguments_section,
     single_turn_plan_guidance,
@@ -1217,14 +1227,22 @@
   let grounding_dropped = 0
   // Set when grounding dropped at least one case: the step stops on the
   // dropped-cases screen before anything is driven. Holds the cases that fit,
-  // which Continue drives.
+  // which Continue drives, and the run config and judge model they were
+  // grounded with, which Replace Dropped Cases grounds its new cases with.
   let grounding_stop:
     | (GroundingOutcome & {
         total: number
         openenv_server_id: string
         judge_model: string
+        target_run_config_id: string
+        judge_choice: ModelChoice
+        // Why the last Replace Dropped Cases stopped part-way, when it failed.
+        replace_error?: string | null
       })
     | null = null
+  // While Replace Dropped Cases runs: how many cases it is replacing, which
+  // the progress screen names in place of the whole plan.
+  let replacing_count: number | null = null
   // A Retry from that screen: the dropped scenarios and their reasons, added
   // to the next plan's guidance. They belong to that Retry's plan alone:
   // cleared once a plan lands, and by any other new plan (Refine Plan, or
@@ -1380,8 +1398,12 @@
 
   // The multi-turn plan's guidance: the base, then on a build with an OpenEnv
   // server the reset arguments it offers and, on a Retry after drops, the
-  // scenarios that didn't fit; the user's steer last.
-  async function multi_turn_plan_guidance(): Promise<string> {
+  // scenarios that didn't fit; the user's steer last. A plan for Replace
+  // Dropped Cases names its own drops and the scenarios staying in the batch,
+  // under the steer the plan on screen was drafted with.
+  async function multi_turn_plan_guidance(
+    replacing: { drops: GroundingDrop[]; kept_scenarios: string[] } | null,
+  ): Promise<string> {
     const tool_ids = await target_run_config_tool_ids()
     const openenv_server_id =
       tool_ids === null ? null : await ensure_openenv_server(tool_ids)
@@ -1392,14 +1414,15 @@
             reset_arguments_section(
               await ensure_reset_arguments_brief(openenv_server_id),
             ),
-            dropped_cases_section(pending_retry_drops),
+            dropped_cases_section(replacing?.drops ?? pending_retry_drops),
+            kept_scenarios_section(replacing?.kept_scenarios ?? []),
           ]
     return compose_plan_guidance(
       multiturn_plan_guidance(spec_text(), {
         openenv: openenv_server_id !== null,
       }),
       sections,
-      pending_plan_steer,
+      replacing ? landed_plan_steer : pending_plan_steer,
     )
   }
 
@@ -2060,44 +2083,22 @@
       // (when they typed one) is appended to it, never replaces it — see
       // compose_plan_guidance.
       const guidance = is_multi_turn
-        ? await multi_turn_plan_guidance()
+        ? await multi_turn_plan_guidance(null)
         : compose_plan_guidance(
             single_turn_plan_guidance(spec_text()),
             [],
             pending_plan_steer,
           )
-      const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
-        {
-          params: { path: { project_id, task_id } },
-          body: {
-            guidance,
-            count: planned_count(batch_size),
-            // The Data Guide and the grounding sample ride the planner's
-            // data-guide param (multi-turn plans scenarios, not inputs — no
-            // guide there).
-            data_guide: is_multi_turn ? null : single_turn_data_guide(),
-          },
-          signal: new_copilot_abort_signal(),
-        },
+      const planned = await request_batch_plan(
+        guidance,
+        planned_count(batch_size),
+        // The Data Guide and the grounding sample ride the planner's
+        // data-guide param (multi-turn plans scenarios, not inputs — no
+        // guide there).
+        is_multi_turn ? null : single_turn_data_guide(),
       )
-      if (error || !data) {
-        generation_error = `Couldn't draft a batch plan: ${createKilnError(
-          error,
-        ).getMessage()}`
-        return
-      }
-      // Clamp: the planner is an LLM and can over-deliver or emit blanks;
-      // both would 422 at drive time with no visible cause.
-      const prompts = data.prompts
-        .map((p) => p.trim())
-        .filter(Boolean)
-        .slice(0, planned_count(batch_size))
-      if (prompts.length === 0) {
-        generation_error = `The planner returned no usable ${plan_noun}. Retry.`
-        return
-      }
-      batch_plan = { prompts, summary: data.summary }
+      if (!planned) return
+      batch_plan = planned
       // A plan landed, so the steer it was drafted under is spent. Every
       // earlier return in this function leaves it in place, which is what
       // makes Retry re-send the steer the user asked for. The dropped
@@ -2117,6 +2118,40 @@
     } finally {
       generation_loading = false
     }
+  }
+
+  // One batch planner call. Its prompts are trimmed, blanks dropped and the
+  // list clamped to count: the planner is an LLM and can over-deliver or emit
+  // blanks, and both would 422 at drive time with no visible cause. Null
+  // after setting generation_error.
+  async function request_batch_plan(
+    guidance: string,
+    count: number,
+    data_guide: string | null,
+  ): Promise<BatchPlan | null> {
+    const { data, error } = await client.POST(
+      "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
+      {
+        params: { path: { project_id, task_id } },
+        body: { guidance, count, data_guide },
+        signal: new_copilot_abort_signal(),
+      },
+    )
+    if (error || !data) {
+      generation_error = `Couldn't draft a batch plan: ${createKilnError(
+        error,
+      ).getMessage()}`
+      return null
+    }
+    const prompts = data.prompts
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .slice(0, count)
+    if (prompts.length === 0) {
+      generation_error = `The planner returned no usable ${plan_noun}. Retry.`
+      return null
+    }
+    return { prompts, summary: data.summary }
   }
 
   // Driven results worth guarding: the exact current plan has judged
@@ -2324,18 +2359,32 @@
       })
       return cached
     }
-    // Generate via copilot — one case per approved scenario prompt. Under
-    // the upstream salvage contract a flaky case is dropped instead of
-    // failing the batch; scenario_index maps each survivor back to its plan
-    // row.
     generation_phase = "generating_cases"
+    const cases = await request_generated_cases(approved_prompts)
+    if (cases === null) return null
+    cached_su_cases = {
+      prompts_json: JSON.stringify(approved_prompts),
+      spec_text: spec_text(),
+      cases,
+    }
+    return cases
+  }
+
+  // One kiln_server generate_cases call: a simulated user per scenario
+  // prompt. Under the upstream salvage contract a flaky case is dropped
+  // instead of failing the batch; scenario_index maps each survivor back to
+  // its position in case_prompts. Returns null after setting
+  // generation_error.
+  async function request_generated_cases(
+    case_prompts: string[],
+  ): Promise<SyntheticUserCaseWire[] | null> {
     const cases_resp = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
       {
         params: { path: { project_id, task_id } },
         body: {
           target_specification: spec_text(),
-          case_prompts: approved_prompts,
+          case_prompts,
         },
         signal: new_copilot_abort_signal(),
       },
@@ -2356,13 +2405,7 @@
         : "Failed to create eval inputs from the approved items."
       return null
     }
-    const cases = cases_resp.data.cases as SyntheticUserCaseWire[]
-    cached_su_cases = {
-      prompts_json: JSON.stringify(approved_prompts),
-      spec_text: spec_text(),
-      cases,
-    }
-    return cases
+    return cases_resp.data.cases as SyntheticUserCaseWire[]
   }
 
   // Checks each generated case against the build's OpenEnv server over the
@@ -2455,6 +2498,166 @@
     if (batch_plan !== null && !generation_error) {
       await on_drive_multi_turn()
     }
+  }
+
+  // Replace Dropped Cases: plan one new scenario per dropped case, then
+  // generate and ground only those. They take the dropped rows' places in the
+  // plan, so the cases that fit keep their rows, and both caches are rebuilt
+  // for the merged plan from the kept cases plus the new ones; the drive then
+  // reuses them. Drops among the new cases stop on the same screen again, and
+  // so does a failure or abort part-way (interrupted_replacement), with the
+  // failure shown on the screen rather than the step's error block.
+  async function on_replace_dropped_cases() {
+    const stop = grounding_stop
+    const plan = batch_plan
+    if (!stop || !plan || generation_loading) return
+    const spec = spec_text()
+    generation_loading = true
+    generation_error = null
+    grounding_stop = null
+    replacing_count = stop.drops.length
+    generation_phase = "planning"
+    let committed: CommittedReplacement | null = null
+    // Set once the outcome is decided: a new stop or a drive.
+    let settled = false
+    let ready_to_drive = false
+    // The page's request helpers report a failure through generation_error;
+    // it moves onto the dropped-cases screen instead.
+    let failure: string | null = null
+    const take_failure = () => {
+      failure = generation_error
+      generation_error = null
+    }
+    try {
+      const planned = await request_batch_plan(
+        await multi_turn_plan_guidance({
+          drops: stop.drops,
+          kept_scenarios: kept_scenarios(plan.prompts, stop.drops),
+        }),
+        stop.drops.length,
+        null,
+      )
+      if (!planned) {
+        take_failure()
+        return
+      }
+      const merged = plan_replacements(
+        plan.prompts,
+        stop.drops,
+        planned.prompts,
+      )
+      generation_phase = "generating_cases"
+      const generated = await request_generated_cases(
+        merged.replacements.map((r) => r.scenario),
+      )
+      if (generated === null) {
+        take_failure()
+        return
+      }
+      const placed = place_replacement_cases(generated, merged.replacements)
+      const replaced_rows = new Set(merged.replacements.map((r) => r.row))
+
+      // The merged plan is committed once its new simulated users exist, so a
+      // grounding failure from here keeps them: a re-drive reuses them.
+      if (has_driven_results) discard_driven_results()
+      const kept_generated = reusable_cached_cases(
+        cached_su_cases,
+        plan.prompts,
+        spec,
+      )
+      batch_plan = { ...plan, prompts: merged.prompts }
+      // The planner's summary describes the scenarios that were replaced.
+      batch_plan_edited = true
+      cached_su_cases = kept_generated
+        ? {
+            prompts_json: JSON.stringify(merged.prompts),
+            spec_text: spec,
+            cases: merge_cases(kept_generated, replaced_rows, placed.cases),
+          }
+        : null
+      cached_grounded_cases = null
+      committed = {
+        prompts: merged.prompts,
+        unreplaced: merged.unreplaced,
+        missing: placed.missing,
+        sent_for_grounding: placed.cases,
+      }
+
+      generation_phase = "grounding_cases"
+      const outcome =
+        placed.cases.length === 0
+          ? { grounded: [], drops: [] }
+          : await ground_planned_cases(
+              placed.cases,
+              merged.prompts,
+              stop.target_run_config_id,
+              stop.judge_choice,
+            )
+      if (outcome === null) {
+        take_failure()
+        return
+      }
+      const grounded = merge_cases(
+        stop.grounded,
+        replaced_rows,
+        outcome.grounded,
+      )
+      const drops = merge_drops(
+        merged.unreplaced,
+        placed.missing,
+        outcome.drops,
+      )
+      posthog.capture("eval_v2_grounding_replaced", {
+        num_replaced: merged.replacements.length,
+        num_dropped: drops.length,
+      })
+      settled = true
+      if (drops.length > 0) {
+        grounding_stop = {
+          ...stop,
+          grounded,
+          drops,
+          total: grounded.length + drops.length,
+          replace_error: null,
+        }
+        return
+      }
+      cached_grounded_cases = {
+        prompts_json: JSON.stringify(merged.prompts),
+        spec_text: spec,
+        openenv_server_id: stop.openenv_server_id,
+        judge_model: stop.judge_model,
+        cases: grounded,
+        grounding_dropped: 0,
+      }
+      ready_to_drive = true
+    } catch (e) {
+      if (!is_abort_error(e)) {
+        failure =
+          e instanceof KilnError
+            ? e.getMessage()
+            : e instanceof Error
+              ? e.message
+              : "Replacing the dropped cases failed."
+      }
+    } finally {
+      generation_loading = false
+      replacing_count = null
+      if (!settled) {
+        const back = interrupted_replacement({
+          kept: stop.grounded,
+          drops: stop.drops,
+          committed,
+          error: failure,
+        })
+        grounding_stop = {
+          ...stop,
+          ...back,
+          total: back.grounded.length + back.drops.length,
+        }
+      }
+    }
+    if (ready_to_drive) void on_drive_multi_turn()
   }
 
   // Cancel: back to the plan, discarding this batch's cases.
@@ -2635,6 +2838,8 @@
               ...outcome,
               total: cases.length,
               ...grounding_key,
+              target_run_config_id,
+              judge_choice: chosen_judge_model,
             }
             return
           }
@@ -4892,9 +5097,11 @@
               : "Creating Simulated Users"
   $: generate_animation_description =
     generation_phase === "planning"
-      ? is_multi_turn
-        ? "Kiln is planning a diverse batch of conversations, tailored to your task and guidance."
-        : "Kiln is planning a diverse batch of eval data, tailored to your task and guidance."
+      ? replacing_count !== null
+        ? `Kiln is planning ${replacing_count === 1 ? "a new conversation" : `${replacing_count} new conversations`} to replace the cases that didn't fit.`
+        : is_multi_turn
+          ? "Kiln is planning a diverse batch of conversations, tailored to your task and guidance."
+          : "Kiln is planning a diverse batch of eval data, tailored to your task and guidance."
       : generation_phase === "authoring_judge"
         ? "Authoring a judge rubric tailored to your eval."
         : generation_phase === "preflight"
@@ -4907,7 +5114,9 @@
             ? `Creating ${planned_total} dataset items.`
             : generation_phase === "grounding_cases"
               ? "Kiln's agent looks inside the OpenEnv server to fit each case to real data and write what the judge should check."
-              : `Setting up ${planned_total} simulated users from the approved plan.`
+              : replacing_count !== null
+                ? `Setting up simulated users for the ${replacing_count === 1 ? "replacement case" : `${replacing_count} replacement cases`}.`
+                : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
   // no progress bar. Stages that show a bar let the bar carry the wait, and
@@ -5320,6 +5529,8 @@
                   total={grounding_stop.total}
                   on_cancel={on_cancel_grounding}
                   on_retry={() => void on_retry_grounding()}
+                  on_replace={() => void on_replace_dropped_cases()}
+                  error={grounding_stop.replace_error ?? null}
                   on_continue={on_continue_with_grounded_cases}
                 />
               </div>

@@ -1,11 +1,13 @@
 <script lang="ts">
   // The screen after grounding when some planned cases couldn't be made to
   // fit the OpenEnv server. It names each one with the grounding agent's own
-  // reason and offers the three ways on: drive the cases that fit, plan the
-  // batch again with these reasons in hand, or go back to the plan.
+  // reason and offers the ways on: drive the cases that fit, plan the batch
+  // again with these reasons in hand, plan new cases for only these rows, or
+  // go back to the plan.
   import SettingsHeader from "$lib/ui/settings_header.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import type { GroundingDrop } from "./grounding_flow"
 
   export let drops: GroundingDrop[]
@@ -13,7 +15,10 @@
   export let total: number
   export let on_cancel: () => void
   export let on_retry: () => void
+  export let on_replace: () => void
   export let on_continue: () => void
+  // Why the last Replace Dropped Cases stopped part-way, when it failed.
+  export let error: string | null = null
 
   let see_all_dialog: SeeAllDialog
 
@@ -54,8 +59,12 @@
       </tbody>
     </table>
   </div>
-  <!-- Right-aligned, primary last. With nothing left to drive, Continue goes
-       and Retry is the way forward. -->
+  {#if error}
+    <Warning warning_color="error" warning_message={error} />
+  {/if}
+  <!-- Right-aligned, primary last. With nothing left to drive, Continue and
+       Replace go (there are no kept cases to plan around), and Retry is the
+       way forward. -->
   <div class="flex justify-end gap-2">
     <button class="btn" on:click={on_cancel}>Cancel</button>
     <button
@@ -65,6 +74,7 @@
       Retry
     </button>
     {#if fit_count > 0}
+      <button class="btn" on:click={on_replace}>Replace Dropped Cases</button>
       <button class="btn btn-primary" on:click={on_continue}>
         Continue With {fit_count}
       </button>

@@ -109,9 +109,10 @@ function unknown_case(case_index: number): KilnError {
 }
 
 // Folds one frame into the state. A grounded case keeps everything the drive
-// already knows about it (its plan row) and takes the frame's simulated user,
-// episode and guidance. grounding_failed throws: the step fails, and no case
-// is dropped for an error that isn't the case's fault.
+// already knows about it, names its plan row as the request resolved it, and
+// takes the frame's simulated user, episode and guidance. grounding_failed
+// throws: the step fails, and no case is dropped for an error that isn't the
+// case's fault.
 export function apply_grounding_frame(
   state: GroundingState,
   frame: GroundingFrame,
@@ -123,13 +124,15 @@ export function apply_grounding_frame(
       return { ...state, total: frame.total }
     case "case_grounded": {
       const original = cases[frame.case_index]
-      if (!original) throw unknown_case(frame.case_index)
+      const request_case = request_cases[frame.case_index]
+      if (!original || !request_case) throw unknown_case(frame.case_index)
       return {
         ...state,
         grounded: {
           ...state.grounded,
           [frame.case_index]: {
             ...original,
+            scenario_index: request_case.scenario_index,
             seed_prompt: frame.seed_prompt,
             synthetic_user_info: frame.synthetic_user_info,
             openenv_reset: frame.openenv_reset,
@@ -146,6 +149,7 @@ export function apply_grounding_frame(
         drops: {
           ...state.drops,
           [frame.case_index]: {
+            scenario_index: request_case.scenario_index,
             scenario: request_case.scenario,
             drop_detail: frame.drop_detail,
           },

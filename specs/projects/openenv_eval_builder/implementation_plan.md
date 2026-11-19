@@ -52,7 +52,7 @@ ship"). This is local setup, not a phase.
 - [x] Phase 9: Run configs that don't fit a grounded eval's server: one fit rule in libs/core,
   the runner errors instead of running without the environment, `run_comparison` refuses or
   skips with the reason, and the comparison table warns and disables the run.
-- [ ] Phase 10: Replace Dropped Cases on the dropped-cases screen: plan, generate and ground only
+- [x] Phase 10: Replace Dropped Cases on the dropped-cases screen: plan, generate and ground only
   replacements for the dropped rows, merge them into the plan and both caches.
 - [ ] Later, once its UI is scoped: the project-wide multi-turn synthetic user guide, wired into
   the planner's section and the grounding request.

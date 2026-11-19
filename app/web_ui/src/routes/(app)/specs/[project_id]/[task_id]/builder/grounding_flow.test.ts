@@ -143,7 +143,20 @@ describe("apply_grounding_frame", () => {
     })
   })
 
-  it("records a drop with its scenario and reason", () => {
+  it("names the request's plan row on a grounded case generated without one", () => {
+    const unindexed: SyntheticUserCaseWire[] = [
+      { seed_prompt: "hi", synthetic_user_info: "<persona>a</persona>" },
+    ]
+    const state = apply_grounding_frame(
+      initial_grounding_state(1),
+      grounded_frame(0),
+      unindexed,
+      grounding_request_cases(unindexed, PLAN),
+    )
+    expect(state.grounded[0].scenario_index).toBe(0)
+  })
+
+  it("records a drop with its plan row, scenario and reason", () => {
     const state = apply_grounding_frame(
       initial_grounding_state(2),
       dropped_frame(1),
@@ -151,6 +164,7 @@ describe("apply_grounding_frame", () => {
       request,
     )
     expect(state.drops[1]).toEqual({
+      scenario_index: 2,
       scenario: "Change a plan",
       drop_detail: "Nothing like it exists.",
     })
@@ -249,6 +263,7 @@ describe("read_grounding_stream", () => {
     expect(outcome.grounded[0].judge_guidance).toBe("## Starting point 1")
     expect(outcome.drops).toEqual([
       {
+        scenario_index: 0,
         scenario: "Refund a shipped order",
         drop_detail: "Nothing like it exists.",
       },

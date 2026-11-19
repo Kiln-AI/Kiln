@@ -6,18 +6,31 @@ import DroppedCasesScreen from "./dropped_cases_screen.svelte"
 afterEach(() => cleanup())
 
 const DROPS = [
-  { scenario: "Refund a shipped order", drop_detail: "No order has shipped." },
-  { scenario: "Close an account", drop_detail: "Accounts can't be closed." },
+  {
+    scenario_index: 0,
+    scenario: "Refund a shipped order",
+    drop_detail: "No order has shipped.",
+  },
+  {
+    scenario_index: 1,
+    scenario: "Close an account",
+    drop_detail: "Accounts can't be closed.",
+  },
 ]
 
-function render_screen(total: number, drops = DROPS) {
+function render_screen(
+  total: number,
+  drops = DROPS,
+  error: string | null = null,
+) {
   const handlers = {
     on_cancel: vi.fn(),
     on_retry: vi.fn(),
+    on_replace: vi.fn(),
     on_continue: vi.fn(),
   }
   const result = render(DroppedCasesScreen, {
-    props: { drops, total, ...handlers },
+    props: { drops, total, error, ...handlers },
   })
   // The screen's own buttons, not the See all dialog's Close.
   const buttons = [
@@ -50,27 +63,28 @@ describe("DroppedCasesScreen", () => {
     expect(squash(rows[1].textContent)).toContain("Accounts can't be closed.")
   })
 
-  it("offers Cancel, Retry and Continue With the cases that fit, primary last", async () => {
+  it("offers Cancel, Retry, Replace Dropped Cases and Continue With the cases that fit, primary last", async () => {
     const { buttons, handlers } = render_screen(20)
     expect(buttons.map((b) => squash(b.textContent))).toEqual([
       "Cancel",
       "Retry",
+      "Replace Dropped Cases",
       "Continue With 18",
     ])
     expect(buttons.map((b) => b.classList.contains("btn-primary"))).toEqual([
       false,
       false,
+      false,
       true,
     ])
-    await fireEvent.click(buttons[0])
-    await fireEvent.click(buttons[1])
-    await fireEvent.click(buttons[2])
+    for (const button of buttons) await fireEvent.click(button)
     expect(handlers.on_cancel).toHaveBeenCalledOnce()
     expect(handlers.on_retry).toHaveBeenCalledOnce()
+    expect(handlers.on_replace).toHaveBeenCalledOnce()
     expect(handlers.on_continue).toHaveBeenCalledOnce()
   })
 
-  it("drops Continue and leads with Retry when nothing fits", () => {
+  it("drops Continue and Replace and leads with Retry when nothing fits", () => {
     const { buttons, getByText } = render_screen(2)
     expect(
       getByText(
@@ -82,5 +96,12 @@ describe("DroppedCasesScreen", () => {
       "Retry",
     ])
     expect(buttons[1].classList.contains("btn-primary")).toBe(true)
+  })
+
+  it("shows why the last Replace stopped, only when it failed", () => {
+    expect(render_screen(20).container.querySelector(".text-error")).toBeNull()
+    cleanup()
+    const { getByText } = render_screen(20, DROPS, "Server unreachable.")
+    expect(getByText("Server unreachable.")).toBeTruthy()
   })
 })

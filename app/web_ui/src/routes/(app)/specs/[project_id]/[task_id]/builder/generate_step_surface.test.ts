@@ -257,17 +257,20 @@ describe("single entrance to the drive", () => {
     expect(submit).toContain("on_drive_multi_turn()")
     expect(submit).toContain("on_drive_single_turn()")
     // Each arm's drive function is named only by its own definition, that
-    // submit's call and, on multi-turn, the dropped-cases screen's Continue and
-    // Retry, which carry on a drive the dialog already started. Any other
-    // mention is a second entrance — a run the user was never shown the
-    // lanes or the cost of.
-    expect(mentions("on_drive_multi_turn")).toBe(4)
+    // submit's call and, on multi-turn, the dropped-cases screen's Continue,
+    // Retry and Replace Dropped Cases, which carry on a drive the dialog
+    // already started. Any other mention is a second entrance — a run the
+    // user was never shown the lanes or the cost of.
+    expect(mentions("on_drive_multi_turn")).toBe(5)
     expect(
       function_body("function on_continue_with_grounded_cases() {"),
     ).toContain("on_drive_multi_turn()")
     expect(function_body("async function on_retry_grounding() {")).toContain(
       "on_drive_multi_turn()",
     )
+    expect(
+      function_body("async function on_replace_dropped_cases() {"),
+    ).toContain("on_drive_multi_turn()")
     expect(mentions("on_drive_single_turn")).toBe(2)
   })
 
@@ -736,11 +739,9 @@ describe("Refine Plan dialog", () => {
     for (const request of [
       region(
         "compose_plan_guidance(\n            single_turn",
-        "count: planned_count(batch_size),",
+        "planned_count(batch_size),",
       ),
-      function_body(
-        "async function multi_turn_plan_guidance(): Promise<string> {",
-      ),
+      function_body("async function multi_turn_plan_guidance("),
     ]) {
       expect(request).toMatch(/\bpending_plan_steer\b/)
       expect(request).not.toMatch(/(?<!pending_)\bplan_steer\b/)
@@ -752,9 +753,9 @@ describe("Refine Plan dialog", () => {
     // returns before the clear below, so Retry re-sends what was asked for.
     const plan = function_body("async function on_plan_batch() {")
     expect(plan).toContain('pending_plan_steer = ""')
-    expect(
-      plan.indexOf("batch_plan = { prompts, summary: data.summary }"),
-    ).toBeLessThan(plan.indexOf('pending_plan_steer = ""'))
+    expect(plan.indexOf("batch_plan = planned")).toBeLessThan(
+      plan.indexOf('pending_plan_steer = ""'),
+    )
   })
 
   it("discards a picked size when the dialog closes without submitting", () => {
@@ -1327,7 +1328,7 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     it("are cleared once a plan lands, not when one starts", () => {
       const plan = function_body("async function on_plan_batch() {")
       expect(plan.indexOf(clear)).toBeGreaterThan(
-        plan.indexOf("batch_plan = { prompts, summary: data.summary }"),
+        plan.indexOf("batch_plan = planned"),
       )
     })
 
@@ -1354,13 +1355,104 @@ describe("grounding a build's cases in its OpenEnv server", () => {
 
   it("adds the reset arguments and dropped cases sections to the plan", () => {
     const guidance = normalize(
-      function_body(
-        "async function multi_turn_plan_guidance(): Promise<string> {",
-      ),
+      function_body("async function multi_turn_plan_guidance("),
     )
     expect(guidance).toContain("reset_arguments_section(")
-    expect(guidance).toContain("dropped_cases_section(pending_retry_drops)")
+    expect(guidance).toContain(
+      "dropped_cases_section(replacing?.drops ?? pending_retry_drops)",
+    )
+    expect(guidance).toContain(
+      "kept_scenarios_section(replacing?.kept_scenarios ?? [])",
+    )
     expect(guidance).toContain("openenv: openenv_server_id !== null")
+    // A replacement plan keeps the steer of the plan on screen.
+    expect(guidance).toContain(
+      "replacing ? landed_plan_steer : pending_plan_steer",
+    )
+  })
+
+  // The flow's pure steps live in replace_flow.ts and its tests; these pin
+  // the order the page runs them in and what each step writes.
+  describe("Replace Dropped Cases", () => {
+    const replace = normalize(
+      function_body("async function on_replace_dropped_cases() {"),
+    )
+
+    it("plans one scenario per drop, with the drops and the kept scenarios", () => {
+      expect(replace).toContain(
+        "await multi_turn_plan_guidance({ drops: stop.drops, kept_scenarios: kept_scenarios(plan.prompts, stop.drops), })",
+      )
+      expect(replace).toContain("stop.drops.length, null, )")
+    })
+
+    it("generates and grounds only the replacements, in that order", () => {
+      const generating = replace.indexOf(
+        "request_generated_cases( merged.replacements.map((r) => r.scenario), )",
+      )
+      const grounding = replace.indexOf(
+        "await ground_planned_cases( placed.cases, merged.prompts, stop.target_run_config_id, stop.judge_choice, )",
+      )
+      expect(generating).toBeGreaterThan(0)
+      expect(grounding).toBeGreaterThan(generating)
+    })
+
+    it("rewrites both caches for the merged plan", () => {
+      expect(replace).toContain(
+        "batch_plan = { ...plan, prompts: merged.prompts }",
+      )
+      expect(replace).toContain(
+        "cases: merge_cases(kept_generated, replaced_rows, placed.cases)",
+      )
+      expect(replace).toContain(
+        "merge_cases( stop.grounded, replaced_rows, outcome.grounded, )",
+      )
+      expect(replace).toContain(
+        "cached_grounded_cases = { prompts_json: JSON.stringify(merged.prompts),",
+      )
+    })
+
+    it("stops on the dropped-cases screen again when replacements drop", () => {
+      const stop = replace.indexOf("grounding_stop = { ...stop,")
+      const drive = replace.indexOf("void on_drive_multi_turn()")
+      expect(replace).toContain(
+        "merge_drops( merged.unreplaced, placed.missing, outcome.drops, )",
+      )
+      expect(stop).toBeGreaterThan(0)
+      expect(drive).toBeGreaterThan(stop)
+    })
+
+    // A failure or abort part-way comes back to the dropped-cases screen,
+    // never the step's error block, so the two can't both render.
+    it("returns to the dropped-cases screen when it stops part-way", () => {
+      expect(replace).toContain(
+        "if (!settled) { const back = interrupted_replacement({ kept: stop.grounded, drops: stop.drops, committed, error: failure, })",
+      )
+      expect(replace.match(/take_failure\(\) return/g)).toHaveLength(3)
+      expect(replace).toContain(
+        "const take_failure = () => { failure = generation_error generation_error = null }",
+      )
+      const after_try = replace.slice(replace.indexOf("} catch (e) {"))
+      expect(after_try).not.toContain("generation_error =")
+      // The commit point: the merged plan is recorded before grounding.
+      expect(replace.indexOf("committed = {")).toBeLessThan(
+        replace.indexOf('generation_phase = "grounding_cases"'),
+      )
+      expect(replace.indexOf("settled = true")).toBeLessThan(
+        replace.indexOf("grounding_stop = { ...stop, grounded, drops,"),
+      )
+    })
+
+    it("shows the failure on the dropped-cases screen", () => {
+      expect(contains("error={grounding_stop.replace_error ?? null}")).toBe(
+        true,
+      )
+    })
+
+    it("is wired to the dropped-cases screen", () => {
+      expect(
+        contains("on_replace={() => void on_replace_dropped_cases()}"),
+      ).toBe(true)
+    })
   })
 
   it("passes each case's guidance to the claims build and the re-judge", () => {

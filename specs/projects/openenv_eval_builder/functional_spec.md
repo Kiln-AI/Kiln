@@ -281,8 +281,8 @@ fills in.
 | Server unreachable during grounding or driving | The step fails on the existing "Error Creating Eval Dataset" screen, with the server URL and error, and its existing Retry. No case is dropped for it. |
 | Server publishes no reset schema | The reset arguments section is left out; the grounding agent resets with no arguments. |
 | No starting state fits a case | The agent tries a setup argument if one is described, otherwise drops the case. |
-| Some cases drop | "Errors During Dataset Creation" lists each dropped case's scenario with its one-sentence reason (`drop_detail`), under three actions: **Continue With N** saves the grounded cases; **Retry** runs the batch again, with the dropped scenarios and their reasons added to the planner guidance ("Dropped cases section", below); **Cancel** ends the build. v1 does not plan replacements for only the dropped cases. |
-| Every case drops | The same screen without Continue. |
+| Some cases drop | "Errors During Dataset Creation" lists each dropped case's scenario with its one-sentence reason (`drop_detail`), under four actions: **Continue With N** saves the grounded cases; **Retry** runs the batch again, with the dropped scenarios and their reasons added to the planner guidance ("Dropped cases section", below); **Replace Dropped Cases** plans, generates and grounds new cases for only the dropped rows ("Phase 10", below); **Cancel** ends the build. |
+| Every case drops | The same screen without Continue or Replace Dropped Cases. |
 | Drive fails for some cases after grounding | Today's "Errors During Dataset Creation" screen, unchanged. |
 | Grounding agent hits a limit | The case drops with the limit as its reason. |
 | User cancels | Every open episode is ended. |

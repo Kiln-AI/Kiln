@@ -117,8 +117,12 @@ ${trimmed}
 }
 
 // A scenario the grounding agent couldn't fit to the OpenEnv server, with its
-// one-sentence reason.
-export type GroundingDrop = { scenario: string; drop_detail: string }
+// one-sentence reason and the plan row it came from.
+export type GroundingDrop = {
+  scenario_index: number
+  scenario: string
+  drop_detail: string
+}
 
 // On a Retry after drops: the scenarios that didn't fit, so the planner
 // doesn't plan them again in the same form. Null when nothing dropped.
@@ -137,6 +141,23 @@ These scenarios came from the last plan for this eval. Kiln checked each one aga
 <dropped_scenarios>
 ${rows}
 </dropped_scenarios>`
+}
+
+// On Replace Dropped Cases: the scenarios that fit and stay in the batch, so
+// the replacements add something new rather than restate them. Null when none.
+export function kept_scenarios_section(scenarios: string[]): string | null {
+  const rows = scenarios
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => `- ${s}`)
+  if (rows.length === 0) return null
+  return `## Scenarios already in the batch
+
+These scenarios are already in the batch, and the scenarios you plan join them. Plan different ones: don't repeat or restate any of these.
+
+<kept_scenarios>
+${rows.join("\n")}
+</kept_scenarios>`
 }
 
 // The multi-turn world-state paragraph. Without an OpenEnv server the planner
