@@ -52,14 +52,16 @@ before any UI work.
 
 ## The flow, for a multi-turn build on an OpenEnv run config
 
-Screens are unchanged: the plan proposal, Generation Settings, the progress takeover, the
-"Errors During Dataset Creation" screen, Review Cases, save.
+The builder keeps its steps. New on screen: a tool-support requirement on the Judge Model, a
+"checking cases" progress stage, a dropped-cases screen, and a read-only section in review
+(`ui_design.md`).
 
 1. **Run config.** The user picks a run config whose tools come from an OpenEnv server. The
    server is found from the config's tool ids (`kiln_tool::openenv::<server id>::…`), and the eval
    records it ("The eval's OpenEnv server", below).
-2. **Judge authoring tools.** `_collect_task_capabilities` reads the server's tools with
-   `OpenEnvSessionManager.list_tools`, which needs no episode. A server it can't reach fails this
+2. **Reading the run config's tools.** Clarifying questions and judge authoring both read the
+   run config's tools. For OpenEnv tools they use `OpenEnvSessionManager.list_tools`, which needs
+   no episode (today this step fails on an OpenEnv run config). A server it can't reach fails the
    step with the server's URL and the error.
 3. **Plan.** The app builds `guidance` (below) and calls kiln_server's batch planner, unchanged.
 4. **Simulated users.** kiln_server writes one simulated user per approved plan item, unchanged.
@@ -69,9 +71,11 @@ Screens are unchanged: the plan proposal, Generation Settings, the progress take
    `eval_runner._run_v2_job_in_openenv` runs saved evals. The task run keeps `openenv_episode`,
    with `final_state`.
 7. **Judge.** The judge prompt adds the case's judge guidance and `final_state` (below).
-8. **Review and save.** Review Cases shows each grounded case's reset arguments and judge
-   guidance, read-only and collapsed by default. Save writes `openenv_reset` and
-   `reference["judge_guidance"]` to each `EvalInput`, and `openenv_server_id` to the `Eval`.
+8. **Review and save.** The review screen ("Align the Judge") shows each case's reset arguments
+   and judge guidance, read-only and collapsed by default. Save writes `openenv_reset` and
+   `reference["judge_guidance"]` to each `EvalInput`, the same guidance as `reference` on each
+   reviewed conversation (the golden set is saved as task runs, and the judge needs it there
+   too), and `openenv_server_id` to the `Eval`.
 
 A build whose run config has no OpenEnv tools behaves exactly as it does today.
 
@@ -252,7 +256,10 @@ with no grounded cases.
   `final_state` when the episode has one.
 - Grades the end result and what the agent told the user, not which tools it called. A path fails
   the case only when `must_not_happen` names it.
-- An input with no judge guidance (an ungrounded case) is judged as today.
+- Golden (reviewed) conversations carry the same guidance on their task run, so calibration
+  grades them against the same answer key.
+- On an OpenEnv build every saved case is grounded. A build without OpenEnv tools has no
+  guidance and keeps today's judge, without `reference_keys`.
 
 ## Simulated user in grounded cases
 
@@ -270,6 +277,7 @@ fills in.
 | No starting state fits a case | The agent tries a setup argument if one is described, otherwise drops the case. |
 | Some cases drop | "Errors During Dataset Creation" lists each dropped case's scenario with its one-sentence reason (`drop_detail`), under three actions: **Continue With N** saves the grounded cases; **Retry** runs the batch again, with the dropped scenarios and their reasons added to the planner guidance ("Dropped cases section", below); **Cancel** ends the build. v1 does not plan replacements for only the dropped cases. |
 | Every case drops | The same screen without Continue. |
+| Drive fails for some cases after grounding | Today's "Errors During Dataset Creation" screen, unchanged. |
 | Grounding agent hits a limit | The case drops with the limit as its reason. |
 | User cancels | Every open episode is ended. |
 | Run config has no OpenEnv tools | Today's flow, unchanged. |

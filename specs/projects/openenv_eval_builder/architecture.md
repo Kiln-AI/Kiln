@@ -4,8 +4,8 @@ status: complete
 
 # Architecture: Eval Builder cases grounded in an OpenEnv server
 
-Backend only. The UI (the project's multi-turn synthetic user guide, progress line, Review Cases, dropped cases, the judge lane's tool filter)
-is designed after the phase 1 prototype, in `ui_design.md`, and added here then.
+The UI is in `ui_design.md`; "Product integration" below is the backend and frontend code
+behind it.
 
 ## Components
 
@@ -16,9 +16,16 @@ is designed after the phase 1 prototype, in `ui_design.md`, and added here then.
 | Grounding agent | `libs/core/kiln_ai/eval_grounding/` | New package |
 | Prototype command | `app/desktop/studio_server/dev/ground_cases.py` | New |
 | MCP wrapper for `claude -p` | `app/desktop/studio_server/dev/grounding_mcp.py` | New |
-| Brief endpoint | `app/desktop/studio_server/openenv_server_api.py` | Changed (after prototype) |
-| Builder pipeline: ground, drive, judge, save | `multiturn_sdg_api.py`, `eval_builder_api.py`, `eval_builder_utils.py`, `copilot_utils.py` | Changed (after prototype) |
+| Tool capabilities without an episode | `app/desktop/studio_server/utils/copilot_utils.py` | Changed |
+| Brief endpoint | `app/desktop/studio_server/openenv_server_api.py` | Changed |
+| Grounding route | `app/desktop/studio_server/eval_builder_api.py` | New route |
+| Judge guidance renderer | `libs/core/kiln_ai/eval_grounding/judge_guidance.py` | New |
+| Episode scope, shared with the eval runner | `libs/core/kiln_ai/openenv/episode_scope.py` | New, extracted |
+| Driving cases in their episode | `libs/core/kiln_ai/synthetic_user/runner.py`, `case.py` | Changed |
+| Judge, review and save | `eval_builder_utils.py`, `eval_builder_api.py`, `copilot_api.py`, `copilot_utils.py` | Changed |
+| Datamodel | `Eval.openenv_server_id`, `TaskRun.reference`, `EvalTaskInput.from_trace` | Changed |
 | Simulated-user driver prompt | `libs/core/kiln_ai/synthetic_user/prompt.py` | Changed: grounded flag |
+| Builder UI | `app/web_ui/.../builder/` (`+page.svelte`, `batch_plan_guidance.ts`, `builder_draft.ts`, `progress_count.svelte`), `create_eval_config` page | Changed |
 
 The grounding agent lives in `libs/core` because it needs only the adapters and the OpenEnv
 session manager, and both the studio server and the prototype call it.
@@ -331,35 +338,183 @@ exits 2.
 
 Comparison against the eb3 runs is manual: same specification, same server, same count.
 
-## After the prototype (outline, finished with `ui_design.md`)
+## Product integration
 
-- **Brief endpoint.** `GET /api/projects/{project_id}/openenv_servers/{id}/reset_arguments_brief`
-  returns `reset_arguments_brief(...)` or null. `batch_plan_guidance.ts` appends it, the
-  synthetic user guide section and, on a Retry after drops, the dropped cases section (each
-  dropped scenario with its `drop_detail`).
-- **Grounding in `generate_cases`.** `GenerateCasesApiInput` gains `target_run_config_id`. When
-  the run config reaches one OpenEnv server (`single_openenv_server_id`), the route runs
-  `ground_cases` after kiln_server returns and streams progress. The case dict gains
-  `openenv_reset`, `reference` (the typed form, rendered at save) and `drop`.
-- **Driving.** Today's multi-turn pipeline leaves `open_openenv_session` on, so on an OpenEnv run
-  config each case's first turn opens its own episode with `{}` reset arguments and nothing ends
-  it. The pipeline takes the episode over, as `eval_runner._run_v2_job_in_openenv` does: start the
-  case's episode with its `openenv_reset`, `set_episode(...)` around the drive, then
-  `end_episode` and store `openenv_episode` with `final_state`. Drive with
-  `open_openenv_session=False`, as `synthetic_user/eval_drive.py` does. The shared helper is
-  extracted from `eval_runner` so both paths start, bind and end episodes the same way.
-- **Judge.** `build_judge_prompt_template(judge_prompt, multi_turn)` adds
-  `{{ reference_data.judge_guidance }}` and `openenv_episode.final_state` blocks, which the Jinja
-  namespace already carries, and the judge's `reference_keys` is `["judge_guidance"]`.
-  `run_judge_for_trace` and `build_claims_for_trace` take the `openenv_episode`.
-- **Save.** `build_multi_turn_eval_inputs` writes `openenv_reset` and
-  `reference={"judge_guidance": render_judge_guidance(grounded_reference)}`. The renderer is in
-  `eval_grounding/judge_guidance.py`, with a test per section and for empty lists. The builder sets
-  `Eval.openenv_server_id` (new, `ID_TYPE | None`) from the step 1 run config's server, and
-  `Eval` validates nothing more about it in v1.
-- **Step 2.** `_collect_task_capabilities` uses `list_tools` for OpenEnv tool ids.
-- **Driver prompt.** `synthetic_user/prompt.py` renders without the accept-not-found bullet when
-  the case has a reference.
+Finished after the prototype, with `ui_design.md`. Each part below is one place in the code; the
+phases in `implementation_plan.md` follow the same order.
+
+### What the builder does today on an OpenEnv run config
+
+Read from the code (2026-11-18), not run:
+
+- **Step 2 fails.** Clarifying questions (`question_spec`) and judge authoring both call
+  `_collect_task_capabilities` (`studio_server/utils/copilot_utils.py`), which calls `tool_from_id`
+  for every tool. For a `kiln_tool::openenv::…` id that raises outside an episode
+  (`tools/tool_registry.py`, `_openenv_tool`).
+- **Turn 2 fails.** `run_cases_batch` drives with `allow_saving=False`, so the adapter clears the
+  run's id, and `openenv_for_run` releases the episode after turn 1 (`openenv/run_session.py`,
+  `handle.run_id is None`). Turn 2 then raises `session_ended`.
+- **Reviewed cases have no reference.** Reviewed conversations become the golden set as `TaskRun`s,
+  and `EvalTaskInput.from_trace` gives a golden `TaskRun` no reference data when it is scored
+  against itself. A judge with `reference_keys=["judge_guidance"]` would skip every one.
+
+All three are fixed below.
+
+### Tool capabilities without an episode
+
+`_collect_task_capabilities` splits the run config's tool ids. OpenEnv ids go to
+`OpenEnvSessionManager.list_tools(server)` (one call per server, no episode), and their names and
+descriptions are read from that list. Other ids keep `tool_from_id`. An unreachable server raises
+`OpenEnvUnreachable`, which the route turns into the existing 500 with the server's URL; the
+frontend's `is_openenv_unreachable` already titles it.
+
+### Planner guidance
+
+- `GET /api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_arguments_brief` in
+  `openenv_server_api.py` returns `{brief: str | null}` from `reset_arguments_brief(...)`.
+- `batch_plan_guidance.ts` gains three builders, all plain text:
+  - `reset_arguments_section(brief)` with the framing in the functional spec, including: name kinds
+    of starting states, never a starting state by name.
+  - `synthetic_user_guide_section(guide)`, left out when empty. Wired once the guide's UI exists.
+  - `dropped_cases_section(drops: {scenario, drop_detail}[])`.
+- `compose_plan_guidance(base, steer)` becomes `compose_plan_guidance(base, sections, steer)`:
+  base, then each non-empty section, then the steer last. The base stays a strict prefix.
+- `multiturn_plan_guidance(spec, { openenv: boolean })` swaps the rule-12 paragraph for the OpenEnv
+  wording.
+- `on_plan_batch` fetches the brief once per build (cached in the draft with the server id), and
+  passes `pending_retry_drops` when set. `pending_retry_drops` is set by the drop screen's Retry
+  and cleared when a plan lands.
+
+### Grounding as its own stream
+
+`generate_cases` stays as it is (plain JSON from kiln_server). Grounding is a new route, so it can
+stream and receives what it needs.
+
+`POST /api/projects/{project_id}/tasks/{task_id}/eval_builder/ground_cases` in
+`eval_builder_api.py`, streamed with `_sse` and `CancellableStreamingResponse` like
+`multi_turn_pipeline`:
+
+```
+GroundCasesRequest
+  target_run_config_id: str
+  judge_model: {model_name: str, model_provider: str}
+  specification: str
+  synthetic_user_guide: str | None
+  cases: list[GroundCaseApi]
+    scenario_index: int
+    scenario: str                       # the plan item text
+    seed_prompt: str
+    synthetic_user_info: str
+```
+
+- Resolves the run config, then the server with `single_openenv_server_id(project, tool_ids)`.
+  None (no OpenEnv tools, or tools from two servers) is a 400.
+- Builds `GroundingCase`s and calls `ground_cases(...)` with the judge model, the task's prompt
+  as `target_task_prompt`, and the run config's tool definitions as `target_tools`.
+- Events, one JSON frame each, then the terminator:
+  - `grounding_started {total}`
+  - `case_grounded {case_index, scenario_index, status: "grounded", openenv_reset, seed_prompt,
+    synthetic_user_info, judge_guidance}`; `judge_guidance` is `render_judge_guidance(reference)`,
+    so the typed reference never leaves the server.
+  - `case_dropped {case_index, scenario_index, drop_reason, drop_detail}`
+  - `grounding_finished {grounded, dropped, usage}`
+  - `grounding_failed {code, message}` when `ground_cases` raises (`GroundingCaseError`; an
+    `OpenEnvUnreachable` cause gives `code: "openenv_unreachable"` and the server URL).
+- A client abort cancels the generator; `ground_cases` cancels its cases and each releases its
+  episode.
+
+### Judge guidance rendering
+
+`libs/core/kiln_ai/eval_grounding/judge_guidance.py`:
+
+```python
+def render_judge_guidance(reference: GroundedReference) -> str
+```
+
+Headings in order: `## Starting point`, `## Facts`, `## Expected outcome`, `## Allowed`,
+`## Must not happen`. Each fact is a bullet with its text, then an indented line
+``Checked with `tool` (args): result excerpt``. An empty list prints "None." under its heading.
+
+### Builder state (frontend)
+
+- `SyntheticUserCaseWire` gains `openenv_reset?: OpenEnvReset` and `judge_guidance?: string`.
+- The cached-cases key (`builder_draft.ts`) adds the OpenEnv server id and the judge model, so a
+  changed judge or server re-grounds.
+- `on_drive_multi_turn` runs `grounding_cases` after `generating_cases` when the run config's
+  server is known. The server is looked up once after step 1 with `lookup_run_openenv_server`
+  and kept as `openenv_server_id` in the draft.
+- Drops collect into `grounding_drops: {scenario, drop_detail}[]`. Any drop stops before driving
+  and shows the drop screen (`ui_design.md`). Continue drives the grounded cases; Retry sets
+  `pending_retry_drops = grounding_drops` and calls `on_plan_batch()`; Cancel clears the batch's
+  cases and returns to the plan.
+
+### Driving each case in its episode
+
+- `SyntheticUserCase` (`synthetic_user/case.py`) gains `openenv_reset: OpenEnvReset | None` and
+  `judge_guidance: str | None`. The pipeline request carries both.
+- New `libs/core/kiln_ai/openenv/episode_scope.py`, extracted from
+  `eval_runner._run_v2_job_in_openenv`:
+
+  ```python
+  @asynccontextmanager
+  async def openenv_episode_scope(
+      manager: OpenEnvSessionManager, server: OpenEnvServer, reset_kwargs: dict[str, JsonValue]
+  ) -> AsyncIterator[EpisodeScope]
+  ```
+
+  It starts the episode, binds it with `set_episode`, yields, then ends it and puts the ended
+  episode (with `final_state`) on `scope.ended`. On error it releases instead. `eval_runner` uses
+  it too, so both paths start, bind and end episodes the same way.
+- `run_cases_batch` drives a case that has `openenv_reset` inside `openenv_episode_scope`, with
+  `open_openenv_session=False` on the target adapter, and stores `scope.ended` as the leaf run's
+  `openenv_episode`. A case without one is driven as today.
+
+### Judge
+
+- `build_judge_prompt_template(judge_prompt, multi_turn, grounded=False)`: when `grounded`, adds a
+  `<judge_guidance>{{ reference_data.judge_guidance }}</judge_guidance>` block, and a
+  `{% if openenv_episode and openenv_episode.final_state %}` block with the final state, before the
+  transcript. The text tells the judge to grade the end result and what the agent told the user
+  against the guidance, and to fail on anything under "Must not happen".
+- `build_transient_judge_eval_config(..., grounded)` sets `reference_keys=["judge_guidance"]` when
+  grounded. `run_judge_for_trace`, `build_claims_for_trace` and the `judge_traces` route take the
+  case's `judge_guidance` and pass `reference_data={"judge_guidance": ...}`; the trace run carries
+  `openenv_episode`.
+- The saved judge (`spec_with_copilot`) uses the same template and `reference_keys`.
+
+### Reference on golden runs
+
+- `TaskRun` gains `reference: dict[str, JsonValue] | None` (default None): ground truth a judge
+  reads for this run when it is a golden eval item. Same meaning as `EvalInput.reference`.
+- `EvalTaskInput.from_trace`: when the source is a `TaskRun` with `reference` set, that is the
+  reference data, whether or not the source is the trace. Otherwise unchanged.
+- Save sets `reference={"judge_guidance": ...}` on each reviewed chain's leaf run.
+
+### Save
+
+- `MultiTurnSaveInfo` gains `openenv_server_id: str | None`. `DrivenSyntheticCaseApi` gains
+  `openenv_reset` and `judge_guidance`.
+- `build_multi_turn_eval_inputs` writes `openenv_reset` and
+  `reference={"judge_guidance": ...}` on each minted `EvalInput`.
+- `Eval` gains `openenv_server_id: ID_TYPE | None` (default None), set from `MultiTurnSaveInfo`.
+  The save checks that every case's `openenv_reset.openenv_server_id` equals it; a mismatch is a
+  400.
+
+### Driver prompt
+
+`synthetic_user/prompt.py` renders without the accept-not-found bullet when the case has
+`judge_guidance`.
+
+### Judge hint
+
+The `create_eval_config` page reads the eval; when `openenv_server_id` is set, it shows the note in
+`ui_design.md` above the prompt fields. No change to how `reference_keys` are derived in v1.
+
+### Grounding prompt
+
+The two rules from the Haiku runs (`prototype_results.md`) go into `prompt.py`: a named thing that
+isn't there is replaced by one of the same kind or added with setup; the scenario's situation
+(when, whose, what state) is kept, with setup if needed.
 
 ## Error handling
 
@@ -400,6 +555,26 @@ the LLM stubbed by patching `acompletion_checking_response`, as `test_run_sessio
   replaced by a stub that returns a fixed result.
 - `grounding_mcp`: lists the session's tools; a call reaches the fake server; limits apply; the
   call log and last reset are written on exit.
+
+- Product integration:
+  - `_collect_task_capabilities` with OpenEnv ids against the fake server, no episode opened;
+    unreachable server gives the existing error.
+  - `reset_arguments_brief` route: brief, null for a server without a reset schema, 404.
+  - `ground_cases` route: events in order for grounded and dropped cases, `judge_guidance`
+    rendered, `grounding_failed` on a raised error, 400 for a run config with no OpenEnv server,
+    a client abort leaves no open session on the fake server.
+  - `render_judge_guidance`: each section, facts with evidence, empty lists.
+  - `openenv_episode_scope`: started, bound, ended with `final_state`; released on error;
+    `eval_runner` tests still pass through it.
+  - `run_cases_batch`: a case with `openenv_reset` drives every turn in one episode and stores
+    the ended episode on the leaf run; a case without it drives as today.
+  - Judge template with and without `grounded`; transient judge passes the guidance.
+  - `EvalTaskInput.from_trace` with a golden `TaskRun` that has `reference`.
+  - Save: inputs carry `openenv_reset` and `judge_guidance`, golden leaves carry `reference`,
+    `Eval.openenv_server_id` set, mismatched server rejected.
+  - Frontend: guidance composition order; drop screen actions (Continue, Retry sets
+    `pending_retry_drops`, Cancel); progress counts from the stream; judge lane settings on
+    OpenEnv builds; cache key includes server and judge model.
 
 ## Open technical questions
 

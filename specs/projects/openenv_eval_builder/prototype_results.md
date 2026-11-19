@@ -95,6 +95,24 @@ kept their wording.
 - Its agent prompt is 63 KB against our 5.7 KB, mostly world conventions, pagination traps and a
   per-role style guide for the simulated user.
 
+## The measured run: Haiku through Kiln
+
+`ground --engine kiln` on Claude Haiku 5.5 (Anthropic provider), the same 38 cases and plans, run
+2026-11-18. Prompt caching was off in the first attempt (fixed in `57a70d58f`); every number below
+is with it on, 84-93% of input tokens cached, no case with incomplete usage.
+
+| Prompt | Grounded | Cost | Notes |
+|---|---|---|---|
+| Phase 3 prompt | 28/38 | $3.85 | 4 sound refusal drops; about 6 drops where Opus used a similar item or setup data |
+| + "use one of the same kind, or add it" rule | 33/38 | $4.64 | One case changed what it tests ("delete my entry from today" became a not-found case) |
+| + "keep the scenario's situation" rule | Apps 3/6, Records 6/6 (the two plans rerun) | $2.21 | The changed case now adds today's entry with setup and keeps the delete; every remaining Apps drop is a sound `unrepresentable` |
+
+- About $0.14 per grounded case, against about $0.98 for Opus through `claude -p`.
+- Haiku's references are usable but thinner: fewer facts and fewer named wrong answers. On one
+  data-accuracy case it counted 29 work orders by name match where Opus counted 28 and named the
+  edge case.
+- Both rules go into the grounding prompt in phase 4. Opus was not rerun through Kiln.
+
 ## Open for the next checkpoint
 
 - Measure the cheaper model on the same plans (phase 3's measured run).
