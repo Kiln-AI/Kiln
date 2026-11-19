@@ -13,6 +13,9 @@ removed Claude 5.5 Sonnet (top-price) and Qwen 3.8 Flash (no AA source).
 - **Artificial Analysis** (`https://artificialanalysis.ai/models/<slug>`):
   intelligence index, cost per task, output speed, time to first token.
   Figures are from the Max effort level unless noted.  Fetched 2026-11-16.
+  Figures for models added on 2026-11-19 (Gemini 4 Neon, Gemini 4 Carbon,
+  Gemini 4 Hydrogen, Qwen 4 Max, Inkling 2 Small) were fetched 2026-11-19,
+  with the effort level shown in each row.
 - **models.dev API** (`https://models.dev/api.json`): pricing, release
   dates, context lengths, output limits, open-weight status.
   Fetched 2026-11-13.
