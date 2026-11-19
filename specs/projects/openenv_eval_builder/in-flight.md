@@ -11,15 +11,14 @@ of Kiln.
 
 | Where | Branch | What | State |
 |---|---|---|---|
-| Kiln | `worktree-openenv-eval-builder` | This spec, phases 1 and 2, and the grounding-input change | Committed (`97bbca26a`, `46eef6c2b`, `6c448ca8b`), not pushed. Branched from `worktree-openenv-run-page-spec` at `cb650560e`. Prototype results in `prototype_results.md` |
-| Seahaven (local) | `sfierro/local-51-52` in `~/Repos/Seahaven-local-51-52` | #51 and #52 merged for testing | Local commits only. Never push |
-| Worlds (local) | `sfierro/local-seahaven-51-52` worktrees of the customer world, a payments world and a commerce world | Each points at the local Seahaven and OpenEnv 0.13 | One uncommitted `pyproject.toml` change each. Never commit |
-| Kiln | `worktree-openenv-run-page-spec` | The OpenEnv run page work the builder depends on (reset-schema forms and more) | 37 commits ahead of `main`, no PR yet |
-| Kiln | `worktree-openenv-run-page-spec` | Preset dialog cuts long reset-argument descriptions | Committed on the branch |
-| Seahaven | `claude/openenv-0.13-schema` | OpenEnv 0.13; reset schema on the standard `/schema` (Kiln now reads only that) | PR open: Kiln-AI/Seahaven#51 |
-| Seahaven | `sfierro/fixture-descriptions-in-reset-schema` | Fixture descriptions published in the reset schema, and `World(setup_sql_notes=...)` appended to the `setup_sql` description | PR open: Kiln-AI/Seahaven#52 |
+| Kiln | `worktree-openenv-eval-builder` | This spec and phases 1 to 10: the grounding agent, the builder flow, judge guidance as environment facts, the eval's server on screen, run configs that don't fit, Replace Dropped Cases | Committed through `5faec9cb9`, not pushed. Branched from `worktree-openenv-run-page-spec` at `cb650560e`. Has one TEMP commit (`056548c56`, custom batch size down to 0 for manual testing) with TODOs to revert before merging |
+| Kiln | `worktree-openenv-run-page-spec` | The OpenEnv run page work the builder depends on (reset-schema forms and more) | Ahead of `main`, no PR yet |
+| Seahaven | `claude/openenv-0.13-schema` | OpenEnv 0.13; reset schema on the standard `/schema` (Kiln now reads only that) | Merged as Kiln-AI/Seahaven#51, released in v0.7.0 |
+| Seahaven | `sfierro/fixture-descriptions-in-reset-schema` | Fixture descriptions published in the reset schema, and `World(setup_sql_notes=...)` appended to the `setup_sql` description | PR open: Kiln-AI/Seahaven#52. `main` merged in (`09640a3`), CI green, mergeable |
+| Customer world | `main` | Serves with `make serve`, pinned to Seahaven v0.7.0 | Fixture descriptions and setup notes don't reach its reset schema until #52 ships |
 | Customer world | `sfierro/setup-sql-notes` | Its setup notes, passed as `setup_sql_notes` | Committed locally (`ef6d1655`), not pushed. Needs a Seahaven release with #52 before the pin moves |
-| Customer world | `main` | `acting_user` startup keyword gets a description | Merged: `d2d2f322` |
+| Customer world (local) | `sfierro/serve-seahaven-52` in a local worktree of the customer world | `main` plus the setup notes, Seahaven pointed at the #52 checkout; serves port 8000 for testing | Local only. Its `pyproject.toml` / `uv.lock` edits are never committed |
+| Docs | `sfierro/openenv-reset-schema-docs` in `~/Repos/docs-worktrees/openenv-reset-schema` | New OpenEnv page, including writing reset-schema descriptions for models | Uncommitted draft |
 
 ## Kiln
 
