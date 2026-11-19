@@ -91,6 +91,41 @@ describe("reset_schema_to_form_schema", () => {
     })
   })
 
+  it("leaves out an optional object with no fields", () => {
+    // Seahaven's `startup` for a world with no startup keywords.
+    const schema = {
+      $defs: {
+        SeahavenStartup: {
+          additionalProperties: false,
+          properties: {},
+          title: "SeahavenStartup",
+          type: "object",
+        },
+      },
+      ...(object_schema({
+        fixture: {
+          anyOf: [
+            { enum: ["empty", "small"], type: "string" },
+            { type: "null" },
+          ],
+          title: "Fixture",
+        },
+        startup: {
+          anyOf: [{ $ref: "#/$defs/SeahavenStartup" }, { type: "null" }],
+          default: null,
+        },
+        nested: object_schema({ empty: object_schema({}) }),
+      }) as object),
+    }
+    expect(reset_schema_to_form_schema(schema)).toEqual({
+      type: "object",
+      properties: {
+        fixture: { type: "string", title: "Fixture", enum: ["empty", "small"] },
+      },
+      required: [],
+    })
+  })
+
   it.each([
     [
       "another anyOf",
@@ -146,7 +181,25 @@ describe("reset_schema_to_form_schema", () => {
       },
     ],
     ["a non-object root", { type: "string" }],
+    [
+      "a free-form object with no declared fields",
+      object_schema({
+        a: { type: "object", properties: {}, additionalProperties: true },
+      }),
+    ],
+    [
+      "a required object with no fields",
+      {
+        ...(object_schema({ a: object_schema({}) }) as object),
+        required: ["a"],
+      },
+    ],
     ["a root with no properties", { type: "object" }],
+    ["a root with empty properties", object_schema({})],
+    [
+      "a root whose only field has no fields",
+      object_schema({ a: object_schema({}) }),
+    ],
     ["not an object", "schema"],
     ["null", null],
     [
