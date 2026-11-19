@@ -1,5 +1,5 @@
 ---
-status: complete
+status: draft
 ---
 
 # Functional Spec: Improve Reasoning
@@ -31,7 +31,8 @@ The tool loop inside one run already keeps LiteLLM's live message objects in mem
 ### Providers
 
 - **Must work:** OpenAI, Anthropic, Gemini (API and Vertex), OpenRouter.
-- **Fixed as part of this project:** Groq and Ollama.
+- **Fixed as part of this project:** Ollama.
+- **Groq** is a separate project (`specs/projects/groq_reasoning/`), because its streamed tool loops fail on `main` today and the fix should ship on its own.
 - **Must not get worse:** every other provider. That includes Fireworks, Together, Cerebras, SiliconFlow, Cloudflare, Featherless, custom OpenAI-compatible hosts, Azure and Bedrock.
 
 ### Out of scope
@@ -79,6 +80,7 @@ When a provider change below alters what the in-run tool loop sends, the saved t
 ### 5. Prompt caching
 
 - `automatic_prompt_caching` turns on by default for every run, including the first turn of a conversation. A turn can only read a cache that an earlier call wrote, so the first turn must write it too.
+- **Claude gets two markers:** one on the last message, and one on the system prompt. Anthropic looks back at most 20 content blocks from a marker, so after a long tool loop a mismatched history loses even the system-prompt cache with only the last-message marker (measured: 0 cached tokens after an 11-call streamed loop from today's trace).
 - **Cache markers go to Claude models only:** on Anthropic direct, and through OpenRouter. Every other provider uses its own automatic caching, and Kiln sends no markers. Today Kiln asks LiteLLM to add markers on every provider. LiteLLM then switches OpenAI GPT-5.6+ to "explicit" cache mode, and a paid check on GPT-5.6 Luna measured 0 cached tokens on turns 2 and 3 there, against a full hit with no markers. On Gemini and Vertex, LiteLLM uses the markers to create a separate stored context cache, found by reading LiteLLM's code. That cache is billed for storage and changes the request body. The synthetic user, which sets this flag today, gets both of those problems. This fix removes them.
 - Cost on Anthropic: writing the cache costs 1.25× the normal input price for the cached part, and reading it costs 0.1×. A run that is never continued and has no tool loop pays the extra 25% on its input for nothing. Any second call (a tool round or a later turn) more than pays it back.
 - Callers can still turn it off explicitly.
@@ -105,7 +107,6 @@ Any other provider error is reported as it is today.
 | Anthropic, adaptive and manual thinking | `thinking_blocks` with signatures, including redacted blocks | the signed blocks, unchanged | Kept across turns and on resume. Fix the doubled thinking text in streamed tool loops, if confirmed. Fix the manual-thinking resume 400, if confirmed. |
 | Gemini API and Vertex | thought signatures (`provider_specific_fields`, and tool-call ids as today) | signatures only. The summary is not sent. | The summary is no longer sent as an unsigned thought part |
 | OpenRouter | `reasoning_details` | top-level `reasoning_details` in the form OpenRouter documents | Today it never reaches OpenRouter. Fix the Gemini 3 tool-loop 400, and the Claude unsigned-reasoning rejection, if confirmed. |
-| Groq | none, readable only | `reasoning_content`, or the field Groq accepts on input | Non-streamed reasoning is saved; today it is lost |
 | Ollama | none, readable only | `reasoning`, the field Ollama reads | Today it is ignored |
 | Cerebras | none | nothing; readable reasoning stays stripped | none |
 | Fireworks, Together, SiliconFlow, Cloudflare, Featherless, custom | none, readable only | `reasoning_content` | none |
@@ -154,12 +155,12 @@ These run for every provider in the table above, with fake provider servers capt
 
 ### Paid tests (`@pytest.mark.paid`)
 
-For each must-work provider, plus Groq, streamed and not streamed:
+For each must-work provider, plus Ollama, streamed and not streamed:
 
 - **Output:** the run's trace holds native reasoning in the right fields.
 - **Input:** the request actually sent on the next turn, captured through LiteLLM's logging hook, carries that reasoning back. This is checked for a new user turn and for a `return_on_tool_call` resume.
 - **Sent tokens:** the captured turn-2 request is exactly turn 1's full request history, including its reasoning, plus the new turn. Nothing is dropped, reordered or changed.
-- **Caching:** turn 2's cached input tokens are at least 95% of turn 1's request input tokens. The system prompt and tools total at least about 4,000 tokens, so every provider's minimum cacheable prefix is cleared. The threshold allows for providers' small end-of-prompt differences (3 tokens on OpenAI) and for caches counted in blocks.
+- **Caching:** turn 2's cached input tokens are at least 95% of turn 1's request input tokens (50% on Gemini, whose implicit cache measured about 2,049 tokens short of every earlier request, even within one run). The system prompt and tools total at least about 4,000 tokens, so every provider's minimum cacheable prefix is cleared. The threshold allows for providers' small end-of-prompt differences (3 tokens on OpenAI) and for caches counted in blocks.
 - Providers that don't report cached tokens skip the caching assertion and still run the reasoning tests.
 - **Retries:** a test retries only when its check fails, with a 5-second wait, up to 4 times. Caching is best-effort on every provider.
 
@@ -180,11 +181,10 @@ The pre-release subset gets a new whitelist in `libs/core/kiln_ai/adapters/pytes
 | 7 | OpenRouter | `gemini_4_argon` | `reasoning_details` with Gemini signatures |
 | 8 | OpenRouter | `claude_sonnet_5_5` | `reasoning_details` with Claude signatures |
 | 9 | OpenRouter | `gpt_6_luna` | `reasoning_details` with OpenAI encrypted reasoning |
-| 10 | Groq | `qwen_3p8_27b` | Groq reasoning fix |
-| 11 | Fireworks | `glm_5_3_flash` | DeepSeek-style, no regression |
-| 12 | Together | `muse_spark_open` | DeepSeek-style, no regression |
-| 13 | Cerebras | `qwen_3p8_27b` | Readable reasoning stays stripped |
-| 14 | Ollama | `qwen_3_8b` | Ollama fix. Skips unless a local Ollama server is running. |
+| 10 | Fireworks | `glm_5_3_flash` | DeepSeek-style, no regression |
+| 11 | Together | `muse_spark_open` | DeepSeek-style, no regression |
+| 12 | Cerebras | `qwen_3p8_27b` | Readable reasoning stays stripped |
+| 13 | Ollama | `qwen_3_8b` | Ollama fix. Skips unless a local Ollama server is running. |
 
 The pre-release skill documentation (`.agents/skills/kiln-prerelease-check/SKILL.md`) is updated to list the new whitelist.
 
@@ -201,5 +201,4 @@ Before this project's PR merges, the Ollama paid tests are run once by hand agai
 Phase 1 of implementation is paid confirmation, before design changes that depend on it. It may need to run on the user's machine with their keys. It covers:
 
 - Confirming or ruling out the four errors above.
-- What Groq accepts on input for reasoning (`reasoning` or `reasoning_content`).
 - The exact field name and form OpenRouter needs for `reasoning_details`, for Gemini, Claude and OpenAI models.
