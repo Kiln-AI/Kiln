@@ -755,11 +755,12 @@ class EvalTaskInput(BaseModel):
         default=None,
         description=(
             "Ground-truth data for the item being evaluated, keyed by reference name. "
-            "Taken from EvalInput.reference for an EvalInput-backed item; for a "
-            "TaskRun-backed dataset item it is the item's own stored output under the "
-            "key 'reference_answer', since that output is the curated answer. None "
-            "when a TaskRun is scored as itself (judge calibration), where the item "
-            "and the scored run are the same record."
+            "Taken from EvalInput.reference for an EvalInput-backed item. For a "
+            "TaskRun-backed dataset item it is TaskRun.reference when that is set, even "
+            "when the TaskRun is scored as itself (judge calibration). Otherwise it is "
+            "the item's own stored output under the key 'reference_answer', since that "
+            "output is the curated answer, and None when the TaskRun is scored as itself, "
+            "where the item and the scored run are the same record."
         ),
     )
     task_input: str | None = Field(
@@ -811,14 +812,17 @@ class EvalTaskInput(BaseModel):
                     f"Unsupported EvalInput data type: {type(source.data).__name__}"
                 )
         elif isinstance(source, _TaskRun):
-            # A TaskRun-backed dataset item stores the curated answer as its output, so
-            # that output is the ground truth to compare the trace against. Skipped when
-            # source *is* trace (calibration, and `from_task_run`): there the golden item
-            # is itself what gets scored, so a reference would be byte-identical to
-            # `final_message` and every judge comparing them would pass.
-            reference_data = (
-                None if source is trace else {"reference_answer": source.output.output}
-            )
+            # An explicit `reference` is ground truth kept apart from the output, so it
+            # holds even when source *is* trace (calibration, and `from_task_run`).
+            # Without one, a dataset item's curated answer is its output. That is skipped
+            # when source is the trace: it would be byte-identical to `final_message` and
+            # every judge comparing them would pass.
+            if source.reference is not None:
+                reference_data = source.reference
+            elif source is trace:
+                reference_data = None
+            else:
+                reference_data = {"reference_answer": source.output.output}
             task_input = trace.input
         else:
             raise TypeError("Expected a TaskRun or EvalInput instance for source")
@@ -1515,6 +1519,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     evaluation_data_type: EvalDataType | None = Field(
         default=EvalDataType.final_answer,
         description="The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.",
+    )
+    openenv_server_id: ID_TYPE | None = Field(
+        default=None,
+        description="The OpenEnv server this eval's inputs were grounded in: every input's openenv_reset names it. None for an eval with no grounded inputs.",
     )
 
     @model_validator(mode="after")

@@ -43,6 +43,12 @@ Limits: {max_resets} resets, {max_tool_calls} tool calls, {time_limit_minutes} m
 
 The case must keep testing what the specification tests. Change its specifics to fit the environment, never its subject: don't switch it to a different feature or kind of object to make it fit. If it can't fit without that, drop it (no_fit or unrepresentable).
 
+The things the scenario and the simulated user name (a product, a customer, a record, an app, a person) were made up without seeing the environment. When one isn't there, that is not a reason to drop the case. Use one of the same kind that the environment has, or add one with setup, and use its real name everywhere in the simulated user. Only the kind of thing matters, not its name. Drop for no_fit only when nothing of that kind exists and setup can't add it.
+
+Keep the situation the scenario describes: when something happened, whose it is, what state it is in. If the starting state doesn't have that situation, add it with setup rather than changing the situation, so the case still tests the same thing.
+
+Before you drop a case for no_fit or rehearsal_failed, try at least one other way: another starting state, an existing item of the same kind, or another tool that reaches the same result.
+
 Steps:
 1. Pick reset arguments whose starting state fits the scenario. A starting state named in the scenario is only a hint. If an argument chooses who the session acts as, pick one whose role matches the persona. Read the argument descriptions to find it; it may have any name. Use the Data Guide for who the user plausibly is (their role, what kind of person they are), but don't override the drafted persona. If the reset schema has a `seed` argument, always pass one (a value the schema allows) so the case replays the same way.
 2. Look at the environment with whatever tools show you its state, and find what the scenario needs: data, objects, a condition. Prefer what the starting state already has. Before setting anything up, try the other starting states whose descriptions suggest they have what the scenario needs. Keep resets in reserve for setup and your final reset. Some environments have nothing to look at, only tools that act. Then go straight to step 4.

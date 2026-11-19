@@ -3872,6 +3872,7 @@ class TestRunV2MultiTurnRedrive:
             drive_kwargs["target_run_config"].model_name
             == mock_run_config.run_config_properties.model_name
         )
+        assert drive_kwargs["grounded"] is False
 
         # The judge saw the FRESH conversation, not stored data.
         assert len(stub.seen_inputs) == 1
@@ -3913,6 +3914,42 @@ class TestRunV2MultiTurnRedrive:
         assert saved.output is None
         assert saved.task_run_trace is None
         assert saved.task_run_usage is None
+
+    @pytest.mark.asyncio
+    async def test_a_grounded_input_is_driven_by_a_grounded_synthetic_user(
+        self,
+        mock_task,
+        mock_run_config,
+        mock_v2_redrive_config,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        multi_turn_eval_input.reference = {"judge_guidance": "## Starting point\nX."}
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            split=_test_split([mock_v2_redrive_config]),
+        )
+        job = EvalJob(
+            item=multi_turn_eval_input,
+            eval_config=mock_v2_redrive_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=RecordingStubV2Eval(mock_v2_redrive_config),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+            ) as mock_drive,
+        ):
+            assert await runner.run_job(job) is True
+
+        assert mock_drive.await_args.kwargs["grounded"] is True
 
     @pytest.mark.asyncio
     async def test_a_second_judge_reuses_the_driven_conversation(

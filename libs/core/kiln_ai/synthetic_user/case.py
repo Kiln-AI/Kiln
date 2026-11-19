@@ -10,6 +10,8 @@ invoking the runner.
 
 from pydantic import BaseModel, Field
 
+from kiln_ai.datamodel.openenv import OpenEnvReset
+
 
 class SyntheticUserCase(BaseModel):
     """One case for the multi-turn SU drive loop.
@@ -22,3 +24,11 @@ class SyntheticUserCase(BaseModel):
 
     seed_prompt: str = Field(..., min_length=1)
     synthetic_user_info: str = Field(..., min_length=1)
+    openenv_reset: OpenEnvReset | None = Field(
+        default=None,
+        description="The OpenEnv episode a grounded case runs in. Every turn of the case runs in one episode started from this reset. None drives the case as its run config would run on its own.",
+    )
+    judge_guidance: str | None = Field(
+        default=None,
+        description="A grounded case's answer key, as markdown. When set, the synthetic user knows that what its persona and goal name exists, so it doesn't accept a not-found reply.",
+    )

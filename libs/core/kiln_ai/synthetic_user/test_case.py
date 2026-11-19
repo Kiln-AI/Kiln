@@ -3,6 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
+from kiln_ai.datamodel.openenv import OpenEnvReset
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 
 
@@ -25,3 +26,26 @@ def test_case_rejects_empty_seed_prompt() -> None:
 def test_case_rejects_empty_synthetic_user_info() -> None:
     with pytest.raises(ValidationError):
         SyntheticUserCase(seed_prompt="hi", synthetic_user_info="")
+
+
+def test_case_grounded_fields_default_to_none_and_validate() -> None:
+    plain = SyntheticUserCase(
+        seed_prompt="hi", synthetic_user_info="<persona>p</persona><goal>g</goal>"
+    )
+    assert plain.openenv_reset is None
+    assert plain.judge_guidance is None
+
+    grounded = SyntheticUserCase.model_validate(
+        {
+            "seed_prompt": "hi",
+            "synthetic_user_info": "<persona>p</persona><goal>g</goal>",
+            "openenv_reset": {
+                "openenv_server_id": "srv_1",
+                "reset_kwargs": {"seed": 3},
+            },
+            "judge_guidance": "## Starting point\nAn empty notebook.",
+        }
+    )
+    assert isinstance(grounded.openenv_reset, OpenEnvReset)
+    assert grounded.openenv_reset.reset_kwargs == {"seed": 3}
+    assert grounded.judge_guidance == "## Starting point\nAn empty notebook."

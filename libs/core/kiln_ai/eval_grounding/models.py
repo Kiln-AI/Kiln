@@ -54,7 +54,8 @@ class Fact(BaseModel):
 
 
 class GroundedReference(BaseModel):
-    """A grounded case's answer key, stored as `EvalInput.reference` via `model_dump()`."""
+    """A grounded case's answer key. Saved as the markdown `render_judge_guidance` makes of
+    it, under the reference key `judge_guidance`."""
 
     starting_point: str = Field(description="What is true before the conversation.")
     facts: list[Fact]

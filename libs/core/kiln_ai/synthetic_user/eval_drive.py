@@ -41,6 +41,7 @@ async def drive_case_for_eval(
     su_driver_config: SyntheticUserDriverConfig,
     turns: int,
     skills: SkillsDict,
+    grounded: bool = False,
 ) -> DriveCaseResult:
     """Drive one case in memory and return the full DriveCaseResult (never saved).
 
@@ -49,8 +50,12 @@ async def drive_case_for_eval(
     carries `su_usage` — the synthetic user model's spend, which surfaces
     nowhere else since SU turns aren't persisted. `skills` must be preloaded
     by the caller — the adapter raises on skill tools with no injected dict.
+    `grounded` is for a case checked against its OpenEnv server: its synthetic
+    user doesn't accept a not-found reply (see `render_system_prompt`).
     """
-    su_driver = SyntheticUserDriver(synthetic_user_info, su_driver_config)
+    su_driver = SyntheticUserDriver(
+        synthetic_user_info, su_driver_config, grounded=grounded
+    )
     adapter = adapter_for_task(
         target_task,
         target_run_config,

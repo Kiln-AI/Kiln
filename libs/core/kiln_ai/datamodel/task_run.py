@@ -1,7 +1,7 @@
 import json
 from typing import TYPE_CHECKING, Dict, List, Literal, Union
 
-from pydantic import BaseModel, Field, ValidationInfo, model_validator
+from pydantic import BaseModel, Field, JsonValue, ValidationInfo, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel, KilnParentModel
@@ -134,6 +134,10 @@ class TaskRun(
     openenv_episode: OpenEnvEpisode | None = Field(
         default=None,
         description="Set when this run used an environment: the episode its environment tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the environment.",
+    )
+    reference: dict[str, JsonValue] | None = Field(
+        default=None,
+        description="Optional reference data (ground truth) a judge reads when this run is a golden eval item, keyed by reference name. Same meaning as EvalInput.reference.",
     )
 
     @model_validator(mode="after")

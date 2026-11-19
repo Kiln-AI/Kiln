@@ -18,13 +18,21 @@ from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, SkillsDict
 from kiln_ai.adapters.retry_classification import (
     is_retryable_error,
+    is_transient_openenv_error,
     unwrap_kiln_run_error,
 )
 from kiln_ai.datamodel.basemodel import generate_model_id
+from kiln_ai.datamodel.openenv import OpenEnvServer, OpenEnvTool
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.openenv.episode_scope import EpisodeScope, openenv_episode_scope
+from kiln_ai.openenv.session_manager import (
+    OpenEnvSessionManager,
+    OpenEnvTransientError,
+    shared_session_manager,
+)
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.drive_loop import TargetInvoker, drive_case
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
@@ -163,6 +171,7 @@ async def run_cases_batch(
     batch_tag: str | None = None,
     save_context: SaveContext | None = None,
     task_run_config_id: str | None = None,
+    openenv_session_manager: OpenEnvSessionManager | None = None,
 ) -> AsyncIterator[BatchEvent]:
     """Drive `cases` concurrently against `target_task`, streaming progress.
 
@@ -179,6 +188,10 @@ async def run_cases_batch(
     Transient provider failures retry the whole case (up to
     DRIVE_MAX_RETRIES) — its turn events restart at 1; deterministic
     failures fail immediately.
+
+    A case with `openenv_reset` runs every turn in one episode on that
+    OpenEnv server, started from its reset, and its leaf run records the
+    ended episode. `openenv_session_manager` defaults to the shared one.
 
     Yields:
       BatchStartedEvent — once, before any case runs.
@@ -207,6 +220,9 @@ async def run_cases_batch(
     # (each attempt banks its spend before its chain is discarded) so the
     # case's completion/failure event can report what was actually billed.
     failed_attempt_spend: dict[int, float] = {}
+    openenv_targets = _OpenEnvTargets(
+        target_task, openenv_session_manager or shared_session_manager()
+    )
 
     async def _drive_job(job: tuple[int, SyntheticUserCase]) -> bool:
         case_index, case = job
@@ -223,6 +239,7 @@ async def run_cases_batch(
             skills=skills,
             task_run_config_id=task_run_config_id,
             failed_attempt_spend=failed_attempt_spend,
+            openenv_targets=openenv_targets,
         )
         return True
 
@@ -311,6 +328,69 @@ async def run_cases_batch(
             await jobs_task
 
 
+# ───────────────────────── OpenEnv episodes ─────────────────────────
+
+
+@dataclass(frozen=True)
+class _OpenEnvTarget:
+    server: OpenEnvServer
+    tools: dict[str, OpenEnvTool]
+
+
+class _OpenEnvTargets:
+    """The OpenEnv servers one batch's grounded cases run on, each read once, on
+    first use. A failed read is not kept, so a retried case reads the server again."""
+
+    def __init__(self, task: Task, manager: OpenEnvSessionManager) -> None:
+        self._task = task
+        self.manager = manager
+        self._targets: dict[str, _OpenEnvTarget] = {}
+        self._lock = asyncio.Lock()
+
+    async def get(self, openenv_server_id: str) -> _OpenEnvTarget:
+        async with self._lock:
+            target = self._targets.get(openenv_server_id)
+            if target is None:
+                target = await self._load(openenv_server_id)
+                self._targets[openenv_server_id] = target
+            return target
+
+    async def _load(self, openenv_server_id: str) -> _OpenEnvTarget:
+        project = self._task.parent_project()
+        server = (
+            OpenEnvServer.from_id_and_parent_path(openenv_server_id, project.path)
+            if project is not None and project.path is not None
+            else None
+        )
+        if server is None:
+            raise _CaseFailure(
+                "openenv_server_not_found",
+                f"OpenEnv server {openenv_server_id} wasn't found in the task's project.",
+            )
+        await self.manager.refresh(server)
+        tools = {tool.name: tool for tool in await self.manager.list_tools(server)}
+        return _OpenEnvTarget(server=server, tools=tools)
+
+
+@contextlib.asynccontextmanager
+async def _case_episode(
+    case: SyntheticUserCase, openenv_targets: _OpenEnvTargets
+) -> AsyncIterator[EpisodeScope | None]:
+    """The episode a grounded case runs in, bound for the whole drive. None for a
+    case without `openenv_reset`."""
+    if case.openenv_reset is None:
+        yield None
+        return
+    target = await openenv_targets.get(case.openenv_reset.openenv_server_id)
+    async with openenv_episode_scope(
+        openenv_targets.manager,
+        target.server,
+        case.openenv_reset.reset_kwargs,
+        target.tools,
+    ) as scope:
+        yield scope
+
+
 # ───────────────────────── per-case orchestration ─────────────────────────
 
 
@@ -360,6 +440,7 @@ async def _drive_one_case_and_emit(
     skills: SkillsDict,
     task_run_config_id: str | None,
     failed_attempt_spend: dict[int, float],
+    openenv_targets: _OpenEnvTargets,
 ) -> None:
     """Run drive_case for one case (one ATTEMPT), emitting turn/completion
     events on `queue`.
@@ -387,7 +468,9 @@ async def _drive_one_case_and_emit(
         except SyntheticUserInfoParseError as e:
             # Deterministic: retrying replays the same parse on the same bytes.
             raise _CaseFailure("bad_synthetic_user_info", str(e)) from e
-        su_driver = SyntheticUserDriver(su_info, su_driver_config)
+        su_driver = SyntheticUserDriver(
+            su_info, su_driver_config, grounded=case.judge_guidance is not None
+        )
 
         adapter_invoker = _make_target_invoker(
             case=case,
@@ -440,7 +523,10 @@ async def _drive_one_case_and_emit(
         # timeout, and the drive terminates structurally (turn ceiling,
         # per-turn tool-call cap); the watchdog makes a pathologically slow
         # case visible in logs without killing a healthy run.
-        async with log_if_slow(f"synthetic_user runner: case {case_index}"):
+        async with (
+            log_if_slow(f"synthetic_user runner: case {case_index}"),
+            _case_episode(case, openenv_targets) as episode_scope,
+        ):
             result = await drive_case(
                 seed_prompt=case.seed_prompt,
                 target_invoker=_target_invoker,
@@ -466,6 +552,17 @@ async def _drive_one_case_and_emit(
         # Tag the leaf so loaders can find it, then save the chain root first.
         leaf = result.chain[-1]
         _tag_leaf(leaf, batch_tag, ended_by_su=ended_by_su)
+        if episode_scope is not None:
+            ended = episode_scope.ended
+            if ended.final_state is None:
+                # The session was gone before its state could be read. A judge
+                # would grade the conversation without the end state, so the case
+                # is driven again in a fresh episode.
+                raise OpenEnvTransientError(
+                    f"Episode {ended.episode_id} ended without a final state, so "
+                    "the conversation was not saved"
+                )
+            leaf.openenv_episode = ended
         async with save_ctx():
             for run in result.chain:
                 run.save_to_file()
@@ -484,7 +581,7 @@ async def _drive_one_case_and_emit(
             )
         )
     except _CaseFailure:
-        # Raised above before anything persisted (parse) — pass through.
+        # Raised before anything persisted (a bad blob, a missing OpenEnv server) — pass through.
         raise
     except asyncio.CancelledError:
         # Delete what the final write saved, shielded so the cancel can't
@@ -508,7 +605,7 @@ async def _drive_one_case_and_emit(
         # text — unwrap so failure events name the real provider failure
         # instead of the generic wrapper text.
         cause = unwrap_kiln_run_error(e)
-        if is_retryable_error(e):
+        if is_retryable_error(e) or is_transient_openenv_error(e):
             raise RetryableError(f"{type(cause).__name__}: {cause}") from e
         raise _CaseFailure(
             "unexpected_error",
@@ -600,6 +697,9 @@ def _make_target_invoker(
             task_run_config_id=task_run_config_id,
             # Each turn re-sends the conversation so far: cache it (Anthropic needs the hint).
             automatic_prompt_caching=True,
+            # A grounded case's turns run in the episode the runner binds for the
+            # whole drive; the adapter must not open one per turn.
+            open_openenv_session=case.openenv_reset is None,
         ),
     )
     turn_index = 0

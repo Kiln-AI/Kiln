@@ -21,6 +21,10 @@ the cases that name a record most often are the ones whose guidance scripts
 the insistence. The ending rules themselves are unchanged: the rules change
 how the user continues, not when it may end.
 
+A grounded case was checked against the environment it runs in, so what its
+persona and goal name does exist there. Its prompt leaves out the not-found
+rule: a not-found reply is then the assistant's mistake, and the SU pushes back.
+
 The first-message rule is phrased as counting the assistant's messages rather
 than "don't end on your first reply" because the SU sees the conversation with
 the roles swapped: its own opening message is already in the transcript, so
@@ -41,24 +45,34 @@ _OPENING = (
     '"User:". Just the message text the user would type.'
 )
 
-_CONVENTIONS = f"""## Conversation style
+_ACCEPT_NOT_FOUND = """
+- When the assistant says something cannot be found or does not exist, that is the truth of its system. Do not repeat the reference or insist, even if your guidance tells you to press: instead give a description, ask it to list what is there, or ask it to create the record, and continue toward your goal from what it reports."""
+
+
+def _conventions(*, grounded: bool) -> str:
+    accept_not_found = "" if grounded else _ACCEPT_NOT_FOUND
+    what_exists_rules = "the rule above" if grounded else "the two rules above"
+    return f"""## Conversation style
 - Reply naturally and conversationally, as a real user would.
 - React to what the assistant actually said in their last message.
 - Keep replies short (one or two sentences) unless the situation calls for more detail.
 - Do not narrate your own behavior ("As a user, I will now…"). Speak as the user.
 - Stay engaged and keep pursuing your goal with follow-ups, varying your approach when the assistant is vague, evasive, or wrong.
-- You are a person using this assistant. You have no way to see inside its systems, so anything you have not been told by the assistant is a guess: never invent identifiers, record numbers, names or dates. Beyond what your persona and goal already gave you, ask the assistant what exists, or ask it to create what you need, then work with what it reports.
-- When the assistant says something cannot be found or does not exist, that is the truth of its system. Do not repeat the reference or insist, even if your guidance tells you to press: instead give a description, ask it to list what is there, or ask it to create the record, and continue toward your goal from what it reports.
+- You are a person using this assistant. You have no way to see inside its systems, so anything you have not been told by the assistant is a guess: never invent identifiers, record numbers, names or dates. Beyond what your persona and goal already gave you, ask the assistant what exists, or ask it to create what you need, then work with what it reports.{accept_not_found}
 
 ## Ending the conversation
 - Before anything else, count the assistant's messages in the conversation so far. If there is only one, you cannot end yet: send a real message, even if the goal already seems met. Confirm a detail, ask about a next step, or check something you are unsure of.
 - Once the assistant has replied at least twice, and your goal has been fully and specifically met, and you have nothing left to ask, end the conversation: your entire reply is exactly {EARLY_STOP_SENTINEL}. It replaces your message. Do not write a thank-you or a closing line first; {EARLY_STOP_SENTINEL} is the whole reply.
 - Never end because the assistant refused, deflected, gave a partial or general answer, asked you a question, or made a mistake. In those cases keep going.
-- If your persona or behavior guidance asks for more than the goal, such as pressing further or covering more ground, follow that instead of ending. Guidance never overrides the two rules above about what exists."""
+- If your persona or behavior guidance asks for more than the goal, such as pressing further or covering more ground, follow that instead of ending. Guidance never overrides {what_exists_rules} about what exists."""
 
 
-def render_system_prompt(info: SyntheticUserInfo) -> str:
-    """Render the persona-playing system prompt for one eval case."""
+def render_system_prompt(info: SyntheticUserInfo, *, grounded: bool = False) -> str:
+    """Render the persona-playing system prompt for one eval case.
+
+    `grounded` is for a case checked against the environment it runs in: what the persona
+    and goal name exists there, so the rule to accept a not-found reply is left out and
+    the user pushes back when the assistant says it isn't there."""
     sections = [
         _OPENING,
         f"## Your persona\n{info.persona}",
@@ -66,5 +80,5 @@ def render_system_prompt(info: SyntheticUserInfo) -> str:
     ]
     if info.behavior_guidance:
         sections.append(f"## How you behave\n{info.behavior_guidance}")
-    sections.append(_CONVENTIONS)
+    sections.append(_conventions(grounded=grounded))
     return "\n\n".join(sections)

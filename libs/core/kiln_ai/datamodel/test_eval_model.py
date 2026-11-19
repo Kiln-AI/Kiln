@@ -3192,6 +3192,26 @@ class TestEvalTaskInputFromTrace:
             "reference_answer": "what the model said"
         }
 
+    def test_a_golden_run_with_a_reference_carries_it_when_scored_as_itself(
+        self, trace
+    ):
+        trace.reference = {"judge_guidance": "## Starting point\nTwo open jobs."}
+
+        assert EvalTaskInput.from_task_run(trace).reference_data == {
+            "judge_guidance": "## Starting point\nTwo open jobs."
+        }
+
+    def test_a_task_run_source_with_a_reference_uses_it_over_its_output(self, trace):
+        item = TaskRun(
+            input="the dataset input",
+            output=TaskOutput(output="the curated answer"),
+            reference={"judge_guidance": "guidance"},
+        )
+
+        assert EvalTaskInput.from_trace(trace, item).reference_data == {
+            "judge_guidance": "guidance"
+        }
+
     def test_existing_constructors_are_from_trace(self, trace):
         """The two named constructors are the two shapes of `from_trace`."""
         eval_input = EvalInput(

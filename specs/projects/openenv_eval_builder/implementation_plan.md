@@ -31,7 +31,7 @@ ship"). This is local setup, not a phase.
   not rerun through Kiln: the prototype already showed the strong-model result. Decided: grounding
   runs on the Judge Model, dropped cases get Continue, Retry and Cancel, Retry re-plans with the
   drop reasons.
-- [ ] Phase 4: Core library. The grounding prompt rules from the Haiku runs;
+- [x] Phase 4: Core library. The grounding prompt rules from the Haiku runs;
   `render_judge_guidance`; `TaskRun.reference` and `EvalTaskInput.from_trace` reading it;
   `Eval.openenv_server_id`; `openenv_episode_scope` extracted from the eval runner, which uses
   it; `SyntheticUserCase.openenv_reset` and `judge_guidance`; `run_cases_batch` drives a

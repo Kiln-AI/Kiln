@@ -164,3 +164,19 @@ def test_ending_block_is_unchanged_by_the_world_state_rules() -> None:
     # The ending block is the tail of the prompt: nothing about not-found
     # replies was appended to or inserted into it.
     assert rendered.endswith(_ENDING_BLOCK)
+
+
+def test_grounded_prompt_drops_only_the_accept_not_found_rule() -> None:
+    """A grounded case's persona names things that exist, so a not-found reply is
+    the assistant's mistake: the user keeps the no-inventing rule and pushes back."""
+    default = render_system_prompt(_full_info())
+    grounded = render_system_prompt(_full_info(), grounded=True)
+
+    assert _ACCEPT_NOT_FOUND_LINE not in grounded
+    assert _NO_INVENTED_STATE_LINE in grounded
+    assert grounded.endswith(
+        _ENDING_BLOCK.replace("the two rules above", "the rule above")
+    )
+    assert grounded == default.replace(f"\n{_ACCEPT_NOT_FOUND_LINE}", "").replace(
+        "the two rules above", "the rule above"
+    )

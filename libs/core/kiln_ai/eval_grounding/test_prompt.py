@@ -153,6 +153,30 @@ def test_system_prompt_has_the_refusal_and_recorded_change_rules():
     assert "Don't forbid the way the server records the expected change" in prompt
 
 
+@pytest.mark.parametrize(
+    "answer_style", ["reply_json", "structured_output", "submit_result"]
+)
+def test_system_prompt_keeps_cases_whose_named_things_or_situation_are_missing(
+    answer_style,
+):
+    prompt = system_prompt(answer_style=answer_style)
+    assert (
+        "When one isn't there, that is not a reason to drop the case. Use one of the "
+        "same kind that the environment has, or add one with setup"
+    ) in prompt
+    assert (
+        "Drop for no_fit only when nothing of that kind exists and setup can't add it."
+    ) in prompt
+    assert (
+        "Keep the situation the scenario describes: when something happened, whose it "
+        "is, what state it is in."
+    ) in prompt
+    assert (
+        "Before you drop a case for no_fit or rehearsal_failed, try at least one other way"
+    ) in prompt
+    assert prompt.index("Keep the situation") < prompt.index("Steps:\n1.")
+
+
 def test_follow_up_message_per_answer_style():
     assert follow_up_message("bad JSON", "reply_json") == (
         "Your last reply could not be used: bad JSON\n\n"

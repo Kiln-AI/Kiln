@@ -100,9 +100,10 @@ def fake_su_driver(monkeypatch: pytest.MonkeyPatch) -> Mock:
     )
     captured_ctor: dict[str, Any] = {}
 
-    def _ctor(info, config):
+    def _ctor(info, config, grounded=False):
         captured_ctor["info"] = info
         captured_ctor["config"] = config
+        captured_ctor["grounded"] = grounded
         return instance
 
     monkeypatch.setattr(eval_drive_mod, "SyntheticUserDriver", _ctor)
@@ -143,6 +144,25 @@ async def test_drives_turns_and_returns_leaf(fake_adapter, fake_su_driver) -> No
     # The SU driver was built from the typed persona.
     assert fake_su_driver.ctor_args["info"] is _INFO
     assert fake_su_driver.ctor_args["config"] is _SU_CONFIG
+    assert fake_su_driver.ctor_args["grounded"] is False
+
+
+@pytest.mark.asyncio
+async def test_grounded_drive_builds_a_grounded_synthetic_user(
+    fake_adapter, fake_su_driver
+) -> None:
+    await drive_case_for_eval(
+        seed_prompt="hi",
+        synthetic_user_info=_INFO,
+        target_task=Mock(spec=Task),
+        target_run_config=_target_run_config(),
+        su_driver_config=_SU_CONFIG,
+        turns=1,
+        skills={},
+        grounded=True,
+    )
+
+    assert fake_su_driver.ctor_args["grounded"] is True
 
 
 @pytest.mark.asyncio

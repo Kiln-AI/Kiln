@@ -7352,6 +7352,11 @@ export interface components {
              * @default final_answer
              */
             evaluation_data_type: components["schemas"]["EvalDataType"] | null;
+            /**
+             * Openenv Server Id
+             * @description The OpenEnv server this eval's inputs were grounded in: every input's openenv_reset names it. None for an eval with no grounded inputs.
+             */
+            openenv_server_id?: string | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -8076,7 +8081,7 @@ export interface components {
             }[] | null;
             /**
              * Reference Data
-             * @description Ground-truth data for the item being evaluated, keyed by reference name. Taken from EvalInput.reference for an EvalInput-backed item; for a TaskRun-backed dataset item it is the item's own stored output under the key 'reference_answer', since that output is the curated answer. None when a TaskRun is scored as itself (judge calibration), where the item and the scored run are the same record.
+             * @description Ground-truth data for the item being evaluated, keyed by reference name. Taken from EvalInput.reference for an EvalInput-backed item. For a TaskRun-backed dataset item it is TaskRun.reference when that is set, even when the TaskRun is scored as itself (judge calibration). Otherwise it is the item's own stored output under the key 'reference_answer', since that output is the curated answer, and None when the TaskRun is scored as itself, where the item and the scored run are the same record.
              */
             reference_data?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -13908,6 +13913,13 @@ export interface components {
             eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** @description Set when this run used an environment: the episode its environment tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the environment. */
             openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
+            /**
+             * Reference
+             * @description Optional reference data (ground truth) a judge reads when this run is a golden eval item, keyed by reference name. Same meaning as EvalInput.reference.
+             */
+            reference?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
         };
         /**
          * TaskRun
@@ -13993,6 +14005,13 @@ export interface components {
             eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** @description Set when this run used an environment: the episode its environment tools ran in, ending with the environment's final state so graders can inspect what the run did there. Project tools in the run config ran as themselves, outside the environment. */
             openenv_episode?: components["schemas"]["OpenEnvEpisode"] | null;
+            /**
+             * Reference
+             * @description Optional reference data (ground truth) a judge reads when this run is a golden eval item, keyed by reference name. Same meaning as EvalInput.reference.
+             */
+            reference?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
             /** Model Type */
             readonly model_type: string;
         };

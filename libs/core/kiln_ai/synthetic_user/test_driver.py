@@ -95,6 +95,16 @@ def test_construction_renders_system_prompt_once(
     assert "Press for specifics" in drv._system_prompt
 
 
+def test_construction_passes_grounded_to_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_adapter(monkeypatch, _fake_run_output())
+    default = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)._system_prompt
+    grounded = SyntheticUserDriver(_INFO, _DRIVER_CONFIG, grounded=True)._system_prompt
+    assert "cannot be found" in default
+    assert "cannot be found" not in grounded
+
+
 # ───────────────────────── respond — happy path ─────────────────────────
 
 

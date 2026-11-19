@@ -467,7 +467,8 @@ Headings in order: `## Starting point`, `## Facts`, `## Expected outcome`, `## A
   it too, so both paths start, bind and end episodes the same way.
 - `run_cases_batch` drives a case that has `openenv_reset` inside `openenv_episode_scope`, with
   `open_openenv_session=False` on the target adapter, and stores `scope.ended` as the leaf run's
-  `openenv_episode`. A case without one is driven as today.
+  `openenv_episode`. An ended episode with no `final_state` is not saved: the case is retried in
+  a fresh episode, as the eval runner refuses such a trace. A case without one is driven as today.
 
 ### Judge
 
@@ -503,7 +504,10 @@ Headings in order: `## Starting point`, `## Facts`, `## Expected outcome`, `## A
 ### Driver prompt
 
 `synthetic_user/prompt.py` renders without the accept-not-found bullet when the case has
-`judge_guidance`.
+`judge_guidance`. Both paths that drive a case pass this flag: `run_cases_batch` in the builder
+(the case's `judge_guidance`), and the eval runner's re-drive through `drive_case_for_eval`
+(the saved `EvalInput.reference` has a `judge_guidance` key, `is_grounded_input`). A saved grounded
+case then behaves the same in the builder and when the eval runs.
 
 ### Judge hint
 

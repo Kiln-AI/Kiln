@@ -81,16 +81,13 @@ from kiln_ai.datamodel.tool_id import (
     openenv_and_tool_name_from_id,
 )
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.eval_grounding.judge_guidance import is_grounded_input
+from kiln_ai.openenv.episode_scope import openenv_episode_scope
 from kiln_ai.openenv.session_manager import (
     OpenEnvError,
     OpenEnvSessionManager,
     OpenEnvTransientError,
     shared_session_manager,
-)
-from kiln_ai.run_context import (
-    EpisodeContext,
-    reset_episode,
-    set_episode,
 )
 from kiln_ai.synthetic_user import drive_case_for_eval
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
@@ -1233,32 +1230,20 @@ class EvalRunner:
         """
 
         async def generate() -> TaskRun:
-            episode = await target.session_manager.start_episode(
-                target.openenv_server, openenv_reset.reset_kwargs
-            )
-            token = set_episode(
-                EpisodeContext(
-                    episode=episode,
-                    openenv_server=target.openenv_server,
-                    session_manager=target.session_manager,
-                    tools=target.tools,
-                )
-            )
-            try:
-                try:
-                    run = await generation.generate()
-                finally:
-                    reset_episode(token)
-            except BaseException:
-                await target.session_manager.release(episode)
-                raise
-            # End the episode before anyone grades: the session manager records what graders will
-            # need (the final state) and the trace persists it, so a
+            # The scope ends the episode before anyone grades: the session manager records
+            # what graders will need (the final state) and the trace persists it, so a
             # concurrent judge reusing this generation sees the settled record.
-            ended = await target.session_manager.end_episode(episode)
+            async with openenv_episode_scope(
+                target.session_manager,
+                target.openenv_server,
+                openenv_reset.reset_kwargs,
+                target.tools,
+            ) as scope:
+                run = await generation.generate()
+            ended = scope.ended
             if ended.final_state is None:
                 raise OpenEnvError(
-                    f"Episode {episode.episode_id} in OpenEnv server '{target.openenv_server.name}' "
+                    f"Episode {ended.episode_id} in OpenEnv server '{target.openenv_server.name}' "
                     "ended without a final state, so its trace was not saved"
                 )
             run.openenv_episode = ended
@@ -1548,6 +1533,7 @@ class EvalRunner:
                     ),
                     turns=drive_config.turns,
                     skills=self._skills,
+                    grounded=is_grounded_input(eval_input),
                 )
             turns_run = len(drive_result.chain)
             ended_by_su = drive_result.ended_early(drive_config.turns)

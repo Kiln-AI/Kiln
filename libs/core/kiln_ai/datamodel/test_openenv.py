@@ -8,8 +8,11 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.code_tool import CodeTool
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
+    Eval,
     EvalInput,
+    EvalOutputScore,
     EvalTaskInput,
     SingleTurnEvalInputData,
     UserMessage,
@@ -327,6 +330,7 @@ class TestResetAndEpisode:
             {"input": "hi", "output": {"output": "hello"}}
         )
         assert legacy_run.openenv_episode is None
+        assert legacy_run.reference is None
 
     def test_task_run_persists_openenv_episode(self, project):
         task = Task(name="t", instruction="i", parent=project)
@@ -374,3 +378,43 @@ class TestResetAndEpisode:
             ),
         )
         assert EvalTaskInput.from_task_run(run).openenv_episode is None
+
+
+class TestGroundedEvalRecords:
+    def test_eval_records_its_openenv_server(self, project, openenv_server):
+        task = Task(name="t", instruction="i", parent=project)
+        task.save_to_file()
+        fields: dict[str, Any] = {
+            "parent": task,
+            "eval_set_filter_id": "tag::eval",
+            "eval_configs_filter_id": "tag::golden",
+            "output_scores": [
+                EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+            ],
+        }
+        assert Eval(name="plain", **fields).openenv_server_id is None
+        eval_ = Eval(name="grounded", openenv_server_id=openenv_server.id, **fields)
+        eval_.save_to_file()
+        assert eval_.path is not None
+        assert Eval.load_from_file(eval_.path).openenv_server_id == openenv_server.id
+
+    def test_task_run_persists_reference(self, project):
+        task = Task(name="t", instruction="i", parent=project)
+        task.save_to_file()
+        run = TaskRun(
+            parent=task,
+            input="hi",
+            output=TaskOutput(
+                output="out",
+                source=DataSource(
+                    type=DataSourceType.human, properties={"created_by": "me"}
+                ),
+            ),
+            reference={"judge_guidance": "## Starting point\nTwo open jobs."},
+        )
+        run.save_to_file()
+        assert run.path is not None
+        loaded = TaskRun.load_from_file(run.path)
+        assert loaded.reference == {
+            "judge_guidance": "## Starting point\nTwo open jobs."
+        }

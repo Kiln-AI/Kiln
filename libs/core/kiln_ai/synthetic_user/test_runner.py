@@ -22,10 +22,18 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
 )
+from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvReset, OpenEnvServer
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.usage import Usage
+from kiln_ai.openenv.session_manager import (
+    OpenEnvSessionManager,
+    OpenEnvTransientError,
+)
+from kiln_ai.openenv.testing import serve_in_thread
+from kiln_ai.run_context import get_episode
 from kiln_ai.synthetic_user import runner as runner_mod
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
@@ -124,7 +132,7 @@ def _patch_su_driver(
     """
     call_counter = {"i": 0}
 
-    def _ctor(info, config):
+    def _ctor(info, config, grounded=False):
         idx = call_counter["i"]
         call_counter["i"] += 1
         replies = (
@@ -272,7 +280,7 @@ async def test_total_cost_sums_target_and_su_driver_spend(
 
     # At turns=2 each case makes ONE SU call (none after the final turn),
     # at $0.01 → $0.01 SU per case.
-    def _ctor(info, config):
+    def _ctor(info, config, grounded=False):
         instance = Mock(spec=SyntheticUserDriver)
         instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
@@ -580,7 +588,7 @@ async def test_malformed_blob_surfaces_as_case_failed(
     blob fails that case alone; the others run normally.
     """
 
-    def _ctor(info, config):
+    def _ctor(info, config, grounded=False):
         instance = Mock(spec=SyntheticUserDriver)
         instance.respond = AsyncMock(return_value=("ok", None))
         return instance
@@ -712,7 +720,7 @@ async def test_mid_drive_failure_writes_nothing(
     else:
         _patch_adapter_for_task(monkeypatch, [run_one, run_two])
 
-        def _ctor(info, config):
+        def _ctor(info, config, grounded=False):
             instance = Mock(spec=SyntheticUserDriver)
             instance.respond = AsyncMock(
                 side_effect=[("u2", None), ValueError("su blew up")]
@@ -887,7 +895,7 @@ async def test_retried_case_batch_total_includes_both_attempts_costs(
     )
 
     # One SU call per attempt (turns=2), at $0.01.
-    def _ctor(info, config):
+    def _ctor(info, config, grounded=False):
         instance = Mock(spec=SyntheticUserDriver)
         instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
@@ -937,7 +945,7 @@ async def test_dead_case_failed_event_reports_all_attempts_spend(
         ],
     )
 
-    def _ctor(info, config):
+    def _ctor(info, config, grounded=False):
         instance = Mock(spec=SyntheticUserDriver)
         instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
@@ -1221,6 +1229,7 @@ async def test_cancelled_case_writes_nothing_and_reraises(
             skills={},
             task_run_config_id=None,
             failed_attempt_spend={},
+            openenv_targets=runner_mod._OpenEnvTargets(fake_task, Mock()),
         )
     )
     await asyncio.wait_for(reached_turn_two.wait(), timeout=1.0)
@@ -1269,3 +1278,318 @@ async def test_consumer_disconnect_mid_case_writes_nothing(
 
     run_one.save_to_file.assert_not_called()
     run_one.delete.assert_not_called()
+
+
+# ───────────────────────── grounded cases in an OpenEnv episode ─────────────────────────
+
+
+@pytest.fixture
+def openenv_project(tmp_path):
+    project = Project(name="proj", path=tmp_path / "proj" / "project.kiln")
+    project.path.parent.mkdir(parents=True)
+    project.save_to_file()
+    task = Task(name="task", instruction="keep notes", parent=project)
+    task.save_to_file()
+    with serve_in_thread() as url:
+        server = OpenEnvServer(name="Notes", parent=project, url=url)
+        server.save_to_file()
+        yield task, server
+
+
+@pytest.fixture
+async def session_manager():
+    session_manager = OpenEnvSessionManager()
+    try:
+        yield session_manager
+    finally:
+        await session_manager.shutdown()
+
+
+def _grounded_case(openenv_server_id: str) -> SyntheticUserCase:
+    return _case(0).model_copy(
+        update={
+            "openenv_reset": OpenEnvReset(
+                openenv_server_id=openenv_server_id,
+                reset_kwargs={"fixture_id": "f1"},
+            ),
+            "judge_guidance": "## Starting point\nAn empty notebook.",
+        }
+    )
+
+
+def _patch_episode_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+    session_manager: OpenEnvSessionManager,
+    fail_on_turn: int | None = None,
+) -> tuple[list[Any], list[str | None]]:
+    """An adapter that writes each turn's input as a note in the bound episode, as an
+    OpenEnv tool call would. Returns the adapter configs built and, per turn, the bound
+    episode's id (None when no episode is bound)."""
+    adapter_configs: list[Any] = []
+    episode_ids: list[str | None] = []
+
+    async def invoke(*, input: str, **_kwargs: Any) -> Mock:
+        bound = get_episode()
+        episode_ids.append(bound.episode.episode_id if bound else None)
+        if fail_on_turn == len(episode_ids):
+            raise ValueError("model failed")
+        if bound is not None:
+            await session_manager.call_tool(
+                bound.episode, "append_note", {"note": input}
+            )
+        run = _fake_run(None)
+        run.openenv_episode = None
+        return run
+
+    def _fake_adapter_for_task(task, run_config, base_adapter_config=None):
+        adapter_configs.append(base_adapter_config)
+        adapter = Mock()
+        adapter.invoke = AsyncMock(side_effect=invoke)
+        return adapter
+
+    monkeypatch.setattr(runner_mod, "adapter_for_task", _fake_adapter_for_task)
+    return adapter_configs, episode_ids
+
+
+@pytest.mark.asyncio
+async def test_grounded_case_drives_every_turn_in_one_episode(
+    openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, server = openenv_project
+    adapter_configs, episode_ids = _patch_episode_adapter(monkeypatch, session_manager)
+    grounded_flags: list[bool] = []
+
+    def _ctor(info, config, grounded=False):
+        grounded_flags.append(grounded)
+        instance = Mock(spec=SyntheticUserDriver)
+        instance.respond = AsyncMock(return_value=("second message", None))
+        return instance
+
+    _patch_su_driver_factory(monkeypatch, _ctor)
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_grounded_case(str(server.id))],
+            target_task=task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    completed = [e for e in events if isinstance(e, CaseCompletedEvent)]
+    assert len(completed) == 1
+    assert len(episode_ids) == 2
+    assert episode_ids[0] is not None and episode_ids[0] == episode_ids[1]
+    assert [cfg.open_openenv_session for cfg in adapter_configs] == [False]
+    assert grounded_flags == [True]
+    assert get_episode() is None
+    assert session_manager._sessions == {}
+
+
+@pytest.mark.asyncio
+async def test_grounded_leaf_records_the_ended_episode(
+    openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, server = openenv_project
+    _patch_episode_adapter(monkeypatch, session_manager)
+    leaves: list[Any] = []
+    real_tag_leaf = runner_mod._tag_leaf
+
+    def _record_leaf(leaf, batch_tag, *, ended_by_su):
+        leaves.append(leaf)
+        real_tag_leaf(leaf, batch_tag, ended_by_su=ended_by_su)
+
+    monkeypatch.setattr(runner_mod, "_tag_leaf", _record_leaf)
+    _patch_su_driver(monkeypatch, replies_per_case=["second message"])
+
+    await _collect(
+        run_cases_batch(
+            cases=[_grounded_case(str(server.id))],
+            target_task=task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    (leaf,) = leaves
+    episode = leaf.openenv_episode
+    assert isinstance(episode, OpenEnvEpisode)
+    assert episode.reset.reset_kwargs == {"fixture_id": "f1"}
+    assert episode.final_state is not None
+    assert episode.final_state["notes"] == ["seed-0", "second message"]
+    leaf.save_to_file.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ungrounded_case_opens_no_episode(
+    openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, _server = openenv_project
+    adapter_configs, episode_ids = _patch_episode_adapter(monkeypatch, session_manager)
+    grounded_flags: list[bool] = []
+
+    def _ctor(info, config, grounded=False):
+        grounded_flags.append(grounded)
+        instance = Mock(spec=SyntheticUserDriver)
+        instance.respond = AsyncMock(return_value=("x", None))
+        return instance
+
+    _patch_su_driver_factory(monkeypatch, _ctor)
+    start_episode = AsyncMock(wraps=session_manager.start_episode)
+    monkeypatch.setattr(session_manager, "start_episode", start_episode)
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case(0)],
+            target_task=task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    assert any(isinstance(e, CaseCompletedEvent) for e in events)
+    assert episode_ids == [None, None]
+    assert [cfg.open_openenv_session for cfg in adapter_configs] == [True]
+    assert grounded_flags == [False]
+    start_episode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_unknown_openenv_server_fails_the_case(
+    openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, _server = openenv_project
+    _, episode_ids = _patch_episode_adapter(monkeypatch, session_manager)
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_grounded_case("missing_server")],
+            target_task=task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    (failed,) = [e for e in events if isinstance(e, CaseFailedEvent)]
+    assert failed.error_code == "openenv_server_not_found"
+    assert "missing_server" in failed.message
+    assert episode_ids == []
+
+
+@pytest.mark.asyncio
+async def test_failed_drive_releases_the_episode(
+    openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, server = openenv_project
+    _, episode_ids = _patch_episode_adapter(
+        monkeypatch, session_manager, fail_on_turn=2
+    )
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_grounded_case(str(server.id))],
+            target_task=task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    (failed,) = [e for e in events if isinstance(e, CaseFailedEvent)]
+    assert failed.error_code == "unexpected_error"
+    assert len(episode_ids) == 2
+    assert session_manager._sessions == {}
+
+
+@pytest.mark.asyncio
+async def test_transient_openenv_error_retries_the_case_in_a_fresh_episode(
+    openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, server = openenv_project
+    episode_ids: list[str] = []
+
+    async def invoke(**_kwargs: Any) -> Mock:
+        bound = get_episode()
+        assert bound is not None
+        episode_ids.append(bound.episode.episode_id)
+        if len(episode_ids) == 1:
+            raise OpenEnvTransientError("connection dropped")
+        run = _fake_run(None)
+        run.openenv_episode = None
+        return run
+
+    _patch_adapter_for_task(monkeypatch, invoke)
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0.0)
+    _patch_su_driver(monkeypatch, replies_per_case=[])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_grounded_case(str(server.id))],
+            target_task=task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    assert any(isinstance(e, CaseCompletedEvent) for e in events)
+    assert len(episode_ids) == 2 and episode_ids[0] != episode_ids[1]
+    assert session_manager._sessions == {}
+
+
+@pytest.mark.asyncio
+async def test_grounded_case_without_a_final_state_is_never_saved(
+    openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A session gone before its state was read leaves no end state for the judge:
+    the case is retried in a fresh episode, and fails once retries run out."""
+    task, server = openenv_project
+    _, episode_ids = _patch_episode_adapter(monkeypatch, session_manager)
+    _patch_su_driver_factory(
+        monkeypatch,
+        lambda info, config, grounded=False: Mock(spec=SyntheticUserDriver),
+    )
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0.0)
+    leaves: list[Any] = []
+    monkeypatch.setattr(
+        runner_mod,
+        "_tag_leaf",
+        lambda leaf, batch_tag, *, ended_by_su: leaves.append(leaf),
+    )
+
+    async def end_without_state(episode: OpenEnvEpisode) -> OpenEnvEpisode:
+        await session_manager.release(episode)
+        return episode
+
+    monkeypatch.setattr(session_manager, "end_episode", end_without_state)
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_grounded_case(str(server.id))],
+            target_task=task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    (failed,) = [e for e in events if isinstance(e, CaseFailedEvent)]
+    assert failed.error_type == "OpenEnvTransientError"
+    assert "ended without a final state" in failed.message
+    assert len(set(episode_ids)) == 1 + runner_mod.DRIVE_MAX_RETRIES
+    for leaf in leaves:
+        leaf.save_to_file.assert_not_called()
+    assert session_manager._sessions == {}

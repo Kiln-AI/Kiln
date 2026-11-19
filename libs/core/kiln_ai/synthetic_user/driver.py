@@ -53,10 +53,12 @@ class SyntheticUserDriver:
         self,
         synthetic_user_info: SyntheticUserInfo,
         driver_config: SyntheticUserDriverConfig,
+        *,
+        grounded: bool = False,
     ):
         self._info = synthetic_user_info
         self._driver_config = driver_config
-        self._system_prompt: str = render_system_prompt(self._info)
+        self._system_prompt: str = render_system_prompt(self._info, grounded=grounded)
 
         # In-memory Task; nothing is persisted. The persona-playing system
         # prompt rides on `prior_trace[0]` each call, so this `instruction`
