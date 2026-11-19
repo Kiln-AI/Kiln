@@ -1,4 +1,6 @@
 import json
+import logging
+import warnings
 
 import pytest
 from pydantic import ValidationError
@@ -12,6 +14,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.prompt import Prompt
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
@@ -450,59 +453,54 @@ def test_task_specs_readonly(tmp_path):
     assert specs_default[0].name == "Readonly Spec"
 
 
-def test_task_prompt_optimization_jobs_relationship(tmp_path):
-    """Test that prompt_optimization_jobs can be created, saved, and retrieved through the task parent."""
-    from kiln_ai.datamodel import PromptOptimizationJob
-
+def test_task_loads_with_unknown_legacy_child_folder(
+    tmp_path, sample_run_config_props, caplog
+):
+    """Task folders written by older Kiln versions can hold a prompt_optimization_jobs/
+    folder. It isn't a registered child type, so loading ignores it and never touches it."""
     task = Task(
         name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
     )
     task.save_to_file()
-
-    prompt_optimization_job = PromptOptimizationJob(
-        name="Test Prompt Optimization Job",
-        job_id="remote-job-123",
-        target_run_config_id="config-123",
-        latest_status="pending",
+    Prompt(name="Saved Prompt", prompt="Be helpful.", parent=task).save_to_file()
+    TaskRunConfig(
+        name="Saved Config",
+        run_config_properties=sample_run_config_props,
         parent=task,
+    ).save_to_file()
+
+    legacy_job_file = (
+        tmp_path
+        / "prompt_optimization_jobs"
+        / "123 - old"
+        / "prompt_optimization_job.kiln"
     )
-    prompt_optimization_job.save_to_file()
-
-    prompt_optimization_jobs = task.prompt_optimization_jobs()
-    assert len(prompt_optimization_jobs) == 1
-    assert prompt_optimization_jobs[0].name == "Test Prompt Optimization Job"
-    assert prompt_optimization_jobs[0].job_id == "remote-job-123"
-
-
-def test_task_prompt_optimization_jobs_readonly(tmp_path):
-    """Test that prompt_optimization_jobs can be retrieved with readonly parameter."""
-    from kiln_ai.datamodel import PromptOptimizationJob
-
-    task = Task(
-        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    legacy_job_file.parent.mkdir(parents=True)
+    legacy_job_json = json.dumps(
+        {
+            "v": 1,
+            "id": "123",
+            "model_type": "prompt_optimization_job",
+            "name": "old",
+            "job_id": "remote-job-123",
+            "target_run_config_id": "config-123",
+            "latest_status": "running",
+            "eval_ids": ["eval-1"],
+        },
+        ensure_ascii=False,
     )
-    task.save_to_file()
+    legacy_job_file.write_text(legacy_job_json)
 
-    prompt_optimization_job = PromptOptimizationJob(
-        name="Readonly Prompt Optimization Job",
-        job_id="remote-job-456",
-        target_run_config_id="config-456",
-        latest_status="succeeded",
-        parent=task,
-    )
-    prompt_optimization_job.save_to_file()
+    with caplog.at_level(logging.WARNING), warnings.catch_warnings():
+        warnings.simplefilter("error")
+        loaded_task = Task.load_from_file(task.path)
+        prompts = loaded_task.prompts()
+        run_configs = loaded_task.run_configs()
 
-    prompt_optimization_jobs_readonly = task.prompt_optimization_jobs(readonly=True)
-    assert len(prompt_optimization_jobs_readonly) == 1
-    assert (
-        prompt_optimization_jobs_readonly[0].name == "Readonly Prompt Optimization Job"
-    )
-
-    prompt_optimization_jobs_default = task.prompt_optimization_jobs(readonly=False)
-    assert len(prompt_optimization_jobs_default) == 1
-    assert (
-        prompt_optimization_jobs_default[0].name == "Readonly Prompt Optimization Job"
-    )
+    assert [p.name for p in prompts] == ["Saved Prompt"]
+    assert [rc.name for rc in run_configs] == ["Saved Config"]
+    assert caplog.records == []
+    assert legacy_job_file.read_text() == legacy_job_json
 
 
 def test_all_children_of_parent_path_task_runs(tmp_path):

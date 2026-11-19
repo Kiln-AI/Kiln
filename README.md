@@ -27,7 +27,6 @@
 <p align="center">
   <a href="#highlights"><strong>Highlights</strong></a> •
   <a href="https://docs.kiln.tech/docs/evaluations"><strong>Evals</strong></a> •
-  <a href="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"><strong>Auto-Optimize</strong></a> •
   <a href="https://docs.kiln.tech/docs/documents-and-search-rag"><strong>RAG</strong></a> •
   <a href="https://docs.kiln.tech/docs/agents"><strong>Agents</strong></a> •
   <a href="https://docs.kiln.tech/docs/fine-tuning-guide"><strong>Fine-Tuning</strong></a> •
@@ -51,7 +50,6 @@ Kiln is a workbench for the full AI development loop: evals, optimization, promp
 
 - 🖥️ [**Intuitive app**](https://kiln.tech/download) - Easy-to-use apps for Mac, Windows, and Linux. One-click install.
 - 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) - Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes.
-- 🚀 [**Auto-Optimize**](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer) - Automatically find the best way to run your AI task, optimizing prompt, model selection, tools, skills, subagents, parameters, and more.
 - 💬 [**AI Assistant**](https://docs.kiln.tech) - Your AI data-science partner. Kiln Assistant proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
 - 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) - The app syncs to Git automatically — even for teammates who don't know what Git is.
 
@@ -80,7 +78,7 @@ Prefer to start in code? See the [Python library quickstart](https://docs.kiln.t
 
 ## Why Kiln?
 
-Most AI tooling forces a tradeoff: a code-only framework that covers one slice (orchestration *or* evals *or* RAG), or a paid SaaS that locks in your data and can't be extended. Kiln is a free, local-first workbench where a single task and dataset flow through evals, prompt optimization, fine-tuning, RAG, agents, and synthetic data — all in one tool.
+Most AI tooling forces a tradeoff: a code-only framework that covers one slice (orchestration *or* evals *or* RAG), or a paid SaaS that locks in your data and can't be extended. Kiln is a free, local-first workbench where a single task and dataset flow through evals, prompts, fine-tuning, RAG, agents, and synthetic data — all in one tool.
 
 - **One dataset, every technique.** Define a task once. Eval it, optimize the prompt, fine-tune a model, generate synthetic data, add RAG — all against the same dataset, with results that compound across stages.
 
@@ -89,8 +87,6 @@ Most AI tooling forces a tradeoff: a code-only framework that covers one slice (
   <p align="center">
     <img width="600" alt="Kiln optimization across iterations" src="https://github.com/user-attachments/assets/5517b33b-74dd-444a-9f40-6a9c6d8a1ffc">
   </p>
-
-- **Optimization, not just evaluation.** Other tools tell you how a prompt scores, but not how to fix it. Kiln's Auto-Optimize searches across hundreds of prompt mutations and models to find what works best for every eval dimension.
 
 - **GUI for the whole team, library for engineers.** Kiln's desktop app lets PMs rate outputs, SMEs add training examples, and QA flag regressions — without a terminal. Engineers ship the same tasks via an MIT-licensed Python library. Data scientists can use the library in notebooks and experiments.
 
@@ -114,7 +110,6 @@ Full docs at [docs.kiln.tech](https://docs.kiln.tech). Common starting points:
 
 - [Quickstart](https://docs.kiln.tech/getting-started/quickstart) — run your first task in 5 minutes
 - [Evals](https://docs.kiln.tech/docs/evaluations)
-- [Auto-Optimize](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer)
 - [RAG](https://docs.kiln.tech/docs/documents-and-search-rag)
 - [Agents](https://docs.kiln.tech/docs/agents)
 - [Fine-Tuning](https://docs.kiln.tech/docs/fine-tuning-guide)
@@ -137,7 +132,7 @@ Kiln's core Python library and REST server are [MIT-licensed](libs/core/LICENSE.
 
 Datasets are open JSON. You own and control your datasets.
 
-[Kiln Pro](https://kiln.tech/pricing) is our service that adds the AI Assistant, Auto-Optimize, and the Eval Builder. It's opt-in, and the core Kiln app remains fully functional without it.
+[Kiln Pro](https://kiln.tech/pricing) is our service that adds the AI Assistant and the Eval Builder. It's opt-in, and the core Kiln app remains fully functional without it.
 
 The Kiln name and logos are trademarks of Chesterfield Laboratories Inc.
 

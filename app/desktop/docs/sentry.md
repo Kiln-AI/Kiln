@@ -9,7 +9,7 @@ across the two projects.
 
 ## Files involved
 
-- `desktop.py` — calls `sentry_sdk.init` from the `__main__` block, gated on
+- `desktop_main.py` — calls `sentry_sdk.init` from `main()`, gated on
   `SENTRY_DSN` being set in `_sentry_config.py`. Unset = no init, no events.
 - `studio_server/_sentry_config.py` — auto-generated module containing
   `SENTRY_DSN`, `SENTRY_ENV`, and `SENTRY_RELEASE`. The committed copy holds
@@ -35,7 +35,7 @@ across the two projects.
 | Push to `main` / `workflow_dispatch` | `staging`    | `kiln-studio-desktop@<full-commit-sha>` |
 
 Both values are baked into `_sentry_config.py` at build time and read at
-runtime from `desktop.py`. If neither env var is set during a manual frozen
+runtime from `desktop_main.py`. If neither env var is set during a manual frozen
 build, the release falls back to `kiln-studio-desktop@<__version__>` from
 `studio_server/_version.py` (auto-synced from `pyproject.toml` by the build
 script) and the environment defaults to whatever Sentry assigns when
@@ -86,6 +86,6 @@ To find your event in Sentry, filter on `environment:local` in the
 We don't pass `integrations=[...]` to `sentry_sdk.init`. Sentry's default
 auto-discovery scans `sys.modules` at init time and activates the
 FastAPI/Starlette integrations because uvicorn (imported at the top of
-`desktop.py`) pulls both in before init runs. That's what makes distributed
+`desktop_main.py`) pulls both in before init runs. That's what makes distributed
 traces continue from the web UI (which sets
 `tracePropagationTargets: ["localhost"]`) into the local FastAPI server.

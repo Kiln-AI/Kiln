@@ -18,8 +18,7 @@ export function get_optimizers(
   const optimizers: Optimizer[] = [
     {
       title: "Refine Prompt",
-      description:
-        "Improve your prompt, manually or using our automatic optimizers.",
+      description: "Improve your prompt, manually or with prompt generators.",
       metrics: {
         [METRIC_IMPACT]: 5,
         [METRIC_COST_EFFICIENCY]: 4,
