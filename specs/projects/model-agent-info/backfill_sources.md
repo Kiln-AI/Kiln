@@ -98,7 +98,7 @@ at a similar cost.
 | Gemini 4 Hydrogen | 54 | $3.16 | 170 | [link](https://artificialanalysis.ai/models/gemini-4-hydrogen) | Index 54 at $3.16/task (Xhigh); highest index within 1.5x of its cost (Kimi K3.1 Pro 46 at $3.68, Qwen 4 Max 43 at $3.27) |
 | Gemini 4 Argon | 50 | $4.97 | 66 | [link](https://artificialanalysis.ai/models/gemini-4-argon) | Index 50 at $4.97/task; below Astra (57 at $6.24) and Gemini 4 Neon (61 at $6.44), but cheaper than both; Gemini 4 Hydrogen (54 at $3.16) beats it on both |
 | DeepSeek V4.1 Flash 1017 | 33 | $0.60 | 174 | [link](https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017) | Index 33 at $0.60/task; best open-weight flash, above Minimax (29 at $0.49) and GLM Flash (28 at $0.58) |
-| Kimi K3.1 Pro | 46 | $3.68 | 30 | [link](https://artificialanalysis.ai/models/kimi-k3-1-pro) | Index 46 at $3.68/task; below Argon (50 at $4.97) in quality but 26% cheaper |
+| Kimi K3.1 Pro | 46 | $3.68 | 30 | [link](https://artificialanalysis.ai/models/kimi-k3-1-pro) | Index 46 at $3.68/task; below Argon (50 at $4.97) in quality but 26% cheaper; Gemini 4 Hydrogen (54 at $3.16) beats it on both, so it is a candidate removal |
 
 Changes on 2026-11-19 (backfill of models added after Phase 4):
 - Added Gemini 4 Hydrogen: AA index 54 at $3.16/task (Xhigh), 170 tok/s.
