@@ -3115,7 +3115,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Replaced Claude Opus 5.\n"
             "Strengths: Strong at long-running autonomous coding, large-scale refactoring, and complex systems engineering."
         ),
-        tags=["current", "top_writing"],
+        tags=["current", "recommended", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3464,7 +3464,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Replaced Claude Sonnet 5.\n"
             "Strengths: Strong at coding, data analysis, and agentic tool use with fast response times."
         ),
-        tags=["current", "top_writing"],
+        tags=["current", "recommended", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
