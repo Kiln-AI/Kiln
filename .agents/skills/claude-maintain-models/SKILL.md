@@ -258,7 +258,7 @@ For each new model, write `agent_notes` and the model `tags`, then run the `curr
 - The `current` tag, when it is the newest release at its lab's price level. `current` is mechanical: it needs only the release date, not a benchmark.
 - A `Superseded by:` line on the predecessor, when the `current` tag moves.
 
-Other note lines (Strengths, Behavior, etc.) need an independent source; when none supports a line, leave it out and say so in the PR. Set tags are different: the set review below is required for every new model. The cost-based sets (`recommended`, `top_value`) and `top_fast` use Artificial Analysis numbers; without an AA page, `recommended` may use another independent benchmark, and `top_value` and `top_fast` are skipped. `top_open`, `top_on_device` and `top_writing` do not need AA: they use open-weight status, device fit and a writing source. Say in **Set review** which source each decision used, or that none was found.
+Other note lines (Strengths, Behavior, etc.) need an independent source; when none supports a line, leave it out and say so in the PR. Set tags are different: the set review below is required for every new model. The cost-based sets (`recommended`, `top_value`) and `top_fast` use Artificial Analysis numbers; without an AA page, `recommended` may use another independent benchmark, `top_value` is skipped, and `top_fast` takes the model only as a faster serving of a model in `top_open` or `recommended`. `top_open`, `top_on_device` and `top_writing` do not need AA: they use open-weight status, device fit and a writing source. Say in **Set review** which source each decision used, or that none was found.
 
 `test_live_models_have_notes` in `test_ml_model_list.py` fails for any live model without `agent_notes`, except the older models in `MODELS_WITHOUT_NOTES`. Never add a new model to that list.
 
@@ -266,8 +266,8 @@ Steps for each new model:
 
 1. Write the model's `agent_notes` — at minimum `Description:` + `Lineup:`.
 2. Run the `current` procedure for its lab and price level (always).
-3. Fetch its Artificial Analysis page (`https://artificialanalysis.ai/models/<slug>`; try the obvious slug variants). Record the intelligence index with its effort variant (for example "61, Xhigh"), the cost per Intelligence Index task, the output speed and the time to first token. Use the cost per task, not the blended $/M-token price, which the page shows in another table. If there is no page, write that down; the model then joins `top_value` and `top_fast` only through a serving-variant rule, and `recommended` only with another independent benchmark.
-4. Run the [set review](#set-tags) for every set in `MODEL_TAGS`. List each set's members from `built_in_models`, and fetch the AA page of every member inside the new model's cost band, so the comparison uses numbers from the same day.
+3. Fetch its Artificial Analysis page (`https://artificialanalysis.ai/models/<slug>`; try the obvious slug variants). Record the intelligence index with its effort variant (for example "61, Xhigh"), the cost per Intelligence Index task, the output speed and the time to first token. Use the cost per task, not the blended $/M-token price, which the page shows in another table. If there is no page, write that down. The model then skips `top_value`, joins `top_fast` only as a faster serving of a model in `top_open` or `recommended`, and joins `recommended` only with another independent benchmark.
+4. Run the [set review](#set-tags) for every set in `MODEL_TAGS`. List each set's members from `built_in_models`. Then fetch same-day AA pages for every `current` model, member or not, whose cost per task can fall inside the new model's cost band; use the OpenRouter prices to shortlist them. The join test compares against all of these, and the removal review against the members among them.
 5. Write judgment note lines where a source supports them.
 6. Add a **Set review** section to the PR (see 3h), even when no set changed.
 
