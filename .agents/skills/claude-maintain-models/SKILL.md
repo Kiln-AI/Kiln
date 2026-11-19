@@ -478,7 +478,7 @@ Rules:
 
 ### Sources in the PR
 
-Put the evidence in the PR body, so a reviewer can answer "why is this model in this set?" without redoing the research. `specs/projects/model-agent-info/backfill_sources.md` is a point-in-time record of the Phase 4 and 5 backfill; do not update it.
+Put the evidence in the PR body, so a reviewer can answer "why is this model in this set?" without redoing the research. Do not edit files under `specs/`, including `specs/projects/model-agent-info/backfill_sources.md`, a point-in-time record of the Phase 4 and 5 backfill.
 
 - **Set review:** for each set, the AA intelligence index, AA cost per task and AA output speed of the new model and of the models it was compared with. A blended $/M-token price is not a cost per task: when AA has no cost per task for a model, say so and leave that model out of the cost-band and value comparisons, deferring any decision that depends on it. The reason states the comparison ("index 52 at $1.10/task; next best at that cost is 44"), not a description ("strong flagship").
 - **Sources:** the URL behind each note line other than `Description:` and `Lineup:` when those come from the lab's own model page, which is cited once. When the lab page is unreachable and the note uses another description (for example the OpenRouter model description), name that source and say the lab page was unreachable. For a provider note, the URL behind each line.

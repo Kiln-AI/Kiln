@@ -108,6 +108,7 @@ Pre-answered gates:
   - **Conflict.** If the rebase has conflicts, put the child on a draft PR with a **Decisions required** section and say which base PR caused the conflict.
 - Titles: a ready PR gets a plain semantic-commit title, `chore: ...`, with no `WIP:` prefix; `WIP:` means draft, so only draft PRs are titled `WIP: chore: ...`. This overrides open-pr's rule that every title starts with `WIP:`. When a draft becomes ready, drop the `WIP: ` prefix from its title.
 - Never merge, approve, or force-push.
+- Never edit files under `specs/`. They are design records that humans maintain; a sweep PR changes no spec, even when docs-sync flags one as stale. Name the stale spec in the report instead.
 
 Remote config publish check, every run, after the PRs above:
 

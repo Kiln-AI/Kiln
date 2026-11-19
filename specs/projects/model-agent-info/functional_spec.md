@@ -179,15 +179,11 @@ fields on provider entries and provider-list items stay, for later use.
 ### Set tags
 
 - **When a model could be in a set:** (1) load the whole set; (2) decide
-  whether the model joins; (3) if it joins, review every member for one
-  that no longer earns its place. That can be an older model at the same
-  level, or a model from any lab or level that the new model beats for the
-  set's purpose. Such a member is removed only when it lost `current` or
-  the set is full; otherwise it is listed as a candidate removal for a
-  human. (Revision 4, 2026-11-19.)
-- A set never goes over its limit. To add a model to a full set, remove the
-  member with the lowest AA index inside the new model's cost band. When no
-  member is inside the band, or the set has no AA numbers, a human picks.
+  whether the model joins; (3) if it joins, review every member and remove
+  each one that no longer earns its place. That can be an older model at
+  the same level, or a model from any lab or level that the new model beats
+  for the set's purpose.
+- A set never goes over its limit. To add a model to a full set, remove one.
 - Every `recommended` model is also `current`. When a model loses
   `current`, it also leaves `recommended`.
 - **The `recommended` bar.** `recommended` is not one model per lab or per
@@ -441,18 +437,8 @@ section says, with these details:
 - Phase 3 (code changes) gets a step for each new model: write its note and
   tags, run the `current` procedure for its lab and price level, and run
   the set-review procedure for each set it could join. A run with nobody
-  watching (the scheduled model sweep) follows the same rules. The set
-  review is required: it fetches the model's Artificial Analysis page,
-  compares it with same-day AA pages of every set member and of every
-  `current` non-member within a 1.5x cost band, and writes a **Set review** section in the PR even when no
-  set changes. Removals other than a lost `current` or a full set are
-  listed as candidates for a human, not applied. Without an AA page,
-  `recommended` needs another independent benchmark, `top_value` is
-  skipped, and `top_fast` takes only a faster serving of a strong model; `top_open`, `top_on_device` and `top_writing` use
-  their own evidence. (Revision 4, 2026-11-19.)
-- A data test (`test_live_models_have_notes`) fails any live model without
-  a note, except the older models frozen in `MODELS_WITHOUT_NOTES`, which
-  only shrinks. (Revision 4, 2026-11-19.)
+  watching (the scheduled model sweep) follows the same rules: when nothing
+  can be supported, it leaves the fields empty and says so in the PR.
 - The PR description: when a set changes, a section at the top lists each
   addition and removal, per set, with a short reason for each.
 - "Adding a Net-New Provider": the touchpoint checklist replaces the
