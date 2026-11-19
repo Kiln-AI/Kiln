@@ -32,11 +32,12 @@ Orchestration and concurrency live here so the UI stays a thin SSE consumer.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Request
@@ -53,11 +54,13 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
     TurnMode,
 )
+from kiln_ai.datamodel.openenv import OpenEnvEpisode
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.openenv.session_manager import shared_session_manager
 from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
 from kiln_ai.synthetic_user.runner import (
     NUM_CASES_MAX,
@@ -77,6 +80,7 @@ from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.slow_operation import log_if_slow
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
+from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -87,6 +91,8 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     AuthorJudgeApiOutput,
     BuildClaimsApiInput,
     BuildClaimsApiOutput,
+    GroundCaseApi,
+    GroundingModelApi,
     JudgeConfig,
     PipelineBatchAbortedEvent,
     PipelineBatchCompletedEvent,
@@ -106,6 +112,12 @@ from app.desktop.studio_server.multiturn_sdg_api import (
     guard_multiturn,
     resolve_target_run_config,
     to_su_driver_config,
+)
+from app.desktop.studio_server.services.eval_grounding import (
+    GroundingFrame,
+    NoGroundingServerError,
+    grounding_frames,
+    grounding_server,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
     delete_multi_turn_batch_chains,
@@ -265,10 +277,28 @@ class JudgeTracesRequest(BaseModel):
         ),
     )
     judge: JudgeConfig
+    judge_guidance: list[str | None] | None = Field(
+        default=None,
+        description=(
+            "Each case's judge guidance, in the order of leaf_run_ids, for "
+            "cases grounded in an OpenEnv server; null for a case without "
+            "one. Omit when no case has any."
+        ),
+    )
 
     # forbid: a retired or misspelled field on this request must 422, not be
     # silently dropped.
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def judge_guidance_matches_leaf_run_ids(self) -> Self:
+        if self.judge_guidance is not None and len(self.judge_guidance) != len(
+            self.leaf_run_ids
+        ):
+            raise ValueError(
+                "judge_guidance must have one entry per leaf_run_ids entry."
+            )
+        return self
 
     @field_validator("leaf_run_ids")
     @classmethod
@@ -340,6 +370,46 @@ class SingleTurnPipelineRequest(TargetRunConfigFields, ReplaceBatchTagsField):
             if not input_text.strip():
                 raise ValueError("inputs must not contain empty entries.")
         return value
+
+
+class GroundCasesRequest(TargetRunConfigFields):
+    """The grounding stream's request: the planned cases kiln_server drafted simulated
+    users for, the run config whose OpenEnv server they are checked against, and what
+    the grounding agent reads about the eval. The run config fields are the drive
+    requests' own, so cases are grounded against the config that will drive them."""
+
+    # forbid: a retired or misspelled field must 422, not be silently dropped.
+    model_config = ConfigDict(extra="forbid")
+
+    judge_model: GroundingModelApi = Field(
+        description="The build's judge model. The grounding agent runs on it: it "
+        "writes the answer key the judge grades against."
+    )
+    specification: str = Field(
+        min_length=1, description="The eval's specification: what the eval tests."
+    )
+    synthetic_user_guide: str | None = Field(
+        default=None,
+        description="Who uses the agent under test and what they ask. Omit when "
+        "the project has none.",
+    )
+    cases: list[GroundCaseApi] = Field(
+        min_length=1,
+        max_length=NUM_CASES_MAX,
+        description="The cases to ground. Frames refer to each by its position "
+        "here (case_index).",
+    )
+
+
+async def _grounding_sse(
+    frames: AsyncGenerator[GroundingFrame, None],
+) -> AsyncIterator[str]:
+    # aclosing: a client disconnect closes the frames too, which cancels the cases
+    # still running and ends their episodes.
+    async with contextlib.aclosing(frames):
+        async for frame in frames:
+            yield _sse(frame)
+    yield SSE_TERMINATOR
 
 
 class JudgeStreamBase:
@@ -519,11 +589,14 @@ class JudgeStreamBase:
         leaf_run_id: str,
         trace: list[dict[str, Any]] | None,
         drive_cost: float,
+        judge_guidance: str | None = None,
+        openenv_episode: OpenEnvEpisode | None = None,
     ) -> None:
         """Judge one case (local). `trace` is the structured conversation
         echoed on the frame; how the judge reads the case is `_judge_view`.
-        Claims are not built here — the client requests them per opened
-        trace via build_claims."""
+        A case grounded in an OpenEnv server passes its judge guidance and the
+        episode it ran in. Claims are not built here — the client requests
+        them per opened trace via build_claims."""
         async with self._review_sem:
             try:
                 raw_input, raw_output, judge_trace = self._judge_view(case_index, trace)
@@ -534,6 +607,8 @@ class JudgeStreamBase:
                     raw_output,
                     self._judge,
                     trace=judge_trace,
+                    judge_guidance=judge_guidance,
+                    openenv_episode=openenv_episode,
                 )
                 # Frame construction/serialization is inside the try: a
                 # failure here must surface as case_failed too, or the batch
@@ -754,6 +829,8 @@ class MultiTurnPipelineRun(JudgeStreamBase):
                             event.leaf_run_id,
                             trace,
                             event.total_cost,
+                            judge_guidance=self._cases[event.case_index].judge_guidance,
+                            openenv_episode=event.openenv_episode,
                         ),
                         name=f"judge_case_{event.case_index}",
                     )
@@ -812,6 +889,7 @@ class JudgeTracesRun(JudgeStreamBase):
         # ran, so there is no new batch tag and no new drive spend to report.
         self._task = task
         self._leaf_run_ids = input.leaf_run_ids
+        self._judge_guidance = input.judge_guidance or [None] * len(input.leaf_run_ids)
         self._single_turn = task.turn_mode != TurnMode.multiturn
         # Single-turn arm: each case's stored (input, output) pair. Only the
         # input is read back — the judge and the frames take raw_input from
@@ -880,7 +958,14 @@ class JudgeTracesRun(JudgeStreamBase):
             trace = [dict(message) for message in leaf.trace]
             self._review_tasks.append(
                 asyncio.create_task(
-                    self._judge_case(case_index, leaf_run_id, trace, 0.0),
+                    self._judge_case(
+                        case_index,
+                        leaf_run_id,
+                        trace,
+                        0.0,
+                        judge_guidance=self._judge_guidance[case_index],
+                        openenv_episode=leaf.openenv_episode,
+                    ),
                     name=f"judge_case_{case_index}",
                 )
             )
@@ -1463,6 +1548,74 @@ def connect_eval_builder_api(app: FastAPI):
         )
 
     @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/ground_cases",
+        tags=["Eval Builder"],
+        summary="Ground Cases in the OpenEnv Server",
+        openapi_extra=agent_policy_require_approval(
+            "Check each planned case against the run config's OpenEnv server and "
+            "fill it in with real data? Runs an agent on the judge model per case "
+            "(cost) and starts episodes on the server."
+        ),
+    )
+    @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
+    async def ground_cases(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
+        input: GroundCasesRequest,
+    ) -> CancellableStreamingResponse:
+        """Fit each planned case to the run config's OpenEnv server, or drop it.
+
+        For each case, an agent on the judge model picks reset arguments, finds
+        what the case needs in a fresh episode, fills real specifics into the
+        simulated user, and writes the judge guidance. Cases run concurrently.
+
+        Emits (all frames `type`-discriminated):
+          - grounding_started  { total }
+          - case_grounded      { case_index, scenario_index, status: "grounded",
+                                 openenv_reset, seed_prompt, synthetic_user_info,
+                                 judge_guidance }
+          - case_dropped       { case_index, scenario_index, drop_reason,
+                                 drop_detail }
+          - grounding_finished { grounded, dropped, usage, usage_complete }
+          - grounding_failed   { code, message }  (in place of
+                                 grounding_finished: an error that is not a
+                                 case's fault, such as an unreachable server,
+                                 stopped every case)
+        Terminated by `data: complete`. case_index is the position in `cases`.
+        Disconnecting cancels the cases still running and ends their episodes.
+        A run config whose tools reach no OpenEnv server, or several, is a 400.
+        """
+        project = project_from_id(project_id)
+        task = task_from_id(project_id, task_id)
+        guard_multiturn(task)
+        run_config, _run_config_id = resolve_target_run_config(
+            input, project_id, task_id
+        )
+        try:
+            openenv_server = grounding_server(project, run_config)
+        except NoGroundingServerError as e:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "no_openenv_server", "message": str(e)},
+            ) from e
+        frames = grounding_frames(
+            task=task,
+            run_config=run_config,
+            openenv_server=openenv_server,
+            session_manager=shared_session_manager(),
+            model=input.judge_model,
+            specification=input.specification,
+            synthetic_user_guide=input.synthetic_user_guide,
+            cases=input.cases,
+        )
+        return CancellableStreamingResponse(
+            content=_grounding_sse(frames),
+            media_type="text/event-stream",
+        )
+
+    @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/build_claims",
         tags=["Eval Builder"],
         openapi_extra=agent_policy_require_approval(
@@ -1494,6 +1647,7 @@ def connect_eval_builder_api(app: FastAPI):
             eval_rubric=input.eval_rubric,
             judge_score=input.judge_score,
             judge_reasoning=input.judge_reasoning,
+            judge_guidance=input.judge_guidance,
         )
         return output
 

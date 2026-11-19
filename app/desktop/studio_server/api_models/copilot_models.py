@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.openenv import OpenEnvReset
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 from typing_extensions import Self
 
@@ -189,6 +190,19 @@ class DrivenSyntheticCaseApi(BaseModel):
         "in. A case whose run the human reviewed is represented by that "
         "rated run and is not minted. Empty when the drive recorded no run, "
         "which can never have been reviewed.",
+    )
+    openenv_reset: OpenEnvReset | None = Field(
+        default=None,
+        description="The OpenEnv episode the case was grounded in and runs in. "
+        "Saved on the minted EvalInput, so every eval run starts the same "
+        "episode. Set on every case of a save with an openenv_server_id, and "
+        "on none otherwise.",
+    )
+    judge_guidance: str | None = Field(
+        default=None,
+        description="The grounded case's answer key, as markdown. Saved as the "
+        "`judge_guidance` reference of its EvalInput, or of its golden run when "
+        "the case was reviewed. Set exactly when openenv_reset is.",
     )
 
 

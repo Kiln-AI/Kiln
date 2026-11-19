@@ -10,7 +10,7 @@ from typing import Annotated
 import httpx
 import jsonschema
 from fastapi import FastAPI, File, HTTPException, Path, UploadFile
-from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
+from kiln_ai.datamodel import ClaimReview, Feedback, Task, TaskRun
 from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import (
@@ -23,6 +23,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnDriveConfig,
 )
 from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.spec import (
     Spec,
@@ -49,7 +50,7 @@ from kiln_server.utils.spec_utils import (
     spec_eval_data_type,
     split_names,
 )
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, JsonValue, field_validator, model_validator
 from typing_extensions import Self
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -123,6 +124,7 @@ from app.desktop.studio_server.data_gen_api import (
     _resolve_task_runtime_prompt,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
+    GroundedSaveError,
     SingleTurnDataset,
     build_multi_turn_eval_inputs,
     build_single_turn_batch_eval_inputs,
@@ -133,16 +135,21 @@ from app.desktop.studio_server.utils.copilot_utils import (
     find_single_turn_batch_runs,
     generate_copilot_examples,
     get_copilot_api_key,
+    golden_references,
     persist_eval_slice,
     rate_reviewed_batch_runs,
+    restore_golden_references,
     tag_golden_batch_runs,
     task_capabilities_for_task,
     task_info_payload,
     unrate_reviewed_batch_runs,
     untag_batch_runs_for_eval,
+    validate_grounded_cases,
+    write_golden_references,
 )
 from app.desktop.studio_server.utils.eval_builder_utils import (
     build_judge_prompt_template,
+    grounded_judge_reference_keys,
 )
 from app.desktop.studio_server.utils.response_utils import (
     unwrap_response,
@@ -228,6 +235,13 @@ class MultiTurnSaveInfo(BaseModel):
         description="The alignment-time drive settings (synthetic-user model "
         "+ turn count), stamped on each minted EvalInput so eval-time "
         "re-drives match the conversations the judge was calibrated on.",
+    )
+    openenv_server_id: str | None = Field(
+        default=None,
+        description="The OpenEnv server the cases were grounded in, saved on the "
+        "Eval. Every case's openenv_reset must name it. Omit when the build's "
+        "run config used no OpenEnv server; no case may then carry a reset or "
+        "judge guidance.",
     )
 
 
@@ -668,6 +682,41 @@ def validate_reviewed_refs(
     return set(reviewed_ids)
 
 
+def validate_grounded_save(
+    task: Task, multi_turn: MultiTurnSaveInfo, reviewed_leaf_ids: set[str]
+) -> dict[str, dict[str, JsonValue]]:
+    """Check a multi-turn save's cases against the OpenEnv server it names, and
+    return each reviewed case's judge guidance reference by leaf run id (empty when
+    the save names no server). Raises HTTPException(400) when they disagree."""
+    try:
+        validate_grounded_cases(multi_turn.cases, multi_turn.openenv_server_id)
+    except GroundedSaveError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if multi_turn.openenv_server_id is None:
+        return {}
+    project = task.parent_project()
+    if (
+        project is None
+        or OpenEnvServer.from_id_and_parent_path(
+            multi_turn.openenv_server_id, project.path
+        )
+        is None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"OpenEnv server {multi_turn.openenv_server_id} wasn't found.",
+        )
+    references = golden_references(multi_turn.cases, reviewed_leaf_ids)
+    missing = sorted(reviewed_leaf_ids - references.keys())
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail="Reviewed runs have no case with judge guidance: "
+            f"{', '.join(missing)}.",
+        )
+    return references
+
+
 def persist_spec_save(
     *,
     eval: Eval,
@@ -680,8 +729,11 @@ def persist_spec_save(
     reviewed_leaf_ids: set[str],
     golden_tag: str,
     spec_name: str,
+    golden_references: dict[str, dict[str, JsonValue]] | None = None,
 ) -> None:
     """Persist every model of a spec save as one unit of work, rolling back on failure.
+
+    `golden_references` is each grounded golden run's reference, by run id.
 
     An eval-builder save passes `batch_leaves` and `batch_eval_inputs`; the
     `sdg_session_config` path passes `single_turn_dataset` instead. Synchronous
@@ -692,6 +744,7 @@ def persist_spec_save(
     rated_leaves: list[
         tuple[TaskRun, TaskOutputRating | None, list[Feedback | ClaimReview]]
     ] = []
+    referenced_leaves: list[tuple[TaskRun, dict[str, JsonValue] | None]] = []
     try:
         eval.save_to_file()
         saved_models.append(eval)
@@ -729,9 +782,15 @@ def persist_spec_save(
                 spec_name=spec_name,
                 rated_out=rated_leaves,
             )
+            if golden_references:
+                write_golden_references(
+                    batch_leaves, golden_references, referenced_leaves
+                )
     except Exception:
         # Run mutations are reversed before the saved models are deleted, so no
         # rating or tag is left pointing at a deleted eval.
+        if referenced_leaves:
+            restore_golden_references(referenced_leaves)
         if rated_leaves:
             unrate_reviewed_batch_runs(rated_leaves)
         if tagged_leaves:
@@ -1173,6 +1232,9 @@ def connect_copilot_api(app: FastAPI):
         batch_leaves: list[TaskRun] = []
         reviewed_refs: list[ReviewedChainApi] = []
         reviewed_leaf_ids: set[str] = set()
+        # Set on a multi-turn save whose cases were grounded in an OpenEnv server.
+        openenv_server_id: str | None = None
+        golden_refs: dict[str, dict[str, JsonValue]] = {}
         if request.multi_turn is not None:
             batch_leaves = find_multi_turn_chain_leaves(
                 task, request.multi_turn.batch_tag
@@ -1188,6 +1250,10 @@ def connect_copilot_api(app: FastAPI):
             reviewed_refs = request.multi_turn.reviewed_chains
             reviewed_leaf_ids = validate_reviewed_refs(
                 reviewed_refs, batch_leaves, request.multi_turn.batch_tag
+            )
+            openenv_server_id = request.multi_turn.openenv_server_id
+            golden_refs = validate_grounded_save(
+                task, request.multi_turn, reviewed_leaf_ids
             )
         if request.single_turn is not None:
             batch_leaves = find_single_turn_batch_runs(
@@ -1290,6 +1356,8 @@ def connect_copilot_api(app: FastAPI):
             val_source="eval_input" if builder_save else "task_run",
             split_names=names,
         )
+        eval.openenv_server_id = openenv_server_id
+        grounded = openenv_server_id is not None
 
         # 2. Create the judge eval config: the judge the review step ran, in the
         # v2 shape, whose prompt_template the refine loop can write back into.
@@ -1303,7 +1371,9 @@ def connect_copilot_api(app: FastAPI):
                 prompt_template=build_judge_prompt_template(
                     request.judge_info.prompt,
                     multi_turn=request.evaluate_full_trace,
+                    grounded=grounded,
                 ),
+                reference_keys=grounded_judge_reference_keys(grounded),
             ),
             provenance=request.provenance,
         )
@@ -1413,6 +1483,7 @@ def connect_copilot_api(app: FastAPI):
             reviewed_leaf_ids=reviewed_leaf_ids,
             golden_tag=golden_tag,
             spec_name=request.name,
+            golden_references=golden_refs,
         )
 
         return spec

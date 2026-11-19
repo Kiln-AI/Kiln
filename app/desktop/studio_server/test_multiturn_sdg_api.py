@@ -842,6 +842,32 @@ def test_event_to_payload_raises_on_unregistered_event_type() -> None:
         _event_to_payload(_UnregisteredEvent())  # type: ignore[arg-type]
 
 
+def test_case_completed_payload_leaves_out_the_episode() -> None:
+    from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvReset
+
+    from app.desktop.studio_server.multiturn_sdg_api import _event_to_payload
+
+    episode = OpenEnvEpisode(
+        episode_id="ep_1",
+        openenv_version="env@1",
+        reset=OpenEnvReset(openenv_server_id="srv", reset_kwargs={}),
+        final_state={"notes": ["a"]},
+    )
+    payload = _event_to_payload(
+        CaseCompletedEvent(
+            case_index=0,
+            chain_run_ids=["r1"],
+            leaf_run_id="r1",
+            total_turns=1,
+            total_cost=0.0,
+            openenv_episode=episode,
+        )
+    )
+
+    assert "openenv_episode" not in payload
+    json.dumps(payload)
+
+
 def test_run_cases_batch_jsonable_typeerror_surfaces_as_batch_failed(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:

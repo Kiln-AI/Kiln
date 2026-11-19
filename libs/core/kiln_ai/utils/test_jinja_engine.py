@@ -556,3 +556,20 @@ class TestFormatTraceFilter:
             "Inventory says 4.\n</assistant_reasoning_message>\n\n"
             "assistant:\n<assistant_message>\nYes — 4 units in stock.\n</assistant_message>"
         )
+
+
+class TestPrettyJsonFilter:
+    def test_renders_indented_json_without_escaping(self):
+        rendered = jinja_engine._template_env.from_string(
+            "{{ value | pretty_json }}"
+        ).render(value={"a": "<b> & 'c'", "n": "é"})
+        assert rendered == '{\n  "a": "<b> & \'c\'",\n  "n": "é"\n}'
+
+    def test_available_in_expressions(self):
+        assert extract("value | pretty_json", {"value": [1]}) == "[\n  1\n]"
+
+    def test_unserializable_value_is_an_extraction_error(self):
+        with pytest.raises(JinjaExtractionError, match="not JSON serializable"):
+            jinja_engine._template_env.from_string("{{ value | pretty_json }}").render(
+                value={1, 2}
+            )

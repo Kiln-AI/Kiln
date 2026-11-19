@@ -32,16 +32,23 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
-from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
+from kiln_ai.datamodel.tool_id import OPENENV_TOOL_ID_PREFIX, SKILL_TOOL_ID_PREFIX
+from kiln_ai.eval_grounding.judge_guidance import JUDGE_GUIDANCE_REFERENCE_KEY
+from kiln_ai.openenv.session_manager import (
+    OpenEnvSessionManager,
+    shared_session_manager,
+)
 from kiln_ai.synthetic_user.models import TAG_SU_ENDED_CONVERSATION
 from kiln_ai.synthetic_user.parser import (
     SyntheticUserInfoParseError,
     parse_synthetic_user_info,
 )
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
+from kiln_ai.tools.run_config_tools import served_openenv_tools
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_server.utils.spec_utils import SpecEvalTags, SplitShare
+from pydantic import JsonValue
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     generate_batch_v1_copilot_generate_batch_post,
@@ -132,6 +139,7 @@ def get_copilot_api_key() -> str:
 async def task_capabilities_for_task(
     task: Task,
     run_config_id: str | None = None,
+    openenv_session_manager: OpenEnvSessionManager | None = None,
 ) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
     """Return the names and descriptions of the tools and skills a run config
     gives the model.
@@ -139,7 +147,9 @@ async def task_capabilities_for_task(
     run_config_id picks the run config. Without it, the task's default saved
     run config is used. Returns (None, None) if there's no run config to read,
     which is different from ([], []), a run config with no tools or skills.
-    Raises if the run config's tools or skills can't be read.
+    Raises if the run config's tools or skills can't be read. OpenEnv tools are
+    read from their server's tool list (`openenv_session_manager`, the shared
+    one by default), so no episode is started.
     """
     started = time.monotonic()
     try:
@@ -147,7 +157,11 @@ async def task_capabilities_for_task(
         # of dialing the server again per tool, and the scope closes those
         # sessions on the way out.
         async with mcp_session_scope():
-            tools, skills = await _collect_task_capabilities(task, run_config_id)
+            tools, skills = await _collect_task_capabilities(
+                task,
+                run_config_id,
+                openenv_session_manager or shared_session_manager(),
+            )
     except HTTPException:
         raise
     except Exception as e:
@@ -218,6 +232,7 @@ def _capability_run_config(
 async def _collect_task_capabilities(
     task: Task,
     run_config_id: str | None,
+    openenv_session_manager: OpenEnvSessionManager,
 ) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
     """Read one run config's capability surface. See the caller for the
     None vs [] contract; failures propagate to it."""
@@ -234,11 +249,23 @@ async def _collect_task_capabilities(
     tools_config = as_kiln_agent_run_config(properties).tools_config
     tool_ids = tools_config.tools if tools_config is not None else None
 
+    openenv_tools = await served_openenv_tools(
+        task, tool_ids or [], openenv_session_manager
+    )
+
     tools: list[TaskToolInfoApi] = []
     for tool_id in tool_ids or []:
         # Skills ride in the same tools list but are resolved by the adapter,
         # and tool_from_id raises on them. They are collected below instead.
         if tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+            continue
+        if tool_id.startswith(OPENENV_TOOL_ID_PREFIX):
+            openenv_tool = openenv_tools[tool_id]
+            tools.append(
+                TaskToolInfoApi(
+                    name=openenv_tool.name, description=openenv_tool.description
+                )
+            )
             continue
         try:
             tool = tool_from_id(tool_id, task)
@@ -915,9 +942,95 @@ def build_multi_turn_eval_inputs(
                     drive_config=drive_config,
                 ),
                 tags=tags,
+                openenv_reset=case.openenv_reset,
+                reference=judge_guidance_reference(case.judge_guidance),
             )
         )
     return eval_inputs
+
+
+class GroundedSaveError(ValueError):
+    """A multi-turn save's cases don't agree with the OpenEnv server it names."""
+
+
+def judge_guidance_reference(
+    judge_guidance: str | None,
+) -> dict[str, JsonValue] | None:
+    """The reference a grounded case is judged against, or None for a case without
+    judge guidance."""
+    if judge_guidance is None:
+        return None
+    return {JUDGE_GUIDANCE_REFERENCE_KEY: judge_guidance}
+
+
+def validate_grounded_cases(
+    cases: list[DrivenSyntheticCaseApi], openenv_server_id: str | None
+) -> None:
+    """With a server, every case is grounded in it: it has an openenv_reset naming
+    that server and judge guidance. Without one, no case carries either. Raises
+    GroundedSaveError naming the first case that doesn't fit."""
+    for position, case in enumerate(cases):
+        if openenv_server_id is None:
+            if case.openenv_reset is not None or case.judge_guidance is not None:
+                raise GroundedSaveError(
+                    f"Case {position} was grounded in an OpenEnv server, but the "
+                    "save names no openenv_server_id."
+                )
+            continue
+        if case.openenv_reset is None or case.judge_guidance is None:
+            raise GroundedSaveError(
+                f"Case {position} needs openenv_reset and judge_guidance: every "
+                "case of a save on an OpenEnv server is grounded in it."
+            )
+        if case.openenv_reset.openenv_server_id != openenv_server_id:
+            raise GroundedSaveError(
+                f"Case {position} was grounded in OpenEnv server "
+                f"{case.openenv_reset.openenv_server_id}, not the eval's server "
+                f"{openenv_server_id}."
+            )
+
+
+def golden_references(
+    cases: list[DrivenSyntheticCaseApi], reviewed_leaf_ids: set[str]
+) -> dict[str, dict[str, JsonValue]]:
+    """Each reviewed case's judge guidance reference, by its leaf run id. Reviewed
+    cases become golden runs, and calibration judges them against the same answer
+    key as the eval's inputs."""
+    references: dict[str, dict[str, JsonValue]] = {}
+    for case in cases:
+        reference = judge_guidance_reference(case.judge_guidance)
+        if case.leaf_run_id in reviewed_leaf_ids and reference is not None:
+            references[case.leaf_run_id] = reference
+    return references
+
+
+def write_golden_references(
+    leaves: list[TaskRun],
+    references: dict[str, dict[str, JsonValue]],
+    written_out: list[tuple[TaskRun, dict[str, JsonValue] | None]],
+) -> None:
+    """Set `reference` on each leaf that has one in `references`, recording the
+    reference it had before in `written_out` so a failed save can restore it."""
+    for leaf in leaves:
+        reference = references.get(leaf.id or "")
+        if reference is None:
+            continue
+        written_out.append((leaf, leaf.reference))
+        leaf.reference = reference
+        leaf.save_to_file()
+
+
+def restore_golden_references(
+    written: list[tuple[TaskRun, dict[str, JsonValue] | None]],
+) -> None:
+    """Undo write_golden_references. Best-effort, like the other rollbacks: a failure
+    is logged and the rest are still restored."""
+    for leaf, prior in written:
+        try:
+            leaf.reference = prior
+            leaf.save_to_file()
+        except Exception:
+            logger.exception(f"Failed to restore the reference of leaf {leaf.id}")
 
 
 def persist_eval_slice(

@@ -36,7 +36,7 @@ ship"). This is local setup, not a phase.
   `Eval.openenv_server_id`; `openenv_episode_scope` extracted from the eval runner, which uses
   it; `SyntheticUserCase.openenv_reset` and `judge_guidance`; `run_cases_batch` drives a
   grounded case in its episode; the driver prompt's grounded flag. With tests.
-- [ ] Phase 5: Studio server. Tool capabilities without an episode; the reset arguments brief
+- [x] Phase 5: Studio server. Tool capabilities without an episode; the reset arguments brief
   route; the streamed `ground_cases` route; the pipeline request's grounded fields and the
   grounded judge (template, transient judge, review re-judge); save writes `openenv_reset`,
   `judge_guidance` on inputs and golden runs, and `Eval.openenv_server_id`. Regenerate the

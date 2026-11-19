@@ -16,6 +16,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.eval import MultiTurnDriveConfig
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.run_config import (
     McpRunConfigProperties,
     MCPToolReference,
@@ -28,6 +29,9 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
+from kiln_ai.datamodel.tool_id import build_openenv_tool_id
+from kiln_ai.openenv.session_manager import OpenEnvSessionManager
+from kiln_ai.openenv.testing import free_port, serve_in_thread
 from kiln_ai.run_context import (
     clear_agent_run_id,
     get_agent_run_id,
@@ -1865,3 +1869,70 @@ class TestTaskInfoPayload:
             **self.BASE,
             "task_tools": [{"name": "add", "description": "Adds."}],
         }
+
+
+class TestTaskCapabilitiesWithOpenEnvTools:
+    """OpenEnv tools are read from the server's tool list, with no episode, so
+    judge authoring and clarifying questions work on an OpenEnv run config."""
+
+    async def test_reads_openenv_tools_from_the_server(
+        self, project_and_task, agent_run_config_properties, set_default_run_config
+    ):
+        project, task = project_and_task
+        with serve_in_thread(max_sessions=1) as url:
+            server = OpenEnvServer(name="counter", url=url, parent=project)
+            server.save_to_file()
+            set_default_run_config(
+                task,
+                agent_run_config_properties(
+                    tools_config=ToolsRunConfig(
+                        tools=[
+                            build_openenv_tool_id(server.id, "read_notes"),
+                            "kiln_tool::add_numbers",
+                        ]
+                    )
+                ),
+            )
+            manager = OpenEnvSessionManager()
+            try:
+                tools, _ = await task_capabilities_for_task(
+                    task, openenv_session_manager=manager
+                )
+                # The one-session server is free again: no episode was left open.
+                await manager.release(await manager.start_episode(server, {}))
+            finally:
+                await manager.shutdown()
+
+        assert tools == [
+            TaskToolInfoApi(
+                name="read_notes", description="Read every note in the notebook."
+            ),
+            TaskToolInfoApi(
+                name="add", description="Add two numbers together and return the result"
+            ),
+        ]
+
+    async def test_unreachable_server_is_a_500_with_its_url(
+        self, project_and_task, agent_run_config_properties, set_default_run_config
+    ):
+        project, task = project_and_task
+        url = f"http://127.0.0.1:{free_port()}"
+        server = OpenEnvServer(name="counter", url=url, parent=project)
+        server.save_to_file()
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(
+                    tools=[build_openenv_tool_id(server.id, "read_notes")]
+                )
+            ),
+        )
+        manager = OpenEnvSessionManager()
+        try:
+            with pytest.raises(HTTPException) as exc:
+                await task_capabilities_for_task(task, openenv_session_manager=manager)
+        finally:
+            await manager.shutdown()
+
+        assert exc.value.status_code == 500
+        assert url in exc.value.detail

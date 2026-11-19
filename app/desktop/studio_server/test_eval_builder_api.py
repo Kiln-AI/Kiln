@@ -28,6 +28,7 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
     V2EvalResult,
 )
+from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvReset
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     ToolsRunConfig,
@@ -36,6 +37,7 @@ from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
 from kiln_ai.utils.async_job_runner import RETRY_BACKOFF_FACTOR
+from kiln_ai.utils.jinja_engine import _template_env
 from kiln_server.custom_errors import connect_custom_errors
 from pydantic import ValidationError
 
@@ -3205,3 +3207,243 @@ def test_remote_call_routes_skip_the_git_sync_lock(path):
     connect_multiturn_sdg_api(app)
     route = next(r for r in app.routes if isinstance(r, APIRoute) and r.path == path)
     assert getattr(route.endpoint, "_git_sync_no_write_lock", False)
+
+
+# ───────────────────── cases grounded in an OpenEnv server ─────────────────────
+
+GUIDANCE = (
+    "## Starting point\nTicket 7 is open.\n\n## Must not happen\n- Closing ticket 8."
+)
+
+
+def _ended_episode(i: int) -> OpenEnvEpisode:
+    return OpenEnvEpisode(
+        episode_id=f"ep_{i}",
+        openenv_version="env@1",
+        reset=OpenEnvReset(openenv_server_id="srv", reset_kwargs={"fixture": "a"}),
+        final_state={"closed": [7]},
+    )
+
+
+class TestGroundedJudge:
+    def test_grounded_template_adds_guidance_and_final_state(self):
+        template = build_judge_prompt_template(
+            "Check the ticket.", multi_turn=True, grounded=True
+        )
+        assert "{{ reference_data.judge_guidance }}" in template
+        assert "openenv_episode.final_state" in template
+        assert "Must not happen" in template
+        # The guidance comes before the conversation it grades.
+        assert template.index("<judge_guidance>") < template.index(
+            "<conversation_transcript>"
+        )
+
+    def test_ungrounded_template_is_unchanged(self):
+        assert build_judge_prompt_template(
+            "Check the ticket.", multi_turn=True
+        ) == build_judge_prompt_template(
+            "Check the ticket.", multi_turn=True, grounded=False
+        )
+        assert "reference_data" not in build_judge_prompt_template(
+            "Check the ticket.", multi_turn=True
+        )
+
+    def test_grounded_template_renders_guidance_and_state(self):
+        template = build_judge_prompt_template(
+            "Check the ticket.", multi_turn=True, grounded=True
+        )
+        trace = [
+            {"role": "user", "content": "close 7"},
+            {"role": "assistant", "content": "done"},
+        ]
+        rendered = _template_env.from_string(template).render(
+            reference_data={"judge_guidance": GUIDANCE},
+            openenv_episode=_ended_episode(0).model_dump(),
+            trace=trace,
+        )
+        assert "Ticket 7 is open." in rendered
+        assert '"closed": [\n    7\n  ]' in rendered
+
+        without_state = _template_env.from_string(template).render(
+            reference_data={"judge_guidance": GUIDANCE},
+            openenv_episode=None,
+            trace=trace,
+        )
+        assert "<final_state>" not in without_state
+
+    def test_final_state_renders_unescaped(self):
+        template = build_judge_prompt_template(
+            "Check the ticket.", multi_turn=True, grounded=True
+        )
+        episode = _ended_episode(0).model_copy(
+            update={"final_state": {"title": "<urgent> R&D for José"}}
+        )
+        rendered = _template_env.from_string(template).render(
+            reference_data={"judge_guidance": GUIDANCE},
+            openenv_episode=episode.model_dump(),
+            trace=[{"role": "user", "content": "hi"}],
+        )
+        assert '"title": "<urgent> R&D for José"' in rendered
+
+    def test_grounded_transient_config_requires_the_guidance(
+        self, in_memory_task, judge_config
+    ):
+        config = build_transient_judge_eval_config(
+            in_memory_task, judge_config, multi_turn=True, grounded=True
+        )
+        properties = config.properties
+        assert isinstance(properties, LlmJudgeProperties)
+        assert properties.reference_keys == ["judge_guidance"]
+        ungrounded = build_transient_judge_eval_config(
+            in_memory_task, judge_config, multi_turn=True
+        ).properties
+        assert isinstance(ungrounded, LlmJudgeProperties)
+        assert ungrounded.reference_keys == []
+
+    @pytest.mark.asyncio
+    async def test_run_judge_passes_guidance_and_episode(
+        self, in_memory_task, judge_config
+    ):
+        adapter = _judge_adapter(V2EvalResult(scores={"meets_spec": 1.0}))
+        episode = _ended_episode(0)
+        task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
+        with task_patch, registry_patch as mock_registry:
+            await run_judge_for_trace(
+                "p1",
+                "t1",
+                "in",
+                "out",
+                judge_config,
+                trace=_real_trace(0),
+                judge_guidance=GUIDANCE,
+                openenv_episode=episode,
+            )
+
+        eval_input = adapter.evaluate.call_args.args[0]
+        assert eval_input.reference_data == {"judge_guidance": GUIDANCE}
+        assert eval_input.openenv_episode == episode
+        properties = mock_registry.call_args.args[0].properties
+        assert properties.reference_keys == ["judge_guidance"]
+
+    @pytest.mark.asyncio
+    async def test_run_judge_without_guidance_has_no_reference(
+        self, in_memory_task, judge_config
+    ):
+        adapter = _judge_adapter(V2EvalResult(scores={"meets_spec": 1.0}))
+        task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
+        with task_patch, registry_patch as mock_registry:
+            await run_judge_for_trace(
+                "p1", "t1", "in", "out", judge_config, trace=_real_trace(0)
+            )
+
+        assert adapter.evaluate.call_args.args[0].reference_data is None
+        assert mock_registry.call_args.args[0].properties.reference_keys == []
+
+
+def _grounded_run_cases_batch():
+    """Like _fake_run_cases_batch, but each completed case reports the episode it
+    ran in."""
+    from kiln_ai.synthetic_user.runner import (
+        BatchStartedEvent,
+        CaseCompletedEvent,
+        TurnCompletedEvent,
+    )
+
+    async def fake(*, cases, turns, **_kwargs):
+        yield BatchStartedEvent(batch_tag="tag123", num_cases=len(cases))
+        for i in range(len(cases)):
+            yield TurnCompletedEvent(
+                case_index=i,
+                turn_index=1,
+                assistant_run_id=f"run-{i}",
+                su_next_message="next",
+                cumulative_cost=0.01,
+                trace=_real_trace(i),
+            )
+            yield CaseCompletedEvent(
+                case_index=i,
+                chain_run_ids=[f"run-{i}"],
+                leaf_run_id=f"leaf-{i}",
+                total_turns=1,
+                total_cost=0.05,
+                openenv_episode=_ended_episode(i) if cases[i].openenv_reset else None,
+            )
+
+    return fake
+
+
+class TestGroundedPipeline:
+    def test_each_case_is_judged_with_its_guidance_and_episode(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        grounded = {
+            **_pipeline_case(0),
+            "openenv_reset": {"openenv_server_id": "srv", "reset_kwargs": {}},
+            "judge_guidance": GUIDANCE,
+        }
+        pipeline_request["cases"] = [grounded, _pipeline_case(1)]
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_cases_batch",
+            new=_grounded_run_cases_batch(),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        assert resp.status_code == 200, resp.text
+        assert len(_events_of(_parse_sse(resp.text), "case_judged")) == 2
+        calls = {
+            call.kwargs["trace"][1]["content"]: call.kwargs
+            for call in pipeline_seams["judge"].call_args_list
+        }
+        assert calls["question 0"]["judge_guidance"] == GUIDANCE
+        assert calls["question 0"]["openenv_episode"] == _ended_episode(0)
+        assert calls["question 1"]["judge_guidance"] is None
+        assert calls["question 1"]["openenv_episode"] is None
+
+
+class TestGroundedJudgeTraces:
+    def test_each_leaf_is_judged_with_its_guidance_and_stored_episode(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        leaves = judge_traces_seams["loader"].return_value
+        leaves["leaf-0"].openenv_episode = _ended_episode(0)
+        leaves["leaf-1"].openenv_episode = None
+        judge_traces_request["judge_guidance"] = [GUIDANCE, None]
+
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        assert resp.status_code == 200, resp.text
+        calls = {
+            call.kwargs["trace"][1]["content"]: call.kwargs
+            for call in judge_traces_seams["judge"].call_args_list
+        }
+        assert calls["question 0"]["judge_guidance"] == GUIDANCE
+        assert calls["question 0"]["openenv_episode"] == _ended_episode(0)
+        assert calls["question 1"]["judge_guidance"] is None
+
+    def test_guidance_list_of_the_wrong_length_is_422(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        judge_traces_request["judge_guidance"] = [GUIDANCE]
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+        assert resp.status_code == 422
+
+
+class TestGroundedBuildClaims:
+    def test_rubric_carries_the_guidance(
+        self, client, build_claims_input, mock_api_key, build_claims_task
+    ):
+        card = _sdk_card(["It passes because ticket 7 was closed [1]."])
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.build_claim_evidence_v1_copilot_build_claim_evidence_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_sdk_response(card),
+        ) as sdk_call:
+            response = client.post(
+                BUILD_CLAIMS_URL,
+                json={**build_claims_input, "judge_guidance": GUIDANCE},
+            )
+
+        assert response.status_code == 200, response.text
+        rubric = sdk_call.call_args.kwargs["body"].eval_rubric
+        assert rubric.startswith(build_claims_input["eval_rubric"])
+        assert f"<judge_guidance>\n{GUIDANCE}\n</judge_guidance>" in rubric

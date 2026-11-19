@@ -323,7 +323,17 @@ def _event_to_payload(event: BatchEvent) -> dict:
         # New dataclass added without registering it — fail loud rather
         # than silently swallowing.
         raise RuntimeError(f"Unregistered BatchEvent type: {type(event).__name__}")
-    return {"event": name, **dataclasses.asdict(event)}
+    # The events hold no nested dataclasses, so their fields go on the frame as they
+    # are. The episode is left off: its final state can be large, and it is already
+    # saved on the leaf run.
+    return {
+        "event": name,
+        **{
+            field.name: getattr(event, field.name)
+            for field in dataclasses.fields(event)
+            if field.name != "openenv_episode"
+        },
+    }
 
 
 def _jsonable(obj: Any) -> Any:

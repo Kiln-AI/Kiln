@@ -1404,7 +1404,7 @@ async def test_grounded_leaf_records_the_ended_episode(
     monkeypatch.setattr(runner_mod, "_tag_leaf", _record_leaf)
     _patch_su_driver(monkeypatch, replies_per_case=["second message"])
 
-    await _collect(
+    events = await _collect(
         run_cases_batch(
             cases=[_grounded_case(str(server.id))],
             target_task=task,
@@ -1422,6 +1422,8 @@ async def test_grounded_leaf_records_the_ended_episode(
     assert episode.final_state is not None
     assert episode.final_state["notes"] == ["seed-0", "second message"]
     leaf.save_to_file.assert_called_once()
+    (completed,) = [e for e in events if isinstance(e, CaseCompletedEvent)]
+    assert completed.openenv_episode is episode
 
 
 @pytest.mark.asyncio
@@ -1453,7 +1455,8 @@ async def test_ungrounded_case_opens_no_episode(
         )
     )
 
-    assert any(isinstance(e, CaseCompletedEvent) for e in events)
+    (completed,) = [e for e in events if isinstance(e, CaseCompletedEvent)]
+    assert completed.openenv_episode is None
     assert episode_ids == [None, None]
     assert [cfg.open_openenv_session for cfg in adapter_configs] == [True]
     assert grounded_flags == [False]

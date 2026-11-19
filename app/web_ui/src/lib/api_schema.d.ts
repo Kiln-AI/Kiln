@@ -3094,6 +3094,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_arguments_brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get OpenEnv Server Reset Arguments Brief
+         * @description The OpenEnv server's reset arguments as guidance for planning eval cases: each argument with its description and allowed values, read fresh from the running server's reset schema. Null when it publishes none.
+         */
+        get: operations["get_openenv_server_reset_arguments_brief_api_projects__project_id__openenv_servers__openenv_server_id__reset_arguments_brief_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/version": {
         parameters: {
             query?: never;
@@ -3703,6 +3723,46 @@ export interface paths {
          *     are built afterwards, per opened trace, via build_claims.
          */
         post: operations["judge_traces_api_projects__project_id__tasks__task_id__eval_builder_judge_traces_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/ground_cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ground Cases in the OpenEnv Server
+         * @description Fit each planned case to the run config's OpenEnv server, or drop it.
+         *
+         *     For each case, an agent on the judge model picks reset arguments, finds
+         *     what the case needs in a fresh episode, fills real specifics into the
+         *     simulated user, and writes the judge guidance. Cases run concurrently.
+         *
+         *     Emits (all frames `type`-discriminated):
+         *       - grounding_started  { total }
+         *       - case_grounded      { case_index, scenario_index, status: "grounded",
+         *                              openenv_reset, seed_prompt, synthetic_user_info,
+         *                              judge_guidance }
+         *       - case_dropped       { case_index, scenario_index, drop_reason,
+         *                              drop_detail }
+         *       - grounding_finished { grounded, dropped, usage, usage_complete }
+         *       - grounding_failed   { code, message }  (in place of
+         *                              grounding_finished: an error that is not a
+         *                              case's fault, such as an unreachable server,
+         *                              stopped every case)
+         *     Terminated by `data: complete`. case_index is the position in `cases`.
+         *     Disconnecting cancels the cases still running and ends their episodes.
+         *     A run config whose tools reach no OpenEnv server, or several, is a 400.
+         */
+        post: operations["ground_cases_api_projects__project_id__tasks__task_id__eval_builder_ground_cases_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5186,6 +5246,11 @@ export interface components {
              * @enum {string}
              */
             judge_score: "pass" | "fail";
+            /**
+             * Judge Guidance
+             * @description The case's judge guidance, for a case grounded in an OpenEnv server. The judge read it beside the rubric, so the claim builder does too.
+             */
+            judge_guidance?: string | null;
         };
         /**
          * BuildClaimsApiOutput
@@ -7099,6 +7164,13 @@ export interface components {
              * @description The id of the chain-leaf TaskRun this case was driven in. A case whose run the human reviewed is represented by that rated run and is not minted. Empty when the drive recorded no run, which can never have been reviewed.
              */
             leaf_run_id: string;
+            /** @description The OpenEnv episode the case was grounded in and runs in. Saved on the minted EvalInput, so every eval run starts the same episode. Set on every case of a save with an openenv_server_id, and on none otherwise. */
+            openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
+            /**
+             * Judge Guidance
+             * @description The grounded case's answer key, as markdown. Saved as the `judge_guidance` reference of its EvalInput, or of its golden run when the case was reviewed. Set exactly when openenv_reset is.
+             */
+            judge_guidance?: string | null;
         };
         /**
          * EmbeddingConfig
@@ -9184,6 +9256,74 @@ export interface components {
              */
             human_verdict: "pass" | "fail";
         };
+        /**
+         * GroundCaseApi
+         * @description One planned case to ground: its plan item and kiln_server's simulated user.
+         */
+        GroundCaseApi: {
+            /**
+             * Scenario Index
+             * @description The plan item's position in the approved plan.
+             */
+            scenario_index: number;
+            /**
+             * Scenario
+             * @description The plan item's text.
+             */
+            scenario: string;
+            /** Seed Prompt */
+            seed_prompt: string;
+            /**
+             * Synthetic User Info
+             * @description kiln_server's tagged blob: <persona>, <goal>, optional <behavior_guidance>.
+             */
+            synthetic_user_info: string;
+        };
+        /**
+         * GroundCasesRequest
+         * @description The grounding stream's request: the planned cases kiln_server drafted simulated
+         *     users for, the run config whose OpenEnv server they are checked against, and what
+         *     the grounding agent reads about the eval. The run config fields are the drive
+         *     requests' own, so cases are grounded against the config that will drive them.
+         */
+        GroundCasesRequest: {
+            /**
+             * Target Run Config
+             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            /**
+             * Target Run Config Id
+             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config_id?: string | null;
+            /** @description The build's judge model. The grounding agent runs on it: it writes the answer key the judge grades against. */
+            judge_model: components["schemas"]["GroundingModelApi"];
+            /**
+             * Specification
+             * @description The eval's specification: what the eval tests.
+             */
+            specification: string;
+            /**
+             * Synthetic User Guide
+             * @description Who uses the agent under test and what they ask. Omit when the project has none.
+             */
+            synthetic_user_guide?: string | null;
+            /**
+             * Cases
+             * @description The cases to ground. Frames refer to each by its position here (case_index).
+             */
+            cases: components["schemas"]["GroundCaseApi"][];
+        };
+        /**
+         * GroundingModelApi
+         * @description The model the grounding agent runs on: the build's judge model.
+         */
+        GroundingModelApi: {
+            /** Model Name */
+            model_name: string;
+            model_provider: components["schemas"]["ModelProviderName"];
+        };
         /** GuidePreviewInput */
         GuidePreviewInput: {
             /**
@@ -9545,6 +9685,11 @@ export interface components {
              */
             leaf_run_ids: string[];
             judge: components["schemas"]["JudgeConfig"];
+            /**
+             * Judge Guidance
+             * @description Each case's judge guidance, in the order of leaf_run_ids, for cases grounded in an OpenEnv server; null for a case without one. Omit when no case has any.
+             */
+            judge_guidance?: (string | null)[] | null;
         };
         /**
          * KilnAgentRunConfigProperties
@@ -10534,6 +10679,11 @@ export interface components {
             cases: components["schemas"]["DrivenSyntheticCaseApi"][];
             /** @description The alignment-time drive settings (synthetic-user model + turn count), stamped on each minted EvalInput so eval-time re-drives match the conversations the judge was calibrated on. */
             drive_config: components["schemas"]["MultiTurnDriveConfig"];
+            /**
+             * Openenv Server Id
+             * @description The OpenEnv server the cases were grounded in, saved on the Eval. Every case's openenv_reset must name it. Omit when the build's run config used no OpenEnv server; no case may then carry a reset or judge guidance.
+             */
+            openenv_server_id?: string | null;
         };
         /**
          * MultiTurnSyntheticEvalInputData
@@ -10843,6 +10993,17 @@ export interface components {
              * @description Named reset kwargs a run can start the environment with, in order. The first is the default. Names must be unique.
              */
             named_reset_kwargs?: components["schemas"]["NamedResetKwargsRequest"][];
+        };
+        /**
+         * OpenEnvServerResetArgumentsBriefResponse
+         * @description The OpenEnv server's reset arguments, written for a model that plans eval cases.
+         */
+        OpenEnvServerResetArgumentsBriefResponse: {
+            /**
+             * Brief
+             * @description Planner guidance listing each reset argument with its description and allowed values, or null when the server publishes no reset schema or it has no arguments.
+             */
+            brief?: string | null;
         };
         /**
          * OpenEnvServerResetSchemaResponse
@@ -22382,6 +22543,40 @@ export interface operations {
             };
         };
     };
+    get_openenv_server_reset_arguments_brief_api_projects__project_id__openenv_servers__openenv_server_id__reset_arguments_brief_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerResetArgumentsBriefResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_openenv_server_version_api_projects__project_id__openenv_servers__openenv_server_id__version_get: {
         parameters: {
             query?: never;
@@ -23353,6 +23548,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["JudgeTracesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ground_cases_api_projects__project_id__tasks__task_id__eval_builder_ground_cases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroundCasesRequest"];
             };
         };
         responses: {

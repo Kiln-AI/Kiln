@@ -12,6 +12,9 @@ from typing import Any, Literal
 from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.openenv import OpenEnvReset
+from kiln_ai.eval_grounding.models import DropReason
+from kiln_ai.utils.usage import Usage
 from pydantic import BaseModel, ConfigDict, Field
 
 # The binary verdict vocabulary, shared by every judge_score and human_verdict
@@ -110,6 +113,11 @@ class BuildClaimsApiInput(BaseModel):
     eval_rubric: str
     judge_reasoning: str
     judge_score: JudgeScoreLiteral
+    judge_guidance: str | None = Field(
+        default=None,
+        description="The case's judge guidance, for a case grounded in an OpenEnv "
+        "server. The judge read it beside the rubric, so the claim builder does too.",
+    )
 
 
 class BuildClaimsApiOutput(BaseModel):
@@ -355,3 +363,90 @@ class PipelineBatchAbortedEvent(BaseModel):
     type: Literal["batch_aborted"] = "batch_aborted"
     error: str
     stage: Literal["drive", "run", "judge"]
+
+
+# ── Grounding stream (ground_cases) ───────────────────────────────────────
+#
+# One frame per finished case, in finishing order, between grounding_started
+# and grounding_finished (or grounding_failed, which ends the stream in its
+# place). case_index is the case's position in the request.
+
+
+class GroundingModelApi(BaseModel):
+    """The model the grounding agent runs on: the build's judge model."""
+
+    model_name: str = Field(min_length=1)
+    model_provider: ModelProviderName
+
+
+class GroundCaseApi(BaseModel):
+    """One planned case to ground: its plan item and kiln_server's simulated user."""
+
+    scenario_index: int = Field(
+        ge=0, description="The plan item's position in the approved plan."
+    )
+    scenario: str = Field(min_length=1, description="The plan item's text.")
+    seed_prompt: str = Field(min_length=1)
+    synthetic_user_info: str = Field(
+        min_length=1,
+        description="kiln_server's tagged blob: <persona>, <goal>, optional "
+        "<behavior_guidance>.",
+    )
+
+
+class GroundingStartedEvent(BaseModel):
+    """First frame: how many cases will be grounded."""
+
+    type: Literal["grounding_started"] = "grounding_started"
+    total: int
+
+
+class CaseGroundedEvent(BaseModel):
+    """A case fits the environment. Its simulated user carries real specifics, and
+    `openenv_reset` and `judge_guidance` go with it to the drive, judge and save."""
+
+    type: Literal["case_grounded"] = "case_grounded"
+    case_index: int
+    scenario_index: int
+    status: Literal["grounded"] = "grounded"
+    openenv_reset: OpenEnvReset
+    seed_prompt: str
+    synthetic_user_info: str
+    judge_guidance: str = Field(
+        description="The case's answer key, as markdown: starting point, facts with "
+        "the tool call that showed each, expected outcome, allowed, must not happen."
+    )
+
+
+class CaseDroppedEvent(BaseModel):
+    """A case couldn't be made to fit the environment."""
+
+    type: Literal["case_dropped"] = "case_dropped"
+    case_index: int
+    scenario_index: int
+    drop_reason: DropReason
+    drop_detail: str = Field(description="One sentence, shown to the user.")
+
+
+class GroundingFinishedEvent(BaseModel):
+    """Last frame before the terminator: every case finished."""
+
+    type: Literal["grounding_finished"] = "grounding_finished"
+    grounded: int
+    dropped: int
+    usage: Usage | None = Field(
+        description="Tokens and cost summed over the cases that reported any."
+    )
+    usage_complete: bool = Field(
+        description="False when some model calls' tokens and cost are missing from usage."
+    )
+
+
+class GroundingFailedEvent(BaseModel):
+    """Grounding stopped on an error that is not a case's fault, such as the server
+    going unreachable or the model provider failing. Sent in place of
+    grounding_finished; the cases still running were cancelled."""
+
+    type: Literal["grounding_failed"] = "grounding_failed"
+    code: Literal["openenv_unreachable", "grounding_error", "internal_error"]
+    message: str

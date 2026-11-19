@@ -56,6 +56,17 @@ def _fromjson(value: object) -> Any:
         raise JinjaExtractionError(f"value is not valid JSON: {e}") from e
 
 
+def _pretty_json(value: Any) -> str:
+    """Jinja2 filter: the value as indented JSON, with characters left as they are.
+
+    For prompts a model reads. Jinja's built-in ``tojson`` is made for HTML and
+    escapes ``<``, ``>``, ``&``, ``'`` and every non-ASCII character."""
+    try:
+        return json.dumps(value, indent=2, ensure_ascii=False)
+    except (TypeError, ValueError) as e:
+        raise JinjaExtractionError(f"value is not JSON serializable: {e}") from e
+
+
 def _format_trace(value: Any) -> str:
     """Jinja2 filter: render a conversation trace as the canonical
     role-labelled transcript (EvalTraceFormatter's format).
@@ -104,6 +115,7 @@ _template_env = SandboxedEnvironment(
 )
 _template_env.filters["fromjson"] = _fromjson
 _template_env.filters["format_trace"] = _format_trace
+_template_env.filters["pretty_json"] = _pretty_json
 
 _expression_env = SandboxedEnvironment(
     undefined=Undefined,
@@ -112,6 +124,7 @@ _expression_env = SandboxedEnvironment(
 )
 _expression_env.filters["fromjson"] = _fromjson
 _expression_env.filters["format_trace"] = _format_trace
+_expression_env.filters["pretty_json"] = _pretty_json
 
 
 def _invalid_template_error(e: TemplateSyntaxError) -> ValueError:

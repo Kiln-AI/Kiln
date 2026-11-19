@@ -573,6 +573,55 @@ class TestResetSchema:
         assert client.get(self._url("nope")).status_code == 404
 
 
+class TestResetArgumentsBrief:
+    def _url(self, openenv_server_id: str) -> str:
+        return f"/api/projects/p1/openenv_servers/{openenv_server_id}/reset_arguments_brief"
+
+    def _create(self, client, url: str | None) -> str:
+        body = {"name": "Live"} if url is None else {"name": "Live", "url": url}
+        r = client.post("/api/projects/p1/openenv_servers", json=body)
+        return r.json()["id"]
+
+    def test_returns_the_brief(self, client, session_manager):
+        schema = {
+            "type": "object",
+            "properties": {
+                "seed": {"type": "integer"},
+                "company": {
+                    "type": "string",
+                    "description": "Whose data the environment starts with.",
+                    "enum": ["acme", "beta"],
+                },
+            },
+        }
+        with serve_in_thread(extra_routes={"/schema": {"reset": schema}}) as base_url:
+            r = client.get(self._url(self._create(client, base_url)))
+        assert r.status_code == 200, r.text
+        brief = r.json()["brief"]
+        assert "- company: Whose data the environment starts with." in brief
+        assert "  Values: acme | beta" in brief
+        assert "seed" not in brief
+
+    def test_server_without_a_schema_is_null(self, client, session_manager):
+        with serve_in_thread() as base_url:
+            r = client.get(self._url(self._create(client, base_url)))
+        assert r.status_code == 200, r.text
+        assert r.json() == {"brief": None}
+
+    def test_unreachable_url_is_502(self, client, session_manager):
+        r = client.get(
+            self._url(self._create(client, f"http://127.0.0.1:{free_port()}"))
+        )
+        assert r.status_code == 502
+
+    def test_no_url_is_400(self, client, session_manager):
+        r = client.get(self._url(self._create(client, None)))
+        assert r.status_code == 400
+
+    def test_missing_openenv_server_is_404(self, client):
+        assert client.get(self._url("nope")).status_code == 404
+
+
 class TestVersion:
     def test_reports_server_version(self, client, session_manager):
         with serve_in_thread() as base_url:

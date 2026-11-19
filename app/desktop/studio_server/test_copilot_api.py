@@ -21,6 +21,7 @@ from kiln_ai.datamodel.eval import (
     LlmJudgeProperties,
     TaskRunSplit,
 )
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.run_config import ToolsRunConfig
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
@@ -1826,6 +1827,232 @@ class TestCreateSpecWithCopilotMultiTurn:
 
         assert response.status_code == 422
         assert "evaluate_full_trace" in str(response.json())
+
+    # ── cases grounded in an OpenEnv server ──
+
+    @pytest.fixture
+    def openenv_server(self, project_and_task):
+        project, _ = project_and_task
+        server = OpenEnvServer(name="counter", url="http://127.0.0.1:9", parent=project)
+        server.save_to_file()
+        return server
+
+    @staticmethod
+    def _ground(request_data: dict, server_id: str) -> None:
+        """Make every case grounded in the server, as the builder's save sends it."""
+        request_data["multi_turn"]["openenv_server_id"] = server_id
+        for i, case in enumerate(request_data["multi_turn"]["cases"]):
+            case["openenv_reset"] = {
+                "openenv_server_id": server_id,
+                "reset_kwargs": {"fixture_id": f"f{i}"},
+            }
+            case["judge_guidance"] = f"## Starting point\nCase {i}."
+
+    def _post(self, client, project, task, request_data):
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            return client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=request_data,
+            )
+
+    def test_grounded_save_writes_resets_guidance_and_server(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+        openenv_server,
+    ):
+        project, task = project_and_task
+        self._bind_cases_to_leaves(multi_turn_request_data, synthetic_chain_leaves)
+        self._ground(multi_turn_request_data, openenv_server.id)
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=True),
+        ]
+
+        response = self._post(client, project, task, multi_turn_request_data)
+
+        assert response.status_code == 200, response.text
+        (eval_obj,) = task.evals()
+        assert eval_obj.openenv_server_id == openenv_server.id
+        (config,) = eval_obj.configs()
+        assert isinstance(config.properties, LlmJudgeProperties)
+        assert config.properties.reference_keys == ["judge_guidance"]
+        assert "{{ reference_data.judge_guidance }}" in (
+            config.properties.prompt_template
+        )
+
+        eval_inputs = {ei.data.first_message.text: ei for ei in task.eval_inputs()}
+        assert len(eval_inputs) == 7
+        minted = eval_inputs["seed prompt 3"]
+        assert minted.openenv_reset is not None
+        assert minted.openenv_reset.openenv_server_id == openenv_server.id
+        assert minted.openenv_reset.reset_kwargs == {"fixture_id": "f3"}
+        assert minted.reference == {"judge_guidance": "## Starting point\nCase 3."}
+
+        golden = TaskRun.from_id_and_parent_path(
+            synthetic_chain_leaves[0].id, task.path
+        )
+        assert golden is not None
+        assert golden.reference == {"judge_guidance": "## Starting point\nCase 0."}
+        unreviewed = TaskRun.from_id_and_parent_path(
+            synthetic_chain_leaves[1].id, task.path
+        )
+        assert unreviewed is not None
+        assert unreviewed.reference is None
+
+    def test_ungrounded_save_keeps_todays_judge(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        project, task = project_and_task
+        response = self._post(client, project, task, multi_turn_request_data)
+
+        assert response.status_code == 200, response.text
+        (eval_obj,) = task.evals()
+        assert eval_obj.openenv_server_id is None
+        (config,) = eval_obj.configs()
+        assert isinstance(config.properties, LlmJudgeProperties)
+        assert config.properties.reference_keys == []
+        assert "judge_guidance" not in config.properties.prompt_template
+        assert all(ei.openenv_reset is None for ei in task.eval_inputs())
+
+    @pytest.mark.parametrize(
+        "break_request, message",
+        [
+            (
+                lambda data: data["multi_turn"]["cases"][2]["openenv_reset"].update(
+                    openenv_server_id="other"
+                ),
+                "Case 2 was grounded in OpenEnv server other",
+            ),
+            (
+                lambda data: data["multi_turn"]["cases"][1].update(judge_guidance=None),
+                "Case 1 needs openenv_reset and judge_guidance",
+            ),
+            (
+                lambda data: data["multi_turn"].update(openenv_server_id=None),
+                "Case 0 was grounded in an OpenEnv server",
+            ),
+        ],
+    )
+    def test_cases_that_disagree_with_the_server_are_400(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+        openenv_server,
+        break_request,
+        message,
+    ):
+        project, task = project_and_task
+        self._ground(multi_turn_request_data, openenv_server.id)
+        break_request(multi_turn_request_data)
+
+        response = self._post(client, project, task, multi_turn_request_data)
+
+        assert response.status_code == 400
+        assert message in response.json()["message"]
+        assert task.evals() == []
+        assert task.eval_inputs() == []
+
+    def test_unknown_server_is_400(
+        self, client, project_and_task, synthetic_chain_leaves, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        self._ground(multi_turn_request_data, "no-such-server")
+
+        response = self._post(client, project, task, multi_turn_request_data)
+
+        assert response.status_code == 400
+        assert "no-such-server wasn't found" in response.json()["message"]
+
+    def test_failed_save_restores_golden_references(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+        openenv_server,
+    ):
+        project, task = project_and_task
+        self._bind_cases_to_leaves(multi_turn_request_data, synthetic_chain_leaves)
+        self._ground(multi_turn_request_data, openenv_server.id)
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=True),
+        ]
+
+        from app.desktop.studio_server.utils import copilot_utils
+
+        written_at_failure: list = []
+
+        def write_then_boom(leaves, references, written_out):
+            copilot_utils.write_golden_references(leaves, references, written_out)
+            written_at_failure.extend(written_out)
+            raise RuntimeError("disk full")
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.write_golden_references",
+                side_effect=write_then_boom,
+            ),
+            pytest.raises(RuntimeError, match="disk full"),
+        ):
+            self._post(client, project, task, multi_turn_request_data)
+
+        assert len(written_at_failure) == 1
+        assert task.evals() == []
+        for leaf in task.runs():
+            assert leaf.reference is None
+            assert leaf.output.rating is None
+
+    def test_a_reference_write_that_fails_part_way_is_restored(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+        openenv_server,
+    ):
+        """The leaf's file is written with the reference, then the save raises. The
+        rollback must still know the leaf's old reference and put it back."""
+        project, task = project_and_task
+        self._bind_cases_to_leaves(multi_turn_request_data, synthetic_chain_leaves)
+        self._ground(multi_turn_request_data, openenv_server.id)
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=True),
+        ]
+        real_save = TaskRun.save_to_file
+        failed: list[str] = []
+
+        def save_then_fail_once_with_a_reference(run):
+            real_save(run)
+            if run.reference is not None and not failed:
+                failed.append(str(run.id))
+                raise OSError("disk full")
+
+        with (
+            patch.object(
+                TaskRun,
+                "save_to_file",
+                autospec=True,
+                side_effect=save_then_fail_once_with_a_reference,
+            ),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            self._post(client, project, task, multi_turn_request_data)
+
+        assert failed == [synthetic_chain_leaves[0].id]
+        assert task.evals() == []
+        for leaf in task.runs():
+            assert leaf.reference is None
 
 
 class TestCreateSpecWithCopilotSingleTurnBatch:

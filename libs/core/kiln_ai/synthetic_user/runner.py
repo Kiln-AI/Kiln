@@ -22,7 +22,7 @@ from kiln_ai.adapters.retry_classification import (
     unwrap_kiln_run_error,
 )
 from kiln_ai.datamodel.basemodel import generate_model_id
-from kiln_ai.datamodel.openenv import OpenEnvServer, OpenEnvTool
+from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvServer, OpenEnvTool
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
@@ -121,6 +121,9 @@ class CaseCompletedEvent:
     # chains were discarded, but the billing happened. Add to total_cost for
     # what the case actually cost end to end.
     discarded_attempts_cost: float = 0.0
+    # The ended episode a grounded case ran in, with its final state, as saved on
+    # the leaf. None for a case driven without one.
+    openenv_episode: OpenEnvEpisode | None = None
 
 
 @dataclass(frozen=True)
@@ -552,6 +555,7 @@ async def _drive_one_case_and_emit(
         # Tag the leaf so loaders can find it, then save the chain root first.
         leaf = result.chain[-1]
         _tag_leaf(leaf, batch_tag, ended_by_su=ended_by_su)
+        ended: OpenEnvEpisode | None = None
         if episode_scope is not None:
             ended = episode_scope.ended
             if ended.final_state is None:
@@ -578,6 +582,7 @@ async def _drive_one_case_and_emit(
                 total_turns=len(result.chain),
                 total_cost=_cumulative_cost(leaf) + result.su_total_cost,
                 discarded_attempts_cost=failed_attempt_spend.get(case_index, 0.0),
+                openenv_episode=ended,
             )
         )
     except _CaseFailure:

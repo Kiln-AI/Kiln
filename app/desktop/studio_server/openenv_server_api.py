@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.openenv import NamedResetKwargs, OpenEnvServer
 from kiln_ai.datamodel.tool_id import ToolId, build_openenv_tool_id
+from kiln_ai.openenv.reset_schema_brief import reset_arguments_brief
 from kiln_ai.openenv.session_manager import OpenEnvError, shared_session_manager
 from kiln_ai.tools.openenv_reach import OpenEnvReachError, single_openenv_server_id
 from kiln_server.project_api import project_from_id
@@ -148,6 +149,15 @@ class OpenEnvServerResetSchemaResponse(BaseModel):
     reset_schema: dict[str, Any] | None = Field(
         default=None,
         description="The JSON schema of the server's reset arguments, or null when it publishes none.",
+    )
+
+
+class OpenEnvServerResetArgumentsBriefResponse(BaseModel):
+    """The OpenEnv server's reset arguments, written for a model that plans eval cases."""
+
+    brief: str | None = Field(
+        default=None,
+        description="Planner guidance listing each reset argument with its description and allowed values, or null when the server publishes no reset schema or it has no arguments.",
     )
 
 
@@ -463,6 +473,31 @@ def connect_openenv_server_api(app: FastAPI):
         except (OpenEnvError, ValueError) as e:
             raise HTTPException(status_code=502, detail=str(e))
         return OpenEnvServerResetSchemaResponse(reset_schema=reset_schema)
+
+    @app.get(
+        "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_arguments_brief",
+        summary="Get OpenEnv Server Reset Arguments Brief",
+        description="The OpenEnv server's reset arguments as guidance for planning eval cases: each argument with its description and allowed values, read fresh from the running server's reset schema. Null when it publishes none.",
+        tags=["OpenEnv Servers"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_openenv_server_reset_arguments_brief(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        openenv_server_id: Annotated[
+            str, Path(description="The unique identifier of the OpenEnv server.")
+        ],
+    ) -> OpenEnvServerResetArgumentsBriefResponse:
+        openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
+        _require_url(openenv_server)
+        try:
+            reset_schema = await shared_session_manager().reset_schema(openenv_server)
+        except (OpenEnvError, ValueError) as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        return OpenEnvServerResetArgumentsBriefResponse(
+            brief=reset_arguments_brief(reset_schema)
+        )
 
     @app.get(
         "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/version",

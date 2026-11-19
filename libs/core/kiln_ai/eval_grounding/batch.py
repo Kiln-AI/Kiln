@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -71,7 +71,7 @@ async def ground_cases(
     limits: GroundingLimits = DEFAULT_LIMITS,
     time_limit_s: float = DEFAULT_TIME_LIMIT_S,
     concurrency: int = CONCURRENCY,
-) -> AsyncIterator[GroundingProgress]:
+) -> AsyncGenerator[GroundingProgress, None]:
     """Ground `cases` at most `concurrency` at a time. Yields a `CaseGrounded` as each
     finishes, in finishing order, then a `GroundingFinished`.
 
