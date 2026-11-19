@@ -162,13 +162,16 @@ kinds, never records.
    goes straight to step 4.
 3. If nothing fits and a setup argument's description (or the readme) says what it accepts, writes
    the smallest setup that adds it, consistent with the data around it, then resets and checks. If
-   nothing says how, it does not guess: it drops the case.
+   nothing says how, it does not guess: it drops the case. The data is written as the scenario
+   describes it, never softened, masked or sanitized to fit the specification.
 4. Rehearses what a well-behaved agent would do for this user and observes the result, reading it
    back where a tool can, otherwise from tool results and the episode's `state()`.
 5. Fills in the simulated user: changes only the specifics (the person the session acts as, and
    real IDs, names and values where the scenario has the user know them). Keeps wording, tone,
    difficulty and `<behavior_guidance>`.
-6. Writes the reference from what it observed, about results rather than steps.
+6. Writes the reference from what it observed, about results rather than steps. The reference
+   holds only facts of the environment. It does not restate or interpret the specification: the
+   judge has the specification, and a second policy written here could disagree with it.
 
 ### Output
 
@@ -216,21 +219,24 @@ malformed answer is caught (`invalid_output`). Kiln renders it to markdown when 
 the typed form is not stored.
 
 ```
-starting_point: str                  # what is true before the conversation
+starting_point: str                  # what the environment holds before the conversation, setup included
 facts: list
   text: str
   evidence:
     tool: str                        # the call the grounding agent made to learn it
     args: dict
     result_excerpt: str
-expected_outcome: list[str]          # what must be true at the end, or what the agent must say
-allowed: list[str]                   # acceptable alternatives, e.g. asking first
-must_not_happen: list[str]           # changes or claims that fail the case
+expected_outcome: str                # one short paragraph of facts: the correct answer the agent
+                                     # should be able to give, and any change the environment
+                                     # should show at the end
 ```
 
+`expected_outcome` may name plausible wrong answers as facts ("the full list is 28; a title search
+finds only 18"). It says nothing about how to apply the specification: no reply wording, no rules
+the agent should follow.
+
 The markdown has one heading per field: Starting point, Facts (each fact with its tool call and
-result excerpt), Expected outcome, Allowed, Must not happen. An empty list keeps its heading with
-"None."
+result excerpt), Expected outcome. An empty field keeps its heading with "None."
 
 Evidence records how the fact was learned, so a person can re-run the call. It is not the path the
 agent under test must take. A later machine-checkable form, if the judge results call for one, is
@@ -254,8 +260,8 @@ with no grounded cases.
   judge.
 - Sets `reference_keys=["judge_guidance"]` and adds `{{ reference_data.judge_guidance }}`, and
   `final_state` when the episode has one.
-- Grades the end result and what the agent told the user, not which tools it called. A path fails
-  the case only when `must_not_happen` names it.
+- Grades against the specification, using the guidance as the facts of the environment. Grades
+  the end result and what the agent told the user, not which tools it called.
 - Golden (reviewed) conversations carry the same guidance on their task run, so calibration
   grades them against the same answer key.
 - On an OpenEnv build every saved case is grounded. A build without OpenEnv tools has no

@@ -3212,7 +3212,7 @@ def test_remote_call_routes_skip_the_git_sync_lock(path):
 # ───────────────────── cases grounded in an OpenEnv server ─────────────────────
 
 GUIDANCE = (
-    "## Starting point\nTicket 7 is open.\n\n## Must not happen\n- Closing ticket 8."
+    "## Starting point\nTicket 7 is open.\n\n## Expected outcome\nTicket 7 is closed."
 )
 
 
@@ -3232,7 +3232,8 @@ class TestGroundedJudge:
         )
         assert "{{ reference_data.judge_guidance }}" in template
         assert "openenv_episode.final_state" in template
-        assert "Must not happen" in template
+        assert "Grade against the specification" in template
+        assert "Must not happen" not in template
         # The guidance comes before the conversation it grades.
         assert template.index("<judge_guidance>") < template.index(
             "<conversation_transcript>"

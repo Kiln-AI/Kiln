@@ -41,7 +41,7 @@
   $: show_judge_guidance_hint =
     valid_type === "llm_judge" && !!evaluator?.openenv_server_id
   const JUDGE_GUIDANCE_HINT =
-    "This eval's cases were checked against your OpenEnv server. Each one has judge guidance: the facts the agent should get right and what must not happen. Use it in your prompt as {{ reference_data.judge_guidance }}."
+    "This eval's cases were checked against your OpenEnv server. Each one has judge guidance: the facts of the environment the agent worked in and the correct answer. Use it in your prompt as {{ reference_data.judge_guidance }}."
 
   $: agentInfo.set({
     name: "Create Eval Config",

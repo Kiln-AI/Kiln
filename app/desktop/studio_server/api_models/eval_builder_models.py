@@ -413,8 +413,8 @@ class CaseGroundedEvent(BaseModel):
     seed_prompt: str
     synthetic_user_info: str
     judge_guidance: str = Field(
-        description="The case's answer key, as markdown: starting point, facts with "
-        "the tool call that showed each, expected outcome, allowed, must not happen."
+        description="The case's facts of the environment, as markdown: starting "
+        "point, facts with the tool call that showed each, expected outcome."
     )
 
 

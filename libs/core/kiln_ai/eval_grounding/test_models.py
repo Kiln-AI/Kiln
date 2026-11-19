@@ -34,9 +34,7 @@ REFERENCE = {
             },
         }
     ],
-    "expected_outcome": ["#804 is on hold"],
-    "allowed": ["Asking which work order first"],
-    "must_not_happen": ["#803 changes"],
+    "expected_outcome": "#804 is on hold; #803 is unchanged.",
 }
 
 
@@ -173,7 +171,7 @@ def test_from_result_takes_the_given_reset_not_the_model_one():
     assert outcome.seed_prompt == "Put #804 on hold please"
     assert outcome.synthetic_user_info == USER_INFO
     assert outcome.reference is not None
-    assert outcome.reference.expected_outcome == ["#804 is on hold"]
+    assert outcome.reference.expected_outcome == "#804 is on hold; #803 is unchanged."
     assert outcome.call_log == [_logged_call()]
     assert outcome.usage == usage
 
@@ -265,6 +263,22 @@ class TestResultJsonSchema:
             _as_the_model_answers(_with_encoded_args(_grounded_result())), schema
         )
         jsonschema.validate(DROPPED_RESULT, schema)
+
+    @pytest.mark.parametrize(
+        "reference_change",
+        [
+            {"expected_outcome": ["#804 is on hold"]},
+            {"must_not_happen": ["#803 changes"]},
+        ],
+    )
+    def test_strict_schema_rejects_the_old_reference_shape(self, reference_change):
+        schema = close_object_schemas(
+            result_json_schema(args_as_json_string=True), strict=True
+        )
+        answer = _as_the_model_answers(_with_encoded_args(_grounded_result()))
+        answer["reference"] = {**answer["reference"], **reference_change}
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(answer, schema)
 
     def test_strict_closing_would_empty_object_args(self):
         schema = close_object_schemas(

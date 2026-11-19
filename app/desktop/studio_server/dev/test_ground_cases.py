@@ -81,9 +81,7 @@ GROUNDED_REPLY = {
                 },
             }
         ],
-        "expected_outcome": ["A note 'hi' exists"],
-        "allowed": [],
-        "must_not_happen": ["Other notes are added"],
+        "expected_outcome": "A note 'hi' exists, and no other note was added.",
     },
 }
 

@@ -54,19 +54,18 @@ class Fact(BaseModel):
 
 
 class GroundedReference(BaseModel):
-    """A grounded case's answer key. Saved as the markdown `render_judge_guidance` makes of
+    """A grounded case's facts of the environment. Saved as the markdown `render_judge_guidance` makes of
     it, under the reference key `judge_guidance`."""
 
-    starting_point: str = Field(description="What is true before the conversation.")
+    starting_point: str = Field(
+        description="What the environment holds before the conversation, including any "
+        "setup the grounding agent added."
+    )
     facts: list[Fact]
-    expected_outcome: list[str] = Field(
-        description="What must be true at the end, or what the agent must tell the user."
-    )
-    allowed: list[str] = Field(
-        description="Acceptable alternatives, e.g. asking a clarifying question first."
-    )
-    must_not_happen: list[str] = Field(
-        description="Changes or claims that fail the case."
+    expected_outcome: str = Field(
+        description="One short paragraph of facts: the correct answer the agent should be "
+        "able to give and any change the environment should show at the end. Says nothing "
+        "about how to apply the specification; the judge has that."
     )
 
 
@@ -178,12 +177,12 @@ def result_json_schema(*, args_as_json_string: bool) -> dict[str, Any]:
             },
         }
     )
-    string_list = {"type": "array", "items": {"type": "string"}}
     reference = _object_schema(
         {
             "starting_point": {
                 "type": "string",
-                "description": "What is true before the conversation.",
+                "description": "What the environment holds before the conversation, "
+                "including any setup you added.",
             },
             "facts": {
                 "type": "array",
@@ -192,18 +191,10 @@ def result_json_schema(*, args_as_json_string: bool) -> dict[str, Any]:
                 ),
             },
             "expected_outcome": {
-                **string_list,
-                "description": "What must be true at the end, or what the agent "
-                "must tell the user.",
-            },
-            "allowed": {
-                **string_list,
-                "description": "Acceptable alternatives, e.g. asking a clarifying "
-                "question first.",
-            },
-            "must_not_happen": {
-                **string_list,
-                "description": "Changes or claims that fail the case.",
+                "type": "string",
+                "description": "One short paragraph of facts: the correct answer the "
+                "agent should be able to give and any change the environment should "
+                "show at the end.",
             },
         }
     )

@@ -24,13 +24,11 @@ def is_grounded_input(eval_input: EvalInput) -> bool:
 
 def render_judge_guidance(reference: GroundedReference) -> str:
     """One heading per part of the reference, in a fixed order. Each fact is followed by the
-    call that showed it. An empty list keeps its heading, with "None." under it."""
+    call that showed it. An empty part keeps its heading, with "None." under it."""
     sections = [
         ("Starting point", reference.starting_point.strip() or "None."),
         ("Facts", _bullets([_fact(fact) for fact in reference.facts])),
-        ("Expected outcome", _bullets(reference.expected_outcome)),
-        ("Allowed", _bullets(reference.allowed)),
-        ("Must not happen", _bullets(reference.must_not_happen)),
+        ("Expected outcome", reference.expected_outcome.strip() or "None."),
     ]
     return "\n\n".join(f"## {heading}\n{body}" for heading, body in sections)
 

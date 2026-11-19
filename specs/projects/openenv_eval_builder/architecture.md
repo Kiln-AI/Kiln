@@ -118,9 +118,7 @@ class Fact(BaseModel):
 class GroundedReference(BaseModel):  # rendered to markdown, saved as reference["judge_guidance"]
     starting_point: str
     facts: list[Fact]
-    expected_outcome: list[str]
-    allowed: list[str]
-    must_not_happen: list[str]
+    expected_outcome: str  # one paragraph of facts: correct answer and end-state change
 
 class DropReason(str, Enum):
     no_fit = "no_fit"                # nothing fits after a reasonable search
@@ -431,9 +429,9 @@ GroundCasesRequest
 def render_judge_guidance(reference: GroundedReference) -> str
 ```
 
-Headings in order: `## Starting point`, `## Facts`, `## Expected outcome`, `## Allowed`,
-`## Must not happen`. Each fact is a bullet with its text, then an indented line
-``Checked with `tool` (args): result excerpt``. An empty list prints "None." under its heading.
+Headings in order: `## Starting point`, `## Facts`, `## Expected outcome`. Each fact is a bullet
+with its text, then an indented line ``Checked with `tool` (args): result excerpt``. An empty field
+prints "None." under its heading.
 
 ### Builder state (frontend)
 
@@ -479,8 +477,9 @@ Headings in order: `## Starting point`, `## Facts`, `## Expected outcome`, `## A
 - `build_judge_prompt_template(judge_prompt, multi_turn, grounded=False)`: when `grounded`, adds a
   `<judge_guidance>{{ reference_data.judge_guidance }}</judge_guidance>` block, and a
   `{% if openenv_episode and openenv_episode.final_state %}` block with the final state, before the
-  transcript. The text tells the judge to grade the end result and what the agent told the user
-  against the guidance, and to fail on anything under "Must not happen".
+  transcript. The text tells the judge to grade against the specification, using the guidance as
+  the facts of the environment, and to grade the end result and what the agent told the user, not
+  which tools it called.
 - `build_transient_judge_eval_config(..., grounded)` sets `reference_keys=["judge_guidance"]` when
   grounded. `run_judge_for_trace`, `build_claims_for_trace` and the `judge_traces` route take the
   case's `judge_guidance` and pass `reference_data={"judge_guidance": ...}`; the trace run carries
@@ -523,6 +522,11 @@ The `create_eval_config` page reads the eval; when `openenv_server_id` is set, i
 The two rules from the Haiku runs (`prototype_results.md`) go into `prompt.py`: a named thing that
 isn't there is replaced by one of the same kind or added with setup; the scenario's situation
 (when, whose, what state) is kept, with setup if needed.
+
+Two more keep the reference to environment truth. The reference does not restate or interpret
+the specification: the judge has it, and writes only what the environment shows. Setup writes the
+data the scenario calls for as the scenario describes it, never softened, masked or sanitized to
+fit the specification, or the case tests something else.
 
 ## Error handling
 

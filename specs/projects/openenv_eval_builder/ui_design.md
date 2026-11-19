@@ -71,7 +71,7 @@ Nothing on this screen edits a case, and that stays true.
   - **Starting state**: the case's reset arguments as a small key-value list (nested keys by path,
     `startup.acting_user`), `setup_sql` in a code block clamped to a few lines with "Show All".
   - **Judge guidance**: the rendered markdown (Starting point, Facts with their tool call,
-    Expected outcome, Allowed, Must not happen).
+    Expected outcome).
 - Read-only. Shown only for grounded cases, which on an OpenEnv build is every case.
 
 ## Writing a judge later
@@ -80,7 +80,7 @@ On the judge creation form (`create_eval_config`), when the eval has an OpenEnv 
 the prompt fields:
 
 > This eval's cases were checked against your OpenEnv server. Each one has judge guidance: the
-> facts the agent should get right and what must not happen. Use it in your prompt as
+> facts of the environment the agent worked in and the correct answer. Use it in your prompt as
 > `{{ reference_data.judge_guidance }}`.
 
 Rough placement for v1; to be polished later.

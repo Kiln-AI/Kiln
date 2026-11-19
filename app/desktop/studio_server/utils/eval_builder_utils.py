@@ -120,10 +120,11 @@ def trace_or_echo(
 
 GROUNDED_JUDGE_INSTRUCTIONS = (
     "This conversation ran in an OpenEnv environment that was checked before it "
-    "started. The judge guidance below says what was true at the start, what the "
-    "agent should get right, what is allowed, and what must not happen. Grade the "
-    "end result, and what the agent told the user, against it, not which tools the "
-    'agent called. Anything under "Must not happen" fails the case. When the '
+    "started. The judge guidance below gives the facts of that environment: what it "
+    "held at the start, what was found in it, and the correct answer and end state. "
+    "Grade against the specification, as the instructions above state it, using "
+    "the guidance only as the facts of the environment. Grade the end result and "
+    "what the agent told the user, not which tools the agent called. When the "
     "environment's final state is given, use it to check what the agent changed."
 )
 """The grounded judge's added instructions, ahead of the guidance and final state."""

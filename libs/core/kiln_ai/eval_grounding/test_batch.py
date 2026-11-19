@@ -44,9 +44,7 @@ def grounded(tokens: int) -> GroundingOutcome:
         reference=GroundedReference(
             starting_point="s",
             facts=[],
-            expected_outcome=[],
-            allowed=[],
-            must_not_happen=[],
+            expected_outcome="",
         ),
         usage=Usage(input_tokens=tokens, output_tokens=1, total_tokens=tokens + 1),
     )

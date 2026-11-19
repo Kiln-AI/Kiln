@@ -136,9 +136,7 @@ def _reference() -> GroundedReference:
                 ),
             )
         ],
-        expected_outcome=["Ticket 7 is closed."],
-        allowed=[],
-        must_not_happen=["Ticket 8 is closed."],
+        expected_outcome="Ticket 7 is closed. Ticket 8 stays open.",
     )
 
 

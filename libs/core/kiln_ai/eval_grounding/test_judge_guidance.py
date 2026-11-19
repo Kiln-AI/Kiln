@@ -29,9 +29,7 @@ def _reference(**overrides) -> GroundedReference:
                 ),
             ),
         ],
-        "expected_outcome": ["Work order 7 is on hold.", "The agent says so."],
-        "allowed": ["Asking which work order first."],
-        "must_not_happen": ["Work order 7 is closed."],
+        "expected_outcome": "Work order 7 is on hold. Work order 9 is unchanged.",
     }
     fields.update(overrides)
     return GroundedReference(**fields)
@@ -49,23 +47,16 @@ def test_renders_every_section_in_order():
         "9: Pump check\n"
         "  12: Valve swap\n\n"
         "## Expected outcome\n"
-        "- Work order 7 is on hold.\n"
-        "- The agent says so.\n\n"
-        "## Allowed\n"
-        "- Asking which work order first.\n\n"
-        "## Must not happen\n"
-        "- Work order 7 is closed."
+        "Work order 7 is on hold. Work order 9 is unchanged."
     )
 
 
-def test_empty_lists_keep_their_heading_with_none():
+def test_empty_parts_keep_their_heading_with_none():
     rendered = render_judge_guidance(
-        _reference(facts=[], expected_outcome=[], allowed=[], must_not_happen=[])
+        _reference(starting_point=" ", facts=[], expected_outcome="")
     )
-    for heading in ("Facts", "Expected outcome", "Allowed", "Must not happen"):
-        assert f"## {heading}\nNone." in rendered
-    assert rendered.startswith(
-        "## Starting point\nTwo open work orders belong to the technician."
+    assert rendered == (
+        "## Starting point\nNone.\n\n## Facts\nNone.\n\n## Expected outcome\nNone."
     )
 
 

@@ -56,9 +56,7 @@ def result(*, args: Any = '{"limit": 5}', **overrides: Any) -> dict[str, Any]:
                     },
                 }
             ],
-            "expected_outcome": ["The notebook holds 'hi'."],
-            "allowed": [],
-            "must_not_happen": [],
+            "expected_outcome": "The notebook holds 'hi'.",
         },
         **overrides,
     }

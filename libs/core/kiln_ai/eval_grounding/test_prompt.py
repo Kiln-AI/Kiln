@@ -150,7 +150,15 @@ def test_system_prompt_has_the_refusal_and_recorded_change_rules():
         "the server itself doesn't refuse the request or enforce the rule behind it."
     ) in prompt
     assert "say in drop_detail that the server doesn't enforce it" in prompt
-    assert "Don't forbid the way the server records the expected change" in prompt
+    assert "describe it the way the server records it" in prompt
+
+
+def test_system_prompt_keeps_the_reference_to_environment_facts():
+    prompt = system_prompt()
+    assert "Don't restate or interpret the specification: the judge has it" in prompt
+    assert "Don't soften, mask or sanitize it to fit the specification" in prompt
+    for removed in ("must_not_happen", '"allowed"'):
+        assert removed not in prompt
 
 
 @pytest.mark.parametrize(
