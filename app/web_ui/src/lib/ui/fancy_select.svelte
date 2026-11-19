@@ -1,6 +1,9 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
-  import type { OptionGroup } from "./fancy_select_types"
+  import {
+    option_description_for_display,
+    type OptionGroup,
+  } from "./fancy_select_types"
   import { filter_option_groups } from "./fancy_select_search"
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
@@ -782,7 +785,7 @@
                       <div
                         class="text-xs font-medium text-base-content/40 w-full line-clamp-3 whitespace-pre-line"
                       >
-                        {item.description}
+                        {option_description_for_display(item.description)}
                       </div>
                     {/if}
                   </div>

@@ -137,9 +137,12 @@ function convert_object(
   defs: JsonRecord,
   refs: string[],
 ): Pick<JsonSchemaProperty, "properties" | "required"> {
+  // The form shows only the declared fields of an object that allows extra
+  // keys. Extra keys are entered in Raw JSON, and `kwargs_fit_form` keeps
+  // arguments that have them out of the form.
   if (
     node.additionalProperties !== undefined &&
-    node.additionalProperties !== false
+    typeof node.additionalProperties !== "boolean"
   ) {
     throw new UnsupportedSchema()
   }

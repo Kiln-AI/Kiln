@@ -5,8 +5,10 @@ import type {
   RunOpenEnvServer,
 } from "$lib/types"
 
-// There's no OpenEnv docs page yet, so this links the tools docs.
-export const OPENENV_DOCS_URL = "https://docs.kiln.tech/docs/tools-and-mcp"
+// TODO: publish this page on docs.kiln.tech before merging. It doesn't exist
+// yet, so the link 404s until it does.
+export const OPENENV_DOCS_URL =
+  "https://docs.kiln.tech/docs/tools-and-mcp/openenv"
 export const SEAHAVEN_URL = "https://github.com/Kiln-AI/Seahaven"
 
 /**
@@ -80,6 +82,36 @@ export function format_reset_arguments(
   reset_kwargs: ResetKwargs | null | undefined,
 ): string {
   return JSON.stringify(reset_kwargs ?? {}, null, 2)
+}
+
+// JSON with every object's keys sorted, so two argument sets that differ only
+// in key order give the same string.
+function canonical_json(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : v,
+  )
+}
+
+/**
+ * The name of the OpenEnv server's preset whose reset arguments are exactly
+ * these, or null when none is. A run stores the arguments, not the preset, so
+ * this is how its sidebar names the preset it started from.
+ */
+export function matching_preset_name(
+  openenv_server: OpenEnvServer | null,
+  reset_kwargs: ResetKwargs | null | undefined,
+): string | null {
+  const target = canonical_json(reset_kwargs ?? {})
+  const preset = openenv_server?.named_reset_kwargs?.find(
+    (p) => canonical_json(p.reset_kwargs ?? {}) === target,
+  )
+  return preset?.name ?? null
 }
 
 export type ParsedResetArguments =

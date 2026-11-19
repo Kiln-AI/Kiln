@@ -40,7 +40,6 @@ The "Custom Tools" `KilnSection` gains an item, worded like the two MCP items:
 
 - **Name:** "OpenEnv Servers", plural like "Remote MCP Servers".
 - **Description:** "Connect to OpenEnv servers to add tools to your project."
-- **Link:** "Learn more", on its own line under the description, linking to the OpenEnv docs page (to be written; https://docs.kiln.tech/docs/tools-and-mcp until then). `settings_item.svelte` gains an optional link for this.
 - **Button:** "Connect".
 
 ## Connect OpenEnv Server and Edit OpenEnv Server
@@ -153,7 +152,7 @@ Before the first message, the run page shows the dropdown as above. After the fi
 
 On the conversation page:
 
-- The sidebar shows the OpenEnv Server and the Reset Arguments the session started with, as read-only properties, with the JSON formatted over several lines. It shows the arguments, not the preset's name, because presets can be renamed or removed later.
+- The sidebar shows the OpenEnv Server and how the session was reset, as read-only properties. The run stores the reset arguments, not the preset's name, since presets can be renamed or removed later. When one of the OpenEnv server's saved presets has exactly those arguments (key order aside), the row reads "Environment Preset" with the preset's name, as on the run page. Otherwise it reads "Environment Options" with a count ("1 option", "2 options"), or "None" when there are none. The name or count is a link that opens the JSON in a `SeeAllDialog`, so long arguments don't stretch the sidebar.
 - If the session has ended, sending a message shows an error `Warning` above the composer: "The OpenEnv session for this conversation ended. Start a new conversation to keep using this OpenEnv server." The conversation stays readable.
 - Forking from an earlier turn is disabled in a conversation with a server. The Fork action's tooltip says why: "This conversation uses an OpenEnv server, so it can only continue from the latest turn."
 
@@ -178,7 +177,7 @@ New strings not already given above. The mockups' "All copy" section lists every
 | Where | Text |
 |---|---|
 | Connect OpenEnv Server subtitle | Connect to a running OpenEnv server to add its tools to your project. |
-| Read the Docs and Learn more links | https://docs.kiln.tech/docs/tools-and-mcp, until an OpenEnv docs page exists |
+| Read the Docs link | https://docs.kiln.tech/docs/tools-and-mcp/openenv (to be written before merge) |
 | Kiln Seahaven callout title | Build an OpenEnv Server with Kiln Seahaven |
 | Kiln Seahaven callout description | Kiln Seahaven is an open-source framework for building realistic copies of your product's tools and data, served as an OpenEnv server. |
 | Kiln Seahaven callout button | Learn More |

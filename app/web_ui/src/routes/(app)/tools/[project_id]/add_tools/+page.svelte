@@ -8,7 +8,6 @@
   import { uncache_available_tools, ui_state } from "$lib/stores"
   import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
   import posthog from "posthog-js"
-  import { OPENENV_DOCS_URL } from "$lib/utils/openenv"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -252,8 +251,6 @@
             name: "OpenEnv Servers",
             description:
               "Connect to OpenEnv servers to add tools to your project.",
-            link_label: "Learn more",
-            link_href: OPENENV_DOCS_URL,
             button_text: "Connect",
             on_click: () => goto(`/tools/${project_id}/add_tools/openenv`),
           },
