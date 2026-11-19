@@ -31,6 +31,11 @@ vi.mock("$lib/ui/warning.svelte", async () => {
   return { default: Stub }
 })
 
+const load_openenv_server = vi.fn()
+vi.mock("$lib/api/openenv_server_api", () => ({
+  load_openenv_server: (...args: unknown[]) => load_openenv_server(...args),
+}))
+
 const RunConfigComparisonTable = (
   await import("./run_config_comparison_table.svelte")
 ).default
@@ -174,5 +179,104 @@ describe("RunConfigComparisonTable n_excluded indicator", () => {
     expect(container.textContent).toContain(
       "3 of 13 cases were skipped and are not reflected in this score.",
     )
+  })
+})
+
+describe("RunConfigComparisonTable on a grounded eval", () => {
+  const own_tool = "kiln_tool::openenv::server_1::append_note"
+
+  function runConfigWithTools(id: string, tools: string[]): TaskRunConfig {
+    const run_config = makeRunConfig(id, `Config ${id}`)
+    return {
+      ...run_config,
+      run_config_properties: {
+        ...run_config.run_config_properties,
+        type: "kiln_agent",
+        tools_config: { tools },
+      },
+    } as TaskRunConfig
+  }
+
+  function groundedProps(run_config: TaskRunConfig, interactive: boolean) {
+    return {
+      ...baseProps(makeSummary(run_config.id || "", 0, 0, 0.0)),
+      evaluator: makeEval({ openenv_server_id: "server_1" }),
+      sorted_task_run_configs: [run_config],
+      interactive,
+    }
+  }
+
+  function disabledRunEval(container: HTMLElement): HTMLButtonElement | null {
+    return container.querySelector("button[disabled]")
+  }
+
+  it.each([true, false])(
+    "disables Run Eval for a run config without the server's tools (interactive: %s)",
+    async (interactive) => {
+      load_openenv_server.mockResolvedValue({ name: "World" })
+      const { container } = render(RunConfigComparisonTable, {
+        props: groundedProps(runConfigWithTools("rc1", []), interactive),
+      })
+      await vi.waitFor(() => {
+        const tooltip = container.querySelector("td .tooltip")
+        expect(tooltip?.getAttribute("data-tip")).toBe(
+          "No OpenEnv tools. This eval's cases run in World.",
+        )
+      })
+      expect(disabledRunEval(container)?.textContent).toContain("Run Eval")
+      expect(
+        Array.from(container.querySelectorAll("a")).some((a) =>
+          a.textContent?.includes("Run Eval"),
+        ),
+      ).toBe(false)
+      expect(load_openenv_server).toHaveBeenCalledWith("proj1", "server_1")
+    },
+  )
+
+  it("names another server's tools as the reason", async () => {
+    load_openenv_server.mockResolvedValue({ name: "World" })
+    const { container } = render(RunConfigComparisonTable, {
+      props: groundedProps(
+        runConfigWithTools("rc1", ["kiln_tool::openenv::server_2::t"]),
+        true,
+      ),
+    })
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector("td .tooltip")?.getAttribute("data-tip"),
+      ).toBe("Uses another OpenEnv server. This eval's cases run in World.")
+    })
+  })
+
+  it("names the server by its id when it can't be loaded", async () => {
+    load_openenv_server.mockRejectedValue(new Error("deleted"))
+    const { container } = render(RunConfigComparisonTable, {
+      props: groundedProps(runConfigWithTools("rc1", []), true),
+    })
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector("td .tooltip")?.getAttribute("data-tip"),
+      ).toBe("No OpenEnv tools. This eval's cases run in server_1.")
+    })
+  })
+
+  it("leaves a run config with the server's tools runnable", () => {
+    load_openenv_server.mockResolvedValue({ name: "World" })
+    const { container } = render(RunConfigComparisonTable, {
+      props: groundedProps(runConfigWithTools("rc1", [own_tool]), false),
+    })
+    expect(disabledRunEval(container)).toBeNull()
+    expect(container.querySelector("a.btn")?.textContent).toContain("Run Eval")
+  })
+
+  it("adds no note on an eval that isn't grounded", () => {
+    const { container } = render(RunConfigComparisonTable, {
+      props: {
+        ...groundedProps(runConfigWithTools("rc1", []), false),
+        evaluator: makeEval(),
+      },
+    })
+    expect(disabledRunEval(container)).toBeNull()
+    expect(container.querySelector("[data-tip*='OpenEnv']")).toBeNull()
   })
 })

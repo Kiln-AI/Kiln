@@ -137,6 +137,59 @@ export function openenv_server_id_of_tool(tool_id: string): string | null {
   return tool_id.split("::")[2]
 }
 
+/** Why a run config doesn't fit a grounded eval (see openenv_misfit). */
+export type OpenEnvMisfit = "no_openenv_tools" | "other_openenv_server"
+
+/**
+ * Why a run config with these tool ids can't run the cases of an eval grounded in
+ * eval_openenv_server_id, or null when it can or the eval isn't grounded. It fits when it
+ * lists at least one OpenEnv tool and every OpenEnv tool it lists is served by the eval's
+ * server. Matches openenv_misfit in libs/core, which the eval runner applies.
+ */
+export function openenv_misfit(
+  eval_openenv_server_id: string | null | undefined,
+  tool_ids: string[],
+): OpenEnvMisfit | null {
+  if (!eval_openenv_server_id) {
+    return null
+  }
+  const openenv_tool_ids = tool_ids.filter(is_openenv_tool_id)
+  if (openenv_tool_ids.length === 0) {
+    return "no_openenv_tools"
+  }
+  const serves_all = openenv_tool_ids.every(
+    (tool_id) => openenv_server_id_of_tool(tool_id) === eval_openenv_server_id,
+  )
+  return serves_all ? null : "other_openenv_server"
+}
+
+/** A short note on a run config that doesn't fit a grounded eval. */
+export function openenv_misfit_note(
+  misfit: OpenEnvMisfit,
+  openenv_server_name: string,
+): string {
+  const what =
+    misfit === "no_openenv_tools"
+      ? "No OpenEnv tools."
+      : "Uses another OpenEnv server."
+  return `${what} This eval's cases run in ${openenv_server_name}.`
+}
+
+/** A run config Run All left out because it doesn't fit the eval's OpenEnv server. */
+export type SkippedRunConfig = { id: string; name: string; reason: string }
+
+/** The run eval stream's skipped run configs, one reason per line. */
+export function skipped_run_configs_message(
+  skipped_run_configs: SkippedRunConfig[],
+): string {
+  const count = skipped_run_configs.length
+  const heading = `Skipped ${count} run config${count === 1 ? "" : "s"} that can't run this eval's cases.`
+  return [
+    heading,
+    ...skipped_run_configs.map((skipped) => skipped.reason),
+  ].join("\n")
+}
+
 /**
  * Whether a picker keeps a selected OpenEnv tool that available_tools doesn't
  * list. An offline server's tools stay selected, so the run reports the server

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Eval, Task, TaskRunConfig, EvalResultSummary } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import RunConfigSummary from "$lib/ui/run_config_component/run_config_summary.svelte"
   import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
@@ -8,6 +9,8 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
+  import { openenv_misfit, openenv_misfit_note } from "$lib/utils/openenv"
+  import { create_openenv_server_loader } from "$lib/utils/openenv_server_property"
 
   export let project_id: string
   export let task_id: string
@@ -33,6 +36,25 @@
   export let score_summary_error: KilnError | null = null
 
   $: spec_id_for_url = spec_id || "legacy"
+
+  const eval_openenv_server = create_openenv_server_loader()
+  $: eval_openenv_server.load(project_id, evaluator.openenv_server_id)
+  $: eval_openenv_server_name =
+    $eval_openenv_server?.name ?? evaluator.openenv_server_id ?? ""
+
+  /** Why this run config can't run a grounded eval's cases, or null when it can. */
+  function misfit_note(
+    task_run_config: TaskRunConfig,
+    eval_openenv_server_id: string | null | undefined,
+    eval_openenv_server_name: string,
+  ): string | null {
+    const properties = task_run_config.run_config_properties
+    const tool_ids = isKilnAgentRunConfig(properties)
+      ? properties.tools_config?.tools ?? []
+      : []
+    const misfit = openenv_misfit(eval_openenv_server_id, tool_ids)
+    return misfit ? openenv_misfit_note(misfit, eval_openenv_server_name) : null
+  }
 
   function excluded_for_run_config(
     summary: EvalResultSummary | null,
@@ -176,6 +198,11 @@
             task_run_config.id ?? null,
             evaluator.output_scores,
           )}
+          {@const misfit = misfit_note(
+            task_run_config,
+            evaluator.openenv_server_id,
+            eval_openenv_server_name,
+          )}
           <tr class="max-w-[400px]">
             <td>
               <RunConfigSummary
@@ -191,7 +218,14 @@
                   {(percent_complete * 100.0).toFixed(0)}% Complete
                 </div>
                 <div class="mt-1">
-                  {#if interactive && current_eval_config_id}
+                  {#if misfit}
+                    <div class="tooltip tooltip-top" data-tip={misfit}>
+                      <button
+                        class="btn btn-xs rounded-full min-w-[120px]"
+                        disabled>Run Eval</button
+                      >
+                    </div>
+                  {:else if interactive && current_eval_config_id}
                     <RunEval
                       {project_id}
                       {task_id}
@@ -228,6 +262,15 @@
                   >
                     View Data
                   </a>
+                </div>
+              {/if}
+              {#if misfit}
+                <div class="mt-2 flex justify-center text-left">
+                  <Warning
+                    warning_message={misfit}
+                    warning_color="warning"
+                    inline={true}
+                  />
                 </div>
               {/if}
               {#if excluded.n_excluded > 0}

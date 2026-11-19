@@ -20,6 +20,13 @@ from kiln_ai.adapters.chat.chat_formatter import (
     is_two_message_cot_strategy,
 )
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
+from kiln_ai.adapters.eval.openenv_fit import (
+    openenv_misfit,
+    openenv_misfit_message,
+    openenv_server_label,
+    openenv_tool_ids,
+    run_config_tool_ids,
+)
 from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.eval.trace_index import (
     TraceIndex,
@@ -282,38 +289,37 @@ def _openenv_reset_of(job: EvalJob) -> OpenEnvReset | None:
     return None
 
 
-def _run_config_tool_ids(run_config: TaskRunConfig) -> list[str]:
-    tools_config = getattr(run_config.run_config_properties, "tools_config", None)
-    return list(tools_config.tools) if tools_config is not None else []
-
-
-_OpenEnvToolMismatch = Literal["no_openenv_reset", "stored_task_run", "other_openenv"]
-"""Why a run config's OpenEnv tools cannot run an item (see `_openenv_tool_mismatch`)."""
-
-
-def _openenv_tool_ids(run_config: TaskRunConfig) -> list[str]:
-    return [
-        t
-        for t in _run_config_tool_ids(run_config)
-        if t.startswith(OPENENV_TOOL_ID_PREFIX)
-    ]
+_OpenEnvToolMismatch = Literal[
+    "no_openenv_reset", "stored_task_run", "other_openenv", "no_openenv_tools"
+]
+"""Why a run config's tools cannot run an item (see `_openenv_tool_mismatch`)."""
 
 
 def _openenv_tool_mismatch(
     run_config: TaskRunConfig,
     item: EvalInput | TaskRun,
     openenv_reset: OpenEnvReset | None,
+    eval_openenv_server_id: ID_TYPE | None,
 ) -> _OpenEnvToolMismatch | None:
-    """Why the run config's OpenEnv tools cannot run this item, or None when they can or
-    the run config lists no OpenEnv tools. The one rule behind the per-job refusal
-    (`_uses_openenv`) and the request-time check (`validate_openenv_readiness`)."""
-    openenv_tool_ids = _openenv_tool_ids(run_config)
-    if not openenv_tool_ids:
+    """Why the run config's tools cannot run this item, or None when they can. The one rule
+    behind the per-job refusal (`_uses_openenv`) and the request-time check
+    (`validate_openenv_readiness`).
+
+    A run config with no OpenEnv tools runs an item against project tools, except an item with
+    an openenv_reset in an eval grounded in an OpenEnv server (`openenv_misfit`): its case only
+    makes sense in that server."""
+    if (
+        openenv_reset is not None
+        and openenv_misfit(eval_openenv_server_id, run_config) == "no_openenv_tools"
+    ):
+        return "no_openenv_tools"
+    tool_ids = openenv_tool_ids(run_config)
+    if not tool_ids:
         return None
     if openenv_reset is None:
         # A stored TaskRun never carries an openenv_reset; only an EvalInput can.
         return "stored_task_run" if isinstance(item, TaskRun) else "no_openenv_reset"
-    openenv_servers = {openenv_and_tool_name_from_id(t)[0] for t in openenv_tool_ids}
+    openenv_servers = {openenv_and_tool_name_from_id(t)[0] for t in tool_ids}
     if openenv_servers != {openenv_reset.openenv_server_id}:
         return "other_openenv"
     return None
@@ -323,39 +329,49 @@ def _uses_openenv(
     run_config: TaskRunConfig,
     item: EvalInput | TaskRun,
     openenv_reset: OpenEnvReset | None,
+    eval_openenv_server_id: ID_TYPE | None,
 ) -> bool:
     """Whether this job runs in the input's environment: only when the run config
     lists that environment's tools. A run config with no environment tools runs the input
-    against project tools and never launches an episode, environment or not. OpenEnv
-    tools without an openenv_reset, or from a different environment, are an error rather than
-    a silent run against the wrong tools. (Real versions of the environment's own tools are
-    refused separately, once the environment's tools are known.)"""
-    openenv_tool_ids = _openenv_tool_ids(run_config)
-    mismatch = _openenv_tool_mismatch(run_config, item, openenv_reset)
+    against project tools and never launches an episode, environment or not, unless the eval
+    was grounded in the input's environment. OpenEnv tools without an openenv_reset, or from a
+    different environment, are an error rather than a silent run against the wrong tools.
+    (Real versions of the environment's own tools are refused separately, once the
+    environment's tools are known.)"""
+    tool_ids = openenv_tool_ids(run_config)
+    mismatch = _openenv_tool_mismatch(
+        run_config, item, openenv_reset, eval_openenv_server_id
+    )
+    if mismatch == "no_openenv_tools":
+        assert openenv_reset is not None
+        raise ValueError(
+            f"eval input {item.id}: "
+            + openenv_misfit_message(
+                mismatch, run_config.name, openenv_reset.openenv_server_id
+            )
+        )
     if mismatch == "no_openenv_reset":
         raise ValueError(
             f"Run config '{run_config.name}' lists OpenEnv tools "
-            f"({', '.join(openenv_tool_ids)}) but eval input {item.id} has no "
+            f"({', '.join(tool_ids)}) but eval input {item.id} has no "
             "openenv_reset. Use a run config with project tools for this "
             "input, or give the input an openenv_reset."
         )
     if mismatch == "stored_task_run":
         raise ValueError(
             f"Run config '{run_config.name}' lists OpenEnv tools "
-            f"({', '.join(openenv_tool_ids)}) but task run {item.id} is a stored task "
+            f"({', '.join(tool_ids)}) but task run {item.id} is a stored task "
             "run, which can't run in an OpenEnv server. Use a run config without OpenEnv tools."
         )
     if mismatch == "other_openenv":
         assert openenv_reset is not None
-        openenv_servers = {
-            openenv_and_tool_name_from_id(t)[0] for t in openenv_tool_ids
-        }
+        openenv_servers = {openenv_and_tool_name_from_id(t)[0] for t in tool_ids}
         raise ValueError(
             f"eval input {item.id} runs in OpenEnv server {openenv_reset.openenv_server_id}, but run "
             f"config '{run_config.name}' lists tools from OpenEnv server(s) "
             f"{sorted(openenv_servers - {openenv_reset.openenv_server_id})}. A job runs in one OpenEnv server."
         )
-    return bool(openenv_tool_ids)
+    return bool(tool_ids)
 
 
 def _resolves_openenv(
@@ -371,7 +387,7 @@ def _resolves_openenv(
         return False
     return uses_openenv or any(
         not tool_id.startswith(OPENENV_TOOL_ID_PREFIX)
-        for tool_id in _run_config_tool_ids(run_config)
+        for tool_id in run_config_tool_ids(run_config)
     )
 
 
@@ -447,7 +463,7 @@ def _check_project_versions_of_served_tools(
     served_names = set(served)
     clashes = [
         f"{tool_id} ({name})"
-        for tool_id in _run_config_tool_ids(run_config)
+        for tool_id in run_config_tool_ids(run_config)
         if not tool_id.startswith(OPENENV_TOOL_ID_PREFIX)
         for name in [project_tool_function_name(tool_id, project)]
         if name is not None and name in served_names
@@ -846,7 +862,8 @@ class EvalRunner:
     def validate_openenv_readiness(self) -> None:
         """Fail fast on the environment problems that every affected job would hit: a run
         config whose environment tools cannot run an item (the item has no openenv_reset, is a
-        stored TaskRun, or runs in another environment), and an openenv_reset that names an environment
+        stored TaskRun, or runs in another environment), a run config with none of the tools of
+        the server a grounded eval's items run in, and an openenv_reset that names an environment
         the project does not have. Callers can invoke this before starting a batch, so
         the user gets one clear error instead of one failed item per job. The per-job
         checks stay as the backstop for standalone runner use.
@@ -884,11 +901,13 @@ class EvalRunner:
                 continue
             openenv_reset = item.openenv_reset if isinstance(item, EvalInput) else None
             for index, run_config in enumerate(run_configs):
-                mismatch = _openenv_tool_mismatch(run_config, item, openenv_reset)
+                mismatch = _openenv_tool_mismatch(
+                    run_config, item, openenv_reset, self.eval.openenv_server_id
+                )
                 if mismatch is not None:
                     mismatched.setdefault((index, mismatch), []).append(str(item.id))
                     continue
-                uses_openenv = bool(_openenv_tool_ids(run_config))
+                uses_openenv = bool(openenv_tool_ids(run_config))
                 if _resolves_openenv(run_config, openenv_reset, uses_openenv):
                     assert openenv_reset is not None
                     items_by_openenv_server.setdefault(
@@ -914,9 +933,19 @@ class EvalRunner:
                         )
         for (index, mismatch), ids in mismatched.items():
             run_config = run_configs[index]
-            tools = ", ".join(_openenv_tool_ids(run_config))
+            tools = ", ".join(openenv_tool_ids(run_config))
             listed = _listed_ids(ids)
-            if mismatch == "no_openenv_reset":
+            if mismatch == "no_openenv_tools":
+                assert self.eval.openenv_server_id is not None
+                label = openenv_server_label(
+                    self.eval.openenv_server_id, self.task.parent_project()
+                )
+                problems.append(
+                    f"Run config '{run_config.name}' has none of the tools of OpenEnv "
+                    f"server '{label}', where these eval inputs run: {listed}. Use a run "
+                    "config that lists that OpenEnv server's tools"
+                )
+            elif mismatch == "no_openenv_reset":
                 problems.append(
                     f"Run config '{run_config.name}' lists OpenEnv tools ({tools}), but "
                     f"these eval inputs have no openenv_reset: {listed}. Use a run "
@@ -1118,7 +1147,7 @@ class EvalRunner:
         # episode in context for every turn, and the leaf trace records it.
         openenv_reset = _openenv_reset_of(job)
         uses_openenv = job.task_run_config is not None and _uses_openenv(
-            job.task_run_config, job.item, openenv_reset
+            job.task_run_config, job.item, openenv_reset, self.eval.openenv_server_id
         )
         if job.task_run_config is not None and _resolves_openenv(
             job.task_run_config, openenv_reset, uses_openenv

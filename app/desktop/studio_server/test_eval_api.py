@@ -55,11 +55,12 @@ from kiln_ai.datamodel.eval_splits import ItemSource, ResolvedSplit
 from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
+from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.tools.base_tool import ToolCallResult
 from kiln_ai.tools.sandbox_bridge import BridgeResult
@@ -9753,3 +9754,200 @@ def test_run_config_eval_scores_counts_a_run_missing_a_score_as_incomplete(
     assert result.results["score1"] is not None
     assert result.results["score1"].mean_score == 4.0
     assert result.results["overall_rating"] is None
+
+
+class TestRunComparisonOpenEnvFit:
+    """A grounded eval's cases only make sense in its OpenEnv server: a hand-picked run
+    config without that server's tools is refused, and Run All leaves such run configs out
+    and says so in the stream."""
+
+    URL = "/api/projects/project1/tasks/task1/evals/eval_v2/eval_config/v2_config/run_comparison"
+
+    @pytest.fixture
+    def task(self, tmp_path):
+        # Nested like a real project: the runner finds the OpenEnv server through the
+        # task's project on disk.
+        project = Project(
+            id="project1", name="proj", path=tmp_path / "proj" / "project.kiln"
+        )
+        project.path.parent.mkdir(parents=True)
+        project.save_to_file()
+        task = Task(id="task1", name="task", instruction="answer", parent=project)
+        task.save_to_file()
+        with patch(
+            "app.desktop.studio_server.eval_api.task_from_id", return_value=task
+        ):
+            yield task
+
+    @pytest.fixture
+    def openenv_server(self, task):
+        server = OpenEnvServer(
+            name="World", parent=task.parent_project(), url="http://127.0.0.1:1"
+        )
+        server.save_to_file()
+        return server
+
+    def _eval(self, task, openenv_server_id) -> Eval:
+        eval = Eval(
+            id="eval_v2",
+            name="V2 Test Eval",
+            output_scores=[
+                EvalOutputScore(
+                    name="accuracy",
+                    instruction="Is the answer accurate?",
+                    type=TaskOutputRatingType.pass_fail,
+                ),
+            ],
+            splits={"test": EvalInputSplit(filter_id="tag::v2_eval_set")},
+            evaluation_data_type=None,
+            openenv_server_id=openenv_server_id,
+            parent=task,
+        )
+        eval.save_to_file()
+        EvalConfig(
+            id="v2_config",
+            name="V2 Judge",
+            config_type=EvalConfigType.v2,
+            properties={"type": "exact_match", "expected_value": "hello"},
+            parent=eval,
+        ).save_to_file()
+        return eval
+
+    @pytest.fixture
+    def grounded_eval(self, task, openenv_server):
+        return self._eval(task, openenv_server.id)
+
+    @pytest.fixture
+    def grounded_input(self, task, openenv_server):
+        return _tagged_eval_input(
+            task,
+            "v2_eval_set",
+            openenv_reset=OpenEnvReset(openenv_server_id=openenv_server.id),
+        )
+
+    def _run_config(self, task, id: str, tool_ids: list[str]) -> TaskRunConfig:
+        run_config = TaskRunConfig(
+            parent=task,
+            id=id,
+            name=f"{id} name",
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                tools_config=ToolsRunConfig(tools=tool_ids),
+            ),
+        )
+        run_config.save_to_file()
+        return run_config
+
+    @staticmethod
+    def _frames(response) -> list[dict]:
+        return [
+            json.loads(line.removeprefix("data: "))
+            for line in response.iter_lines()
+            if line and line != "data: complete"
+        ]
+
+    def test_refuses_a_hand_picked_run_config_without_the_servers_tools(
+        self, client, task, grounded_eval, grounded_input
+    ):
+        self._run_config(task, "plain", [])
+
+        with patch.object(EvalRunner, "run") as run:
+            response = client.get(self.URL, params={"run_config_ids": ["plain"]})
+
+        assert response.status_code == 400
+        message = response.json()["message"]
+        assert (
+            "Run config 'plain name' has none of the tools of OpenEnv server 'World', "
+            f"where these eval inputs run: {grounded_input.id}." in message
+        )
+        run.assert_not_called()
+
+    def test_refuses_a_hand_picked_run_config_with_another_servers_tools(
+        self, client, task, grounded_eval, grounded_input
+    ):
+        self._run_config(
+            task, "foreign", [build_openenv_tool_id("other", "append_note")]
+        )
+
+        response = client.get(self.URL, params={"run_config_ids": ["foreign"]})
+
+        assert response.status_code == 400
+        assert (
+            "these eval inputs run in another OpenEnv server"
+            in (response.json()["message"])
+        )
+
+    def test_run_all_skips_run_configs_that_dont_fit(
+        self,
+        client,
+        task,
+        openenv_server,
+        grounded_eval,
+        grounded_input,
+    ):
+        fits = self._run_config(
+            task,
+            "fits",
+            [build_openenv_tool_id(openenv_server.id, "append_note")],
+        )
+        self._run_config(task, "plain", [])
+
+        async def one_progress():
+            yield Mock(complete=1, total=1, errors=0)
+
+        with patch.object(EvalRunner, "run", return_value=one_progress()):
+            with patch(
+                "app.desktop.studio_server.eval_api.EvalRunner",
+                wraps=EvalRunner,
+            ) as runner_class:
+                response = client.get(self.URL, params={"all_run_configs": True})
+
+        assert response.status_code == 200
+        run_configs = runner_class.call_args.kwargs["run_configs"]
+        assert [rc.id for rc in run_configs] == [fits.id]
+        (frame,) = self._frames(response)
+        assert frame["skipped_run_configs"] == [
+            {
+                "id": "plain",
+                "name": "plain name",
+                "reason": "This eval's cases run in OpenEnv server 'World'; "
+                "run config 'plain name' has none of its tools.",
+            }
+        ]
+
+    def test_run_all_refuses_when_no_run_config_fits(
+        self, client, task, grounded_eval, grounded_input
+    ):
+        self._run_config(task, "plain", [])
+
+        response = client.get(self.URL, params={"all_run_configs": True})
+
+        assert response.status_code == 400
+        assert response.json()["message"] == (
+            "No run config can run this eval's cases. This eval's cases run in OpenEnv "
+            "server 'World'; run config 'plain name' has none of its tools."
+        )
+
+    def test_an_ungrounded_eval_runs_every_run_config_without_skips(
+        self, client, task, openenv_server
+    ):
+        self._eval(task, None)
+        _tagged_eval_input(
+            task,
+            "v2_eval_set",
+            openenv_reset=OpenEnvReset(openenv_server_id=openenv_server.id),
+        )
+        self._run_config(task, "plain", [])
+
+        async def one_progress():
+            yield Mock(complete=1, total=1, errors=0)
+
+        with patch.object(EvalRunner, "run", return_value=one_progress()):
+            response = client.get(self.URL, params={"run_config_ids": ["plain"]})
+
+        assert response.status_code == 200
+        (frame,) = self._frames(response)
+        assert frame == {"progress": 1, "total": 1, "errors": 0}

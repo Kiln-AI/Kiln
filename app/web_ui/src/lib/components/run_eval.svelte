@@ -5,6 +5,10 @@
   import { base_url } from "$lib/api_client"
   import { stream_sse } from "$lib/utils/sse_stream"
   import posthog from "posthog-js"
+  import {
+    skipped_run_configs_message,
+    type SkippedRunConfig,
+  } from "$lib/utils/openenv"
 
   export let btn_size: "normal" | "mid" | "small" | "xs" = "mid"
   export let btn_primary: boolean = true
@@ -53,6 +57,7 @@
   let eval_complete_count = 0
   let eval_total_count = 0
   let eval_error_count = 0
+  let skipped_run_configs: SkippedRunConfig[] = []
 
   function run_eval(): boolean {
     if (eval_type === "run_config" && !current_eval_config_id) {
@@ -85,6 +90,7 @@
     eval_complete_count = 0
     eval_total_count = 0
     eval_error_count = 0
+    skipped_run_configs = []
 
     eval_run_error = null
 
@@ -112,6 +118,7 @@
             eval_complete_count = parsed.progress
             eval_total_count = parsed.total
             eval_error_count = parsed.errors
+            skipped_run_configs = parsed.skipped_run_configs ?? []
             eval_state = "running"
           }
         } catch (error) {
@@ -248,6 +255,14 @@
         </div>
       {/if}
     </div>
+    {#if skipped_run_configs.length > 0}
+      <div class="mt-4 text-left">
+        <Warning
+          warning_message={skipped_run_configs_message(skipped_run_configs)}
+          warning_color="warning"
+        />
+      </div>
+    {/if}
   </div>
 </Dialog>
 

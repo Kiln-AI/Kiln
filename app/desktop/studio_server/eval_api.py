@@ -1,7 +1,7 @@
 import json
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from typing import Annotated, Any, Dict, List, Set, Tuple, Type, TypeVar
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
@@ -14,6 +14,11 @@ from kiln_ai.adapters.eval.base_eval import (
     materialize_llm_judge_properties,
 )
 from kiln_ai.adapters.eval.eval_runner import EvalRunner, no_golden_set_message
+from kiln_ai.adapters.eval.openenv_fit import (
+    SkippedRunConfig,
+    openenv_server_label,
+    split_run_configs_by_openenv_fit,
+)
 from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
 from kiln_ai.adapters.eval.v2_eval_code_eval import (
     CodeEvalAdapter,
@@ -326,17 +331,27 @@ def task_run_config_from_id(
     )
 
 
-async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingResponse:
-    # Yields async messages designed to be used with server sent events (SSE)
+async def run_eval_runner_with_status(
+    eval_runner: EvalRunner,
+    skipped_run_configs: list[SkippedRunConfig] | None = None,
+) -> StreamingResponse:
+    """Stream the runner's progress as server-sent events. Each progress frame carries
+    `skipped_run_configs` ({id, name, reason} each) when run configs were left out of the
+    run."""
+
     # https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
     async def event_generator():
         async for progress in eval_runner.run():
-            data = {
+            data: dict[str, Any] = {
                 "progress": progress.complete,
                 "total": progress.total,
                 "errors": progress.errors,
             }
-            yield f"data: {json.dumps(data)}\n\n"
+            if skipped_run_configs:
+                data["skipped_run_configs"] = [
+                    asdict(skipped) for skipped in skipped_run_configs
+                ]
+            yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
         # Send the final complete message the app expects, and uses to stop listening
         yield "data: complete\n\n"
@@ -2926,6 +2941,23 @@ def connect_evals_api(app: FastAPI):
         split = resolved_split_or_422(task, eval, "test")
         require_dataset_run_items_or_400(eval, eval_config.config_type, split)
 
+        # A grounded eval's cases only make sense in its OpenEnv server. Run All leaves out
+        # the run configs without that server's tools; a hand-picked one is refused below
+        # by the readiness check.
+        skipped_run_configs: list[SkippedRunConfig] = []
+        if eval.openenv_server_id is not None and all_run_configs:
+            run_configs, skipped_run_configs = split_run_configs_by_openenv_fit(
+                eval,
+                run_configs,
+                openenv_server_label(eval.openenv_server_id, task.parent_project()),
+            )
+            if not run_configs:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No run config can run this eval's cases. "
+                    + " ".join(skipped.reason for skipped in skipped_run_configs),
+                )
+
         eval_runner = EvalRunner(
             eval_configs=[eval_config],
             run_configs=run_configs,
@@ -2945,10 +2977,12 @@ def connect_evals_api(app: FastAPI):
             eval_runner.validate_multi_turn_drive_readiness(
                 check_run_configs=not all_run_configs
             )
+            if eval.openenv_server_id is not None:
+                eval_runner.validate_openenv_readiness()
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        return await run_eval_runner_with_status(eval_runner)
+        return await run_eval_runner_with_status(eval_runner, skipped_run_configs)
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}",

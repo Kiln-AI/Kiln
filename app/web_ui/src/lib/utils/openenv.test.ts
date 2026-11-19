@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest"
 import type { OpenEnvServer } from "$lib/types"
 import {
+  skipped_run_configs_message,
+  openenv_misfit,
+  openenv_misfit_note,
   RESET_ARGUMENTS_INVALID_JSON,
   RESET_ARGUMENTS_NOT_OBJECT,
   OPENENV_SERVER_URL_ERROR,
@@ -319,5 +322,62 @@ describe("reset_kwargs_for", () => {
       named_reset_kwargs: [{ name: "Default" }],
     }
     expect(reset_kwargs_for(env, "Default")).toEqual({})
+  })
+})
+
+describe("openenv_misfit", () => {
+  const own = "kiln_tool::openenv::server_1::append_note"
+  const other = "kiln_tool::openenv::server_2::append_note"
+  const project_tool = "kiln_tool::add_numbers"
+
+  it("fits every run config to an eval that isn't grounded", () => {
+    expect(openenv_misfit(null, [])).toBeNull()
+    expect(openenv_misfit(undefined, [other])).toBeNull()
+  })
+
+  it("needs at least one of the server's tools", () => {
+    expect(openenv_misfit("server_1", [])).toBe("no_openenv_tools")
+    expect(openenv_misfit("server_1", [project_tool])).toBe("no_openenv_tools")
+  })
+
+  it("fits the server's tools, with or without project tools", () => {
+    expect(openenv_misfit("server_1", [own])).toBeNull()
+    expect(openenv_misfit("server_1", [own, project_tool])).toBeNull()
+  })
+
+  it("refuses any tool from another server", () => {
+    expect(openenv_misfit("server_1", [other])).toBe("other_openenv_server")
+    expect(openenv_misfit("server_1", [own, other])).toBe(
+      "other_openenv_server",
+    )
+  })
+})
+
+describe("openenv_misfit_note", () => {
+  it("names what is missing and where the cases run", () => {
+    expect(openenv_misfit_note("no_openenv_tools", "World")).toBe(
+      "No OpenEnv tools. This eval's cases run in World.",
+    )
+    expect(openenv_misfit_note("other_openenv_server", "World")).toBe(
+      "Uses another OpenEnv server. This eval's cases run in World.",
+    )
+  })
+})
+
+describe("skipped_run_configs_message", () => {
+  it("counts the skipped run configs and gives each reason a line", () => {
+    expect(
+      skipped_run_configs_message([
+        { id: "a", name: "A", reason: "Reason A." },
+        { id: "b", name: "B", reason: "Reason B." },
+      ]),
+    ).toBe(
+      "Skipped 2 run configs that can't run this eval's cases.\nReason A.\nReason B.",
+    )
+    expect(
+      skipped_run_configs_message([
+        { id: "a", name: "A", reason: "Reason A." },
+      ]),
+    ).toBe("Skipped 1 run config that can't run this eval's cases.\nReason A.")
   })
 })
