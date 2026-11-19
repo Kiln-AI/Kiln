@@ -258,7 +258,7 @@ For each new model, write `agent_notes` and the model `tags`, then run the `curr
 - The `current` tag, when it is the newest release at its lab's price level. `current` is mechanical: it needs only the release date, not a benchmark.
 - A `Superseded by:` line on the predecessor, when the `current` tag moves.
 
-Other note lines (Strengths, Behavior, etc.) need an independent source; when none supports a line, leave it out and say so in the PR. Set tags are different: the set review below is required for every new model, and an Artificial Analysis page is the source it uses. Leave set tags out only when the model has no AA page, and say so in the PR.
+Other note lines (Strengths, Behavior, etc.) need an independent source; when none supports a line, leave it out and say so in the PR. Set tags are different: the set review below is required for every new model. The cost-based sets (`recommended`, `top_value`) and `top_fast` use Artificial Analysis numbers; without an AA page, `recommended` may use another independent benchmark, and `top_value` and `top_fast` are skipped. `top_open`, `top_on_device` and `top_writing` do not need AA: they use open-weight status, device fit and a writing source. Say in **Set review** which source each decision used, or that none was found.
 
 `test_live_models_have_notes` in `test_ml_model_list.py` fails for any live model without `agent_notes`, except the older models in `MODELS_WITHOUT_NOTES`. Never add a new model to that list.
 
@@ -266,7 +266,7 @@ Steps for each new model:
 
 1. Write the model's `agent_notes` — at minimum `Description:` + `Lineup:`.
 2. Run the `current` procedure for its lab and price level (always).
-3. Fetch its Artificial Analysis page (`https://artificialanalysis.ai/models/<slug>`; try the obvious slug variants). Record the intelligence index with its effort variant (for example "61, Xhigh"), the cost per Intelligence Index task, the output speed and the time to first token. Use the cost per task, not the blended $/M-token price, which the page shows in another table. If there is no page, write that down; the model then joins no cost-based set.
+3. Fetch its Artificial Analysis page (`https://artificialanalysis.ai/models/<slug>`; try the obvious slug variants). Record the intelligence index with its effort variant (for example "61, Xhigh"), the cost per Intelligence Index task, the output speed and the time to first token. Use the cost per task, not the blended $/M-token price, which the page shows in another table. If there is no page, write that down; the model then joins `top_value` and `top_fast` only through a serving-variant rule, and `recommended` only with another independent benchmark.
 4. Run the [set review](#set-tags) for every set in `MODEL_TAGS`, against the member tables in `specs/projects/model-agent-info/backfill_sources.md`. That log is the baseline: it has the index, cost and speed of every member, so the comparison needs no other fetch.
 5. Write judgment note lines where a source supports them.
 6. Add a **Set review** section to the PR (see 3h), even when no set changed.
@@ -449,8 +449,8 @@ Procedure when a model could be in a set:
 
 1. Load the whole set (every model with that tag across `built_in_models`).
 2. Decide whether the new model joins the set.
-3. If it joins, review every member and remove each one that no longer earns its place. That can be an older model at the same level, or a model from any lab or level that the new model beats for the set's purpose.
-4. A set never goes over its limit (`max_models` in the tag map). To add a model to a full set, remove one.
+3. If it joins, review every member for one that no longer earns its place. That can be an older model at the same level, or a model from any lab or level that the new model beats for the set's purpose. Remove a member only when it lost `current` (for `recommended`) or the set is full (step 4); list every other one under **Candidate removals** in **Set review** and leave it in the set.
+4. A set never goes over its limit (`max_models` in the tag map). To add a model to a full set, remove one, by the full-set rule below.
 
 The comparison rules the log already applies, so each run decides the same way:
 
@@ -460,7 +460,7 @@ The comparison rules the log already applies, so each run decides the same way:
 - **`top_fast`:** output speed and time to first token from AA, or a faster serving of a model in `top_open` or `recommended`.
 - **`top_writing`:** needs a writing source (an AA writing score, a writing benchmark, or the lab's writing evals with an independent check). No source, no join.
 - **`top_open`:** open-weight models only, compared within the cost band with other open-weight models. **`top_on_device`:** models that run on a laptop or phone.
-- **Removals.** A member that loses `current` leaves `recommended` in the same change. Any other removal is a judgment: a member that the new model beats on both index and cost inside the band may also stand for something the numbers do not show (a lab, a region, a size). List it under **Candidate removals** in the PR's **Set review** and leave it in the set; a human decides. The exception is a full set: then remove the weakest member in the band of the new model, and say so in **Set changes**.
+- **Removals.** A member that loses `current` leaves `recommended` in the same change. Any other removal is a judgment: a member that the new model beats on both index and cost inside the band may also stand for something the numbers do not show (a lab, a region, a size). List it under **Candidate removals** in the PR's **Set review** and leave it in the set; a human decides. The exception is a full set. Then remove the member with the lowest AA index inside the new model's cost band, and say so in **Set changes**. When no member is inside the band, or the set has no AA numbers to compare (as in `top_on_device`), do not add the model: put the proposed swap under **Decisions required** and a human picks the member to remove.
 
 Rules:
 

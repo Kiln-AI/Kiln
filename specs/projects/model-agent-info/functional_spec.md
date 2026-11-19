@@ -179,11 +179,15 @@ fields on provider entries and provider-list items stay, for later use.
 ### Set tags
 
 - **When a model could be in a set:** (1) load the whole set; (2) decide
-  whether the model joins; (3) if it joins, review every member and remove
-  each one that no longer earns its place. That can be an older model at
-  the same level, or a model from any lab or level that the new model beats
-  for the set's purpose.
-- A set never goes over its limit. To add a model to a full set, remove one.
+  whether the model joins; (3) if it joins, review every member for one
+  that no longer earns its place. That can be an older model at the same
+  level, or a model from any lab or level that the new model beats for the
+  set's purpose. Such a member is removed only when it lost `current` or
+  the set is full; otherwise it is listed as a candidate removal for a
+  human. (Revision 4, 2026-11-19.)
+- A set never goes over its limit. To add a model to a full set, remove the
+  member with the lowest AA index inside the new model's cost band. When no
+  member is inside the band, or the set has no AA numbers, a human picks.
 - Every `recommended` model is also `current`. When a model loses
   `current`, it also leaves `recommended`.
 - **The `recommended` bar.** `recommended` is not one model per lab or per
@@ -442,8 +446,10 @@ section says, with these details:
   compares it with the member tables in the sources log within a 1.5x
   cost band, and writes a **Set review** section in the PR even when no
   set changes. Removals other than a lost `current` or a full set are
-  listed as candidates for a human, not applied. Set tags are left out
-  only when the model has no AA page. (Revision 4, 2026-11-19.)
+  listed as candidates for a human, not applied. Without an AA page,
+  `recommended` needs another independent benchmark and `top_value` and
+  `top_fast` are skipped; `top_open`, `top_on_device` and `top_writing` use
+  their own evidence. (Revision 4, 2026-11-19.)
 - A data test (`test_live_models_have_notes`) fails any live model without
   a note, except the older models frozen in `MODELS_WITHOUT_NOTES`, which
   only shrinks. (Revision 4, 2026-11-19.)
