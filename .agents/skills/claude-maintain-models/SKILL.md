@@ -267,7 +267,7 @@ Steps for each new model:
 1. Write the model's `agent_notes` — at minimum `Description:` + `Lineup:`.
 2. Run the `current` procedure for its lab and price level (always).
 3. Fetch its Artificial Analysis page (`https://artificialanalysis.ai/models/<slug>`; try the obvious slug variants). Record the intelligence index with its effort variant (for example "61, Xhigh"), the cost per Intelligence Index task, the output speed and the time to first token. Use the cost per task, not the blended $/M-token price, which the page shows in another table. If there is no page, write that down; the model then joins `top_value` and `top_fast` only through a serving-variant rule, and `recommended` only with another independent benchmark.
-4. Run the [set review](#set-tags) for every set in `MODEL_TAGS`, against the member tables in `specs/projects/model-agent-info/backfill_sources.md`. That log is the baseline: it has the index, cost and speed of every member, so the comparison needs no other fetch.
+4. Run the [set review](#set-tags) for every set in `MODEL_TAGS`. List each set's members from `built_in_models`, and fetch the AA page of every member inside the new model's cost band, so the comparison uses numbers from the same day.
 5. Write judgment note lines where a source supports them.
 6. Add a **Set review** section to the PR (see 3h), even when no set changed.
 
@@ -476,14 +476,13 @@ Rules:
 - A lab's own release benchmarks are chosen to look good. They can support a claim but are never its only source.
 - Common sense.
 
-### Sources log
+### Sources in the PR
 
-When a set changes, update the sources log at `specs/projects/model-agent-info/backfill_sources.md` so a reviewer can answer "why is this model in this set?" without redoing the research:
+Put the evidence in the PR body, so a reviewer can answer "why is this model in this set?" without redoing the research. `specs/projects/model-agent-info/backfill_sources.md` is a point-in-time record of the Phase 4 and 5 backfill; do not update it.
 
-- **Per set:** one row per member with the AA intelligence index, AA cost per task (or blended price when AA has no cost per task), AA output speed, and the AA page URL. A member with no AA page cites the URL of the source used instead. The reason column states the comparison ("index 52 at $1.10/task; next best at that cost is 44"), not a description ("strong flagship").
-- **Per model:** the source URL behind each line of its note other than `Description:` and `Lineup:` when those come from the lab's own model page, which is cited once. Add the row to the "Model note sources" table. When the lab page is unreachable and the note uses another description (for example the OpenRouter model description), name that source and say the lab page was unreachable.
-- **Per provider:** the source URL behind each line of its note.
-- Every figure in the log is checked against its source; a price is labeled input or output.
+- **Set review:** for each set, the AA intelligence index, AA cost per task (or blended price when AA has no cost per task) and AA output speed of the new model and of the members it was compared with. The reason states the comparison ("index 52 at $1.10/task; next best at that cost is 44"), not a description ("strong flagship").
+- **Sources:** the URL behind each note line other than `Description:` and `Lineup:` when those come from the lab's own model page, which is cited once. When the lab page is unreachable and the note uses another description (for example the OpenRouter model description), name that source and say the lab page was unreachable. For a provider note, the URL behind each line.
+- Every figure is checked against its source; a price is labeled input or output.
 
 ### Adding a tag
 
@@ -711,8 +710,8 @@ Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
 - [ ] `agent_notes` always written (at minimum `Description:` + `Lineup:`); `test_live_models_have_notes` passes (see [Agent notes and tags](#agent-notes-and-tags))
-- [ ] AA page fetched (or its absence noted), set review run for every set against `backfill_sources.md`, and a **Set review** section in the PR
-- [ ] Sources log updated for every set change and for each new note's sources
+- [ ] AA page fetched (or its absence noted), set review run for every set with same-day AA numbers for the members in the band, and a **Set review** section in the PR
+- [ ] Note and set sources cited in the PR body's **Sources** section
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
 - [ ] API keys bridged into the test env (see 4a — settings.yaml is NOT used by tests)
 - [ ] Smoke test passed

@@ -443,8 +443,8 @@ section says, with these details:
   the set-review procedure for each set it could join. A run with nobody
   watching (the scheduled model sweep) follows the same rules. The set
   review is required: it fetches the model's Artificial Analysis page,
-  compares it with the member tables in the sources log within a 1.5x
-  cost band, and writes a **Set review** section in the PR even when no
+  compares it with the AA pages of the set members within a 1.5x cost
+  band, and writes a **Set review** section in the PR even when no
   set changes. Removals other than a lost `current` or a full set are
   listed as candidates for a human, not applied. Without an AA page,
   `recommended` needs another independent benchmark and `top_value` and
