@@ -17,6 +17,7 @@ import {
   create_openenv_server,
   is_openenv_unreachable,
   load_archived_openenv_server_ids,
+  load_openenv_server_reset_arguments_brief,
   lookup_run_openenv_server,
   openenv_server_error,
   update_openenv_server,
@@ -185,5 +186,42 @@ describe("lookup_run_openenv_server", () => {
     const error = { message: "Task not found" }
     mockPost.mockResolvedValue({ data: undefined, error })
     await expect(lookup_run_openenv_server("p1", "t1", [])).rejects.toBe(error)
+  })
+})
+
+describe("load_openenv_server_reset_arguments_brief", () => {
+  it("returns the brief", async () => {
+    mockGet.mockResolvedValue({ data: { brief: "## Brief" }, error: undefined })
+    await expect(
+      load_openenv_server_reset_arguments_brief("p1", "openenv_1"),
+    ).resolves.toBe("## Brief")
+    expect(mockGet).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_arguments_brief",
+      {
+        params: { path: { project_id: "p1", openenv_server_id: "openenv_1" } },
+      },
+    )
+  })
+
+  it("returns null when the server publishes no reset schema", async () => {
+    mockGet.mockResolvedValue({ data: { brief: null }, error: undefined })
+    await expect(
+      load_openenv_server_reset_arguments_brief("p1", "openenv_1"),
+    ).resolves.toBeNull()
+  })
+
+  it("marks a server that doesn't answer as unreachable", async () => {
+    mockGet.mockResolvedValue({
+      data: undefined,
+      error: { message: "No OpenEnv server answered." },
+      response: { status: 502 },
+    })
+    const error = await load_openenv_server_reset_arguments_brief(
+      "p1",
+      "openenv_1",
+    ).catch((e) => e)
+    expect(error).toBeInstanceOf(KilnError)
+    expect(is_openenv_unreachable(error)).toBe(true)
+    expect(error.getMessage()).toBe("No OpenEnv server answered.")
   })
 })

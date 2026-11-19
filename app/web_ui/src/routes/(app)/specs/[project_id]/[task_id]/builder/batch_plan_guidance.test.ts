@@ -1,38 +1,45 @@
 import { describe, expect, it } from "vitest"
 import {
   compose_plan_guidance,
+  dropped_cases_section,
   grounding_data_guide,
   join_data_guides,
   multiturn_plan_guidance,
+  reset_arguments_section,
   single_turn_plan_guidance,
+  synthetic_user_guide_section,
 } from "./batch_plan_guidance"
 
 describe("compose_plan_guidance", () => {
   it("returns the base byte-identical when the steer is blank", () => {
     const base = multiturn_plan_guidance("be helpful")
-    expect(compose_plan_guidance(base, "")).toBe(base)
+    expect(compose_plan_guidance(base, [], "")).toBe(base)
   })
 
   it("returns the base byte-identical when the steer is only whitespace", () => {
     const base = single_turn_plan_guidance("be helpful")
-    expect(compose_plan_guidance(base, "  \n\t ")).toBe(base)
+    expect(compose_plan_guidance(base, [], "  \n\t ")).toBe(base)
   })
 
   it("keeps the base as a strict prefix when a steer is appended", () => {
     const base = multiturn_plan_guidance("be helpful")
-    const composed = compose_plan_guidance(base, "Fewer refund scenarios.")
+    const composed = compose_plan_guidance(base, [], "Fewer refund scenarios.")
     expect(composed.startsWith(base)).toBe(true)
     expect(composed.length).toBeGreaterThan(base.length)
   })
 
   it("includes the steer text in the composed guidance", () => {
-    const composed = compose_plan_guidance("BASE", "Fewer refund scenarios.")
+    const composed = compose_plan_guidance(
+      "BASE",
+      [],
+      "Fewer refund scenarios.",
+    )
     expect(composed).toContain("Fewer refund scenarios.")
   })
 
   it("trims surrounding whitespace off the steer", () => {
-    expect(compose_plan_guidance("BASE", "  steer text  ")).toBe(
-      compose_plan_guidance("BASE", "steer text"),
+    expect(compose_plan_guidance("BASE", [], "  steer text  ")).toBe(
+      compose_plan_guidance("BASE", [], "steer text"),
     )
   })
 
@@ -41,11 +48,13 @@ describe("compose_plan_guidance", () => {
     // the head of the guidance, so a steer must never displace it.
     const single = compose_plan_guidance(
       single_turn_plan_guidance("be helpful"),
+      [],
       "More edge cases.",
     )
     expect(single).toContain("one single-turn task input")
     const multi = compose_plan_guidance(
       multiturn_plan_guidance("be helpful"),
+      [],
       "More edge cases.",
     )
     expect(multi).not.toContain("one single-turn task input")
@@ -162,5 +171,106 @@ describe("join_data_guides", () => {
     const joined = join_data_guides(guide, grounding) as string
     expect(joined).toContain("<example_input>")
     expect(joined).toContain("</example_input>")
+  })
+})
+
+describe("compose_plan_guidance sections", () => {
+  it("orders base, then each section, then the steer", () => {
+    const composed = compose_plan_guidance(
+      "BASE",
+      ["SECTION ONE", "SECTION TWO"],
+      "the steer",
+    )
+    expect(composed).toBe(
+      "BASE\n\nSECTION ONE\n\nSECTION TWO\n\nThe user has asked for this batch specifically:\nthe steer",
+    )
+  })
+
+  it("skips null and blank sections", () => {
+    expect(compose_plan_guidance("BASE", [null, "  ", "KEPT"], "")).toBe(
+      "BASE\n\nKEPT",
+    )
+  })
+
+  it("keeps the base a strict prefix with sections and a steer", () => {
+    const base = multiturn_plan_guidance("be helpful", { openenv: true })
+    const composed = compose_plan_guidance(base, ["SECTION"], "steer")
+    expect(composed.startsWith(base)).toBe(true)
+  })
+})
+
+describe("multiturn_plan_guidance on an OpenEnv build", () => {
+  const openenv = multiturn_plan_guidance("be helpful", { openenv: true })
+
+  it("swaps the world-state paragraph for the OpenEnv wording", () => {
+    expect(openenv).not.toContain(
+      "Neither you nor the user can see what that system contains.",
+    )
+    expect(openenv).toContain("The agent acts on an OpenEnv server")
+    expect(openenv).toContain("never specific records, names or IDs")
+  })
+
+  it("keeps everything else the same as the default", () => {
+    const plain = multiturn_plan_guidance("be helpful")
+    const strip = (text: string) =>
+      text
+        .split("\n\n")
+        .filter((_, i) => i !== 1)
+        .join("\n\n")
+    expect(strip(openenv)).toBe(strip(plain))
+  })
+
+  it("defaults to the plain wording", () => {
+    expect(multiturn_plan_guidance("x", { openenv: false })).toBe(
+      multiturn_plan_guidance("x"),
+    )
+  })
+})
+
+describe("reset_arguments_section", () => {
+  it("passes the server's brief through, trimmed", () => {
+    expect(reset_arguments_section("  ## The system\n- fixture  ")).toBe(
+      "## The system\n- fixture",
+    )
+  })
+
+  it("is null without a brief", () => {
+    expect(reset_arguments_section(null)).toBeNull()
+    expect(reset_arguments_section("   ")).toBeNull()
+  })
+})
+
+describe("synthetic_user_guide_section", () => {
+  it("frames the guide for the planner", () => {
+    const section = synthetic_user_guide_section(" Support agents ask. ")
+    expect(section).toContain("## Who uses this agent")
+    expect(section).toContain(
+      "<data_guide>\nSupport agents ask.\n</data_guide>",
+    )
+  })
+
+  it("is null when the guide is blank", () => {
+    expect(synthetic_user_guide_section(null)).toBeNull()
+    expect(synthetic_user_guide_section(" ")).toBeNull()
+  })
+})
+
+describe("dropped_cases_section", () => {
+  it("lists each dropped scenario with its reason", () => {
+    const section = dropped_cases_section([
+      { scenario: "Refund a shipped order", drop_detail: "No orders ship." },
+      { scenario: "Close an account", drop_detail: "Accounts can't close." },
+    ])
+    expect(section).toContain("Don't plan them again in the same form.")
+    expect(section).toContain(
+      "- Scenario: Refund a shipped order\n  Why it didn't fit: No orders ship.",
+    )
+    expect(section).toContain(
+      "- Scenario: Close an account\n  Why it didn't fit: Accounts can't close.",
+    )
+  })
+
+  it("is null when nothing dropped", () => {
+    expect(dropped_cases_section([])).toBeNull()
   })
 })

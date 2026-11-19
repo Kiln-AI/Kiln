@@ -51,6 +51,60 @@ export type DriveStop = {
   preflight?: PreflightFailure | null
 }
 
+// ── Target run config ─────────────────────────────────────────────────────
+
+// The run config a build evaluates: the one the entry page chose, else the
+// task's default, else the first config. A choice that no longer resolves
+// (the config was deleted while the wizard was open) picks nothing: running
+// the default instead would build eval data for an agent this eval does not
+// describe. is_fallback marks the first-config case, which the page names.
+export function pick_target_run_config<C extends { id?: string | null }>(
+  run_configs: C[],
+  target_run_config_id: string | null,
+  default_run_config_id: string | null | undefined,
+): { config: C; is_fallback: boolean } | null {
+  if (target_run_config_id) {
+    const chosen = run_configs.find((c) => c.id === target_run_config_id)
+    return chosen ? { config: chosen, is_fallback: false } : null
+  }
+  const default_match = run_configs.find((c) => c.id === default_run_config_id)
+  if (default_match) return { config: default_match, is_fallback: false }
+  return run_configs.length > 0
+    ? { config: run_configs[0], is_fallback: true }
+    : null
+}
+
+// ── Cases lost upstream ───────────────────────────────────────────────────
+
+// Which cached case lists a re-drive must throw away because the current
+// batch lost cases upstream: every slot is filled, yet the batch is short of
+// what it set out to drive (kiln_server's salvage dropped some). Retrying
+// with the same list would replace the batch with the same shortfall forever;
+// only a fresh generation can supply the missing scenarios. A cache is
+// dropped only when it holds the batch's own cases (the same list), so a set
+// cached since, such as the cases a dropped-cases Continue just accepted, is
+// kept. Dropping the grounded set drops the generated cases it came from too.
+export function stale_case_caches<T>(args: {
+  batch_cases: T[] | null
+  built_slots: readonly unknown[]
+  planned_cases: number
+  generated_cases: T[] | null
+  grounded_cases: T[] | null
+}): { generated: boolean; grounded: boolean } {
+  const { batch_cases, built_slots } = args
+  const lost_upstream =
+    batch_cases !== null &&
+    built_slots.length > 0 &&
+    built_slots.every((s) => s !== null) &&
+    batch_cases.length < args.planned_cases
+  if (!lost_upstream) return { generated: false, grounded: false }
+  const grounded = args.grounded_cases === batch_cases
+  return {
+    grounded,
+    generated: grounded || args.generated_cases === batch_cases,
+  }
+}
+
 // ── Conversation length ───────────────────────────────────────────────────
 
 // The range the multi-turn drive route accepts for its turn count

@@ -41,7 +41,7 @@ ship"). This is local setup, not a phase.
   grounded judge (template, transient judge, review re-judge); save writes `openenv_reset`,
   `judge_guidance` on inputs and golden runs, and `Eval.openenv_server_id`. Regenerate the
   OpenAPI client. With tests.
-- [ ] Phase 6: Builder UI. Server lookup after step 1; planner guidance sections and the
+- [x] Phase 6: Builder UI. Server lookup after step 1; planner guidance sections and the
   OpenEnv rule-12 wording; the checking-cases phase and its progress; the dropped-cases screen;
   the judge lane's tool requirement and tooltip; the read-only section in review; the save
   payload; the cached-cases key. With tests.

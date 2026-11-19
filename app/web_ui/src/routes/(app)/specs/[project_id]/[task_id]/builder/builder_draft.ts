@@ -8,18 +8,22 @@
 // under a saved draft, so restore never lands past the plan screen.
 
 import type { ModelChoice } from "$lib/eval/default_judge"
-import type { KilnAgentRunConfigProperties } from "$lib/types"
+import type { KilnAgentRunConfigProperties, OpenEnvReset } from "$lib/types"
 import type { SuggestedEdit } from "../spec_utils"
 import type { BatchSize } from "./batch_profiles"
 
 // A generated synthetic-user case as the wire carries it: the seed message,
 // the persona blob, and the plan scenario it came from. leaf_run_id is absent
-// until the case has been driven, which is when the run exists.
+// until the case has been driven, which is when the run exists. A case
+// grounded in an OpenEnv server also carries the episode it runs in and the
+// judge guidance written from that episode's data.
 export type SyntheticUserCaseWire = {
   seed_prompt: string
   synthetic_user_info: string
   scenario_index?: number | null
   leaf_run_id?: string
+  openenv_reset?: OpenEnvReset | null
+  judge_guidance?: string | null
 }
 
 // A case the save sends: the generated case plus the run it was driven in.
@@ -51,6 +55,46 @@ export function reusable_cached_cases(
   if (cache.spec_text !== spec) return null
   if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
   return cache.cases
+}
+
+// The plan's cases after grounding in an OpenEnv server, cached apart from
+// the generated ones above. Grounding writes each case's specifics and judge
+// guidance from what it found on the server, so this set also depends on the
+// server and on the judge model the grounding agent ran on. Keeping the
+// generated cases separately means a grounding failure or a judge change
+// re-grounds them without paying for generation again.
+export type CachedGroundedCases = {
+  prompts_json: string
+  spec_text: string
+  openenv_server_id: string
+  // model_choice_key of the judge model the grounding agent ran on.
+  judge_model: string
+  cases: SyntheticUserCaseWire[]
+  // Cases dropped in grounding and accepted with Continue. The drive counts
+  // them as planned-for, not failed, so the shortfall it reports is only its
+  // own.
+  grounding_dropped: number
+}
+
+export type CaseGroundingKey = {
+  openenv_server_id: string
+  judge_model: string
+}
+
+// The cached grounded set iff it came from EXACTLY this plan and spec and was
+// grounded in this server by this judge model.
+export function reusable_grounded_cases(
+  cache: CachedGroundedCases | null,
+  approved_prompts: string[],
+  spec: string,
+  key: CaseGroundingKey,
+): CachedGroundedCases | null {
+  if (!cache || cache.cases.length === 0) return null
+  if (cache.spec_text !== spec) return null
+  if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
+  if (cache.openenv_server_id !== key.openenv_server_id) return null
+  if (cache.judge_model !== key.judge_model) return null
+  return cache
 }
 
 // A run config as a cache key: object keys sorted and the tool list ordered,
@@ -186,6 +230,9 @@ export type BuilderDraft = {
   // The plan's generated synthetic users (more minutes) — reused on drive
   // while plan+spec are byte-unchanged, revalidated in reusable_cached_cases.
   cached_su_cases: CachedSuCases | null
+  // The plan's grounded cases on an OpenEnv build, revalidated in
+  // reusable_grounded_cases. Null on older drafts.
+  cached_grounded_cases: CachedGroundedCases | null
   // The single-turn arm's minted inputs — reused on a re-run while
   // plan+model are byte-unchanged, revalidated in reusable_minted_inputs.
   cached_minted_inputs: CachedMintedInputs | null
@@ -242,6 +289,26 @@ export type BuilderDraft = {
   // asked restore this as null, which reads as "nothing chosen" and leaves
   // the task default in charge.
   target_run_config_id: string | null
+  // The OpenEnv server the target run config's tools reach (multi-turn), and
+  // the tool set it was looked up for: a run config whose tools change is
+  // looked up again. Null when no lookup is on record, including on older
+  // drafts.
+  openenv_server_lookup: OpenEnvServerLookup | null
+  // The planner's reset arguments brief, read once per server per build.
+  reset_arguments_brief: CachedResetArgumentsBrief | null
+  // The Refine Plan steer the plan on screen was drafted under. A grounding
+  // Retry re-plans with it, so it has to survive a reload too.
+  landed_plan_steer: string
+}
+
+export type OpenEnvServerLookup = {
+  tool_ids_key: string
+  openenv_server_id: string | null
+}
+
+export type CachedResetArgumentsBrief = {
+  openenv_server_id: string
+  brief: string | null
 }
 
 export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
@@ -256,6 +323,7 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   batch_plan: null,
   batch_plan_edited: false,
   cached_su_cases: null,
+  cached_grounded_cases: null,
   cached_minted_inputs: null,
   grounding_sample: null,
   data_guide_text: null,
@@ -271,6 +339,9 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   judge_model: null,
   turns_per_case: null,
   target_run_config_id: null,
+  openenv_server_lookup: null,
+  reset_arguments_brief: null,
+  landed_plan_steer: "",
 }
 
 export function builder_draft_key(project_id: string, task_id: string): string {

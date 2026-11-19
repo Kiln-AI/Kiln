@@ -10,7 +10,7 @@
 // itself, since the server output carries no id.
 
 import type { components } from "$lib/api_schema"
-import type { TraceMessage } from "$lib/types"
+import type { OpenEnvReset, TraceMessage } from "$lib/types"
 import { TASK_RESPONSE_TOOL_NAME } from "$lib/utils/task_response_tool"
 
 export type CitationSource = "input" | "output"
@@ -83,6 +83,11 @@ export type TraceClaims = {
   // single-turn it is a UI-only echo (the judge scores the I/O pair).
   // Absent/null when the run recorded none — the modal keeps the raw view.
   trace?: TraceMessage[] | null
+  // A case grounded in an OpenEnv server: the episode it ran in and the
+  // guidance the judge graded against. Review shows both read-only; the claim
+  // builder and the re-judge read the guidance. Absent on ungrounded cases.
+  openenv_reset?: OpenEnvReset | null
+  judge_guidance?: string | null
 }
 
 // ── Human review (UI output) ─────────────────────────────────────────────

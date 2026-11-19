@@ -132,6 +132,25 @@ export async function load_openenv_server_reset_schema(
   return data.reset_schema ?? null
 }
 
+/**
+ * The OpenEnv server's reset arguments as planning guidance, or null when it
+ * publishes no reset schema. Throws openenv_server_error's KilnError; a server
+ * that doesn't answer carries OPENENV_UNREACHABLE_CODE.
+ */
+export async function load_openenv_server_reset_arguments_brief(
+  project_id: string,
+  openenv_server_id: string,
+): Promise<string | null> {
+  const { data, error, response } = await client.GET(
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_arguments_brief",
+    { params: { path: { project_id, openenv_server_id } } },
+  )
+  if (error) {
+    throw save_error(error, response)
+  }
+  return data.brief ?? null
+}
+
 /** The one OpenEnv a run with these tools would use, or why it can't run. */
 export async function lookup_run_openenv_server(
   project_id: string,

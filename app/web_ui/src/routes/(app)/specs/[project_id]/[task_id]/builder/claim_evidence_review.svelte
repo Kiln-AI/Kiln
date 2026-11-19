@@ -27,6 +27,7 @@
   import ClaimCard from "./claim_card.svelte"
   import ClaimText from "./claim_text.svelte"
   import ClaimTraceModal from "./claim_trace_modal.svelte"
+  import EnvironmentGuidance from "./environment_guidance.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import Output from "$lib/ui/output.svelte"
   import SettingsHeader from "$lib/ui/settings_header.svelte"
@@ -406,6 +407,17 @@
             <div class="loading loading-dots loading-md mb-2"></div>
             <div class="text-sm">Analyzing this {judged_noun}…</div>
           </div>
+        {/if}
+        {#if current.judge_guidance}
+          <!-- Under the conversation's summary: what the judge graded it
+               against, for a case grounded in an OpenEnv server. Keyed on the
+               trace so moving to another case closes it again. -->
+          {#key current.trace_id}
+            <EnvironmentGuidance
+              openenv_reset={current.openenv_reset ?? null}
+              judge_guidance={current.judge_guidance}
+            />
+          {/key}
         {/if}
       </div>
 

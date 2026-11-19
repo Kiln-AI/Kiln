@@ -120,6 +120,7 @@ export type OpenEnvTool = components["schemas"]["OpenEnvToolResponse"]
 export type NamedResetKwargs = components["schemas"]["NamedResetKwargs"]
 export type RunOpenEnvServer = components["schemas"]["RunOpenEnvServerResponse"]
 export type OpenEnvEpisode = components["schemas"]["OpenEnvEpisode"]
+export type OpenEnvReset = components["schemas"]["OpenEnvReset"]
 export type ToolSetType = components["schemas"]["ToolSetType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
 export type ToolSetApiDescription =

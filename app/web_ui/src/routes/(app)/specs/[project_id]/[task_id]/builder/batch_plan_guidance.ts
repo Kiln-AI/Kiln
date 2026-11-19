@@ -65,26 +65,97 @@ Balance the batch roughly 50/50 between:
 Include boundary and ambiguous cases where the right behavior is debatable, and vary difficulty across the batch. Every input must stay realistic — written by an ordinary user pursuing their own goal, not a tester probing the spec.`
 }
 
-// The user's optional steer ("fewer refund scenarios") joined onto the arm's
-// base guidance. The base is APPENDED TO, never rewritten: it is a strict
-// prefix of the result, because the arm is identified by reading the start of
-// the guidance and a steer that displaced it would mis-route the whole batch.
-// A blank steer returns the base byte-identical, so an untouched box costs
-// the planner nothing.
-export function compose_plan_guidance(base: string, steer: string): string {
-  const trimmed = steer.trim()
-  if (!trimmed) return base
-  return `${base}
-
-The user has asked for this batch specifically:
-${trimmed}`
+// The arm's base guidance, then each extra section, then the user's optional
+// steer ("fewer refund scenarios"). The base is APPENDED TO, never rewritten:
+// it is a strict prefix of the result, because the arm is identified by
+// reading the start of the guidance and anything that displaced it would
+// mis-route the whole batch. The steer goes last so it reads as the user's
+// final word on this batch. Blank sections and a blank steer add nothing, so
+// a build with neither sends the base byte-identical.
+export function compose_plan_guidance(
+  base: string,
+  sections: (string | null)[],
+  steer: string,
+): string {
+  const parts = [base]
+  for (const section of sections) {
+    const trimmed = section?.trim()
+    if (trimmed) parts.push(trimmed)
+  }
+  const trimmed_steer = steer.trim()
+  if (trimmed_steer) {
+    parts.push(`The user has asked for this batch specifically:
+${trimmed_steer}`)
+  }
+  return parts.join("\n\n")
 }
 
+// The planner's reset arguments section for an OpenEnv build: the brief the
+// studio server renders from the server's reset schema. The brief opens with
+// its own framing (RESET_ARGUMENTS_FRAMING in reset_schema_brief.py) so the
+// prototype command and the builder send the same words. Null when the server
+// publishes no reset schema, which leaves the section out.
+export function reset_arguments_section(brief: string | null): string | null {
+  const trimmed = brief?.trim()
+  return trimmed ? trimmed : null
+}
+
+// The project's multi-turn synthetic user guide, framed for the planner. Same
+// words as the prototype command's DATA_GUIDE_FRAMING. Null when blank.
+export function synthetic_user_guide_section(
+  guide: string | null,
+): string | null {
+  const trimmed = guide?.trim()
+  if (!trimmed) return null
+  return `## Who uses this agent
+
+The user wrote the guide below about who talks to this agent and what they ask. Take the people in your scenarios, and the kinds of requests they make, from it. Where it says how common something is, follow that in the batch. Where it is silent, use your judgment as usual. It describes users, not test goals: the specification above still decides what each scenario stresses.
+
+<data_guide>
+${trimmed}
+</data_guide>`
+}
+
+// A scenario the grounding agent couldn't fit to the OpenEnv server, with its
+// one-sentence reason.
+export type GroundingDrop = { scenario: string; drop_detail: string }
+
+// On a Retry after drops: the scenarios that didn't fit, so the planner
+// doesn't plan them again in the same form. Null when nothing dropped.
+export function dropped_cases_section(drops: GroundingDrop[]): string | null {
+  if (drops.length === 0) return null
+  const rows = drops
+    .map(
+      (d) =>
+        `- Scenario: ${d.scenario.trim()}\n  Why it didn't fit: ${d.drop_detail.trim()}`,
+    )
+    .join("\n")
+  return `## Scenarios that didn't fit the environment
+
+These scenarios came from the last plan for this eval. Kiln checked each one against the environment and couldn't make it fit, for the reason given. Don't plan them again in the same form. Keep testing what each one tested, in a situation the starting states above can support.
+
+<dropped_scenarios>
+${rows}
+</dropped_scenarios>`
+}
+
+// The multi-turn world-state paragraph. Without an OpenEnv server the planner
+// cannot see the agent's live system, so no scenario may assume a record
+// exists. On an OpenEnv build Kiln fits each scenario to the server's real
+// data after planning, so scenarios may assume what a starting state plausibly
+// holds, still naming kinds rather than records.
+const MULTI_TURN_WORLD_STATE = `The agent may act on a live system through tools (a database, an API, a set of records). Neither you nor the user can see what that system contains. Never write a scenario that depends on a specific record already existing: the user creates what the scenario later acts on, or asks the agent what exists and works from the answer. Name a specific record only when the point of the scenario is how the agent handles a record that is not found.`
+
+const OPENENV_WORLD_STATE = `The agent acts on an OpenEnv server through tools: a stand-in for the real system, with its own data. You can't see that data. When a section below describes the server's reset arguments, those describe the starting states each conversation can begin in. After you plan, Kiln fits each scenario to real data in one of them, so a scenario may rely on things a starting state plausibly holds. Still name kinds of things and situations, never specific records, names or IDs.`
+
 // Multi-turn: recasts each planned "input" as a conversation scenario.
-export function multiturn_plan_guidance(spec: string): string {
+export function multiturn_plan_guidance(
+  spec: string,
+  { openenv = false }: { openenv?: boolean } = {},
+): string {
   return `Each input is a scenario for one multi-turn synthetic-user conversation with the agent: the user's situation, their opening request, and how they press the agent as the conversation unfolds.
 
-The agent may act on a live system through tools (a database, an API, a set of records). Neither you nor the user can see what that system contains. Never write a scenario that depends on a specific record already existing: the user creates what the scenario later acts on, or asks the agent what exists and works from the answer. Name a specific record only when the point of the scenario is how the agent handles a record that is not found.
+${openenv ? OPENENV_WORLD_STATE : MULTI_TURN_WORLD_STATE}
 
 The batch exists to stress-test the agent against this specification:
 <specification>

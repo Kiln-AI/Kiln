@@ -438,11 +438,15 @@ Headings in order: `## Starting point`, `## Facts`, `## Expected outcome`, `## A
 ### Builder state (frontend)
 
 - `SyntheticUserCaseWire` gains `openenv_reset?: OpenEnvReset` and `judge_guidance?: string`.
-- The cached-cases key (`builder_draft.ts`) adds the OpenEnv server id and the judge model, so a
-  changed judge or server re-grounds.
+- Two case caches (`builder_draft.ts`). `cached_su_cases` holds kiln_server's generated simulated
+  users, keyed on the plan and spec only, as before this project. `cached_grounded_cases` holds the
+  same cases after grounding, keyed on plan, spec, OpenEnv server id and judge model, with the count
+  of drops accepted with Continue. A grounding failure or a changed judge or server re-grounds the
+  cached generated cases without calling `generate_cases` again.
 - `on_drive_multi_turn` runs `grounding_cases` after `generating_cases` when the run config's
-  server is known. The server is looked up once after step 1 with `lookup_run_openenv_server`
-  and kept as `openenv_server_id` in the draft.
+  server is known. The server is looked up with `lookup_run_openenv_server` when the first plan
+  needs it, only when the run config has an OpenEnv tool id, and kept in the draft keyed by the
+  tool set.
 - Drops collect into `grounding_drops: {scenario, drop_detail}[]`. Any drop stops before driving
   and shows the drop screen (`ui_design.md`). Continue drives the grounded cases; Retry sets
   `pending_retry_drops = grounding_drops` and calls `on_plan_batch()`; Cancel clears the batch's

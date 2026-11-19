@@ -11,12 +11,14 @@ import {
   reset_draft_keeping_tags,
   restore_step,
   reusable_cached_cases,
+  reusable_grounded_cases,
   reusable_minted_inputs,
   run_config_cache_key,
   should_invalidate_refined_values,
   should_prefill_suggested_name,
   EMPTY_BUILDER_DRAFT,
   type BuilderDraft,
+  type CachedGroundedCases,
   type CachedSuCases,
 } from "./builder_draft"
 import type { KilnAgentRunConfigProperties } from "$lib/types"
@@ -91,6 +93,25 @@ const full_draft: BuilderDraft = {
       },
     ],
   },
+  cached_grounded_cases: {
+    prompts_json: JSON.stringify(["Customer asks about a return window."]),
+    spec_text: "The agent must not fabricate or guess at policies.",
+    openenv_server_id: "srv_1",
+    judge_model: "openai/gpt_5_4",
+    cases: [
+      {
+        seed_prompt: "What's the return window on order 1042?",
+        synthetic_user_info: "<persona>impatient</persona>",
+        scenario_index: 0,
+        openenv_reset: {
+          openenv_server_id: "srv_1",
+          reset_kwargs: { fixture: "shop" },
+        },
+        judge_guidance: "## Starting point",
+      },
+    ],
+    grounding_dropped: 1,
+  },
   cached_minted_inputs: {
     prompts_json: JSON.stringify([
       "Customer asks about a return window.",
@@ -127,6 +148,15 @@ const full_draft: BuilderDraft = {
   // restored choice from the fallback.
   turns_per_case: 8,
   target_run_config_id: "run_config_1",
+  openenv_server_lookup: {
+    tool_ids_key: JSON.stringify(["kiln_tool::openenv::srv_1::search"]),
+    openenv_server_id: "srv_1",
+  },
+  reset_arguments_brief: {
+    openenv_server_id: "srv_1",
+    brief: "## The system the agent works on",
+  },
+  landed_plan_steer: "Fewer refund scenarios.",
 }
 
 describe("draft round-trip", () => {
@@ -381,6 +411,63 @@ describe("reusable_cached_cases — SU-case reuse", () => {
   it("prompt order matters (case i maps to prompt i)", () => {
     expect(
       reusable_cached_cases(cache, ["scenario b", "scenario a"], spec),
+    ).toBeNull()
+  })
+})
+
+describe("reusable_grounded_cases", () => {
+  const prompts = ["scenario a"]
+  const spec = "no fabrication"
+  const grounded: CachedGroundedCases = {
+    prompts_json: JSON.stringify(prompts),
+    spec_text: spec,
+    openenv_server_id: "srv_1",
+    judge_model: "openai/gpt_5_4",
+    cases: [
+      {
+        seed_prompt: "hi",
+        synthetic_user_info: "<persona>x</persona>",
+        judge_guidance: "## Starting point",
+        openenv_reset: { openenv_server_id: "srv_1", reset_kwargs: {} },
+      },
+    ],
+    grounding_dropped: 2,
+  }
+  const key = { openenv_server_id: "srv_1", judge_model: "openai/gpt_5_4" }
+
+  it("reuses when plan, spec, server and judge model all match", () => {
+    expect(reusable_grounded_cases(grounded, prompts, spec, key)).toBe(grounded)
+  })
+
+  it("misses with no cache or an empty case list", () => {
+    expect(reusable_grounded_cases(null, prompts, spec, key)).toBeNull()
+    expect(
+      reusable_grounded_cases({ ...grounded, cases: [] }, prompts, spec, key),
+    ).toBeNull()
+  })
+
+  it("misses when the plan or spec changed", () => {
+    expect(
+      reusable_grounded_cases(grounded, ["scenario b"], spec, key),
+    ).toBeNull()
+    expect(reusable_grounded_cases(grounded, prompts, "other", key)).toBeNull()
+  })
+
+  it("misses when the server changed", () => {
+    expect(
+      reusable_grounded_cases(grounded, prompts, spec, {
+        ...key,
+        openenv_server_id: "srv_2",
+      }),
+    ).toBeNull()
+  })
+
+  it("misses when the judge model changed", () => {
+    expect(
+      reusable_grounded_cases(grounded, prompts, spec, {
+        ...key,
+        judge_model: "openai/gpt_5_4_mini",
+      }),
     ).toBeNull()
   })
 })

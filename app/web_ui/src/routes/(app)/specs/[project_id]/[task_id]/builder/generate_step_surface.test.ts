@@ -256,10 +256,18 @@ describe("single entrance to the drive", () => {
     const submit = function_body("async function submit_drive_settings() {")
     expect(submit).toContain("on_drive_multi_turn()")
     expect(submit).toContain("on_drive_single_turn()")
-    // Each arm's drive function is named exactly twice on the page: its own
-    // definition and that submit's call. A third mention is a second
-    // entrance — a run the user was never shown the lanes or the cost of.
-    expect(mentions("on_drive_multi_turn")).toBe(2)
+    // Each arm's drive function is named only by its own definition, that
+    // submit's call and, on multi-turn, the dropped-cases screen's Continue and
+    // Retry, which carry on a drive the dialog already started. Any other
+    // mention is a second entrance — a run the user was never shown the
+    // lanes or the cost of.
+    expect(mentions("on_drive_multi_turn")).toBe(4)
+    expect(
+      function_body("function on_continue_with_grounded_cases() {"),
+    ).toContain("on_drive_multi_turn()")
+    expect(function_body("async function on_retry_grounding() {")).toContain(
+      "on_drive_multi_turn()",
+    )
     expect(mentions("on_drive_single_turn")).toBe(2)
   })
 
@@ -723,12 +731,20 @@ describe("Refine Plan dialog", () => {
   })
 
   it("sends the committed steer, never the dialog's draft", () => {
-    const request = region(
-      "compose_plan_guidance(",
-      "count: planned_count(batch_size),",
-    )
-    expect(request).toMatch(/\bpending_plan_steer\b/)
-    expect(request).not.toMatch(/(?<!pending_)\bplan_steer\b/)
+    // Both arms' guidance: the single-turn compose in on_plan_batch, and the
+    // multi-turn one built in multi_turn_plan_guidance.
+    for (const request of [
+      region(
+        "compose_plan_guidance(\n            single_turn",
+        "count: planned_count(batch_size),",
+      ),
+      function_body(
+        "async function multi_turn_plan_guidance(): Promise<string> {",
+      ),
+    ]) {
+      expect(request).toMatch(/\bpending_plan_steer\b/)
+      expect(request).not.toMatch(/(?<!pending_)\bplan_steer\b/)
+    }
   })
 
   it("keeps the steer through a failed attempt and drops it once a plan lands", () => {
@@ -802,15 +818,16 @@ describe("the run config the eval is written against", () => {
   it("drives the config the entry page chose over the task default", () => {
     // The questions, the judge and the generated data were all authored
     // against that config, so driving the task default instead would produce
-    // eval data for a different agent than the one the eval describes.
+    // eval data for a different agent than the one the eval describes. The
+    // order itself is pick_target_run_config's, tested in plan_flow.test.ts.
     const body = normalize(resolve)
     expect(body).toContain(
-      "const chosen_config = chosen_by_user ?? default_match ?? run_configs[0]",
+      "const picked = pick_target_run_config( run_configs, target_run_config_id, task.default_run_config_id, )",
     )
     // The no-default notice names a config the user did not pick. An explicit
     // choice is not a fallback, so it must not raise it.
     expect(body).toContain(
-      "fallback_run_config_name = chosen_by_user || default_match ? null : chosen_config.name",
+      "fallback_run_config_name = picked.is_fallback ? chosen_config.name : null",
     )
   })
 
@@ -818,7 +835,9 @@ describe("the run config the eval is written against", () => {
     // Driving the task default instead would generate eval data for an agent
     // this eval does not describe, and say nothing about it.
     const body = normalize(resolve)
-    expect(body).toContain("if (target_run_config_id && !chosen_by_user) {")
+    expect(body).toContain(
+      'if (!picked) { generation_error = "The run config this eval was written against is no longer on the task.',
+    )
     expect(body).toContain("return null")
   })
 
@@ -880,8 +899,9 @@ describe("progress screens carry their counts under the bar, never in a string",
   })
 
   it("routes every waiting screen's bar through the one readout component", () => {
-    // Minting, both drive arms, both claims gates, and the re-check.
-    expect(normalized.split("<ProgressCount").length - 1).toBe(6)
+    // Minting, grounding, both drive arms, both claims gates, and the
+    // re-check.
+    expect(normalized.split("<ProgressCount").length - 1).toBe(7)
   })
 
   it("counts the cases dropped from the review on both claims gates", () => {
@@ -1131,7 +1151,7 @@ describe("wizard step copy", () => {
 // output and its way out runs through the plan.
 describe("the stopped-drive screen", () => {
   const stop_step = region(
-    "{#if show_plan_approval && batch_plan}",
+    "{:else if drive_stop && is_partial_stop(drive_stop)}",
     "{:else if !generation_loading",
   )
   const partial_branch = stop_step.slice(0, stop_step.indexOf("{:else}"))
@@ -1143,7 +1163,7 @@ describe("the stopped-drive screen", () => {
 
   it("takes over the step only for a stop that left usable work behind", () => {
     expect(normalize(partial_branch)).toContain(
-      "{#if drive_stop && is_partial_stop(drive_stop)}",
+      "{:else if drive_stop && is_partial_stop(drive_stop)}",
     )
     expect(partial_branch).toContain("<Intro")
     expect(partial_branch).not.toContain("<Warning")
@@ -1211,12 +1231,130 @@ describe("the stopped-drive screen", () => {
     // keystroke is consumed all the same, or a focused button takes the Enter.
     const shortcut = normalize(
       region(
-        "if (drive_stop && is_partial_stop(drive_stop)) {",
+        "if (grounding_stop || (drive_stop && is_partial_stop(drive_stop))) {",
         "if (has_driven_results) {",
       ),
     )
     expect(shortcut).toContain("event.preventDefault() return }")
     expect(shortcut).not.toContain("on_continue_with_survivors()")
     expect(shortcut).not.toContain("open_drive_settings()")
+  })
+})
+
+// ── Builds whose run config reaches an OpenEnv server ─────────────────────
+//
+// Every case is checked against the server before it is driven. The flow's
+// logic lives in grounding_flow.ts and its tests; these pin the page wiring.
+describe("grounding a build's cases in its OpenEnv server", () => {
+  const drive = function_body("async function on_drive_multi_turn() {")
+
+  it("asks the judge lane for tool support only on an OpenEnv build", () => {
+    expect(normalize(drive_settings_dialog)).toContain(
+      "requires_tool_support: build_openenv_server_id !== null,",
+    )
+  })
+
+  it("grounds freshly generated cases after generating them, before driving", () => {
+    const generating = drive.indexOf(
+      "generated_cases_for_plan(approved_prompts)",
+    )
+    const grounding = drive.indexOf('generation_phase = "grounding_cases"')
+    const driving = drive.indexOf('generation_phase = "running_pipeline"')
+    expect(generating).toBeGreaterThan(0)
+    expect(grounding).toBeGreaterThan(generating)
+    expect(driving).toBeGreaterThan(grounding)
+  })
+
+  it("reuses the grounded set only for the same server and judge model", () => {
+    expect(normalize(drive)).toContain(
+      "reusable_grounded_cases( cached_grounded_cases, approved_prompts, spec_text(), grounding_key, )",
+    )
+    expect(normalize(drive)).toContain(
+      "judge_model: model_choice_key(chosen_judge_model),",
+    )
+  })
+
+  it("grounds the cached generated cases rather than generating again", () => {
+    // A grounding failure or a judge change misses the grounded set only:
+    // the generated cases are cached on plan and spec alone.
+    const generated = normalize(
+      function_body("async function generated_cases_for_plan("),
+    )
+    expect(generated).toContain(
+      "reusable_cached_cases( cached_su_cases, approved_prompts, spec_text(), )",
+    )
+    expect(normalize(drive)).toContain(
+      "cases = await generated_cases_for_plan(approved_prompts)",
+    )
+  })
+
+  it("never looks a build up without an OpenEnv tool", () => {
+    expect(function_body("async function ensure_openenv_server(")).toContain(
+      "if (!tool_ids.some(is_openenv_tool_id)) return null",
+    )
+  })
+
+  it("stops on the dropped-cases screen before anything is driven", () => {
+    const stop = normalize(drive).indexOf("grounding_stop = {")
+    const commit = normalize(drive).indexOf("drive_committed = true")
+    expect(stop).toBeGreaterThan(0)
+    expect(stop).toBeLessThan(commit)
+  })
+
+  it("shows the checking progress with the dropped count", () => {
+    expect(contains('noun="cases checked"')).toBe(true)
+    expect(contains('failed_label="dropped"')).toBe(true)
+    expect(contains("Checking Cases Against Your Environment")).toBe(true)
+  })
+
+  it("plans again with the drops and the same steer on Retry", () => {
+    const retry = normalize(
+      function_body("async function on_retry_grounding() {"),
+    )
+    expect(retry).toContain("pending_retry_drops = grounding_stop.drops")
+    expect(retry).toContain("pending_plan_steer = landed_plan_steer")
+    expect(retry.indexOf("on_plan_batch()")).toBeLessThan(
+      retry.indexOf("on_drive_multi_turn()"),
+    )
+  })
+
+  it("discards the batch's cases on Cancel", () => {
+    const cancel = function_body("function on_cancel_grounding() {")
+    expect(cancel).toContain("cached_su_cases = null")
+    expect(cancel).toContain("cached_grounded_cases = null")
+  })
+
+  it("adds the reset arguments and dropped cases sections to the plan", () => {
+    const guidance = normalize(
+      function_body(
+        "async function multi_turn_plan_guidance(): Promise<string> {",
+      ),
+    )
+    expect(guidance).toContain("reset_arguments_section(")
+    expect(guidance).toContain("dropped_cases_section(pending_retry_drops)")
+    expect(guidance).toContain("openenv: openenv_server_id !== null")
+  })
+
+  it("passes each case's guidance to the claims build and the re-judge", () => {
+    expect(contains("judge_guidance: tc.judge_guidance ?? null,")).toBe(true)
+    expect(
+      contains("judge_guidance: rejudge_guidance(entries.map((e) => e.i)),"),
+    ).toBe(true)
+  })
+
+  it("saves the server the cases were grounded in", () => {
+    expect(
+      contains("openenv_server_id: grounded_server_id(driven_cases),"),
+    ).toBe(true)
+  })
+
+  it("keeps the server lookup and the brief across a reload", () => {
+    const mirror = normalize(
+      region("$: current_draft = draft_ready", "    : null"),
+    )
+    expect(mirror).toContain("openenv_server_lookup,")
+    expect(mirror).toContain("reset_arguments_brief,")
+    expect(mirror).toContain("landed_plan_steer,")
+    expect(mirror).toContain("cached_grounded_cases,")
   })
 })

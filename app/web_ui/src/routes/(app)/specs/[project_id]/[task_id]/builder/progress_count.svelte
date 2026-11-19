@@ -20,6 +20,8 @@
   // early spends fewer turns, so the bar can finish short of full.
   export let max_is_ceiling = false
   export let failed = 0
+  // The word after the failed count: grounding calls its misses "dropped".
+  export let failed_label = "failed"
 </script>
 
 <div class="flex flex-col items-center mt-6">
@@ -33,7 +35,7 @@
   {#if max > 0}
     <div data-progress-count class="text-xs text-gray-500 text-center mt-1">
       {value} of {max_is_ceiling ? "up to " : ""}{max}
-      {noun}{failed > 0 ? ` — ${failed} failed` : ""}
+      {noun}{failed > 0 ? ` — ${failed} ${failed_label}` : ""}
     </div>
   {/if}
 </div>

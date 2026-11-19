@@ -1039,3 +1039,46 @@ describe("ClaimEvidenceReview — keyboard", () => {
     expect(slots[1].agrees).toBeNull()
   })
 })
+
+describe("environment and judge guidance", () => {
+  const GUIDANCE =
+    "## Starting point\nAn agency with three teams.\n\n## Facts\n- Ada leads design."
+
+  function grounded_trace(id: string): TraceClaims {
+    return {
+      ...built_trace(id),
+      openenv_reset: {
+        openenv_server_id: "srv_1",
+        reset_kwargs: { fixture: "agency", startup: { acting_user: "u_12" } },
+      },
+      judge_guidance: GUIDANCE,
+    }
+  }
+
+  it("shows a grounded case's starting state and guidance, closed, under the overview", () => {
+    const { container } = render_review([grounded_trace("a")])
+    const overview = by_id(container, "review-overview")
+    const section = overview.querySelector("[data-environment-guidance]")
+    expect(section).not.toBeNull()
+    expect(overview.textContent).toContain("Environment and Judge Guidance")
+    // Collapsed by default: the disclosure's checkbox is unchecked.
+    const toggle = overview.querySelector<HTMLInputElement>(
+      ".collapse input[type=checkbox]",
+    )
+    expect(toggle?.checked).toBe(false)
+    const text = (section?.textContent ?? "").replace(/\s+/g, " ")
+    expect(text).toContain("fixture")
+    expect(text).toContain("agency")
+    expect(text).toContain("startup.acting_user")
+    expect(text).toContain("u_12")
+    expect(text).toContain("Ada leads design.")
+  })
+
+  it("is absent for an ungrounded case", () => {
+    const { container } = render_review([built_trace("a")])
+    expect(container.querySelector("[data-environment-guidance]")).toBeNull()
+    expect(container.textContent).not.toContain(
+      "Environment and Judge Guidance",
+    )
+  })
+})

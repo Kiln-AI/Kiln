@@ -12,9 +12,11 @@ import {
   is_partial_stop,
   missing_slot_indices,
   new_plan_confirm,
+  pick_target_run_config,
   plan_drive,
   resolved_selected_count,
   restore_turns_per_case,
+  stale_case_caches,
   stop_primary_action,
   MAX_TURNS_PER_CASE,
   MIN_TURNS_PER_CASE,
@@ -1007,5 +1009,117 @@ describe("drive_cost_warning", () => {
     ).toBe(
       "This will run 1 conversation of up to 1 turn each. Running multi-turn data generation and evaluation can be expensive. Calculate your costs before proceeding.",
     )
+  })
+})
+
+describe("pick_target_run_config", () => {
+  const configs = [{ id: "rc_1" }, { id: "rc_2" }, { id: "rc_3" }]
+
+  it("picks the config the entry page chose over the task default", () => {
+    expect(pick_target_run_config(configs, "rc_3", "rc_2")).toEqual({
+      config: configs[2],
+      is_fallback: false,
+    })
+  })
+
+  it("picks nothing when the chosen config is gone, never the default", () => {
+    expect(pick_target_run_config(configs, "rc_gone", "rc_2")).toBeNull()
+  })
+
+  it("picks the task default when nothing was chosen", () => {
+    expect(pick_target_run_config(configs, null, "rc_2")).toEqual({
+      config: configs[1],
+      is_fallback: false,
+    })
+  })
+
+  it("falls back to the first config without a default", () => {
+    expect(pick_target_run_config(configs, null, null)).toEqual({
+      config: configs[0],
+      is_fallback: true,
+    })
+    expect(pick_target_run_config(configs, null, "rc_gone")).toEqual({
+      config: configs[0],
+      is_fallback: true,
+    })
+  })
+
+  it("picks nothing from an empty list", () => {
+    expect(pick_target_run_config([], null, "rc_1")).toBeNull()
+  })
+})
+
+describe("stale_case_caches", () => {
+  const filled = ["r", "r"]
+
+  it("drops the generated cases the short batch was driven from", () => {
+    const batch = ["c1", "c2"]
+    expect(
+      stale_case_caches({
+        batch_cases: batch,
+        built_slots: filled,
+        planned_cases: 3,
+        generated_cases: batch,
+        grounded_cases: null,
+      }),
+    ).toEqual({ generated: true, grounded: false })
+  })
+
+  it("drops the grounded set and the cases it came from when it was the batch", () => {
+    const generated = ["g1", "g2", "g3"]
+    const grounded = ["c1", "c2"]
+    expect(
+      stale_case_caches({
+        batch_cases: grounded,
+        built_slots: filled,
+        planned_cases: 3,
+        generated_cases: generated,
+        grounded_cases: grounded,
+      }),
+    ).toEqual({ generated: true, grounded: true })
+  })
+
+  it("keeps a set cached since the short batch, such as a Continue's", () => {
+    // An earlier drive of this plan came back short. The user then drove
+    // again under a new judge, some cases dropped, and Continue cached the
+    // cases that fit. That set is not the short batch, so it survives, and
+    // the drive uses it instead of generating and grounding again.
+    const short_batch = ["old1", "old2"]
+    expect(
+      stale_case_caches({
+        batch_cases: short_batch,
+        built_slots: filled,
+        planned_cases: 3,
+        generated_cases: ["g1", "g2"],
+        grounded_cases: ["new1", "new2"],
+      }),
+    ).toEqual({ generated: false, grounded: false })
+  })
+
+  it("keeps everything when the batch is not short or not finished", () => {
+    const batch = ["c1", "c2"]
+    for (const args of [
+      { built_slots: filled, planned_cases: 2 },
+      { built_slots: ["r", null], planned_cases: 3 },
+      { built_slots: [], planned_cases: 3 },
+    ]) {
+      expect(
+        stale_case_caches({
+          batch_cases: batch,
+          generated_cases: batch,
+          grounded_cases: batch,
+          ...args,
+        }),
+      ).toEqual({ generated: false, grounded: false })
+    }
+    expect(
+      stale_case_caches({
+        batch_cases: null,
+        built_slots: filled,
+        planned_cases: 3,
+        generated_cases: null,
+        grounded_cases: null,
+      }),
+    ).toEqual({ generated: false, grounded: false })
   })
 })

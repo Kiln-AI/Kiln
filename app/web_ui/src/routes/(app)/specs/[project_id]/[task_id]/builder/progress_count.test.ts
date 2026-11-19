@@ -55,6 +55,19 @@ describe("ProgressCount", () => {
     expect(line(container)).toBe("3 of 20 judged — 2 failed")
   })
 
+  it("names the failed count with failed_label", () => {
+    const { container } = render(ProgressCount, {
+      props: {
+        value: 3,
+        max: 20,
+        noun: "cases checked",
+        failed: 1,
+        failed_label: "dropped",
+      },
+    })
+    expect(line(container)).toBe("3 of 20 cases checked — 1 dropped")
+  })
+
   it("lets the bar run ahead of the count when failures still count as done", () => {
     // A failed case is finished, just not judged: the bar reaches full while
     // the count beside it stays short, rather than stalling on the failure.
