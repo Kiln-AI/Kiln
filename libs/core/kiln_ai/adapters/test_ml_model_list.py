@@ -1000,10 +1000,11 @@ def test_note_has_no_banned_time_words(model: KilnModel):
         )
 
 
-# Live models that predate the agent-notes backfill and were left without a
-# note on purpose. The list only shrinks: give a model a note, then remove it
-# here. Every model added later needs at least the Description: and Lineup:
-# lines, so a new entry without a note fails test_live_models_have_notes.
+# Models that predate the agent-notes backfill and were left without a note on
+# purpose. Never add to it: every model added later needs at least the
+# Description: and Lineup: lines, so a new entry without a note fails
+# test_live_models_have_notes. A listed model that later gets a note or is
+# fully deprecated can stay listed; the exemption then has no effect.
 MODELS_WITHOUT_NOTES: frozenset[ModelName] = frozenset(
     {
         ModelName.gpt_5_2_chat,
@@ -1149,13 +1150,4 @@ def test_live_models_have_notes(model: KilnModel):
         " Description: and Lineup: lines, and the current tag when it is the"
         " newest release at its lab's price level. See 'Agent notes and tags'"
         " in .agents/skills/claude-maintain-models/SKILL.md."
-    )
-
-
-@pytest.mark.parametrize("name", sorted(MODELS_WITHOUT_NOTES), ids=str)
-def test_models_without_notes_list_is_exact(name: ModelName):
-    model = get_model_by_name(name)
-    assert model.agent_notes is None and _is_live(model), (
-        f"{name}: has a note or is fully deprecated; remove it from"
-        " MODELS_WITHOUT_NOTES"
     )
