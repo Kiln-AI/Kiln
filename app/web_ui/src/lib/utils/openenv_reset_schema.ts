@@ -26,6 +26,13 @@ const LOCAL_REF_PREFIX = "#/$defs/"
 
 class UnsupportedSchema extends Error {}
 
+/**
+ * An object that declares no fields and allows no others, such as Seahaven's
+ * `startup` for a world with no startup keywords. Its parent leaves it out
+ * when it's optional, since there's nothing in it to fill in.
+ */
+class NoFields extends UnsupportedSchema {}
+
 function is_record(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -146,17 +153,22 @@ function convert_object(
   ) {
     throw new UnsupportedSchema()
   }
-  if (
-    !is_record(node.properties) ||
-    Object.keys(node.properties).length === 0
-  ) {
+  if (!is_record(node.properties)) {
     throw new UnsupportedSchema()
   }
   const declared_required = Array.isArray(node.required) ? node.required : []
   const properties: Record<string, JsonSchemaProperty> = {}
   const required: string[] = []
   for (const [key, child] of Object.entries(node.properties)) {
-    const converted = convert(child, defs, refs)
+    let converted: Converted
+    try {
+      converted = convert(child, defs, refs)
+    } catch (e) {
+      if (e instanceof NoFields && !declared_required.includes(key)) {
+        continue
+      }
+      throw e
+    }
     properties[key] = {
       ...converted.property,
       title: converted.property.title ?? title_from_key(key),
@@ -164,6 +176,13 @@ function convert_object(
     if (declared_required.includes(key) && !converted.nullable) {
       required.push(key)
     }
+  }
+  if (Object.keys(properties).length === 0) {
+    // An object that allows extra keys is free-form JSON, which the form
+    // can't show, rather than one with nothing to fill in.
+    throw node.additionalProperties === true
+      ? new UnsupportedSchema()
+      : new NoFields()
   }
   return { properties, required }
 }
