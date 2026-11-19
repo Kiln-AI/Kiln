@@ -3115,7 +3115,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Replaced Claude Opus 5.\n"
             "Strengths: Strong at long-running autonomous coding, large-scale refactoring, and complex systems engineering."
         ),
-        tags=["current", "recommended", "top_writing"],
+        tags=["current", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3464,7 +3464,7 @@ built_in_models: List[KilnModel] = [
             "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Replaced Claude Sonnet 5.\n"
             "Strengths: Strong at coding, data analysis, and agentic tool use with fast response times."
         ),
-        tags=["current", "recommended", "top_writing"],
+        tags=["current", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4047,7 +4047,7 @@ built_in_models: List[KilnModel] = [
             "Description: Google's mid-tier model in the Gemini 4 generation, adapted from Gemini 4 Carbon, for coding, analytical reasoning and enterprise workflows.\n"
             "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon for the hardest long-horizon projects. Argon is the Pro-level model."
         ),
-        tags=["current"],
+        tags=["current", "recommended"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
