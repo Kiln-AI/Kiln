@@ -8,7 +8,9 @@ export type BatchProfileKey = "standard" | "deep" | "smoke_test" | "custom"
 
 export type BatchSize = { profile: BatchProfileKey; custom_count: number }
 
-export const CUSTOM_MIN = 35
+// TODO: restore 35 before merging. Lowered to 0 so a manual end-to-end test of
+// grounded multi-turn builds can plan a handful of cases.
+export const CUSTOM_MIN = 0
 export const CUSTOM_MAX = 120
 
 export const DEFAULT_BATCH_SIZE: BatchSize = {
