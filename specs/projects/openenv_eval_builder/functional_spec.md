@@ -251,8 +251,8 @@ with no grounded cases.
 
 - **v1.** Set once, from the run config picked in step 1 of the builder. Every saved
   `EvalInput.openenv_reset.openenv_server_id` equals it.
-- **Follow-up.** Show the server on the eval, warn when the eval is run with a run config whose
-  tools come from another server or from none, and decide whether a user can change it.
+- **Follow-up (phases 8 and 9).** Shown on the eval, read-only; run configs that don't fit are
+  warned about and refused ("Follow-ups after v1", below).
 
 ## Judge
 
@@ -294,7 +294,66 @@ Kiln's OpenEnv docs say that a server's reset-schema descriptions guide eval gen
 should be written for models: what each starting state holds, who a session can act as, and how
 any setup argument works.
 
-## Follow-ups after v1
+## Follow-ups after v1 (phases 8 to 10)
 
-- The eval's OpenEnv server in the UI (above).
-- Planning replacements for only the dropped cases.
+Decided 2026-11-18 (Sam: "go with what you recommend"). Each is a phase in `implementation_plan.md`.
+
+### Phase 8: the eval's OpenEnv server on screen
+
+- **Spec page** (`specs/[project_id]/[task_id]/[spec_id]/+page.svelte`): Properties gains an
+  "OpenEnv Server" row after "Test Dataset", only when `evaluator.openenv_server_id` is set.
+- **Eval page** (`.../[spec_id]/[eval_id]/+page.svelte`): "Evaluator Properties" gains the same
+  row after the dataset rows.
+- The value is the server's name, linked with `openenv_server_detail_link`. Loaded with
+  `load_openenv_server`, following `lib/ui/openenv_episode_properties.svelte`: a deleted server
+  shows its id, an archived one gets "(Archived)". Share one small helper between the two pages.
+- Read-only. Changing an eval's server is not offered: its cases only make sense on the server
+  they were grounded in.
+
+### Phase 9: run configs that don't fit the eval's server
+
+Today, for an eval with `openenv_server_id` set:
+- a run config whose OpenEnv tools name another server fails every item, and the UI shows only
+  "N errors" (the `run_comparison` route skips `validate_openenv_readiness`);
+- a run config with project tools only, or no tools, runs silently without the environment and is
+  judged against guidance about an environment it never saw.
+
+Behaviour after this phase:
+- **Rule** (one function in libs/core, used by the runner, the route and mirrored in the UI): a run
+  config fits a grounded eval when its tool ids include at least one OpenEnv tool and every
+  OpenEnv tool id names the eval's server. Direct tool ids only (`kiln_tool::openenv::<id>::…`),
+  matching what the runner enforces. An eval without `openenv_server_id` is unaffected.
+- **Runner**: an eval input with `openenv_reset` and a run config with no OpenEnv tools is an
+  error for that item ("This eval's cases run in OpenEnv server X; run config 'N' has none of its
+  tools"), instead of running without the environment.
+- **Route** (`run_comparison`): refuses up front with a 400 naming the reason when the requested
+  run config doesn't fit (uses the readiness check). For `all_run_configs`, the misfitting run
+  configs are skipped and the stream reports them (a frame or field with their names and reason),
+  the rest run.
+- **UI** (`RunConfigComparisonTable`): a misfitting row shows a warning note in its Status cell,
+  e.g. "Uses another OpenEnv server. This eval's cases run in <name>." or "No OpenEnv tools. This
+  eval's cases run in <name>.", and its Run Eval button is disabled with that reason as tooltip.
+  Run All shows which were skipped. A refused run shows the server's message, not just a count.
+
+### Phase 10: replace only the dropped cases
+
+On the dropped-cases screen, a fourth action, **Replace Dropped Cases**, beside Retry (which still
+re-plans everything). Shown when at least one case fit; when every case dropped, Retry is the
+only way forward.
+
+1. Plans `count = number of dropped cases` new scenarios with the batch planner. Guidance is the
+   same sections as the original plan, plus the dropped-cases section (reasons), plus a new
+   section listing the kept scenarios: "These scenarios are already in the batch; plan different
+   ones." The Refine Plan steer stays last. The result is clamped to `count`.
+2. Generates simulated users for the new scenarios only, then grounds only those.
+3. The new scenarios take the dropped rows' places in `batch_plan.prompts`, so kept rows keep their
+   indices. `GroundingDrop` gains `scenario_index` to make this possible.
+4. Both caches are rewritten for the merged plan: `cached_su_cases` (kept generated cases plus the
+   new ones, indices remapped) and `cached_grounded_cases` (kept grounded plus newly grounded).
+   The drive then reuses them without generating or grounding again.
+5. If some replacements drop, the screen shows again for those drops only, with the same actions.
+   A replacement that is itself replaced works the same way.
+6. Kiln_server's generate step may return fewer cases than asked (salvage). Missing ones count as
+   dropped with a reason saying the simulated user couldn't be written.
+
+Not planned: replacing cases after the conversations are driven.
