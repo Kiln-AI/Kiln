@@ -1,0 +1,312 @@
+
+===== gemini_api stream=False parts=[['text', 'thought'], ['functionCall', 'thoughtSignature'], ['functionCall']]
+model_dump: {"role": "assistant", "tool_calls": [{"index": 0, "provider_specific_fields": {"thought_signature": "SIG_FC1"}, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_162f1d3791df4ae6bbeaf0a59f55__thought__SIG_FC1", "type": "function"}, {"index": 1, "function": {"arguments": "{\"a\": 3, \"b\": 3}", "name": "add"}, "id": "call_64586dcec9274a10abf7bc2c6184", "type": "function"}], "images": [], "reasoning_content": "**Plan** add numbers", "thinking_blocks": [{"type": "thinking", "thinking": "**Plan** add numbers"}], "provider_specific_fields": {"thought_signatures": ["SIG_FC1"]}}
+json-serialisable: yes
+--- gemini_api: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_162f1d3791df4ae6bbeaf0a59f55"}
+      .contents[1].parts[0].text: missing in B, A="**Plan** add numbers"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_FC1"
+      .contents[1].parts[1].function_call.args.a: 2 != 3
+      .contents[1].parts[1].function_call.args.b: 2 != 3
+      .contents[1].parts[1].function_call.id: "call_162f1d3791df4ae6bbeaf0a59f55" != "call_64586dcec9274a10abf7bc2c6184"
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_FC1"
+  kiln_today_trace: IDENTICAL
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_162f1d3791df4ae6bbeaf0a59f55"}
+      .contents[1].parts[0].text: missing in B, A="**Plan** add numbers"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_FC1"
+      .contents[1].parts[1].function_call.args.a: 2 != 3
+      .contents[1].parts[1].function_call.args.b: 2 != 3
+      .contents[1].parts[1].function_call.id: "call_162f1d3791df4ae6bbeaf0a59f55" != "call_64586dcec9274a10abf7bc2c6184"
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_FC1"
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** add numbers"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_162f1d3791df4ae6bbeaf0a59f55"}, "thoughtSignature": "SIG_FC1"}, {"function_call": {"name": "add", "args": {"a": 3, "b": 3}, "id": "call_64586dcec9274a10abf7bc2c6184"}}]
+  no-reasoning_content turn-2 model parts: [{"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_162f1d3791df4ae6bbeaf0a59f55"}, "thoughtSignature": "SIG_FC1"}, {"function_call": {"name": "add", "args": {"a": 3, "b": 3}, "id": "call_64586dcec9274a10abf7bc2c6184"}}]
+
+===== gemini_api stream=False parts=[['text', 'thought'], ['text', 'thoughtSignature'], ['functionCall']]
+model_dump: {"content": "Let me add.", "role": "assistant", "tool_calls": [{"index": 0, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_7329a6fdef3c4270a367207df402", "type": "function"}], "images": [], "reasoning_content": "**Plan** add numbers", "thinking_blocks": [{"type": "thinking", "thinking": "**Plan** add numbers"}], "provider_specific_fields": {"thought_signatures": ["SIG_TXT0"]}}
+json-serialisable: yes
+--- gemini_api: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].text: "**Plan** add numbers" != "Let me add."
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT0"
+      .contents[1].parts[1].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_7329a6fdef3c4270a367207df402"}
+      .contents[1].parts[1].text: missing in B, A="Let me add."
+      .contents[1].parts[1].thoughtSignature: "SIG_TXT0" != "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+  kiln_today_trace: DIFF
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_TXT0"
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].text: "**Plan** add numbers" != "Let me add."
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT0"
+      .contents[1].parts[1].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_7329a6fdef3c4270a367207df402"}
+      .contents[1].parts[1].text: missing in B, A="Let me add."
+      .contents[1].parts[1].thoughtSignature: "SIG_TXT0" != "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** add numbers"}, {"text": "Let me add.", "thoughtSignature": "SIG_TXT0"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_7329a6fdef3c4270a367207df402"}, "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]
+  no-reasoning_content turn-2 model parts: [{"text": "Let me add.", "thoughtSignature": "SIG_TXT0"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_7329a6fdef3c4270a367207df402"}, "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]
+
+===== gemini_api stream=False parts=[['text', 'thought'], ['text', 'thoughtSignature']]
+model_dump: {"content": "The answer is 4", "role": "assistant", "images": [], "reasoning_content": "**Plan** answer", "thinking_blocks": [{"type": "thinking", "thinking": "**Plan** answer"}], "provider_specific_fields": {"thought_signatures": ["SIG_TXT"]}}
+json-serialisable: yes
+--- gemini_api: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 2 vs 1
+      .contents[1].parts[0].text: "**Plan** answer" != "The answer is 4"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT"
+  kiln_today_trace: DIFF
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_TXT"
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 2 vs 1
+      .contents[1].parts[0].text: "**Plan** answer" != "The answer is 4"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT"
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** answer"}, {"text": "The answer is 4", "thoughtSignature": "SIG_TXT"}]
+  no-reasoning_content turn-2 model parts: [{"text": "The answer is 4", "thoughtSignature": "SIG_TXT"}]
+
+===== gemini_api stream=True parts=[['text', 'thought'], ['functionCall', 'thoughtSignature'], ['functionCall']]
+model_dump: {"role": "assistant", "tool_calls": [{"provider_specific_fields": {"thought_signature": "SIG_FC1"}, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_2b2eeec6648f48378616cdbaeb5c__thought__SIG_FC1", "type": "function"}, {"function": {"arguments": "{\"a\": 3, \"b\": 3}", "name": "add"}, "id": "call_1cff4181eea0421d8bc159e00a71", "type": "function"}], "provider_specific_fields": {"thought_signatures": ["SIG_FC1"]}, "reasoning_content": "**Plan** add numbers"}
+json-serialisable: yes
+--- gemini_api: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_2b2eeec6648f48378616cdbaeb5c"}
+      .contents[1].parts[0].text: missing in B, A="**Plan** add numbers"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_FC1"
+      .contents[1].parts[1].function_call.args.a: 2 != 3
+      .contents[1].parts[1].function_call.args.b: 2 != 3
+      .contents[1].parts[1].function_call.id: "call_2b2eeec6648f48378616cdbaeb5c" != "call_1cff4181eea0421d8bc159e00a71"
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_FC1"
+  kiln_today_trace: IDENTICAL
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_2b2eeec6648f48378616cdbaeb5c"}
+      .contents[1].parts[0].text: missing in B, A="**Plan** add numbers"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_FC1"
+      .contents[1].parts[1].function_call.args.a: 2 != 3
+      .contents[1].parts[1].function_call.args.b: 2 != 3
+      .contents[1].parts[1].function_call.id: "call_2b2eeec6648f48378616cdbaeb5c" != "call_1cff4181eea0421d8bc159e00a71"
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_FC1"
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** add numbers"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_2b2eeec6648f48378616cdbaeb5c"}, "thoughtSignature": "SIG_FC1"}, {"function_call": {"name": "add", "args": {"a": 3, "b": 3}, "id": "call_1cff4181eea0421d8bc159e00a71"}}]
+  no-reasoning_content turn-2 model parts: [{"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_2b2eeec6648f48378616cdbaeb5c"}, "thoughtSignature": "SIG_FC1"}, {"function_call": {"name": "add", "args": {"a": 3, "b": 3}, "id": "call_1cff4181eea0421d8bc159e00a71"}}]
+
+===== gemini_api stream=True parts=[['text', 'thought'], ['text', 'thoughtSignature'], ['functionCall']]
+model_dump: {"content": "Let me add.", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_af646132ba304c8bac129cedf349", "type": "function"}], "provider_specific_fields": {"thought_signatures": ["SIG_TXT0"]}, "reasoning_content": "**Plan** add numbers"}
+json-serialisable: yes
+--- gemini_api: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].text: "**Plan** add numbers" != "Let me add."
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT0"
+      .contents[1].parts[1].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_af646132ba304c8bac129cedf349"}
+      .contents[1].parts[1].text: missing in B, A="Let me add."
+      .contents[1].parts[1].thoughtSignature: "SIG_TXT0" != "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+  kiln_today_trace: DIFF
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_TXT0"
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].text: "**Plan** add numbers" != "Let me add."
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT0"
+      .contents[1].parts[1].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_af646132ba304c8bac129cedf349"}
+      .contents[1].parts[1].text: missing in B, A="Let me add."
+      .contents[1].parts[1].thoughtSignature: "SIG_TXT0" != "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** add numbers"}, {"text": "Let me add.", "thoughtSignature": "SIG_TXT0"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_af646132ba304c8bac129cedf349"}, "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]
+  no-reasoning_content turn-2 model parts: [{"text": "Let me add.", "thoughtSignature": "SIG_TXT0"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_af646132ba304c8bac129cedf349"}, "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]
+
+===== gemini_api stream=True parts=[['text', 'thought'], ['text', 'thoughtSignature']]
+model_dump: {"content": "The answer is 4", "role": "assistant", "provider_specific_fields": {"thought_signatures": ["SIG_TXT"]}, "reasoning_content": "**Plan** answer"}
+json-serialisable: yes
+--- gemini_api: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 2 vs 1
+      .contents[1].parts[0].text: "**Plan** answer" != "The answer is 4"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT"
+  kiln_today_trace: DIFF
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_TXT"
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 2 vs 1
+      .contents[1].parts[0].text: "**Plan** answer" != "The answer is 4"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT"
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** answer"}, {"text": "The answer is 4", "thoughtSignature": "SIG_TXT"}]
+  no-reasoning_content turn-2 model parts: [{"text": "The answer is 4", "thoughtSignature": "SIG_TXT"}]
+
+===== vertex stream=False parts=[['text', 'thought'], ['functionCall', 'thoughtSignature'], ['functionCall']]
+model_dump: {"role": "assistant", "tool_calls": [{"index": 0, "provider_specific_fields": {"thought_signature": "SIG_FC1"}, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_cf208ca5642a4d7f90148b5d5d90__thought__SIG_FC1", "type": "function"}, {"index": 1, "function": {"arguments": "{\"a\": 3, \"b\": 3}", "name": "add"}, "id": "call_0ce654dd8f784f86920233210ad9", "type": "function"}], "images": [], "reasoning_content": "**Plan** add numbers", "thinking_blocks": [{"type": "thinking", "thinking": "**Plan** add numbers"}], "provider_specific_fields": {"thought_signatures": ["SIG_FC1"]}}
+json-serialisable: yes
+--- vertex: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_cf208ca5642a4d7f90148b5d5d90"}
+      .contents[1].parts[0].text: missing in B, A="**Plan** add numbers"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_FC1"
+      .contents[1].parts[1].function_call.args.a: 2 != 3
+      .contents[1].parts[1].function_call.args.b: 2 != 3
+      .contents[1].parts[1].function_call.id: "call_cf208ca5642a4d7f90148b5d5d90" != "call_0ce654dd8f784f86920233210ad9"
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_FC1"
+  kiln_today_trace: IDENTICAL
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_cf208ca5642a4d7f90148b5d5d90"}
+      .contents[1].parts[0].text: missing in B, A="**Plan** add numbers"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_FC1"
+      .contents[1].parts[1].function_call.args.a: 2 != 3
+      .contents[1].parts[1].function_call.args.b: 2 != 3
+      .contents[1].parts[1].function_call.id: "call_cf208ca5642a4d7f90148b5d5d90" != "call_0ce654dd8f784f86920233210ad9"
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_FC1"
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** add numbers"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_cf208ca5642a4d7f90148b5d5d90"}, "thoughtSignature": "SIG_FC1"}, {"function_call": {"name": "add", "args": {"a": 3, "b": 3}, "id": "call_0ce654dd8f784f86920233210ad9"}}]
+  no-reasoning_content turn-2 model parts: [{"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_cf208ca5642a4d7f90148b5d5d90"}, "thoughtSignature": "SIG_FC1"}, {"function_call": {"name": "add", "args": {"a": 3, "b": 3}, "id": "call_0ce654dd8f784f86920233210ad9"}}]
+
+===== vertex stream=False parts=[['text', 'thought'], ['text', 'thoughtSignature'], ['functionCall']]
+model_dump: {"content": "Let me add.", "role": "assistant", "tool_calls": [{"index": 0, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_279ac491a5d94ddbb88ed6a451d1", "type": "function"}], "images": [], "reasoning_content": "**Plan** add numbers", "thinking_blocks": [{"type": "thinking", "thinking": "**Plan** add numbers"}], "provider_specific_fields": {"thought_signatures": ["SIG_TXT0"]}}
+json-serialisable: yes
+--- vertex: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].text: "**Plan** add numbers" != "Let me add."
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT0"
+      .contents[1].parts[1].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_279ac491a5d94ddbb88ed6a451d1"}
+      .contents[1].parts[1].text: missing in B, A="Let me add."
+      .contents[1].parts[1].thoughtSignature: "SIG_TXT0" != "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+  kiln_today_trace: DIFF
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_TXT0"
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].text: "**Plan** add numbers" != "Let me add."
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT0"
+      .contents[1].parts[1].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_279ac491a5d94ddbb88ed6a451d1"}
+      .contents[1].parts[1].text: missing in B, A="Let me add."
+      .contents[1].parts[1].thoughtSignature: "SIG_TXT0" != "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** add numbers"}, {"text": "Let me add.", "thoughtSignature": "SIG_TXT0"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_279ac491a5d94ddbb88ed6a451d1"}, "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]
+  no-reasoning_content turn-2 model parts: [{"text": "Let me add.", "thoughtSignature": "SIG_TXT0"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_279ac491a5d94ddbb88ed6a451d1"}, "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]
+
+===== vertex stream=False parts=[['text', 'thought'], ['text', 'thoughtSignature']]
+model_dump: {"content": "The answer is 4", "role": "assistant", "images": [], "reasoning_content": "**Plan** answer", "thinking_blocks": [{"type": "thinking", "thinking": "**Plan** answer"}], "provider_specific_fields": {"thought_signatures": ["SIG_TXT"]}}
+json-serialisable: yes
+--- vertex: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 2 vs 1
+      .contents[1].parts[0].text: "**Plan** answer" != "The answer is 4"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT"
+  kiln_today_trace: DIFF
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_TXT"
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 2 vs 1
+      .contents[1].parts[0].text: "**Plan** answer" != "The answer is 4"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT"
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** answer"}, {"text": "The answer is 4", "thoughtSignature": "SIG_TXT"}]
+  no-reasoning_content turn-2 model parts: [{"text": "The answer is 4", "thoughtSignature": "SIG_TXT"}]
+
+===== vertex stream=True parts=[['text', 'thought'], ['functionCall', 'thoughtSignature'], ['functionCall']]
+model_dump: {"role": "assistant", "tool_calls": [{"provider_specific_fields": {"thought_signature": "SIG_FC1"}, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_a245007bd91d4c5cbc62e2d96ddb__thought__SIG_FC1", "type": "function"}, {"function": {"arguments": "{\"a\": 3, \"b\": 3}", "name": "add"}, "id": "call_d489507b6a444e04871361938b83", "type": "function"}], "provider_specific_fields": {"thought_signatures": ["SIG_FC1"]}, "reasoning_content": "**Plan** add numbers"}
+json-serialisable: yes
+--- vertex: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_a245007bd91d4c5cbc62e2d96ddb"}
+      .contents[1].parts[0].text: missing in B, A="**Plan** add numbers"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_FC1"
+      .contents[1].parts[1].function_call.args.a: 2 != 3
+      .contents[1].parts[1].function_call.args.b: 2 != 3
+      .contents[1].parts[1].function_call.id: "call_a245007bd91d4c5cbc62e2d96ddb" != "call_d489507b6a444e04871361938b83"
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_FC1"
+  kiln_today_trace: IDENTICAL
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_a245007bd91d4c5cbc62e2d96ddb"}
+      .contents[1].parts[0].text: missing in B, A="**Plan** add numbers"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_FC1"
+      .contents[1].parts[1].function_call.args.a: 2 != 3
+      .contents[1].parts[1].function_call.args.b: 2 != 3
+      .contents[1].parts[1].function_call.id: "call_a245007bd91d4c5cbc62e2d96ddb" != "call_d489507b6a444e04871361938b83"
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_FC1"
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** add numbers"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_a245007bd91d4c5cbc62e2d96ddb"}, "thoughtSignature": "SIG_FC1"}, {"function_call": {"name": "add", "args": {"a": 3, "b": 3}, "id": "call_d489507b6a444e04871361938b83"}}]
+  no-reasoning_content turn-2 model parts: [{"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_a245007bd91d4c5cbc62e2d96ddb"}, "thoughtSignature": "SIG_FC1"}, {"function_call": {"name": "add", "args": {"a": 3, "b": 3}, "id": "call_d489507b6a444e04871361938b83"}}]
+
+===== vertex stream=True parts=[['text', 'thought'], ['text', 'thoughtSignature'], ['functionCall']]
+model_dump: {"content": "Let me add.", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_fdd7195b0e7841019c636ecb9fc9", "type": "function"}], "provider_specific_fields": {"thought_signatures": ["SIG_TXT0"]}, "reasoning_content": "**Plan** add numbers"}
+json-serialisable: yes
+--- vertex: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].text: "**Plan** add numbers" != "Let me add."
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT0"
+      .contents[1].parts[1].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_fdd7195b0e7841019c636ecb9fc9"}
+      .contents[1].parts[1].text: missing in B, A="Let me add."
+      .contents[1].parts[1].thoughtSignature: "SIG_TXT0" != "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+  kiln_today_trace: DIFF
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_TXT0"
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 3 vs 2
+      .contents[1].parts[0].text: "**Plan** add numbers" != "Let me add."
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT0"
+      .contents[1].parts[1].function_call: missing in A, B={"name": "add", "args": {"a": 2, "b": 2}, "id": "call_fdd7195b0e7841019c636ecb9fc9"}
+      .contents[1].parts[1].text: missing in B, A="Let me add."
+      .contents[1].parts[1].thoughtSignature: "SIG_TXT0" != "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** add numbers"}, {"text": "Let me add.", "thoughtSignature": "SIG_TXT0"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_fdd7195b0e7841019c636ecb9fc9"}, "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]
+  no-reasoning_content turn-2 model parts: [{"text": "Let me add.", "thoughtSignature": "SIG_TXT0"}, {"function_call": {"name": "add", "args": {"a": 2, "b": 2}, "id": "call_fdd7195b0e7841019c636ecb9fc9"}, "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]
+
+===== vertex stream=True parts=[['text', 'thought'], ['text', 'thoughtSignature']]
+model_dump: {"content": "The answer is 4", "role": "assistant", "provider_specific_fields": {"thought_signatures": ["SIG_TXT"]}, "reasoning_content": "**Plan** answer"}
+json-serialisable: yes
+--- vertex: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  dump_minus_reasoning_content: DIFF
+      .contents[1].parts: len 2 vs 1
+      .contents[1].parts[0].text: "**Plan** answer" != "The answer is 4"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT"
+  kiln_today_trace: DIFF
+      .contents[1].parts[1].thoughtSignature: missing in B, A="SIG_TXT"
+  kiln_trace_plus_psf_no_rc: DIFF
+      .contents[1].parts: len 2 vs 1
+      .contents[1].parts[0].text: "**Plan** answer" != "The answer is 4"
+      .contents[1].parts[0].thought: missing in B, A=true
+      .contents[1].parts[0].thoughtSignature: missing in A, B="SIG_TXT"
+  live turn-2 model parts: [{"thought": true, "text": "**Plan** answer"}, {"text": "The answer is 4", "thoughtSignature": "SIG_TXT"}]
+  no-reasoning_content turn-2 model parts: [{"text": "The answer is 4", "thoughtSignature": "SIG_TXT"}]

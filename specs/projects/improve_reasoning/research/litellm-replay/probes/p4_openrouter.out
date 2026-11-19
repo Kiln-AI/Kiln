@@ -1,0 +1,93 @@
+
+===== openrouter claude stream=False tool=True
+model_dump: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add.", "provider_specific_fields": {"reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}], "reasoning": "Need to add.", "refusal": null}}
+json-serialisable: yes
+--- claude: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  kiln_with_top_level_reasoning_details: DIFF
+      .messages[2].provider_specific_fields: missing in B, A={"reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}], "reasoning":
+      .messages[2].reasoning_content: missing in B, A="Need to add."
+      .messages[2].reasoning_details: missing in A, B=[{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}]
+  live turn-2 assistant msg: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add.", "provider_specific_fields": {"reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}], "reasoning": "Need to add.", "refusal": null}}
+  top-level reasoning_details dict msg on wire: {"role": "assistant", "content": "", "tool_calls": [{"id": "tool_add_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}]}
+
+===== openrouter claude stream=True tool=True
+model_dump: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add."}
+json-serialisable: yes
+chunk[1] delta reasoning_details attr: [{'type': 'reasoning.text', 'text': 'Need ', 'signature': 'SIG_CLAUDE', 'format': 'anthropic-claude-v1', 'index': 0}] psf: None
+--- claude: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  kiln_with_top_level_reasoning_details: DIFF
+      .messages[2].reasoning_content: missing in B, A="Need to add."
+      .messages[2].reasoning_details: missing in A, B=[{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}]
+  live turn-2 assistant msg: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add."}
+  top-level reasoning_details dict msg on wire: {"role": "assistant", "content": "", "tool_calls": [{"id": "tool_add_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}]}
+
+===== openrouter gemini stream=False tool=True
+model_dump: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add.", "provider_specific_fields": {"reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "format": "google-gemini-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "SIG_GEM", "id": "tool_add_1", "format": "google-gemini-v1", "index": 0}], "reasoning": "Need to add.", "refusal": null}}
+json-serialisable: yes
+--- gemini: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  kiln_with_top_level_reasoning_details: DIFF
+      .messages[2].provider_specific_fields: missing in B, A={"reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "format": "google-gemini-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "SI
+      .messages[2].reasoning_content: missing in B, A="Need to add."
+      .messages[2].reasoning_details: missing in A, B=[{"type": "reasoning.text", "text": "Need to add.", "format": "google-gemini-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "SIG_GEM", "id": "tool_ad
+  live turn-2 assistant msg: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add.", "provider_specific_fields": {"reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "format": "google-gemini-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "SIG_GEM", "id": "tool_add_1", "format": "google-gemini-v1", "index": 0}], "reasoning": "Need to add.", "refusal": null}}
+  top-level reasoning_details dict msg on wire: {"role": "assistant", "content": "", "tool_calls": [{"id": "tool_add_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "format": "google-gemini-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "SIG_GEM", "id": "tool_add_1", "format": "google-gemini-v1", "index": 0}]}
+
+===== openrouter gemini stream=True tool=True
+model_dump: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add."}
+json-serialisable: yes
+chunk[1] delta reasoning_details attr: [{'type': 'reasoning.text', 'text': 'Need ', 'format': 'google-gemini-v1', 'index': 0}] psf: None
+--- gemini: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  kiln_with_top_level_reasoning_details: DIFF
+      .messages[2].reasoning_content: missing in B, A="Need to add."
+      .messages[2].reasoning_details: missing in A, B=[{"type": "reasoning.text", "text": "Need to add.", "format": "google-gemini-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "SIG_GEM", "id": "tool_ad
+  live turn-2 assistant msg: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add."}
+  top-level reasoning_details dict msg on wire: {"role": "assistant", "content": "", "tool_calls": [{"id": "tool_add_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "format": "google-gemini-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "SIG_GEM", "id": "tool_add_1", "format": "google-gemini-v1", "index": 0}]}
+
+===== openrouter openai stream=False tool=True
+model_dump: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add.", "provider_specific_fields": {"reasoning_details": [{"type": "reasoning.summary", "summary": "Need to add.", "format": "openai-responses-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "ENC_OAI", "id": "rs_1", "format": "openai-responses-v1", "index": 1}], "reasoning": "Need to add.", "refusal": null}}
+json-serialisable: yes
+--- openai: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  kiln_with_top_level_reasoning_details: DIFF
+      .messages[2].provider_specific_fields: missing in B, A={"reasoning_details": [{"type": "reasoning.summary", "summary": "Need to add.", "format": "openai-responses-v1", "index": 0}, {"type": "reasoning.encrypted", "d
+      .messages[2].reasoning_content: missing in B, A="Need to add."
+      .messages[2].reasoning_details: missing in A, B=[{"type": "reasoning.summary", "summary": "Need to add.", "format": "openai-responses-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "ENC_OAI", "id":
+  live turn-2 assistant msg: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add.", "provider_specific_fields": {"reasoning_details": [{"type": "reasoning.summary", "summary": "Need to add.", "format": "openai-responses-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "ENC_OAI", "id": "rs_1", "format": "openai-responses-v1", "index": 1}], "reasoning": "Need to add.", "refusal": null}}
+  top-level reasoning_details dict msg on wire: {"role": "assistant", "content": "", "tool_calls": [{"id": "tool_add_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_details": [{"type": "reasoning.summary", "summary": "Need to add.", "format": "openai-responses-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "ENC_OAI", "id": "rs_1", "format": "openai-responses-v1", "index": 1}]}
+
+===== openrouter openai stream=True tool=True
+model_dump: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add."}
+json-serialisable: yes
+chunk[1] delta reasoning_details attr: [{'type': 'reasoning.summary', 'summary': 'Need to add.', 'format': 'openai-responses-v1', 'index': 0}] psf: None
+--- openai: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  kiln_with_top_level_reasoning_details: DIFF
+      .messages[2].reasoning_content: missing in B, A="Need to add."
+      .messages[2].reasoning_details: missing in A, B=[{"type": "reasoning.summary", "summary": "Need to add.", "format": "openai-responses-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "ENC_OAI", "id":
+  live turn-2 assistant msg: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "tool_add_1", "type": "function"}], "reasoning_content": "Need to add."}
+  top-level reasoning_details dict msg on wire: {"role": "assistant", "content": "", "tool_calls": [{"id": "tool_add_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_details": [{"type": "reasoning.summary", "summary": "Need to add.", "format": "openai-responses-v1", "index": 0}, {"type": "reasoning.encrypted", "data": "ENC_OAI", "id": "rs_1", "format": "openai-responses-v1", "index": 1}]}
+
+===== openrouter claude stream=False tool=False
+model_dump: {"content": "4", "role": "assistant", "reasoning_content": "Need to add.", "provider_specific_fields": {"reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}], "reasoning": "Need to add.", "refusal": null}}
+json-serialisable: yes
+--- claude: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  kiln_with_top_level_reasoning_details: DIFF
+      .messages[2].provider_specific_fields: missing in B, A={"reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}], "reasoning":
+      .messages[2].reasoning_content: missing in B, A="Need to add."
+      .messages[2].reasoning_details: missing in A, B=[{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}]
+  live turn-2 assistant msg: {"content": "4", "role": "assistant", "reasoning_content": "Need to add.", "provider_specific_fields": {"reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}], "reasoning": "Need to add.", "refusal": null}}
+  top-level reasoning_details dict msg on wire: {"role": "assistant", "content": "4", "reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}]}
+
+arbitrary keys on wire: {"role": "assistant", "content": "4", "reasoning_details": [{"type": "reasoning.text", "text": "Need to add.", "signature": "SIG_CLAUDE", "format": "anthropic-claude-v1", "index": 0}], "thinking_blocks": [{"type": "thinking", "thinking": "t", "signature": "S"}], "reasoning_items": [{"type": "reasoning", "id": "rs"}], "reasoning": "plain", "reasoning_content": "rc", "zzz": 1}

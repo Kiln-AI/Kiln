@@ -1,0 +1,8 @@
+False [['text', 'thought'], ['functionCall', 'thoughtSignature'], ['functionCall']] live-minus-rc vs kiln+psf: IDENTICAL
+False [['text', 'thought'], ['text', 'thoughtSignature'], ['functionCall']] live-minus-rc vs kiln+psf: IDENTICAL
+False [['text', 'thought'], ['text', 'thoughtSignature']] live-minus-rc vs kiln+psf: IDENTICAL
+True [['text', 'thought'], ['functionCall', 'thoughtSignature'], ['functionCall']] live-minus-rc vs kiln+psf: IDENTICAL
+True [['text', 'thought'], ['text', 'thoughtSignature'], ['functionCall']] live-minus-rc vs kiln+psf: IDENTICAL
+True [['text', 'thought'], ['text', 'thoughtSignature']] live-minus-rc vs kiln+psf: IDENTICAL
+thinking_blocks input parts: [{"thoughtSignature": "S", "text": "t"}, {"text": "4"}]
+two thought_signatures parts: [{"text": "4", "thoughtSignature": "S1"}]

@@ -1,0 +1,124 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+
+===== tool call stream=False
+turn-1 request keys: ['input', 'instructions', 'model', 'reasoning', 'store', 'tool_choice', 'tools'] store= False include= None
+model_dump(exclude_none): {"role": "assistant", "tool_calls": [{"index": 0, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_add", "type": "function"}], "reasoning_content": "Need to add.", "reasoning_items": [{"type": "reasoning", "id": "rs_1", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- tool call: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "function_call", "call_id": "call_add", "name": "add", "arguments": "{\"a\": 2, \"b\": 2}"}, {"type": "function_call_output", "call_id": "call_add", "output": [{"type": "input_text", "text": "4"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 4 vs 3', '.input[1].arguments: missing in A, B="{\\"a\\": 2, \\"b\\": 2}"', '.input[1].call_id: missing in A, B="call_add"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]
+
+===== narration+tool stream=False
+turn-1 request keys: ['input', 'instructions', 'model', 'reasoning', 'store', 'tool_choice', 'tools'] store= False include= None
+model_dump(exclude_none): {"content": "Let me add those.", "role": "assistant", "tool_calls": [{"index": 0, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_add", "type": "function"}], "reasoning_content": "Need to add.", "reasoning_items": [{"type": "reasoning", "id": "rs_1", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- narration+tool: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Let me add those."}]}, {"type": "function_call", "call_id": "call_add", "name": "add", "arguments": "{\"a\": 2, \"b\": 2}"}, {"type": "function_call_output", "call_id": "call_add", "output": [{"type": "input_text", "text": "4"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 5 vs 4', '.input[1].content: missing in A, B=[{"type": "output_text", "text": "Let me add those."}]', '.input[1].encrypted_content: missing in B, A="ENC_RS_1"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]
+
+===== final answer stream=False
+turn-1 request keys: ['input', 'instructions', 'model', 'reasoning', 'store', 'tool_choice', 'tools'] store= False include= None
+model_dump(exclude_none): {"content": "The answer is [4]", "role": "assistant", "reasoning_content": "Need to add.", "reasoning_items": [{"type": "reasoning", "id": "rs_1", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- final answer: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "The answer is [4]"}]}, {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "and 3+3?"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 4 vs 3', '.input[1].content: missing in A, B=[{"type": "output_text", "text": "The answer is [4]"}]', '.input[1].encrypted_content: missing in B, A="ENC_RS_1"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]
+
+===== two reasoning items + call stream=False
+turn-1 request keys: ['input', 'instructions', 'model', 'reasoning', 'store', 'tool_choice', 'tools'] store= False include= None
+model_dump(exclude_none): {"role": "assistant", "tool_calls": [{"index": 0, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_add", "type": "function"}], "reasoning_content": "Need to add.", "reasoning_items": [{"type": "reasoning", "id": "rs_1", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- two reasoning items + call: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "function_call", "call_id": "call_add", "name": "add", "arguments": "{\"a\": 2, \"b\": 2}"}, {"type": "function_call_output", "call_id": "call_add", "output": [{"type": "input_text", "text": "4"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 4 vs 3', '.input[1].arguments: missing in A, B="{\\"a\\": 2, \\"b\\": 2}"', '.input[1].call_id: missing in A, B="call_add"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]
+/home/user/Kiln/.venv/lib/python3.13/site-packages/pydantic/main.py:475: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `ResponseAPIUsage` - serialized value may not be as expected [field_name='usage', input_value={'completion_tokens': 5, ...: 0.0012000000000000001}, input_type=dict])
+  return self.__pydantic_serializer__.to_python(
+
+===== tool call stream=True
+turn-1 request keys: ['input', 'instructions', 'model', 'reasoning', 'store', 'stream', 'tool_choice', 'tools'] store= False include= None
+model_dump(exclude_none): {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_add", "type": "function"}], "reasoning_content": "Need to add.", "reasoning_items": [{"id": "rs_1", "type": "reasoning", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- tool call: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "function_call", "call_id": "call_add", "name": "add", "arguments": "{\"a\": 2, \"b\": 2}"}, {"type": "function_call_output", "call_id": "call_add", "output": [{"type": "input_text", "text": "4"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 4 vs 3', '.input[1].arguments: missing in A, B="{\\"a\\": 2, \\"b\\": 2}"', '.input[1].call_id: missing in A, B="call_add"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]
+
+===== narration+tool stream=True
+turn-1 request keys: ['input', 'instructions', 'model', 'reasoning', 'store', 'stream', 'tool_choice', 'tools'] store= False include= None
+model_dump(exclude_none): {"content": "Let me add those.", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_add", "type": "function"}], "reasoning_content": "Need to add.", "reasoning_items": [{"id": "rs_1", "type": "reasoning", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- narration+tool: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Let me add those."}]}, {"type": "function_call", "call_id": "call_add", "name": "add", "arguments": "{\"a\": 2, \"b\": 2}"}, {"type": "function_call_output", "call_id": "call_add", "output": [{"type": "input_text", "text": "4"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 5 vs 4', '.input[1].content: missing in A, B=[{"type": "output_text", "text": "Let me add those."}]', '.input[1].encrypted_content: missing in B, A="ENC_RS_1"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]
+
+===== final answer stream=True
+turn-1 request keys: ['input', 'instructions', 'model', 'reasoning', 'store', 'stream', 'tool_choice', 'tools'] store= False include= None
+model_dump(exclude_none): {"content": "The answer is [4]", "role": "assistant", "reasoning_content": "Need to add.", "reasoning_items": [{"id": "rs_1", "type": "reasoning", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- final answer: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "The answer is [4]"}]}, {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "and 3+3?"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 4 vs 3', '.input[1].content: missing in A, B=[{"type": "output_text", "text": "The answer is [4]"}]', '.input[1].encrypted_content: missing in B, A="ENC_RS_1"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]
+
+===== two reasoning items + call stream=True
+turn-1 request keys: ['input', 'instructions', 'model', 'reasoning', 'store', 'stream', 'tool_choice', 'tools'] store= False include= None
+model_dump(exclude_none): {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_add", "type": "function"}], "reasoning_content": "One more thought.\n\nNeed to add.", "reasoning_items": [{"id": "rs_one_part", "type": "reasoning", "encrypted_content": "ENC_ONE_PART", "summary": [{"type": "summary_text", "text": "One more thought."}]}, {"id": "rs_1", "type": "reasoning", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- two reasoning items + call: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_one_part", "summary": [{"text": "One more thought.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_ONE_PART"}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "function_call", "call_id": "call_add", "name": "add", "arguments": "{\"a\": 2, \"b\": 2}"}, {"type": "function_call_output", "call_id": "call_add", "output": [{"type": "input_text", "text": "4"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 5 vs 3', '.input[1].arguments: missing in A, B="{\\"a\\": 2, \\"b\\": 2}"', '.input[1].call_id: missing in A, B="call_add"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]
+
+===== include passed stream=False
+turn-1 request keys: ['include', 'input', 'instructions', 'model', 'reasoning', 'store', 'tool_choice', 'tools'] store= False include= ['reasoning.encrypted_content']
+model_dump(exclude_none): {"role": "assistant", "tool_calls": [{"index": 0, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "call_add", "type": "function"}], "reasoning_content": "Need to add.", "reasoning_items": [{"type": "reasoning", "id": "rs_1", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- include passed: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "function_call", "call_id": "call_add", "name": "add", "arguments": "{\"a\": 2, \"b\": 2}"}, {"type": "function_call_output", "call_id": "call_add", "output": [{"type": "input_text", "text": "4"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 4 vs 3', '.input[1].arguments: missing in A, B="{\\"a\\": 2, \\"b\\": 2}"', '.input[1].call_id: missing in A, B="call_add"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]
+
+===== gpt-6.1-sol summary, no tools stream=True
+turn-1 request keys: ['input', 'instructions', 'model', 'reasoning', 'store', 'stream'] store= False include= None
+model_dump(exclude_none): {"content": "The answer is [4]", "role": "assistant", "reasoning_content": "Need to add.", "reasoning_items": [{"id": "rs_1", "type": "reasoning", "encrypted_content": "ENC_RS_1", "summary": [{"type": "summary_text", "text": "Need to add."}]}]}
+json-serialisable: yes
+--- gpt-6.1-sol summary, no tools: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 input: [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "what is 2+2"}]}, {"id": "rs_1", "summary": [{"text": "Need to add.", "type": "summary_text"}], "type": "reasoning", "encrypted_content": "ENC_RS_1"}, {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "The answer is [4]"}]}, {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "and 3+3?"}]}]
+  today's trace (no reasoning_items) diff: ['.input: len 4 vs 3', '.input[1].content: missing in A, B=[{"type": "output_text", "text": "The answer is [4]"}]', '.input[1].encrypted_content: missing in B, A="ENC_RS_1"']
+  reasoning_content-only diff vs today's: IDENTICAL (ignored)
+  thinking_blocks-only reasoning items: [{'type': 'reasoning', 'summary': [{'type': 'summary_text', 'text': 't'}]}]

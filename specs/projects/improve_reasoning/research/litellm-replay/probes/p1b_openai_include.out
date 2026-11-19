@@ -1,0 +1,4 @@
+openai/gpt-5.2 ['include'] -> chat include= ['reasoning.encrypted_content'] store= False
+openai/gpt-6.1-sol ['include'] -> chat include= ['reasoning.encrypted_content'] store= False
+openai/gpt-5.2 ['extra_body'] -> chat include= ['reasoning.encrypted_content'] store= False
+openai/gpt-5.4-pro ['extra_body', 'tools'] -> responses include= ['reasoning.encrypted_content'] store= False

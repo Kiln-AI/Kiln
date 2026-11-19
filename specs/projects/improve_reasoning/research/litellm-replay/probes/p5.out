@@ -1,0 +1,64 @@
+
+===== groq stream=False reply field='reasoning'
+model_dump: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning": "I should add."} | json: yes
+attrs: reasoning_content= None reasoning= 'I should add.'
+  live turn-2 assistant on wire: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning": "I should add."}
+  dict reasoning_content on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_content": "R"}
+  dict reasoning on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning": "R"}
+  live vs dump_json: IDENTICAL
+
+===== groq stream=True reply field='reasoning'
+model_dump: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add."} | json: yes
+attrs: reasoning_content= 'I should add.' reasoning= '<absent>'
+  live turn-2 assistant on wire: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add."}
+  dict reasoning_content on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_content": "R"}
+  dict reasoning on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning": "R"}
+  live vs dump_json: IDENTICAL
+
+===== ollama stream=False reply field='reasoning'
+model_dump: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add.", "provider_specific_fields": {"reasoning": "I should add.", "refusal": null}} | json: yes
+attrs: reasoning_content= 'I should add.' reasoning= '<absent>'
+  live turn-2 assistant on wire: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add.", "provider_specific_fields": {"reasoning": "I should add.", "refusal": null}}
+  dict reasoning_content on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_content": "R"}
+  dict reasoning on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning": "R"}
+  live vs dump_json: IDENTICAL
+
+===== ollama stream=True reply field='reasoning'
+model_dump: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add."} | json: yes
+attrs: reasoning_content= 'I should add.' reasoning= '<absent>'
+  live turn-2 assistant on wire: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add."}
+  dict reasoning_content on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_content": "R"}
+  dict reasoning on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning": "R"}
+  live vs dump_json: IDENTICAL
+
+===== ollama_rc stream=False reply field='reasoning_content'
+model_dump: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add.", "provider_specific_fields": {"refusal": null}} | json: yes
+attrs: reasoning_content= 'I should add.' reasoning= '<absent>'
+  live turn-2 assistant on wire: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add.", "provider_specific_fields": {"refusal": null}}
+  dict reasoning_content on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_content": "R"}
+  dict reasoning on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning": "R"}
+  live vs dump_json: IDENTICAL
+
+===== ollama_rc stream=True reply field='reasoning_content'
+model_dump: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add."} | json: yes
+attrs: reasoning_content= 'I should add.' reasoning= '<absent>'
+  live turn-2 assistant on wire: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add."}
+  dict reasoning_content on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning_content": "R"}
+  dict reasoning on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning": "R"}
+  live vs dump_json: IDENTICAL
+
+===== cerebras stream=False reply field='reasoning'
+model_dump: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add.", "provider_specific_fields": {"reasoning": "I should add.", "refusal": null}} | json: yes
+attrs: reasoning_content= 'I should add.' reasoning= '<absent>'
+  live turn-2 assistant on wire: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}]}
+  dict reasoning_content on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}]}
+  dict reasoning on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning": "R"}
+  live vs dump_json: IDENTICAL
+
+===== cerebras stream=True reply field='reasoning'
+model_dump: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}], "reasoning_content": "I should add."} | json: yes
+attrs: reasoning_content= 'I should add.' reasoning= '<absent>'
+  live turn-2 assistant on wire: {"role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\":2,\"b\":2}", "name": "add"}, "id": "call_1", "type": "function"}]}
+  dict reasoning_content on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}]}
+  dict reasoning on wire: {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{\"a\":2,\"b\":2}"}}], "reasoning": "R"}
+  live vs dump_json: IDENTICAL

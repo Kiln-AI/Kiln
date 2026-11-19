@@ -1,0 +1,120 @@
+
+===== sonnet_5_5_adaptive stream=False content=['thinking', 'redacted_thinking', 'thinking', 'text', 'tool_use']
+turn-1 thinking param: {'type': 'adaptive', 'display': 'summarized'} output_config: {'effort': 'medium'}
+model_dump: {"content": "Let me add.", "role": "assistant", "tool_calls": [{"index": 4, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "toolu_1", "type": "function"}], "reasoning_content": "I need to add 2 and 2.Then call the tool.", "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.", "signature": "SIG_C"}], "provider_specific_fields": {"citations": null, "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.", "signature": "SIG_C"}]}}
+json-serialisable: yes
+--- sonnet_5_5_adaptive: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 assistant content: [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.", "signature": "SIG_C"}, {"type": "text", "text": "Let me add."}, {"type": "tool_use", "id": "toolu_1", "name": "add", "input": {"a": 2, "b": 2}}]
+  live turn-2 thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  today's trace assistant content: ['text', 'tool_use'] thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  reasoning_content-only vs today's: IDENTICAL (ignored)
+  psf-only vs live: ['.messages[1].content: len 5 vs 2', '.messages[1].content[0].signature: missing in B, A="SIG_A"', '.messages[1].content[0].text: missing in A, B="Let me add."']
+
+===== sonnet_5_5_adaptive stream=False content=['thinking', 'text']
+turn-1 thinking param: {'type': 'adaptive', 'display': 'summarized'} output_config: {'effort': 'medium'}
+model_dump: {"content": "4", "role": "assistant", "reasoning_content": "I need to add 2 and 2.", "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}], "provider_specific_fields": {"citations": null, "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}]}}
+json-serialisable: yes
+--- sonnet_5_5_adaptive: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 assistant content: [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "text", "text": "4"}]
+  live turn-2 thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  today's trace assistant content: ['text'] thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  reasoning_content-only vs today's: IDENTICAL (ignored)
+  psf-only vs live: ['.messages[1].content: len 2 vs 1', '.messages[1].content[0].signature: missing in B, A="SIG_A"', '.messages[1].content[0].text: missing in A, B="4"']
+
+===== sonnet_5_5_adaptive stream=True content=['thinking', 'redacted_thinking', 'thinking', 'text', 'tool_use']
+turn-1 thinking param: {'type': 'adaptive', 'display': 'summarized'} output_config: {'effort': 'medium'}
+model_dump: {"content": "Let me add.", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "toolu_1", "type": "function"}], "provider_specific_fields": {"thinking_blocks": [{"type": "thinking", "thinking": "Then call the tool.", "signature": "SIG_C"}]}, "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.Then call the tool.", "signature": "SIG_C"}], "reasoning_content": "I need to add 2 and 2.Then call the tool."}
+json-serialisable: yes
+--- sonnet_5_5_adaptive: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 assistant content: [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.Then call the tool.", "signature": "SIG_C"}, {"type": "text", "text": "Let me add."}, {"type": "tool_use", "id": "toolu_1", "name": "add", "input": {"a": 2, "b": 2}}]
+  live turn-2 thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  today's trace assistant content: ['text', 'tool_use'] thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  reasoning_content-only vs today's: IDENTICAL (ignored)
+  psf-only vs live: ['.messages[1].content: len 5 vs 2', '.messages[1].content[0].signature: missing in B, A="SIG_A"', '.messages[1].content[0].text: missing in A, B="Let me add."']
+
+===== sonnet_5_5_adaptive stream=True content=['thinking', 'text']
+turn-1 thinking param: {'type': 'adaptive', 'display': 'summarized'} output_config: {'effort': 'medium'}
+model_dump: {"content": "4", "role": "assistant", "provider_specific_fields": {"thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}]}, "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}], "reasoning_content": "I need to add 2 and 2."}
+json-serialisable: yes
+--- sonnet_5_5_adaptive: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 assistant content: [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "text", "text": "4"}]
+  live turn-2 thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  today's trace assistant content: ['text'] thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  reasoning_content-only vs today's: IDENTICAL (ignored)
+  psf-only vs live: ['.messages[1].content: len 2 vs 1', '.messages[1].content[0].signature: missing in B, A="SIG_A"', '.messages[1].content[0].text: missing in A, B="4"']
+
+===== haiku_4_5_manual stream=False content=['thinking', 'redacted_thinking', 'thinking', 'text', 'tool_use']
+turn-1 thinking param: {'type': 'enabled', 'budget_tokens': 4096} output_config: None
+model_dump: {"content": "Let me add.", "role": "assistant", "tool_calls": [{"index": 4, "function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "toolu_1", "type": "function"}], "reasoning_content": "I need to add 2 and 2.Then call the tool.", "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.", "signature": "SIG_C"}], "provider_specific_fields": {"citations": null, "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.", "signature": "SIG_C"}]}}
+json-serialisable: yes
+--- haiku_4_5_manual: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 assistant content: [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.", "signature": "SIG_C"}, {"type": "text", "text": "Let me add."}, {"type": "tool_use", "id": "toolu_1", "name": "add", "input": {"a": 2, "b": 2}}]
+  live turn-2 thinking param: {'type': 'enabled', 'budget_tokens': 4096}
+  today's trace assistant content: ['text', 'tool_use'] thinking param: {'type': 'enabled', 'budget_tokens': 4096}
+  reasoning_content-only vs today's: IDENTICAL (ignored)
+  psf-only vs live: ['.messages[1].content: len 5 vs 2', '.messages[1].content[0].signature: missing in B, A="SIG_A"', '.messages[1].content[0].text: missing in A, B="Let me add."']
+
+===== haiku_4_5_manual stream=False content=['thinking', 'text']
+turn-1 thinking param: {'type': 'enabled', 'budget_tokens': 4096} output_config: None
+model_dump: {"content": "4", "role": "assistant", "reasoning_content": "I need to add 2 and 2.", "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}], "provider_specific_fields": {"citations": null, "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}]}}
+json-serialisable: yes
+--- haiku_4_5_manual: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 assistant content: [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "text", "text": "4"}]
+  live turn-2 thinking param: {'type': 'enabled', 'budget_tokens': 4096}
+  today's trace assistant content: ['text'] thinking param: {'type': 'enabled', 'budget_tokens': 4096}
+  reasoning_content-only vs today's: IDENTICAL (ignored)
+  psf-only vs live: ['.messages[1].content: len 2 vs 1', '.messages[1].content[0].signature: missing in B, A="SIG_A"', '.messages[1].content[0].text: missing in A, B="4"']
+
+===== haiku_4_5_manual stream=True content=['thinking', 'redacted_thinking', 'thinking', 'text', 'tool_use']
+turn-1 thinking param: {'type': 'enabled', 'budget_tokens': 4096} output_config: None
+model_dump: {"content": "Let me add.", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "toolu_1", "type": "function"}], "provider_specific_fields": {"thinking_blocks": [{"type": "thinking", "thinking": "Then call the tool.", "signature": "SIG_C"}]}, "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.Then call the tool.", "signature": "SIG_C"}], "reasoning_content": "I need to add 2 and 2.Then call the tool."}
+json-serialisable: yes
+--- haiku_4_5_manual: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 assistant content: [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.Then call the tool.", "signature": "SIG_C"}, {"type": "text", "text": "Let me add."}, {"type": "tool_use", "id": "toolu_1", "name": "add", "input": {"a": 2, "b": 2}}]
+  live turn-2 thinking param: {'type': 'enabled', 'budget_tokens': 4096}
+  today's trace assistant content: ['text', 'tool_use'] thinking param: {'type': 'enabled', 'budget_tokens': 4096}
+  reasoning_content-only vs today's: IDENTICAL (ignored)
+  psf-only vs live: ['.messages[1].content: len 5 vs 2', '.messages[1].content[0].signature: missing in B, A="SIG_A"', '.messages[1].content[0].text: missing in A, B="Let me add."']
+
+===== haiku_4_5_manual stream=True content=['thinking', 'text']
+turn-1 thinking param: {'type': 'enabled', 'budget_tokens': 4096} output_config: None
+model_dump: {"content": "4", "role": "assistant", "provider_specific_fields": {"thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}]}, "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}], "reasoning_content": "I need to add 2 and 2."}
+json-serialisable: yes
+--- haiku_4_5_manual: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 assistant content: [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "text", "text": "4"}]
+  live turn-2 thinking param: {'type': 'enabled', 'budget_tokens': 4096}
+  today's trace assistant content: ['text'] thinking param: {'type': 'enabled', 'budget_tokens': 4096}
+  reasoning_content-only vs today's: IDENTICAL (ignored)
+  psf-only vs live: ['.messages[1].content: len 2 vs 1', '.messages[1].content[0].signature: missing in B, A="SIG_A"', '.messages[1].content[0].text: missing in A, B="4"']
+
+===== sonnet_simple stream=True content=['thinking', 'tool_use']
+turn-1 thinking param: {'type': 'adaptive', 'display': 'summarized'} output_config: {'effort': 'medium'}
+model_dump: {"content": "", "role": "assistant", "tool_calls": [{"function": {"arguments": "{\"a\": 2, \"b\": 2}", "name": "add"}, "id": "toolu_1", "type": "function"}], "provider_specific_fields": {"thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}]}, "thinking_blocks": [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}], "reasoning_content": "I need to add 2 and 2."}
+json-serialisable: yes
+--- sonnet_simple: turn-2 body diffs vs live Message
+  dump_json: IDENTICAL
+  minimal: IDENTICAL
+  live turn-2 assistant content: [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "text", "text": "[System: Empty message content sanitised to satisfy protocol]"}, {"type": "tool_use", "id": "toolu_1", "name": "add", "input": {"a": 2, "b": 2}}]
+  live turn-2 thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  today's trace assistant content: ['text', 'tool_use'] thinking param: {'type': 'adaptive', 'display': 'summarized'}
+  reasoning_content-only vs today's: IDENTICAL (ignored)
+  psf-only vs live: ['.messages[1].content: len 3 vs 2', '.messages[1].content[0].signature: missing in B, A="SIG_A"', '.messages[1].content[0].text: missing in A, B="[System: Empty message content sanitised to satisfy protocol]"']
+
+DOUBLED CHECK: expected 'I need to add 2 and 2.' got 'I need to add 2 and 2.I need to add 2 and 2.' doubled= True
+reasoning_content: 'I need to add 2 and 2.'

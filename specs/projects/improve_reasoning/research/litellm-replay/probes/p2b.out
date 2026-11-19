@@ -1,0 +1,4 @@
+full builder: [{"type": "thinking", "thinking": "I need to add 2 and 2.I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.Then call the tool.", "signature": "SIG_C"}]
+full rebuilt == provider blocks: True [{"type": "thinking", "thinking": "I need to add 2 and 2.", "signature": "SIG_A"}, {"type": "redacted_thinking", "data": "REDACTED_B"}, {"type": "thinking", "thinking": "Then call the tool.", "signature": "SIG_C"}]
+display omitted builder: [{"type": "thinking", "thinking": "", "signature": "SIG_OMIT"}]
+display omitted rebuilt == provider blocks: True [{"type": "thinking", "thinking": "", "signature": "SIG_OMIT"}]
