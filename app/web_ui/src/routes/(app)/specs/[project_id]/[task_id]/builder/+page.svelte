@@ -42,6 +42,7 @@
     questions_are_current,
     reset_draft_keeping_tags,
     restore_step,
+    restore_synthetic_user_guide,
     reusable_cached_cases,
     reusable_grounded_cases,
     reusable_minted_inputs,
@@ -61,10 +62,10 @@
   // Grounding a multi-turn build's cases in its OpenEnv server: the request,
   // the stream's frames, and what the save and the review read from them.
   import {
+    ground_cases_request,
     grounded_server_id,
     grounding_request_cases,
     model_choice_key,
-    type GroundCasesRequest,
     openenv_lookup_key,
     read_grounding_stream,
     type GroundingDrop,
@@ -125,6 +126,7 @@
     multiturn_plan_guidance,
     reset_arguments_section,
     single_turn_plan_guidance,
+    synthetic_user_guide_section,
   } from "./batch_plan_guidance"
   // The Step 4 dataset sizes: what the planner is asked for, and the splits
   // the save deals into.
@@ -483,6 +485,7 @@
         input_gen_run_config,
         judge_model,
         turns_per_case,
+        synthetic_user_guide,
         target_run_config_id,
         openenv_server_lookup,
         reset_arguments_brief,
@@ -599,6 +602,9 @@
       turns_per_case = restore_turns_per_case(
         saved.turns_per_case,
         TURNS_PER_CASE,
+      )
+      synthetic_user_guide = restore_synthetic_user_guide(
+        saved.synthetic_user_guide,
       )
       // A missing config reads as nothing chosen and keeps the task-default
       // behaviour.
@@ -1234,6 +1240,7 @@
         total: number
         openenv_server_id: string
         judge_model: string
+        synthetic_user_guide: string
         target_run_config_id: string
         judge_choice: ModelChoice
         // Why the last Replace Dropped Cases stopped part-way, when it failed.
@@ -1397,10 +1404,10 @@
   }
 
   // The multi-turn plan's guidance: the base, then on a build with an OpenEnv
-  // server the reset arguments it offers and, on a Retry after drops, the
-  // scenarios that didn't fit; the user's steer last. A plan for Replace
-  // Dropped Cases names its own drops and the scenarios staying in the batch,
-  // under the steer the plan on screen was drafted with.
+  // server the reset arguments it offers, the synthetic user guide and, on a
+  // Retry after drops, the scenarios that didn't fit; the user's steer last.
+  // A plan for Replace Dropped Cases names its own drops and the scenarios
+  // staying in the batch, under the steer the plan on screen was drafted with.
   async function multi_turn_plan_guidance(
     replacing: { drops: GroundingDrop[]; kept_scenarios: string[] } | null,
   ): Promise<string> {
@@ -1414,6 +1421,7 @@
             reset_arguments_section(
               await ensure_reset_arguments_brief(openenv_server_id),
             ),
+            synthetic_user_guide_section(synthetic_user_guide),
             dropped_cases_section(replacing?.drops ?? pending_retry_drops),
             kept_scenarios_section(replacing?.kept_scenarios ?? []),
           ]
@@ -1534,6 +1542,9 @@
   // the cost warning honest as the stepper moves, and never quotes a length
   // the route would reject.
   $: staged_drive_turns_per_case = clamp_turns_per_case(staged_turns_per_case)
+  // Who uses the agent; read by the grounding agent and the OpenEnv planner.
+  let synthetic_user_guide = ""
+  let staged_synthetic_user_guide = synthetic_user_guide
 
   // ── Model lanes (SDG's Generation Settings pattern). The Generation
   // Settings dialog is the drive's only entrance: it shows the lanes the
@@ -1723,6 +1734,7 @@
     // gone the next time it opens. Unlike the lanes it waits on nothing, so it
     // is seeded up front rather than after the await below.
     staged_turns_per_case = turns_per_case
+    staged_synthetic_user_guide = synthetic_user_guide
     // Await the pre-population pass (usually already in flight from the plan
     // surface, so this resolves at once) so the reseed below reads resolved
     // lanes. On failure the dialog still opens on whatever is committed.
@@ -1930,6 +1942,7 @@
     // what the request, the draft, and the stamp all read — is always one the
     // drive route accepts.
     turns_per_case = clamp_turns_per_case(staged_turns_per_case)
+    synthetic_user_guide = staged_synthetic_user_guide
     drive_settings_error = null
     drive_settings_dialog?.close()
     // Let the commit above reach the reactive graph before driving: the drive
@@ -2418,17 +2431,19 @@
     approved_prompts: string[],
     target_run_config_id: string,
     judge_model: ModelChoice,
+    synthetic_user_guide: string,
   ): Promise<GroundingOutcome | null> {
     const request_cases = grounding_request_cases(cases, approved_prompts)
     grounding_total = request_cases.length
     grounding_checked = 0
     grounding_dropped = 0
-    const body: GroundCasesRequest = {
+    const body = ground_cases_request({
       target_run_config_id,
       judge_model,
       specification: spec_text(),
       cases: request_cases,
-    }
+      synthetic_user_guide,
+    })
     // Aborting (Back, leaving the page) closes the stream, and the server
     // ends every episode the cancelled cases had open.
     const response = await fetch(
@@ -2478,6 +2493,7 @@
       spec_text: spec_text(),
       openenv_server_id: grounding_stop.openenv_server_id,
       judge_model: grounding_stop.judge_model,
+      synthetic_user_guide: grounding_stop.synthetic_user_guide,
       cases: grounding_stop.grounded,
       grounding_dropped: grounding_stop.drops.length,
     }
@@ -2592,6 +2608,7 @@
               merged.prompts,
               stop.target_run_config_id,
               stop.judge_choice,
+              stop.synthetic_user_guide,
             )
       if (outcome === null) {
         take_failure()
@@ -2627,6 +2644,7 @@
         spec_text: spec,
         openenv_server_id: stop.openenv_server_id,
         judge_model: stop.judge_model,
+        synthetic_user_guide: stop.synthetic_user_guide,
         cases: grounded,
         grounding_dropped: 0,
       }
@@ -2723,6 +2741,7 @@
           : {
               openenv_server_id,
               judge_model: model_choice_key(chosen_judge_model),
+              synthetic_user_guide: synthetic_user_guide.trim(),
             }
 
       // 2. Author the judge before preflight and any SU spend, so a failure
@@ -2827,6 +2846,7 @@
             approved_prompts,
             target_run_config_id,
             chosen_judge_model,
+            grounding_key.synthetic_user_guide,
           )
           if (outcome === null) return
           if (outcome.drops.length > 0) {
@@ -6029,6 +6049,16 @@
           max={MAX_TURNS_PER_CASE}
         />
       </div>
+      {#if build_openenv_server_id !== null}
+        <FormElement
+          label="Who uses this agent"
+          id="synthetic_user_guide"
+          inputType="textarea"
+          optional={true}
+          info_description="Describe the people who talk to your agent and what they ask. Kiln uses it to pick who each test conversation's user is and to plan new cases."
+          bind:value={staged_synthetic_user_guide}
+        />
+      {/if}
     {:else}
       <RunConfigComponent
         bind:this={input_gen_config_component}

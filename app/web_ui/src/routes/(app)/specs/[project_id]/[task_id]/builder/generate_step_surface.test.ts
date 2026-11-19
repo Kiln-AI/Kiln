@@ -1361,6 +1361,11 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     expect(guidance).toContain(
       "dropped_cases_section(replacing?.drops ?? pending_retry_drops)",
     )
+    const guide = guidance.indexOf(
+      "synthetic_user_guide_section(synthetic_user_guide)",
+    )
+    expect(guide).toBeGreaterThan(guidance.indexOf("reset_arguments_section("))
+    expect(guide).toBeLessThan(guidance.indexOf("dropped_cases_section("))
     expect(guidance).toContain(
       "kept_scenarios_section(replacing?.kept_scenarios ?? [])",
     )
@@ -1390,7 +1395,7 @@ describe("grounding a build's cases in its OpenEnv server", () => {
         "request_generated_cases( merged.replacements.map((r) => r.scenario), )",
       )
       const grounding = replace.indexOf(
-        "await ground_planned_cases( placed.cases, merged.prompts, stop.target_run_config_id, stop.judge_choice, )",
+        "await ground_planned_cases( placed.cases, merged.prompts, stop.target_run_config_id, stop.judge_choice, stop.synthetic_user_guide, )",
       )
       expect(generating).toBeGreaterThan(0)
       expect(grounding).toBeGreaterThan(generating)

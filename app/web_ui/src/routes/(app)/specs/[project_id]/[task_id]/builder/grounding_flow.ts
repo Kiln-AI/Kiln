@@ -89,6 +89,21 @@ export function grounding_request_cases(
   })
 }
 
+// The ground_cases request body. A blank synthetic user guide is sent as
+// null, so the grounding agent reads no guide rather than an empty one.
+export function ground_cases_request(args: {
+  target_run_config_id: string
+  judge_model: ModelChoice
+  specification: string
+  cases: GroundCaseApi[]
+  synthetic_user_guide: string
+}): GroundCasesRequest {
+  return {
+    ...args,
+    synthetic_user_guide: args.synthetic_user_guide.trim() || null,
+  }
+}
+
 export type GroundingState = {
   total: number
   grounded: Record<number, SyntheticUserCaseWire>

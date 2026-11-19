@@ -60,15 +60,19 @@ export function reusable_cached_cases(
 // The plan's cases after grounding in an OpenEnv server, cached apart from
 // the generated ones above. Grounding writes each case's specifics and judge
 // guidance from what it found on the server, so this set also depends on the
-// server and on the judge model the grounding agent ran on. Keeping the
-// generated cases separately means a grounding failure or a judge change
-// re-grounds them without paying for generation again.
+// server, on the judge model the grounding agent ran on, and on the synthetic
+// user guide it read. Keeping the generated cases separately means a grounding
+// failure or a judge change re-grounds them without paying for generation
+// again.
 export type CachedGroundedCases = {
   prompts_json: string
   spec_text: string
   openenv_server_id: string
   // model_choice_key of the judge model the grounding agent ran on.
   judge_model: string
+  // The trimmed synthetic user guide the grounding agent read, "" for none.
+  // Missing on older drafts, which grounded without one.
+  synthetic_user_guide?: string
   cases: SyntheticUserCaseWire[]
   // Cases dropped in grounding and accepted with Continue. The drive counts
   // them as planned-for, not failed, so the shortfall it reports is only its
@@ -79,10 +83,11 @@ export type CachedGroundedCases = {
 export type CaseGroundingKey = {
   openenv_server_id: string
   judge_model: string
+  synthetic_user_guide: string
 }
 
 // The cached grounded set iff it came from EXACTLY this plan and spec and was
-// grounded in this server by this judge model.
+// grounded in this server by this judge model under this synthetic user guide.
 export function reusable_grounded_cases(
   cache: CachedGroundedCases | null,
   approved_prompts: string[],
@@ -94,6 +99,9 @@ export function reusable_grounded_cases(
   if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
   if (cache.openenv_server_id !== key.openenv_server_id) return null
   if (cache.judge_model !== key.judge_model) return null
+  if ((cache.synthetic_user_guide ?? "") !== key.synthetic_user_guide) {
+    return null
+  }
   return cache
 }
 
@@ -284,6 +292,10 @@ export type BuilderDraft = {
   // written before this key restore that way — and the page falls back to its
   // default turn count.
   turns_per_case: number | null
+  // The Generation Settings guide to who talks to the agent under test
+  // (multi-turn), as the user wrote it. "" when none; older drafts lack the
+  // key and restore through restore_synthetic_user_guide.
+  synthetic_user_guide: string
   // The run config the entry page chose for this eval. Persisted so a reload
   // keeps evaluating the same thing; drafts written before the entry page
   // asked restore this as null, which reads as "nothing chosen" and leaves
@@ -338,10 +350,15 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   input_gen_run_config: null,
   judge_model: null,
   turns_per_case: null,
+  synthetic_user_guide: "",
   target_run_config_id: null,
   openenv_server_lookup: null,
   reset_arguments_brief: null,
   landed_plan_steer: "",
+}
+
+export function restore_synthetic_user_guide(saved: unknown): string {
+  return typeof saved === "string" ? saved : ""
 }
 
 export function builder_draft_key(project_id: string, task_id: string): string {

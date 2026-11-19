@@ -4,6 +4,7 @@ import type { SyntheticUserCaseWire } from "./builder_draft"
 import {
   apply_grounding_frame,
   flatten_reset_arguments,
+  ground_cases_request,
   grounded_server_id,
   grounding_outcome,
   grounding_progress,
@@ -121,6 +122,38 @@ describe("grounding_request_cases", () => {
       PLAN,
     )
     expect(request[0].scenario).toBe("seed")
+  })
+})
+
+describe("ground_cases_request", () => {
+  const base = {
+    target_run_config_id: "rc_1",
+    judge_model: { model_name: "gpt_5_4", model_provider: "openai" as const },
+    specification: "No fabrication.",
+    cases: grounding_request_cases(CASES, PLAN),
+  }
+
+  it("sends the guide trimmed", () => {
+    expect(
+      ground_cases_request({
+        ...base,
+        synthetic_user_guide: "  Shoppers asking about orders.\n",
+      }),
+    ).toEqual({
+      ...base,
+      synthetic_user_guide: "Shoppers asking about orders.",
+    })
+  })
+
+  it("sends a blank guide as null", () => {
+    expect(
+      ground_cases_request({ ...base, synthetic_user_guide: " \n " })
+        .synthetic_user_guide,
+    ).toBeNull()
+    expect(
+      ground_cases_request({ ...base, synthetic_user_guide: "" })
+        .synthetic_user_guide,
+    ).toBeNull()
   })
 })
 
