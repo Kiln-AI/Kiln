@@ -1,5 +1,5 @@
 ---
-status: complete
+status: draft
 ---
 
 # Kiln MCP Fencing
@@ -30,9 +30,7 @@ Harness-tuner runs many agent sessions against Kiln. Each one must be held to it
 - Version alignment between harness-tuner and Kiln, two ways:
   - Harness-tuner checks the Kiln version meets its minimum expected version. Needs a `/version` endpoint in Kiln. Bump whenever harness-tuner depends on new Kiln features/APIs.
   - Kiln returns a `min_supported_harness_tuner_version`. If we change something in the app that breaks older versions of harness-tuner, we bump this. Harness-tuner checks it, sees it's under the min, and asks for an upgrade.
-- Model info APIs. Harness-tuner added a model info API (`list_models`, `get_model_details`, `list_providers`), ported from kiln_server: Kiln's published model file joined with models.dev (prices and other details).
-  - Consider implementing these as API endpoints in the Kiln desktop server instead of MCP tools, so agents reach them through `call_kiln_api` and we add no more tools.
-  - Might need lazy reloading of stale models.dev info. Harness-tuner fetches it once per run, which is fine as its sessions are short lived. Kiln desktop can run for weeks.
+- Model info: the model info endpoints are built in spec one, from harness-tuner's implementation (the Assistant's skill needs them). Here, harness-tuner uses them through `call_kiln_api`, and keeps its own model policy (which models a run may use) on its side.
 - Anything else the gateway gives harness-tuner today that the two tools don't cover. To be found by going through the gateway's tools in the functional spec.
 
 ## Open
