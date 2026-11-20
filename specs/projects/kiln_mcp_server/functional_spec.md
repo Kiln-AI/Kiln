@@ -32,7 +32,7 @@ Non-goals (this spec):
 - Fencing or scoping a connection (spec two).
 - Any change to harness-tuner.
 - Replacing or changing the Kiln Assistant. It stays as it is. Sharing one skill between the Assistant and this MCP is P2.
-- More tools, or typed per-feature tools.
+- More tools, typed per-feature tools, MCP prompts or MCP resources.
 - Bumping the `mcp` library. This spec builds on the version Kiln uses when the work starts.
 - Server memory of a conversation. The server stays stateless.
 - An automated eval of agents using the MCP.
@@ -56,7 +56,7 @@ Non-goals (this spec):
 
 ### 3.3 `/kiln`
 
-The user types `/kiln`. With the stub skill installed, the agent loads the stub, which tells it to call `kiln_skill`. Without the stub, the server's instructions and the `kiln_skill` description tell the agent that a request for `/kiln` means "call this tool". Agents that show MCP prompts as slash commands also get one from the server itself (section 4).
+The user types `/kiln`. With the stub skill installed, the agent loads the stub, which tells it to call `kiln_skill`. Without the stub, the server's instructions and the `kiln_skill` description tell the agent that a request for `/kiln` means "call this tool".
 
 ### 3.4 Kiln is not running
 
@@ -74,7 +74,7 @@ The MCP runs inside the Kiln app, so when Kiln is not running the server cannot 
 - **Price.** Free for everyone. There is no Kiln Pro check on the MCP. Some API functions need Pro; those return their own errors (section 11).
 - **Identity.** The server names itself `kiln` and reports the Kiln app version.
 - **Instructions.** Some agents (Claude Code is one) do not load MCP tool descriptions until the model goes looking for a tool; only the server's `instructions` text and the tool names are in context from the start. So the trigger text (what Kiln is; call `kiln_skill` first; `/kiln` means call it) is in the server `instructions` as well as in the `kiln_skill` description. The first 500 characters stand on their own, and the whole text is under 4,000 characters, to fit the limits of the supported agents. `kiln_skill` is also marked to be loaded up front where an agent supports that.
-- **Surface.** Two tools, and one MCP prompt named `kiln`. The prompt returns the same text as `kiln_skill()` with no path. Agents that show MCP prompts as slash commands (Claude Code and OpenCode show it as `/kiln:kiln`) get an entry that always matches the running app. No MCP resources.
+- **Surface.** Exactly two tools. No MCP prompts and no MCP resources. An MCP prompt would give some agents a second, differently named slash command (`/kiln:kiln`); we want the skill experience, and that would only confuse it.
 - **Concurrency.** Agents may make several calls at once, and several agents may be connected at once.
 
 ## 5. `call_kiln_api`
@@ -167,8 +167,7 @@ Based on how coding agents expose skills natively ([research](research/skill_too
 - `kiln_skill()` returns the skill's instructions: one header sentence, then the body of the root `SKILL.md` without its frontmatter. The header says how to read a file the instructions mention, with an example:
   > This skill is served by the `kiln_skill` tool. To read a file this skill references by a relative path, for example `references/knowledge/specs_and_evals.md`, call `kiln_skill` with path "references/knowledge/specs_and_evals.md". Paths are relative to the skill root.
 - `kiln_skill(path)` returns that file's text, unchanged.
-- A path to a folder returns a listing of the folder.
-- An unknown path returns an error that names the bad path and lists the files in the nearest folder that exists, so the agent can correct itself in one step.
+- An unknown path returns an error that names the bad path and lists the files in the nearest folder that exists, so the agent can correct itself in one step. A path to a folder is treated the same way: the native skill tools have no folder listing, so ours has none either.
 - A path that leaves the skill root, or an absolute path, is refused.
 - Forgiving input: `./references/x.md` and `skill://kiln/references/x.md` mean `references/x.md`; `SKILL.md` or an empty path means no path; an argument named `resource` is accepted as `path`; a stray `name`, `skill` or `id` argument is ignored.
 - Results are plain text.
