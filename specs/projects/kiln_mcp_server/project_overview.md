@@ -6,13 +6,19 @@ status: draft
 
 Build an MCP server into the Kiln app, so anyone running Kiln can use it from any agent (Claude Code, Codex, etc). Think "local Kiln assistant": add the MCP to your agent, and your agent knows what Kiln is and how to drive it.
 
-This started as "move the harness-tuner MCP into Kiln". After looking at the code, the plan changed: this project is a clean, general Kiln MCP. Harness-tuner support (fencing, and moving harness-tuner onto this MCP) is a follow-up project. The mechanisms it needs are sketched here only where they affect this design.
+This started as "move the harness-tuner MCP into Kiln". After looking at the code, the plan changed: this project is a clean, general Kiln MCP. Fencing, and everything else harness-tuner needs from the MCP, is a second spec: [kiln_mcp_fencing](../kiln_mcp_fencing/project_overview.md).
 
 ## Roadmap
 
-1. **This project:** a clean Kiln MCP server running in the desktop app, with a skill that carries Kiln's general guidance. Gets us to a smart agent fast.
-2. **Follow-up, ASAP (harness-tuner stage 1):** harness-tuner uses the new MCP. Adds fencing. Removes the duplicate `kiln-harness-tuner-knowledge`. Solves the major hurdles.
-3. **Follow-up, P2 (harness-tuner stage 2):** move the tuner code into the Kiln repo, bundled into the app. Nice to have.
+1. **This spec:** the MCP server running in the desktop app, with knowledge and APIs. Gets us to a smart agent fast.
+2. **Spec two ([kiln_mcp_fencing](../kiln_mcp_fencing/project_overview.md)):** support for fencing, and everything harness-tuner needs.
+
+Both specs are written together, so the planning is aligned. They are built separately.
+
+Not specced now:
+
+- Adopting spec two in the harness-tuner repo (harness-tuner uses the new MCP, and removes its duplicate `kiln-harness-tuner-knowledge`).
+- Moving the tuner code into the Kiln repo, bundled into the app (P2, nice to have).
 
 ## MCP Server
 
@@ -52,17 +58,9 @@ This started as "move the harness-tuner MCP into Kiln". After looking at the cod
 - Keep it for now. Steal anything we need from its skill for our new skill.
 - Sharing its skill with the new main skill is P2. We'll focus on getting people into the Claude version; we can maintain two in parallel for a bit.
 
-## Designed here, built later (harness-tuner stage 1)
+## Must leave room for spec two
 
-Design these only as far as they affect this project's design. Leave them out of this project's build.
+This spec builds none of the fencing. Its design must not block it:
 
-- **Scoping/fencing permissions per connection.** Same two tools and same API for every connection; a scoped connection just gets a clear error when it goes outside what it was given.
-  - The scope is carried in the URL path. `/mcp` is the open default.
-  - A project/task allow list as an option. Defaults to all; harness-tuner can use it.
-  - Train-filtered: select APIs error if you try to access val/test data.
-  - The fenced session design needs its own design step.
-- A "create skill from a folder" API (replaces harness-tuner's skill installer).
-- Version alignment between harness-tuner and Kiln:
-  - Harness-tuner checks the Kiln version meets its minimum. Needs a `/version` endpoint in Kiln.
-  - Kiln returns a `min_supported_harness_tuner_version`. Harness-tuner checks it and asks for an upgrade.
-- **Open:** whether harness-tuner's role procedures (planner, builder, analyst, etc) move into `kiln_skill`, clearly marked, or stay in harness-tuner's prompts. Both work.
+- Spec two scopes a connection by its URL path. `/mcp` here is the open default.
+- Spec two adds no tools and changes no skill files. A scoped connection gets the same two tools and the same API, and a clear error when it goes outside what it was given. So `call_kiln_api` needs one place where a per-connection policy can be applied later.
