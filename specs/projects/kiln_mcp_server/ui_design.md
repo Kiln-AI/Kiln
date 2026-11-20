@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # UI Design: Kiln MCP Server
@@ -13,8 +13,7 @@ For now, the only way in is a highlighted callout at the top of the Settings pag
 - Title: **Connect Kiln to Claude, Codex, OpenCode and more**
 - Description: one line, for example "Use Kiln from your own coding agent."
 - Button: **Connect**, which opens `/settings/connect_agent`.
-- It is always shown. It is not dismissible in V1.
-- When the "Update Available" callout is also showing, the update callout comes first and this one sits below it.
+- Only one callout shows at a time. When the "Update Available" callout is showing, this one is hidden. Otherwise it is always shown; it is not dismissible in V1.
 
 There is no row for it in the settings sections, and no other entry point in V1.
 
