@@ -164,13 +164,15 @@ Based on how coding agents expose skills natively ([research](research/skill_too
 ### 6.1 Contract
 
 - One optional argument, `path`. There is no skill-name argument: the tool serves one skill.
-- `kiln_skill()` returns the content of the root `SKILL.md` (the body, without its frontmatter, as the native skill tools do). Nothing is added to it; the only change is the base-URL placeholder (7.3).
-- `kiln_skill(path)` returns that file's text, unchanged.
+- `kiln_skill()` returns the content of the root `SKILL.md`. If the file has frontmatter, it is left out: frontmatter is there for native skill tools, which this does not use, so the file may not have any.
+- `kiln_skill(path)` returns that file's text.
 - An unknown path returns an error that names the bad path and lists the files in the nearest folder that exists, so the agent can correct itself in one step. A path to a folder is treated the same way: the native skill tools have no folder listing, so ours has none either.
 - A path that leaves the skill root, or an absolute path, is refused.
 - Forgiving input: `./references/x.md` and `skill://kiln/references/x.md` mean `references/x.md`; `SKILL.md` or an empty path means no path; an argument named `resource` is accepted as `path`; a stray `name`, `skill` or `id` argument is ignored.
 - Results are plain text.
-- How to read a reference file ("call again with `path` set to the path exactly as the instructions wrote it, for example `references/knowledge/specs_and_evals.md`") is said in the description of the `path` argument, which is the natural place for it. It is not repeated in the result.
+- The description of the `path` argument says what it is and how to use it. Draft:
+  > Optional. The path of a skill file to read, relative to the skill root and exactly as the skill's instructions wrote it, for example `references/knowledge/specs_and_evals.md`. Omit it to read the skill's instructions.
+- Nothing is added to a result: no header and no footer. The one change the tool can make to a file's text is the app address (7.3).
 - Every file can be read on every connection. There is no gating.
 
 ### 6.2 Description
@@ -198,7 +200,7 @@ references/
   improving_agents/              techniques, smells and playbooks for making an agent better
 ```
 
-- The tree is a valid Agent Skill named `kiln`, so it can also be served through a standard mechanism later without changing the content.
+- The tree is self-contained, with every path written from the skill root, so it could be served another way later without changing the content.
 - Every file is reachable: each knowledge, lever and improving-agents file is listed by a mode (or by a file a mode lists), with its full path and a line on what it holds and when to read it.
 - Files refer to each other by the full path from the skill root (`references/knowledge/rag.md`), never by a bare filename, and never by writing out a tool call. The description of the `path` argument says how to read a file (6.1).
 
@@ -217,7 +219,7 @@ The Assistant's skill was written for a dedicated assistant inside the Kiln app;
 - **Identity.** The skill does not take over the agent. It no longer says "you are Kiln Assistant", and its rules (always be in a mode, how to greet, what to do at session start) apply only while the agent is doing Kiln work.
 - **Loaded on demand.** The Assistant has `SKILL.md` in context at all times. Here it arrives through a tool call, and can drop out when the agent's context is compacted. Text that assumes it is always present is rewritten.
 - **File references.** Every `skill(name="kiln-chat", resource="…")` becomes a plain root-relative path (7.1).
-- **Links into the app.** The skill tells the agent to give the user links to pages of the Kiln app, written as paths such as `/optimize/{project_id}/{task_id}`. Those only resolve inside the app. The skill's text names the app's base URL through a placeholder, which the tool replaces with the real one (for example `http://localhost:8757`) when it serves a file, and tells the agent to put it in front of every app link. Claude Code does the same kind of substitution for a skill's own folder.
+- **Links into the app.** The skill tells the agent to give the user links to pages of the Kiln app. In the Assistant's skill these are relative paths such as `/optimize/{project_id}/{task_id}`, which only resolve inside the app. Wherever the skill describes how to link, it shows the full address: `http://localhost:8757/optimize/{project_id}/{task_id}`. That address is usually right. When Kiln is not on the default address, the tool replaces `http://localhost:8757` with the real one as it serves each file.
 - **What the agent may do.** The Assistant is denied many endpoints and its skill sends the user to the UI for those ("UI-only"). Wherever the MCP allows an endpoint, that wording is changed so the agent does the work itself. The skill text and the MCP block list (5.5) must agree.
 - **Destructive actions.** The skill keeps its guidance to confirm with the user before destructive or irreversible operations.
 - **Model info.** The Assistant's three model-info tools are replaced by the model-info endpoints (section 8), called through `call_kiln_api`.
