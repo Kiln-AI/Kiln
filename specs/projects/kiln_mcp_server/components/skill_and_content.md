@@ -18,7 +18,8 @@ app/mcp/kiln_mcp_server/
     tree_check.py           section 8
     knowledge_schema.py  knowledge_load.py  knowledge_check.py  knowledge_index.py     section 7
     docs_index.py           online_url_for(), render_docs_index()
-    api_reference.py        render / write / diff of api_docs from a spec dict (section 6)
+    api_reference.py        render / write / diff of api_docs from a spec dict (section 6).
+                            It never imports app.desktop; the spec is built in app/desktop.
   test_*.py                 beside each module
 app/desktop/
   skill_api_reference.py    CLI generate | check: builds the OpenAPI document in process
@@ -26,8 +27,6 @@ app/desktop/
 .agents/skills/knowledge-maintenance/     SKILL.md, templates/, references/schema.md
 .gitattributes              app/mcp/kiln_mcp_server/skill/** text eol=lf
 ```
-
-`api_reference.py` takes a spec and never imports `app.desktop` (dependency direction). The module that builds the spec lives in `app/desktop`.
 
 ## 2. The `kiln_skill` tool
 
@@ -62,7 +61,7 @@ async def kiln_skill(
 Optional. The path of a skill file to read, relative to the skill root and exactly as the skill's instructions wrote it, for example `references/knowledge/specs_and_evals.md`. Omit it to read the skill's instructions.
 ```
 
-`SKILL_TOOL_DESCRIPTION` (draft, 143 words; final wording is tuned in the content phase):
+`SKILL_TOOL_DESCRIPTION` (draft, 138 words; the trigger rule ends at character 456, inside the first 500; final wording is tuned in the content phase):
 
 ```
 Load the Kiln skill: the instructions for working with Kiln.
@@ -74,8 +73,6 @@ Kiln is an app for building, evaluating and improving AI agents and tasks. This 
 
 Only paths the instructions list are valid; do not guess. If the instructions are no longer in this conversation, call again with no arguments.
 ```
-
-The first paragraph break falls inside the first 500 characters with the trigger rule before it.
 
 ### 2.3 Index
 
@@ -100,9 +97,8 @@ def read_skill(raw: str | None, origin: str, index: SkillIndex | None = None) ->
 ```
 
 - Root: `importlib.resources.files("kiln_mcp_server").joinpath("skill")`. Use only `files`, `iterdir`, `is_dir`, `is_file`, `name`, `read_bytes` and single-segment `joinpath` (all in 3.10). Import `Traversable` from `importlib.resources.abc` on 3.11+, else `importlib.abc`.
-- Walk: depth first, skip names that start with `.` and `__pycache__`; build each key by joining names with `/`. Sort the keys. No OS path is ever built from tool input.
+- Walk: depth first, skip names that start with `.` and `__pycache__`; build each key by joining names with `/`. Sort the keys. No OS path is ever built from tool input. The index is immutable after the build, so concurrent calls need no lock.
 - `read_file`: `index.files[key].read_bytes().decode("utf-8")`. No newline translation.
-- The index is immutable after the build, so concurrent calls need no lock.
 
 ### 2.4 Path resolution
 
@@ -139,7 +135,7 @@ No percent-decoding. Matching is exact and case-sensitive on every OS.
 
 ### 2.5 Error texts
 
-`{raw}` is the argument as received, with backticks and control characters removed, cut to 200 characters.
+`{raw}` is the argument as received, with backticks and control characters removed, cut to 200 characters. Square brackets mark a part that is present only when it applies.
 
 ```
 HINT     = "Give a path relative to the skill root, exactly as the skill's instructions wrote it, for example `references/knowledge/specs_and_evals.md`. Omit the path to read the skill's instructions."
@@ -198,7 +194,7 @@ skill/
 
 ## 4. Content model
 
-### 4.1 Conventions (each has a check in section 8)
+### 4.1 Conventions (C1–C7 have a check in section 8; C8 and C9 are review rules)
 
 | # | Rule |
 |---|---|
@@ -208,7 +204,7 @@ skill/
 | C4 | A page of the Kiln app is written as `http://localhost:8757/<path>`, in rule statements, tables and examples. Placeholders are `{project_id}`, `{task_id}`. Never a bare app path, never another host. |
 | C5 | A placeholder path contains one of `* < > { }` or ends in `X.md`. It is not a reference. |
 | C6 | No file names a tool, role or folder that does not exist on this MCP (banned terms, section 8). |
-| C7 | Only `references/knowledge/train_val_test.md` states the train/val/test rule. A file that uses split wording links to it. |
+| C7 | Only `references/knowledge/train_val_test.md` states the train/val/test rule. A mode or knowledge-tree file that uses split wording names its path. |
 | C8 | Help articles are copies. Only scripts change them (`online_url`, link rewrites, image removal) plus spelling fixes. |
 | C9 | The two knowledge trees (`references/levers/`, `references/improving_agents/`) follow the knowledge schema (section 7) and are written in Simplified Technical English. The rest of the skill has no language rule. |
 
@@ -249,8 +245,7 @@ It has no persona, no session-start steps and no "always in a mode" rule.
 | Regenerate the API reference | `uv run python -m app.desktop.skill_api_reference generate` (`make api_docs`) |
 | Check the API reference | `uv run python -m app.desktop.skill_api_reference check` |
 
-- `checks.sh`: add `start_check "api reference" uv run python -m app.desktop.skill_api_reference check` beside `openapi schema`. The other checks are pytest tests and run with the suite.
-- `.github/workflows/check_api_bindings.yml` (Python 3.13, Linux): add the same command as a step after the annotations check.
+- `checks.sh`: add `start_check "api reference" uv run python -m app.desktop.skill_api_reference check` beside `openapi schema`. `.github/workflows/check_api_bindings.yml` (Python 3.13, Linux): the same command as a step after the annotations check. The other checks are pytest tests and run with the suite on every Python version of the matrix.
 - `AGENTS.md` checks table: two rows (API reference, skill indexes), each with its fix command.
 - CLIs write with `sys.stdout.write` (CI fails on `print(` in a `.py` file). Exit codes: 0 clean, 1 problems (one line each: `rule  path  message`), 2 usage or missing folder.
 
@@ -292,9 +287,7 @@ Steps of `generate` (and `check`, up to step 7):
 
 **Pin.** Root `pyproject.toml`: dev group entry `"openapi2skill ; python_full_version >= '3.13'"` and `[tool.uv.sources] openapi2skill = { git = "https://github.com/scosman/openapi2skill", rev = "c7c2ca55e5b5300e28678ba4e47e2ad6f5bd1d28" }`. `uv.lock` records the commit. A bump of the generator is one PR that changes the `rev` and regenerates. (This is the facts file's option A; the decisions file is silent on the method.)
 
-**Python.** The generator's metadata needs 3.13. Below 3.13, `check` prints `skipped: the generator needs Python 3.13` and exits 0, `generate` exits 2, and the freshness test skips. A second test runs on every version and needs no generator: each unblocked operation of the app has a file with the generator's name (`<method>_<path with "/" as "_", braces removed, lower case>.md`), and no blocked operation has one.
-
-Size today: 269 operations and 26 catalogues before the block list (986 KB; largest doc 24,789 bytes). The block list removes its endpoints, and a catalogue whose endpoints are all blocked.
+**Python.** The generator's metadata needs 3.13. Below 3.13, `check` prints `skipped: the generator needs Python 3.13` and exits 0, `generate` exits 2, and the freshness test skips. A second test runs on every version and needs no generator: each unblocked operation of the app has a file with the generator's name (`<method>_<path with "/" as "_", braces removed, lower case>.md`), and no blocked operation has one. Size today: 269 operations and 26 catalogues before the block list (986 KB; largest doc 24,789 bytes). The block list removes its endpoints, and a catalogue whose endpoints are all blocked.
 
 | Known problem | Mitigation |
 |---|---|
@@ -304,8 +297,7 @@ Size today: 269 operations and 26 catalogues before the block list (986 KB; larg
 | `info.version` changes at release | Step 3 |
 | A knowledge file names the doc of a blocked endpoint | The tree check fails. This coupling is wanted: fix the text (batch 5) |
 | 197 of 269 catalogue rows have no description | The error-probe phase adds route descriptions (functional spec 11) |
-| The in-process spec costs about 40 s in a fresh process | Accepted in `checks.sh` and CI; `--spec` exists for a faster path |
-| An API change now touches three generated artifacts | The fix commands are in the checks table |
+| The in-process spec costs about 40 s in a fresh process; an API change now touches three generated artifacts | Accepted. `--spec` exists for a faster path; the fix commands are in the checks table |
 
 ## 7. Knowledge tooling port
 
@@ -334,7 +326,7 @@ def render_blocks(kb: KnowledgeBase) -> dict[tuple[str, str], str]
 def write_blocks(kb: KnowledgeBase) -> list[Path]
 ```
 
-- `Document.path` and `Problem.path` are paths from the skill root. `Link.resolved` is a tree key or `None`.
+- `Document.path` and `Problem.path` are paths from the skill root. `Link.resolved` is a tree key or `None`. `tree` comes from `tree_check.tree_paths`.
 - Links in the knowledge trees stay Markdown links, because the structure rules read sections by link. The target is the full root path: `[roll-up tool](references/improving_agents/techniques/roll-up-tool.md)`. `resolve_link` does an exact lookup in `tree`; a target with a `.` or `..` part does not resolve.
 - The lever section `How the tuner changes it` is renamed `How to change it`. Other required sections, size limits, id patterns and task shapes do not change.
 
@@ -352,14 +344,7 @@ Rules after the port (19 of 22):
 | `index` | Changes: the blocks of `INDEX_BLOCKS` |
 | `stray` | Changes: only inside the four component roots and their two parents; `index.md` is allowed |
 
-Generated blocks sit between `<!-- BEGIN GENERATED: name -->` and `<!-- END GENERATED: name -->`; the prose around them is hand-written. Rows are sorted by id and name the full path in backticks:
-
-| Block | Columns |
-|---|---|
-| `levers` | path, API docs (full paths), description |
-| `techniques` | path, levers, applies to, cost, description (active only) |
-| `techniques-dormant` | path, description (`None yet.` when empty) |
-| `smells`, `playbooks-<kind>` | path, applies to, description |
+Generated blocks sit between `<!-- BEGIN GENERATED: name -->` and `<!-- END GENERATED: name -->`; the prose around them is hand-written. Rows are sorted by id and name the full path in backticks. Columns: `levers`: path, API docs (full paths), description. `techniques` (active only): path, levers, applies to, cost, description. `techniques-dormant`: path, description (`None yet.` when empty). `smells` and `playbooks-<kind>`: path, applies to, description.
 
 **Python 3.10.** `from datetime import UTC` becomes `timezone.utc`. `print` becomes `sys.stdout.write` / `sys.stderr.write`. The import of `install_agents` goes (`NOT_SKILL_FILES = {"__pycache__", ".DS_Store"}` is local). The lazy imports of the gateway operations and the detector registry go. The code must pass `ty check` and the repo's ruff rules (`typing.cast` is banned).
 
@@ -396,7 +381,7 @@ def check_tree(root: Path) -> list[Problem]
 | `tree-call-syntax` | A file contains `skill(name=` or `kiln_skill` |
 | `tree-banned-term` | A file contains a term of `BANNED_TERMS` for its scope (table in section 9) |
 | `tree-app-link` | Outside `references/docs/` and `api_docs/`: a backticked span or link target matches `^/(specs\|settings\|optimize\|run\|generate\|dataset\|skills\|docs\|prompts\|models\|tools\|fine_tune\|jobs)(/\|\?\|$)` |
-| `tree-split-pointer` | Outside `references/docs/` and `api_docs/`: a file matches `held-out\|\b(val\|validation\|test) (split\|set\|gate)\b` and does not contain `references/knowledge/train_val_test.md` (the central file is exempt) |
+| `tree-split-pointer` | In `references/modes/`, `references/levers/` and `references/improving_agents/`: a file matches `held-out\|\b(val\|validation\|test) (split\|set\|gate)\b` and does not contain `references/knowledge/train_val_test.md`. Other files (fine-tuning uses "test split" for a dataset tag) are covered by review |
 | `tree-front-matter` | A file breaks the table in 4.2 |
 | `tree-file` | A file is not `.md`, is not UTF-8, contains `\r`, or has a name outside the pattern in section 3 |
 | `tree-unreachable` | A file is not reached from `SKILL.md` |
@@ -419,20 +404,20 @@ A large phase, run by sub-agents, one batch per pull request. Rules for the phas
 
 - **Pending rules.** `test_shipped_skill.py` has `PENDING_RULES: set[str]`. A problem of a pending rule does not fail the shipped-tree tests. The phase starts with every tree and knowledge rule pending. Each batch removes the rules it must satisfy. `test_no_rule_is_pending` is enabled in the last batch.
 - **Order.** Batches 1–6 edit the Assistant files, in order. Batches 7–8 edit the knowledge trees and can run beside 2–6. Batches 9–13 need both.
-- **Each sub-agent gets:** its batch row, the file list, the rule for hard cases, and the check to pass. It reads `arch_content_facts`-style counts as a target, not as a quota: a count that differs is reported, not forced.
+- **Each sub-agent gets:** its batch row, the file list, the rule for hard cases, and the check to pass. The counts in the table are what the research found, not a quota: a count that differs is reported, not forced.
 - **Private-source hygiene (batches 1–6).** The export stays outside the repository; no file of it is added, and no committed file names its path. The agent reads each file whole before it writes the ported copy. Nothing comes from the export's service code, policy notes, tool descriptions, manifest or maintenance notes. The copy holds no secret, internal host or URL, person or customer name. The banned terms below catch the known markers. A person reads the diff of batch 1 before merge (functional spec 7.8).
 
 Sources: the Assistant tree is 66 files, 548,010 bytes (`SKILL.md`, 4 modes, 26 knowledge files, 34 help articles and their index). The knowledge set is 74 files, 294,116 bytes (7 levers, 30 technique files, 15 smells, 22 playbooks). The API reference exists before this phase.
 
-| # | Batch | What changes (counts from the facts file) | Rule for hard cases | Verified by |
+| # | Batch | What changes (counts from the research) | Rule for hard cases | Verified by |
 |---|---|---|---|---|
-| 1 | Import the Assistant files; normalise references | Add 66 files. `SKILL.md` gets front matter. 46 `skill(name=…, resource=…)` calls in 19 files become plain paths; 6 bare `skill()` verbs become "read"; the access-rule section goes. 75 bare skill-file names (22 files) and 17 bare API-doc names (7 files) become full paths. 7 `../` links in help articles become public URLs | 2 `skill()` mentions describe the Kiln product feature and stay. A base name with two matches is fixed by hand | `tree-path`, `tree-relative`, `tree-bare-name`, `tree-call-syntax`, `tree-file`; hygiene review |
+| 1 | Import the Assistant files; normalise references | Add 66 files. `SKILL.md` gets front matter. 46 `skill(name=…, resource=…)` calls in 19 files become plain paths; 6 bare `skill()` verbs become "read"; the access-rule section goes. 75 bare skill-file names (22 files) and 17 bare API-doc names (7 files) become full paths. Of 7 `../` links in help articles, 6 leave the copied set and become public URLs, and 1 becomes a root path | 2 `skill()` mentions describe the Kiln product feature and stay. A base name with two matches is fixed by hand | `tree-path`, `tree-relative`, `tree-bare-name`, `tree-call-syntax`, `tree-file`; hygiene review |
 | 2 | Model info | About 70 mentions of the three Assistant tools in 13 files (`model_work.md` 21, `improve_task.md` 13, `learn_about_kiln.md` 10) become the model info endpoints through `call_kiln_api`: list and search → `GET /api/model_info/models`, details → `GET /api/model_info/model_details`, providers → `GET /api/model_info/providers`. Rewrite the defining section of `model_work.md` | "MCP tool" stays only where it means Kiln's tool-server feature (17 hits in 7 files to review) | `tree-banned-term`; `tree-path` for the 3 endpoint docs |
 | 3 | Link templates | About 160 app links in 25 files (108 in backticks, 52 link targets, 51 distinct paths) get `http://localhost:8757`. Rewrite the 4 rule statements, the 10 per-file link tables and the 2 "external URL" definitions | About 6 regex hits are API paths (`/api/…`): leave them | `tree-app-link`; `test_address_replacement_covers_every_app_link` |
 | 4 | Identity and on-demand loading | Rewrite `SKILL.md` to 4.3: persona (4 uses of the name), always-in-a-mode, greeting, session start, the compaction rule, the no-repeat-load rules. Rewrite the Session Start and intent-check sections of 3 modes, and `establish_intent.md` | A rule that only makes sense for an always-present system prompt is deleted, not reworded. Rules apply "while you do Kiln work" | `test_skill_md_has_the_required_parts`, `test_skill_md_size`; `tree-banned-term` (scope `SKILL.md`); owner reads `SKILL.md` |
-| 5 | UI-only and approval wording | 11 statements in 14 files, against the block list. The agent now does the work for: running an eval, MCP server wiring, RAG setup and indexing, code tools, judges, task from a tool, dataset download. It still sends the user to the app for: provider key connect and disconnect, raw settings writes, git-sync setup, opening folders. About 55 approval hits in 20 files: "requires approval" becomes "ask the user first", or goes | The endpoint has a doc in `api_docs/` → write the API workflow. No doc → "ask the user to do this in the app", with the link. Product advice (Eval Builder, data-guide jobs) stays as advice. The destructive-action rule stays | `tree-path`; `tree-banned-term` (`UI-only`, `approval-gated`, `requires approval`, `requires user approval`) |
+| 5 | UI-only and approval wording | 11 statements in 14 files, against the block list. 19 endpoint docs that the skill names belong to endpoints the Assistant is denied; each is looked up. The agent now does the work for: running an eval, MCP server wiring, RAG setup and indexing, code tools, judges, task from a tool, dataset download. It still sends the user to the app for: provider key connect and disconnect, raw settings writes, git-sync setup, opening folders. About 55 approval hits in 20 files: "requires approval" becomes "ask the user first", or goes | The endpoint has a doc in `api_docs/` → write the API workflow. No doc → "ask the user to do this in the app", with the link. Product advice (Eval Builder, data-guide jobs) stays as advice. The destructive-action rule stays | `tree-path`; `tree-banned-term` (`UI-only`, `approval-gated`, `requires approval`, `requires user approval`) |
 | 6 | Help-article URLs | 34 articles get `online_url`. `docs_index.md` is regenerated. `<figure>`, `<img>` and Markdown images whose file is not in the tree are removed (79 and 80 tags). Other GitBook markup stays | No hand edits except spelling | `tree-front-matter`; docs index current; `misspell` |
-| 7 | Knowledge import and link rewrite | Add 74 files in 4 folders. 367 file-relative links become root paths (levers 18, techniques 168, smells 47, playbooks 134). `gateway_ops` (34 entries, 7 levers) becomes `api_docs`. `detected_by` and `detectors` leave 15 smells. The lever heading is renamed in 7 files. Write the 2 index files and run `build` | An operation with no REST endpoint, or with a blocked one, gets no `api_docs` entry; batch 8 rewords the text | Every knowledge rule except `size`; `index` current; `tree-relative` |
+| 7 | Knowledge import and link rewrite | Add 74 files in 4 folders. 367 file-relative links become root paths (levers 18, techniques 168, smells 47, playbooks 134). `gateway_ops` (34 entries, 7 levers) becomes `api_docs`. `detected_by` and `detectors` leave 15 smells. The lever heading is renamed in 7 files. Write the 2 index files and run `build` | Map each operation to its endpoint with harness-tuner's `gateway/ops.py` (reference only; no code is copied). An operation with no REST endpoint, or with a blocked one, gets no `api_docs` entry; batch 8 rewords the text | Every knowledge rule except `size`; `index` current; `tree-relative` |
 | 8 | Gateway-tool and role wording | 83 gateway operation names in 12 files (72 in the levers); "gateway" 5; role names 95 in 38 files; "the tuner / the loop / this run" 40 in 25; other harness-tuner skills by name 27 in 13; 1 run-folder path. 5 smells get "how to measure this yourself" with the number (prompt over 200,000 characters; tool description over 4,096; skill description over 1,024; more than 40 tools; model older than 8 months). `levers/output_mode.md` and `smells/tools-on-a-live-server.md` are over the size limit after batch 7 and are shortened | A role becomes "you". An operation becomes its endpoint doc path. A sentence that only works inside the tuner loop is deleted. A hard limit of the tuner becomes advice or goes. "experiment", "budget", "hypothesis" stay | `tree-banned-term` (scope: the knowledge trees); knowledge `size`, `sections` |
 | 9 | Train/val/test | New `references/knowledge/train_val_test.md`: tune on train; confirm on val by running the evals on val and reading the metrics, without reading the val data; never read test; good practice, not enforced. 79 split mentions in 40 files are reviewed | A file may use the words. Only the central file states the rule. Any other statement of the rule is replaced by the path | `tree-split-pointer`; owner reads the file |
 | 10 | Memory | New `references/knowledge/memory.md` (at most 12,000 characters) from harness-tuner's `memory` skill (28,273 bytes, 9 gateway mentions): the 6 Memory endpoints with their doc paths, tags, write discipline. Listed in `SKILL.md` and the modes | Run and loop scopes go | `tree-path`, `tree-unreachable`, `tree-banned-term` |
@@ -445,12 +430,12 @@ Sources: the Assistant tree is 66 files, 548,010 bytes (`SKILL.md`, 4 modes, 26 
 | Scope | Terms |
 |---|---|
 | Whole tree | `kiln-chat`, `model_info_featured`, `model_search`, `model_info` (not after `/` or `_`), `compacted_digest`, `UI-only`, `approval-gated`, `requires approval`, `requires user approval` |
-| `SKILL.md` | `Kiln Assistant`, `system prompt`, `always in context` |
-| Knowledge trees | the 54 gateway operation names (names only, from the lever rewrite table), `install_skill_bundle`, `gateway`, `the tuner`, `harness-tuner`, `kiln-harness-tuner`, `the planner`, `the builder`, `the analyzer`, `the probe`, `scratch folder` |
+| `SKILL.md` | `Kiln Assistant`, `always in context`, `turn 0` |
+| Knowledge trees | the 54 operation names of harness-tuner's gateway (names only, from its `gateway/ops.py`), `install_skill_bundle`, `gateway`, `the tuner`, `harness-tuner`, `kiln-harness-tuner`, `the planner`, `the builder`, `the analyzer`, `the probe`, `scratch folder` |
 
 **Needs a person:**
 
-- A security owner reads the statement that user code runs with no network or filesystem sandbox, in `code_tools.md` and `judge_types.md`, before batch 11 merges (functional spec 15).
+- A security owner reads the statement that user code runs with no network or filesystem sandbox, in `code_tools.md` and `judge_types.md`, before batches 5 and 11 merge (functional spec 15).
 - The 19 priors in the knowledge are all marked `Source: public`, and the tree holds no link. A person confirms each is clearly public, or approves it, before batch 7 merges.
 - The owner reads `SKILL.md` (batch 4) and `train_val_test.md` (batch 9).
 
@@ -460,7 +445,7 @@ Sources: the Assistant tree is 66 files, 548,010 bytes (`SKILL.md`, 4 modes, 26 
 |---|---|
 | `test_skill_files.py` | `test_index_holds_skill_md_and_posix_keys`; `test_index_skips_hidden_and_pycache`; `test_resolve_path` (parametrised: every row of the table in 2.4); `test_each_error_text` (exact strings of 2.5); `test_not_found_lists_nearest_folder`; `test_not_found_suggests_case_fix`; `test_folder_path_is_an_error`; `test_api_docs_listing_is_short`; `test_raw_is_cleaned_and_cut`; `test_strip_front_matter` (present, absent, unclosed); `test_reference_file_keeps_front_matter`; `test_app_origin` (default, other port, `127.0.0.1` → `localhost`, IPv6, wildcard bind, bad Host header, https, no request); `test_apply_origin_only_when_different`; `test_read_is_byte_exact` |
 | `test_skill_tool.py` (through a FastMCP client session) | `test_schema_has_only_optional_path`; `test_meta_always_load`; `test_description_is_100_to_150_words_and_front_loaded`; `test_example_paths_exist` (the paths in the description, `PATH_DESCRIPTION` and `HINT`); `test_no_args_returns_skill_md_without_front_matter`; `test_path_returns_file_text`; `test_resource_alias`; `test_stray_name_skill_id_ignored`; `test_error_is_iserror_without_sdk_prefix`; `test_no_structured_content`; `test_non_default_origin_is_replaced`; `test_wrong_type_is_an_error` |
-| `skill_checks/test_tree_check.py`, `test_knowledge_check.py`, `test_shipped_skill.py` | Sections 7 and 8. Also `test_address_replacement_covers_every_app_link`, `test_skill_md_has_the_required_parts`, `test_skill_md_size`, `test_wrapper_templates_compile`, `test_docs_index_is_current`, `test_no_file_over_body_limit` (each file at most 30,000 characters, with a short allow-list) |
+| `skill_checks/test_tree_check.py`, `test_knowledge_check.py`, `test_shipped_skill.py` | Sections 7 and 8. Also `test_address_replacement_covers_every_app_link` (no file holds `127.0.0.1:8757`, `https://localhost:8757`, or `localhost:8757` without `http://`: forms the replacement would miss), `test_skill_md_has_the_required_parts`, `test_skill_md_size`, `test_wrapper_templates_compile`, `test_docs_index_is_current`, `test_no_file_over_body_limit` (each file at most 30,000 characters, with a short allow-list) |
 | `skill_checks/test_api_reference.py` | `test_drop_blocked_removes_operations_and_empty_paths`; `test_other_method_stops`; `test_version_is_normalised`; `test_catalogue_index_rows`; `test_write_folder_replaces_whole_folder`; `test_diff_folder_reports_added_removed_changed`; `test_collision_warning_stops` (fake generator) |
 | `app/desktop/test_skill_api_reference.py` | `test_the_committed_api_reference_is_current` (skips below 3.13; `slow`); `test_committed_docs_match_the_block_list` (all versions); `test_collected_data_matches_the_index` (`collect_data_files` against `get_index()`) |
 
@@ -468,14 +453,12 @@ No test reaches the network. The manual checks of functional spec 16 exercise th
 
 ## Open items
 
-- **Front matter on reference files.** Only the root has it removed (functional spec 6.1 names only the root). Confirm.
-- **`readOnlyHint` and the other annotations** on `kiln_skill` were not asked for. They are true and let agents skip a permission prompt. Confirm.
+- **Confirm two tool choices.** Only the root has its front matter removed (functional spec 6.1 names only the root). `readOnlyHint` and the other annotations on `kiln_skill` were not asked for; they are true and let agents skip a permission prompt.
 - **Host header as the address source.** Right for a forwarded port or a remote agent. A TLS proxy that does not pass the scheme gives `http`. Not tested with the three agents.
 - **Help articles are behind the site**: 8 public pages have no copy. A refresh needs the `Kiln-AI/docs` repo and is a follow-up. The 34 URLs come from the sitemap; no URL was requested directly.
 - **Backlog.** Harness-tuner's `specs/backlog.md` mixes tuner, Kiln and knowledge entries. It does not move, and the maintenance skill loses its backlog procedure. Confirm, or name a new home.
 - **Other harness-tuner skills** with general knowledge (`kiln-task-setup`, `experiment-costing`, the skill-authoring guide) are not in this port. Each is a separate decision.
 - **Stance conflict** in batch 13: the Assistant's "audit the prompt first, always" against the knowledge's playbook order. The rule in the table lets the knowledge win. Confirm.
-- **Attaching a skill to a run config** (batch 5): the Assistant text says the API cannot do it. Check against the generated endpoint doc.
-- **Wrapper templates as Markdown** lose lint and tests; only a compile check remains.
+- **Attaching a skill to a run config** (batch 5): the Assistant text says the API cannot do it. Check against the generated endpoint doc. **Wrapper templates as Markdown** (batch 11) lose lint and tests; only a compile check remains.
 - **Not verified:** the generator pin inside the real workspace (tested in a throwaway project); the knowledge tooling on Python 3.10 (read, not run); `misspell` over the ported text; PyInstaller data collection in a real build; whether `alwaysLoad` holds in every Claude Code configuration.
 - **Person items** of section 9: the sandbox statement, the 19 priors, the two owner reads.
