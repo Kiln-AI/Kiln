@@ -124,8 +124,11 @@ GROUNDED_JUDGE_INSTRUCTIONS = (
     "held at the start, what was found in it, and the correct answer and end state. "
     "Grade against the specification, as the instructions above state it, using "
     "the guidance only as the facts of the environment. Grade the end result and "
-    "what the agent told the user, not which tools the agent called. When the "
-    "environment's final state is given, use it to check what the agent changed."
+    "what the agent told the user, not which tools the agent used to get there. "
+    "When the specification is about when the agent acts (for example before or "
+    "after the user replies), use the order of the agent's calls and messages in "
+    "the transcript. When the environment's final state is given, use it to check "
+    "what the agent changed."
 )
 """The grounded judge's added instructions, ahead of the guidance and final state."""
 

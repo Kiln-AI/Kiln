@@ -3248,6 +3248,7 @@ class TestGroundedJudge:
         assert "{{ reference_data.judge_guidance }}" in template
         assert "openenv_episode.final_state" in template
         assert "Grade against the specification" in template
+        assert "use the order of the agent's calls and messages" in template
         assert "Must not happen" not in template
         # The guidance comes before the conversation it grades.
         assert template.index("<judge_guidance>") < template.index(
