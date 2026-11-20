@@ -1,52 +1,68 @@
 ---
-status: complete
+status: draft
 ---
 
 # Kiln MCP Server
 
-Move the MCP server in harness-tuner into the Kiln repo, as its own project under `app/mcp` (desktop imports and runs it). The goal is to enable anyone running the Kiln app to use the MCP server in any agent (Claude Code, Codex, etc).
+Build an MCP server into the Kiln app, so anyone running Kiln can use it from any agent (Claude Code, Codex, etc). Think "local Kiln assistant": add the MCP to your agent, and your agent knows what Kiln is and how to drive it.
 
-This is cross repo: moving a bunch from harness-tuner and server into the Kiln main repo. The spec lives in the Kiln repo.
+This started as "move the harness-tuner MCP into Kiln". After looking at the code, the plan changed: this project is a clean, general Kiln MCP. Harness-tuner support (fencing, and moving harness-tuner onto this MCP) is a follow-up project. The mechanisms it needs are sketched here only where they affect this design.
 
-## Scope
+## Roadmap
 
-This project is focused on moving the harness-tuner MCP into Kiln, and updating harness-tuner to use it from there. Not "expand the MCP to be better at general purpose questions" yet — that will be a follow-up.
+1. **This project:** a clean Kiln MCP server running in the desktop app, with a skill that carries Kiln's general guidance. Gets us to a smart agent fast.
+2. **Follow-up, ASAP (harness-tuner stage 1):** harness-tuner uses the new MCP. Adds fencing. Removes the duplicate `kiln-harness-tuner-knowledge`. Solves the major hurdles.
+3. **Follow-up, P2 (harness-tuner stage 2):** move the tuner code into the Kiln repo, bundled into the app. Nice to have.
 
 ## MCP Server
 
-- The MCP server is built into the Kiln app. Starting the app starts the MCP.
+- Built into the Kiln app. Starting the app starts the MCP.
   - Can be used by any agent, just by connecting via HTTP MCP.
-  - Localhost/loopback only (same security as our regular REST API). Would have simplified harness-tuner too: just installing Kiln gets the needed MCP services.
-- MCP server code lives in its own project under `app/mcp`. The desktop app just imports and runs it. Moved from harness-tuner, then enhanced.
-- Great errors (Kiln not running, not logged in to Pro, etc), so agents can fix all core issues.
-- MCP modality: the harness tuner spins up various subsets of the MCP API, depending on the agent using it. How we support that on this MCP is TBD: separate endpoints, per-session filter, port per role, etc. Need to look at how the MCP lib works.
-- Not to be confused with existing MCP projects in Kiln: adding remote MCP servers, and adding a remote agent over MCP as a task.
+  - Localhost/loopback only (same security as our regular REST API).
+- Lives in its own project under `app/mcp`. The desktop app just imports and runs it.
+- **Clean new codebase**, not a port of harness-tuner's servers. It builds on Kiln's existing `call_kiln_api` tool. Content is ported in from harness-tuner and the Kiln Assistant afterwards.
+- **Two tools, the same for every agent:**
+  - `call_kiln_api`: calls Kiln's REST API. We've had good success with one API tool plus a skill that explains how to use it; this is how Kiln Assistant works.
+  - `kiln_skill`: the skill (see below).
+  - New capabilities are added as REST endpoints, not as more tools.
+- **MCP policy:** a per-endpoint tag, like the tags we use today to say whether Kiln Assistant may call an API, but a separate tag with a separate policy. A user's own agent may do more than our cloud agent: the user is taking responsibility for it. Default is everything allowed, with a block tag for rare exceptions. The exception list is an item for later in the design.
+- Great errors (not logged in to Pro, etc), so agents can fix all core issues.
+- Not to be confused with existing MCP projects in Kiln: adding remote MCP servers, adding a remote agent over MCP as a task, and the `kiln_mcp` CLI in `libs/server/kiln_server/mcp`. We have many MCP integrations, so docs are key:
+  - Rename `libs/server/kiln_server/mcp` in its docs and `--help` for clarity (the `kiln_mcp` CLI name can stay), and make clear what it is and isn't.
+- We may want to bump the `mcp` dependency as part of this; the current pin is holding us back elsewhere.
 
 ## Skill
 
-- Unify a few skills we have:
-  - Harness-tuner: move into the core repo, one shared location.
-  - Server-side Assistant skill: borrow anything we need from there.
-- Add some "general" skill files: what Kiln is, etc. The harness-tuner skill is very focused at specific agents with very focused prompts. Kiln inside Claude Code is much more general. This is probably mostly solved by the Assistant skill merge, as it has a lot of that.
-- Distribution — **open decision**, to be settled in the functional spec or architecture: a real installed skill vs a `kiln_skill` tool on the MCP.
-  - The skill content ships with the app either way, so the skill version stays aligned to the MCP/API version. The problem with a "real" skill is that it must be copied into each agent's skill folder (Claude Code, Codex, etc). Those copies go stale when Kiln updates, so keeping them in sync is a maintenance task.
-  - Better(?): a `kiln_skill()` tool built into our MCP that's "skill shaped" (returns the root `SKILL.md` if invoked without a reference file, or a reference file if you give it a path). Benefits:
-    - Just adding our MCP adds Kiln to your agent.
-    - The tool description is the prompt we inject into every agent.
-    - Upgrading Kiln upgrades skill contents automatically and in sync: no worrying about old skills against a new API/MCP version.
-    - Downside: `/kiln` isn't a thing.
-      - Option one: the tool description just says "if the user asks for /kiln, they want you to read this tool". Probably works decently, but no nice UI.
-      - Option two: install a very minimal `SKILL.md` to make this work: "Kiln is a tool for evaluating and optimizing agents. Call the kiln_skill tool to learn how to use it whenever asked to use /kiln". Tiny file, not expected to be kept in sync with the MCP, as it just points to the up-to-date tool docs. A simple one-line prompt can create this.
+- `kiln_skill` is a "skill shaped" tool: it returns the root `SKILL.md` if invoked without a reference file, or a reference file if you give it a path.
+  - Just adding our MCP adds Kiln to your agent.
+  - The tool description is the prompt we inject into every agent.
+  - Upgrading Kiln upgrades the skill contents automatically and in sync: no old skills against a new API/MCP version.
+- One general skill tree, shared by every agent: what Kiln is and what it can do, how to use the API, plus levers, techniques and guidance for improving agents. The root tool description and `kiln_skill()` give progressive disclosure.
+- No gating of skill files by mode. Anyone can read any file.
+- Content:
+  - Kiln Assistant's general guidance, ported from its server-side skill. That repo is private: the content comes over as a filtered dump, reviewed by a person before it lands here.
+  - `kiln-harness-tuner-knowledge` from harness-tuner. Harness-tuner keeps its own copy until the follow-up project removes the duplicate.
+  - The API reference, generated with the OSS OpenAPI-to-skill tool we already use for the Kiln Assistant's skill.
+- **Open decision** (functional spec or architecture): `/kiln` isn't a thing with only a tool.
+  - Option one: the tool description just says "if the user asks for /kiln, they want you to read this tool". Probably works decently, but no nice UI.
+  - Option two: also install a very minimal `SKILL.md`: "Kiln is a tool for evaluating and optimizing agents. Call the kiln_skill tool to learn how to use it whenever asked to use /kiln". Tiny file, not expected to be kept in sync, as it just points to the up-to-date tool docs. A simple one-line prompt can create this.
 
 ## Kiln Assistant
 
 - Keep it for now. Steal anything we need from its skill for our new skill.
-- Sharing its skill with the new main skill is P2 for now. We'll focus on getting people into the Claude version; we can maintain two in parallel for a bit.
+- Sharing its skill with the new main skill is P2. We'll focus on getting people into the Claude version; we can maintain two in parallel for a bit.
 
-## Harness-tuner
+## Designed here, built later (harness-tuner stage 1)
 
-- It gets simpler. It uses the MCP and skill from the Kiln app itself. Remove them from that repo.
-- It needs to check that the installed version of HT works with the installed version of Kiln, two ways:
-  - Harness tuner checks the Kiln version meets its minimum expected version (>1.2.1 now). Might need to add a `/version` endpoint to Kiln. Bump whenever harness tuner depends on new Kiln features/APIs.
-  - Kiln app adds an API that returns `min_supported_harness_tuner_version`. If we change something in the app that breaks older versions of harness tuner, we bump this. HT checks it, sees it's under the min, asks for an upgrade.
-- There's a case for building harness tuner into Kiln too… but not required in V1.
+Design these only as far as they affect this project's design. Leave them out of this project's build.
+
+- **Scoping/fencing permissions per connection.** Same two tools and same API for every connection; a scoped connection just gets a clear error when it goes outside what it was given.
+  - The scope is carried in the URL path. `/mcp` is the open default.
+  - A project/task allow list as an option. Defaults to all; harness-tuner can use it.
+  - Train-filtered: select APIs error if you try to access val/test data.
+  - The fenced session design needs its own design step.
+- A "create skill from a folder" API (replaces harness-tuner's skill installer).
+- Version alignment between harness-tuner and Kiln:
+  - Harness-tuner checks the Kiln version meets its minimum. Needs a `/version` endpoint in Kiln.
+  - Kiln returns a `min_supported_harness_tuner_version`. Harness-tuner checks it and asks for an upgrade.
+- **Open:** whether harness-tuner's role procedures (planner, builder, analyst, etc) move into `kiln_skill`, clearly marked, or stay in harness-tuner's prompts. Both work.
