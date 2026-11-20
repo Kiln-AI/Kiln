@@ -79,6 +79,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     find_single_turn_batch_runs,
 )
 from app.desktop.studio_server.utils.eval_builder_utils import (
+    AGENT_TEXT_JUDGE_INSTRUCTIONS,
     JudgeVerdict,
     build_judge_prompt_template,
     build_transient_judge_eval_config,
@@ -219,6 +220,20 @@ class TestBuildJudgePromptTemplate:
         # the same text the claim builder receives as raw_output.
         assert "{{ trace | format_trace }}" in template
         assert "{{ final_message }}" not in template
+
+    def test_transcript_judge_is_told_the_agent_prompt_is_not_a_rule(self):
+        for grounded in (False, True):
+            template = build_judge_prompt_template(
+                "Check the policy.", multi_turn=True, grounded=grounded
+            )
+            assert AGENT_TEXT_JUDGE_INSTRUCTIONS in template
+            assert template.index(AGENT_TEXT_JUDGE_INSTRUCTIONS) < template.index(
+                "<conversation_transcript>"
+            )
+
+    def test_io_pair_judge_has_no_transcript_reading_rule(self):
+        template = build_judge_prompt_template("Check the policy.", multi_turn=False)
+        assert AGENT_TEXT_JUDGE_INSTRUCTIONS not in template
 
     def test_jinja_in_judge_prompt_is_raw_wrapped(self):
         # Spec text with Jinja syntax must not break rendering or inject template
