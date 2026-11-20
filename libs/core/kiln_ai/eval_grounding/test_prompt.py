@@ -161,6 +161,19 @@ def test_system_prompt_keeps_the_reference_to_environment_facts():
         assert removed not in prompt
 
 
+def test_system_prompt_has_the_reading_simulated_user_evidence_and_setup_rules():
+    prompt = system_prompt()
+    assert "give the answer or end state for each reading" in prompt
+    assert "without calling it the only correct one" in prompt
+    assert "Then remove what a real user wouldn't say" in prompt
+    assert "instructions that rescue the agent" in prompt
+    assert "Keep how the user answers questions the agent may ask them." in prompt
+    assert "A call that returned nothing is not a refusal" in prompt
+    assert "quote it word for word instead of paraphrasing it" in prompt
+    assert "Before you add a look-alike of something" in prompt
+    assert "encodes no meaning" in prompt
+
+
 @pytest.mark.parametrize(
     "answer_style", ["reply_json", "structured_output", "submit_result"]
 )
