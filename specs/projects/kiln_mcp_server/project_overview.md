@@ -4,7 +4,7 @@ status: draft
 
 # Kiln MCP Server
 
-Move the MCP server in harness-tuner into the Kiln repo, under the `app/desktop` folder. The goal is to enable anyone running the Kiln app to use the MCP server in any agent (Claude Code, Codex, etc).
+Move the MCP server in harness-tuner into the Kiln repo, as its own project under `app/mcp` (desktop imports and runs it). The goal is to enable anyone running the Kiln app to use the MCP server in any agent (Claude Code, Codex, etc).
 
 This is cross repo: moving a bunch from harness-tuner and server into the Kiln main repo. The spec lives in the Kiln repo.
 
@@ -17,7 +17,7 @@ This project is focused on moving the harness-tuner MCP into Kiln, and updating 
 - The MCP server is built into the Kiln app. Starting the app starts the MCP.
   - Can be used by any agent, just by connecting via HTTP MCP.
   - Localhost/loopback only (same security as our regular REST API). Would have simplified harness-tuner too: just installing Kiln gets the needed MCP services.
-- MCP server code lives under `app/desktop` — source available but not open source. Moved from harness-tuner, then enhanced.
+- MCP server code lives in its own project under `app/mcp` — source available but not open source. The desktop app just imports and runs it. Moved from harness-tuner, then enhanced.
 - Great errors (Kiln not running, not logged in to Pro, etc), so agents can fix all core issues.
 - MCP modality: the harness tuner spins up various subsets of the MCP API, depending on the agent using it. How we support that on this MCP is TBD: separate endpoints, per-session filter, port per role, etc. Need to look at how the MCP lib works.
 - Not to be confused with existing MCP projects in Kiln: adding remote MCP servers, and adding a remote agent over MCP as a task.
