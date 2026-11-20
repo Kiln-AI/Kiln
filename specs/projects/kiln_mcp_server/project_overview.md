@@ -1,5 +1,5 @@
 ---
-status: complete
+status: draft
 ---
 
 # Kiln MCP Server
@@ -28,8 +28,8 @@ This project is focused on moving the harness-tuner MCP into Kiln, and updating 
   - Harness-tuner: move into the core repo, one shared location.
   - Server-side Assistant skill: borrow anything we need from there.
 - Add some "general" skill files: what Kiln is, etc. The harness-tuner skill is very focused at specific agents with very focused prompts. Kiln inside Claude Code is much more general. This is probably mostly solved by the Assistant skill merge, as it has a lot of that.
-- Distribution:
-  - Packaging with the app would make sense: the skill version should be aligned to the MCP/API version. But that creates a maintenance task to update the skill on app updates… unless it's not a "real" skill (copied around).
+- Distribution — **open decision**, to be settled in the functional spec or architecture: a real installed skill vs a `kiln_skill` tool on the MCP.
+  - The skill content ships with the app either way, so the skill version stays aligned to the MCP/API version. The problem with a "real" skill is that it must be copied into each agent's skill folder (Claude Code, Codex, etc). Those copies go stale when Kiln updates, so keeping them in sync is a maintenance task.
   - Better(?): a `kiln_skill()` tool built into our MCP that's "skill shaped" (returns the root `SKILL.md` if invoked without a reference file, or a reference file if you give it a path). Benefits:
     - Just adding our MCP adds Kiln to your agent.
     - The tool description is the prompt we inject into every agent.
