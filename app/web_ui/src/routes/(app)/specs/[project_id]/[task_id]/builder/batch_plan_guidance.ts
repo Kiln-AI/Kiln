@@ -54,9 +54,9 @@ export function single_turn_plan_guidance(spec: string): string {
 The agent may act on a live system through tools (a database, an API, a set of records). You cannot see what that system contains. Never write an input that depends on a specific record already existing: the input creates what it later acts on, or asks the agent what exists. Name a specific record only when the point of the input is how the agent handles a record that is not found.
 
 The batch exists to stress-test the agent against this specification:
-<specification>
+<eval_definition>
 ${spec}
-</specification>
+</eval_definition>
 
 Balance the batch roughly 50/50 between:
 - inputs where a well-behaved agent should clearly satisfy the specification, and
@@ -179,9 +179,9 @@ export function multiturn_plan_guidance(
 ${openenv ? OPENENV_WORLD_STATE : MULTI_TURN_WORLD_STATE}
 
 The batch exists to stress-test the agent against this specification:
-<specification>
+<eval_definition>
 ${spec}
-</specification>
+</eval_definition>
 
 Balance the batch roughly 50/50 between:
 - scenarios where a well-behaved agent should clearly satisfy the specification, and

@@ -73,6 +73,20 @@ const WORLD_STATE_OPENER =
 const SPECIFICATION_INTRO =
   "The batch exists to stress-test the agent against this specification:"
 
+describe("spec tag the batch planner reads", () => {
+  // The planner's EVAL composition rules key off an <eval_definition> block.
+  it("wraps the spec in eval_definition on both arms", () => {
+    for (const guidance of [
+      multiturn_plan_guidance("SPEC"),
+      multiturn_plan_guidance("SPEC", { openenv: true }),
+      single_turn_plan_guidance("SPEC"),
+    ]) {
+      expect(guidance).toContain("<eval_definition>\nSPEC\n</eval_definition>")
+      expect(guidance).not.toContain("<specification>")
+    }
+  })
+})
+
 describe("multiturn_plan_guidance world-state rule", () => {
   const guidance = multiturn_plan_guidance("be helpful")
 
