@@ -25,6 +25,7 @@ const provider_image_map: Record<
   cerebras: "/images/cerebras.svg",
   featherless_ai: "/images/featherless.svg",
   cloudflare: "/images/cloudflare.svg",
+  openllm: "/images/openllm.svg",
   typesafe: "/images/typesafe.svg",
   kiln_copilot: "/images/kiln_logo_black.svg",
 }
