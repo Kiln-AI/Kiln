@@ -4,7 +4,7 @@ status: draft
 
 # Component: Connect page and install guide
 
-How a user gets from the Kiln app, the README or the docs to an agent that has the Kiln MCP server and the stub skill. Covers the Settings callout, the page `/settings/connect_agent`, `agent_install.md`, the stub skill text, the README section, the rename of the existing `kiln_mcp` texts, and the follow-up in the docs repo. Contracts: [functional_spec.md](../functional_spec.md) sections 3, 9, 10, 12, 16 and [ui_design.md](../ui_design.md). The web UI calls no endpoint for this component.
+How a user gets from the Kiln app, the README or the docs to an agent that has the Kiln MCP server and the stub skill. Covers the Settings callout, the page `/settings/connect_agent`, `agent_install.md`, the stub skill text, the README section, the rename of the existing `kiln_mcp` texts, and the follow-up in the docs repo. Contracts: [functional_spec.md](../functional_spec.md) sections 3, 9, 10, 12, 16 and [ui_design.md](../ui_design.md). The web UI calls no endpoint for this component. This is build step 7 of [architecture.md](../architecture.md) section 6. This doc owns the rename of the `kiln_mcp` texts (section 6); the server doc only points here.
 
 ## 1. Files
 
@@ -19,7 +19,7 @@ Web paths are under `app/web_ui/src/routes/(app)/settings/`.
 | `connect_agent/connect_agent.test.ts`, `connect_agent/page.test.ts` | New (8.2, 8.3) |
 | `/agent_install.md` (repo root) | New; full draft in 4.3 |
 | `/README.md` | New section and one Highlights bullet (section 5) |
-| `libs/server/kiln_server/mcp/{mcp.py,runtime.py,README.md}`, `libs/server/README.md` | Text rename (section 6) |
+| `libs/server/kiln_server/mcp/{__init__.py,mcp.py,runtime.py,tool_selection.py,mcp_server_tool_utils.py,README.md}`, `libs/server/README.md`, `.agents/skills/kiln-conventions/references/server_desktop.md` | Text rename (section 6) |
 
 Nothing under `lib/ui/`, `lib/components/` or `app_page.svelte` changes, so the `kiln-ui` gate reports no `SHARED_CONTROL_TOUCHED`.
 
@@ -98,9 +98,11 @@ export function is_default_address(origin: string): boolean
 export function build_prompt(origin: string): string
 ```
 
-- `app_origin`: `base_url` when `is_dev`, otherwise `window.location.origin`. In any production build the UI is served by the Kiln server, so the page origin is the server's real address (the desktop app opens `http://localhost:{port}`, `app/desktop/desktop_main.py:103`). Under `vite dev` the page origin is the Vite server, so the build-time `base_url` (`http://localhost:${VITE_API_PORT || "8757"}`) is used. `window` is read only inside the function.
-- `mcp_url`: `origin` without trailing slashes, plus `MCP_PATH`.
-- `is_default_address`: `origin` without trailing slashes `=== DEFAULT_ORIGIN`. An exact compare: `http://127.0.0.1:8757` is not the default and gets the extra sentence, which is then correct.
+The address rule is the one of architecture section 3, item 11; this is its page side.
+
+- `app_origin`: `base_url` when `is_dev`, otherwise `window.location.origin`. In any production build the UI is served by the Kiln server, so the page origin is the server's real address (the desktop app opens `http://localhost:{port}`, `app/desktop/desktop_main.py:103`). Under `vite dev` the page origin is the Vite server, so the build-time `base_url` (`http://localhost:${VITE_API_PORT || "8757"}`) is used; this is a decision. `window` is read only inside the function.
+- `mcp_url`: `origin` without trailing slashes, plus `MCP_PATH`. It always shows the real origin, also when that origin counts as the default: on `http://127.0.0.1:8757` the manual URL is `http://127.0.0.1:8757/mcp`.
+- `is_default_address`: true when the origin is plain HTTP on port 8757 at a loopback host name. With `u = new URL(origin)`: `u.protocol === "http:"`, `u.port === "8757"`, and `u.hostname` is one of `localhost`, `127.0.0.1`, `[::1]`. A string that `URL` cannot parse gives false. So `http://127.0.0.1:8757` and `http://[::1]:8757` are the default and get no extra sentence: the guide's `http://localhost:8757` reaches the same server. `DEFAULT_ORIGIN` stays as the name of the address that the guide and the skill are written with.
 - `build_prompt`: `BASE_PROMPT` for the default address; otherwise `BASE_PROMPT + " The Kiln MCP server is at " + mcp_url(origin) + "."`.
 
 The two exact strings today (the second for origin `http://localhost:9000`). After the switch in 4.1 both read `… here: https://kiln.tech/agent_install.md`.
@@ -155,7 +157,7 @@ Below the `sm` breakpoint the prompt row stacks, so the Copy button sits under t
 - **Why runtime.** The compiled app's `base_url` is always port 8757, so it cannot show a port set with `KILN_LOCAL_API_PORT`.
 - **Buttons.** Both Copy controls are real buttons with distinct accessible names ("Copy prompt", "Copy MCP server URL"); the visible label is the start of the name. The `aria-live="polite"` span announces the result.
 - **Text.** The prompt and URL are plain selectable text; `select-all` selects the whole string on one click; `translate="no"` stops browser translation from changing what the user reads against what is copied.
-- **Clipboard failure.** `navigator.clipboard` is missing outside a secure context (Kiln opened over plain HTTP on a non-loopback host). The button stays "Copy" and the user selects the text. No error is shown (UI design: no error state).
+- **Clipboard failure.** `navigator.clipboard` is missing outside a secure context (Kiln opened over plain HTTP on a non-loopback host, for example with `KILN_LOCAL_API_HOST=0.0.0.0`). The button stays "Copy" and the user selects the text. No error is shown (UI design: no error state). This is a known limit, accepted: the Copy buttons need a secure context. The page still shows the origin the user opened, which is the right address for that user.
 - **Owned by shared controls, not changed here.** The docs link opens in a new tab (`AppPage`). `Collapse` works from the keyboard through its checkbox, which has no accessible name today.
 
 ## 4. `agent_install.md`
@@ -165,11 +167,18 @@ Below the `sm` breakpoint the prompt row stacks, so the Copy button sits under t
 - File: `/agent_install.md` at the repo root, beside `README.md`. Not inside `app/mcp/`, and never served by `kiln_skill`: it is for an agent that does not have the MCP yet.
 - URL now: `https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md` (plain text). URL later: `https://kiln.tech/agent_install.md`.
 - The switch is one commit: change `AGENT_INSTALL_GUIDE_URL` in `connect_agent.ts` and the prompt line in `README.md`. A test (8.2) fails while the two differ. The guide does not contain its own URL, so it does not change. The docs page (section 7) is updated in its own repo.
-- `kiln.tech` should answer that URL with a redirect to the raw GitHub file, or with a copy made at deploy time, so no second file is maintained by hand (open item).
+- `kiln.tech` should answer that URL with a redirect to the raw GitHub file, or with a copy made at deploy time, so no second file is maintained by hand. Someone with access to the website sets this up; it is a follow-up outside this repo (architecture section 8).
 
 ### 4.2 The stub skill: single source
 
-The text of functional spec 9.2 is written once in this repo: in the fenced block of step 3 of the guide. Nothing in the app or the MCP server embeds it. A test (8.2) pins that block to the exact text, so a change to the stub is a deliberate change to the test. The docs page links to the guide and does not repeat the text.
+The text of functional spec 9.2 is written once in this repo: in the fenced block of step 3 of the guide. Nothing in the app or the MCP server embeds it. A test (8.2) pins that block to the exact text, so a change to the stub is a deliberate change to the test. The docs page links to the guide and does not repeat the text. The first sentence of its `description` is the shared opening `WHAT_KILN_IS` of the server's `texts.py` (architecture section 3, item 16); the content phase changes that sentence only together with this stub.
+
+Decisions in the guide (4.3):
+
+- The agent does not install the Kiln app itself. It sends the user to the download page and waits, although the prompt says "Install Kiln's app".
+- The MCP server and the stub skill are installed at user level, so that they work in every project.
+- Codex users invoke the stub as Codex does, with `$kiln`. The guide says so; the Connect page keeps "type /kiln".
+- The `405` or `404` test in step 1 relies on the server answering `GET /mcp` with 405 (server doc 2.1).
 
 ### 4.3 Full draft
 
@@ -334,12 +343,40 @@ Also one bullet under "Highlights → Iterate, optimize, and collaborate", after
 
 ## 6. Rename of the existing `kiln_mcp` texts (this repo)
 
-The command name `kiln_mcp` stays. Text only:
+This section is the one source for the rename (functional spec 12): every place, the exact new string, and the line references, which are those of the files as they are today. The server doc points here.
 
-- `libs/server/kiln_server/mcp/mcp.py:31`, argparse `description`: `"Run the Kiln project tools MCP server: it serves one project's tools (such as search tools) to other apps. It does not connect a coding agent to the Kiln app; for that, use the MCP server built into the Kiln app."`
-- `libs/server/kiln_server/mcp/runtime.py:30,34`: `server_name = "Kiln Project Tools MCP Server"`; `instructions = "Kiln project tools MCP server: exposes one Kiln project's tools."`
-- `libs/server/kiln_server/mcp/README.md`: title `# Kiln Project Tools MCP Server [Beta]`; a second note under the existing one: "To connect a coding agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see `agent_install.md` at the repo root."; refresh the pasted `--help` block.
-- `libs/server/README.md:64-66`: heading `## Kiln Project Tools MCP Server` and the same one-line distinction. Update any test that asserts the old strings.
+Rules:
+
+- The name is **Kiln project tools MCP server**, in sentence case, also in headings and titles.
+- The command name `kiln_mcp`, the module path and the entry point stay.
+- The protocol does not change. `server_name` (`runtime.py:30`, the `serverInfo.name` of that server, today `"Kiln MCP Server"`) and `instructions` (`runtime.py:34`) keep their values: functional spec 12 renames docs and `--help` text only, and a client may show or log the protocol name.
+
+Under `libs/server/kiln_server/mcp/`:
+
+| Place | New text |
+|---|---|
+| `mcp.py:1`, module docstring | `"""CLI entry point for the Kiln project tools MCP server (kiln_mcp)."""` |
+| `mcp.py:30-32`, the argparse `description` (the string is on line 31); this is the `--help` text | `"Run the Kiln project tools MCP server: it serves one project's tools (such as search tools) to other apps. It does not connect a coding agent to the Kiln app; for that, use the MCP server built into the Kiln app."` |
+| `runtime.py:1`, module docstring | `"""Runtime helpers for the Kiln project tools MCP server."""` |
+| `runtime.py:30` and `:34` | no change (rule above) |
+| `__init__.py:1`, module docstring | `"""The Kiln project tools MCP server: exposes one project's tools over MCP."""` |
+| `tool_selection.py:1`, module docstring | `"""Select the Kiln tools that the Kiln project tools MCP server exposes."""` |
+| `mcp_server_tool_utils.py:1`, module docstring | `"""Prepare Kiln tools for the Kiln project tools MCP server."""` |
+| `README.md:1`, title | `# Kiln project tools MCP server [Beta]` |
+| `README.md:3`, after the existing note | A second note: `> To connect a coding agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see agent_install.md at the repo root. This server is not the way to do that.` |
+| `README.md:5` | ``The Kiln project tools MCP server (the `kiln_mcp` command) lets you call one Kiln project's tools, such as a Kiln Search Tool, from any MCP client.`` |
+| `README.md:46-66`, the fenced `--help` block | Replace with the real output of `kiln_mcp --help` after the change. The block is stale today: it lacks `--list-tools` |
+
+Elsewhere:
+
+| Place | New text |
+|---|---|
+| `libs/server/README.md:64`, heading | `## Kiln project tools MCP server` |
+| `libs/server/README.md:66`, sentence (line 68, the link to the README, stays) | ``Also included in this package is the Kiln project tools MCP server (the `kiln_mcp` command). It serves one Kiln project's tools to other apps. It is not the way to connect a coding agent to the Kiln app: the app has its own built-in MCP server for that.`` |
+| `.agents/skills/kiln-conventions/references/server_desktop.md:44`, the `kiln_mcp` row of the "Startup" table | First cell: ``Kiln project tools MCP server: `kiln_mcp` script (`kiln_server.mcp.mcp:main`)``. The second cell stays |
+| The same file, table "Where things go" | A new row: ``A change to the Kiln MCP server (the one a coding agent connects to, at `/mcp` in the app)`` goes in ``app/mcp/kiln_mcp_server/``, mounted by `connect_kiln_mcp_server` in `app/desktop/studio_server/kiln_mcp_mount.py` |
+
+`README.md:17` ("via this MCP server") needs no change. No test asserts the old strings today (checked with a search of the repo); the Python tests for `kiln_mcp` must still pass.
 
 ## 7. Docs repo follow-up (`Kiln-AI/docs`, outside this repo)
 
@@ -348,7 +385,7 @@ The command name `kiln_mcp` stays. Text only:
 3. Existing page `tools-and-mcp`: a note at the top that links to page 2. Any page that documents `kiln_mcp`: rename to "Kiln project tools MCP server".
 4. When page 1 is live, in this repo: set `CONNECT_AGENT_DOCS_URL` to its URL and add it to the README `## Docs` list.
 
-Until page 1 exists, "Read the Docs" points to the README section, `https://github.com/Kiln-AI/Kiln#use-kiln-from-your-coding-agent`, which exists as soon as this work is on `main`. A docs URL that does not exist yet would be a dead link in a released app.
+Until page 1 exists, "Read the Docs" points to the README section, `https://github.com/Kiln-AI/Kiln#use-kiln-from-your-coding-agent`, which exists as soon as this work is on `main`. A docs URL that does not exist yet would be a dead link in a released app. This interim target is a decision. The slugs `connect-your-agent` and `kiln-and-mcp` are proposals for the docs owner.
 
 ## 8. Test plan
 
@@ -361,8 +398,8 @@ Until page 1 exists, "Read the Docs" points to the README section, `https://gith
 ### 8.2 `connect_agent.test.ts` (no DOM)
 
 - `mcp_url`: `http://localhost:8757` → `http://localhost:8757/mcp`; a trailing slash is removed; `http://127.0.0.1:9000` → `http://127.0.0.1:9000/mcp`.
-- `is_default_address`: true for `http://localhost:8757`, also with a trailing slash; false for `http://localhost:9000`, `http://127.0.0.1:8757`, `https://localhost:8757`.
-- `build_prompt`: the default origin gives exactly `BASE_PROMPT`; `http://localhost:9000` gives `BASE_PROMPT + " The Kiln MCP server is at http://localhost:9000/mcp."`; `BASE_PROMPT` starts with "Install Kiln's app, skill, and MCP following the guide here: " and ends with `AGENT_INSTALL_GUIDE_URL`.
+- `is_default_address`: true for `http://localhost:8757` (also with a trailing slash), `http://127.0.0.1:8757` and `http://[::1]:8757`; false for `http://localhost:9000`, `http://127.0.0.1:9000`, `https://localhost:8757`, `http://192.168.1.5:8757`, `http://kiln.lan:8757` and a string that is not a URL.
+- `build_prompt`: the default origin gives exactly `BASE_PROMPT`, and so does `http://127.0.0.1:8757`; `http://localhost:9000` gives `BASE_PROMPT + " The Kiln MCP server is at http://localhost:9000/mcp."`; `BASE_PROMPT` starts with "Install Kiln's app, skill, and MCP following the guide here: " and ends with `AGENT_INSTALL_GUIDE_URL`.
 - `app_origin(true)` is `base_url`; `app_origin(false)` is the stubbed origin (`vi.stubGlobal("window", { location: { origin: "http://localhost:9000" } })`, as `lib/agent.test.ts` does).
 - Repo files, read with `node:fs` from the repo root (seven folders above the test file):
   - `README.md` has a line equal to `BASE_PROMPT` and the heading `## Use Kiln from your coding agent`.
@@ -373,6 +410,7 @@ Until page 1 exists, "Read the Docs" points to the README section, `https://gith
 Setup: `vi.mock("./connect_agent", …)` with `importOriginal`, replacing only `app_origin` with a function that returns a test variable; `navigator.clipboard.writeText` is a `vi.fn()`; fake timers.
 
 - Default address: `connect-agent-prompt` text equals `BASE_PROMPT`; `connect-agent-mcp-url` text is `http://localhost:8757/mcp`.
+- Origin `http://127.0.0.1:8757`: the prompt equals `BASE_PROMPT` (no extra sentence); the URL is `http://127.0.0.1:8757/mcp` (the real origin).
 - Origin `http://localhost:9000`: the prompt ends with " The Kiln MCP server is at http://localhost:9000/mcp."; the URL is `http://localhost:9000/mcp`.
 - Header: title "Connect Your Agent"; the subtitle; a link "Read the Docs" with `href` `CONNECT_AGENT_DOCS_URL` and `target="_blank"`; a breadcrumb link "Settings" to `/settings`. The lead-in and the "Then ask your agent to work with Kiln, or type /kiln." line are present.
 - Copy prompt: click `connect-agent-copy-prompt`; `writeText` is called once with the full prompt (with the extra sentence on the other address); the label is "Copied"; after 1500 ms it is "Copy".
@@ -381,15 +419,15 @@ Setup: `vi.mock("./connect_agent", …)` with `importOriginal`, replacing only `
 
 ### 8.4 Other checks
 
-- From `app/web_ui`: `npm run check`, `lint`, `format_check`, `test_run`, `build`. `bash .agents/skills/kiln-ui/ui_gate.sh --range <base>..<tip>` with 0 FAIL, and the `kiln-ui` handback (plan, gate output, side-by-side with the Edit Task form, fresh-session screenshot review). `lib/agent_coverage.test.ts` passes. Python tests for `kiln_mcp` pass after the text changes of section 6.
+- From `app/web_ui`: `npm run check`, `lint`, `format_check`, `test_run`, `build`. `bash .agents/skills/kiln-ui/ui_gate.sh --range <base>..<tip>` with 0 FAIL, and the `kiln-ui` handback (plan, gate output, side-by-side with the Edit Task form, fresh-session screenshot review). `lib/agent_coverage.test.ts` passes. Python tests for `kiln_mcp` pass after the text changes of section 6. Two new cases in `libs/server/kiln_server/mcp/test_mcp_server.py`: the name of the server built by `create_fastmcp_server` still starts with `Kiln MCP Server` (the protocol name did not change), and `build_argument_parser().description` starts with "Run the Kiln project tools MCP server".
 - Manual sanity phase (functional spec 16): install from the prompt in a fresh agent, with Claude Code and one other agent, on the default address and on another port; each row of table 4.4; `/kiln`; Kiln not running.
 
 ## 9. Open items
 
-- **Per-agent details.** Every unverified row of table 4.4; corrected in the manual sanity phase.
-- **Docs URLs.** The slugs `connect-your-agent` and `kiln-and-mcp` are proposals for the docs owner. Decide whether the app release waits for the docs page, so the interim README link never ships.
-- **`kiln.tech/agent_install.md`.** Someone with access to the website sets up the redirect or copy; then the switch in 4.1 is made.
-- **Vite dev origin.** The binding decision says the URL comes from `window.location.origin`. This design uses `base_url` under `vite dev` only, because the page origin there is the Vite server. Confirm.
-- **Non-loopback host.** With `KILN_LOCAL_API_HOST=0.0.0.0` the page shows the origin the user opened, which is right for that user, but the Copy buttons do not work over plain HTTP (3.5). Accepted for V1; confirm.
-- **Guide choices to confirm.** The agent does not install the app itself; it sends the user to the download page. The `405`/`404` test in step 1 depends on the server component answering `GET /mcp` with 405.
-- **Shared controls, later.** `TerminalIcon` is also the icon of the "Application Logs" row; a dedicated icon would be a separate shared-control change. So would promoting `copy_button.svelte` to `lib/ui/` and moving the four existing copy sites to it.
+To verify during implementation:
+
+- **Per-agent details.** Every unverified row of table 4.4. They are checked against the real CLIs in the manual sanity phase (build step 9), and the guide is corrected from what that finds.
+- **The `--help` block.** Paste the real output of `kiln_mcp --help` into the README after the change (section 6).
+- **The page under `vite dev`.** Check by hand that the prompt and the URL name the API port, not the Vite port (3.3).
+
+Owner decisions are in [architecture.md](../architecture.md) section 11. Item 3 there concerns this component: whether the app release waits for the docs page, so that the interim README link never ships. Follow-ups outside this repo or this project are in architecture section 8: the docs pages and their slugs, `kiln.tech/agent_install.md` and then the switch of 4.1, a shared `copy_button` in `lib/ui/` with the four existing copy sites moved to it, and an icon of its own for the callout (`TerminalIcon` is also the icon of the "Application Logs" row).

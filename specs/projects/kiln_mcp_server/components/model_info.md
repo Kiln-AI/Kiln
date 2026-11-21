@@ -4,7 +4,7 @@ status: draft
 
 # Component: Model info endpoints
 
-Three read-only REST endpoints that join Kiln's model list with the public models.dev catalogue (functional spec section 8). They are a port of harness-tuner's model info code (HT below; paths under `harness-tuner/src/kiln_harness_tuner/`), without HT's model policy and without its per-run snapshot. Agents reach them through `call_kiln_api`; the web UI and other clients may use them too.
+Three read-only REST endpoints that join Kiln's model list with the public models.dev catalogue (functional spec section 8). They are a port of harness-tuner's model info code (HT below; paths under `harness-tuner/src/kiln_harness_tuner/`), without HT's model policy and without its per-run snapshot. Every "as HT" in this doc, and every HT line reference, means harness-tuner at commit `b49f159`, the same pinned commit as the knowledge port (skill doc, section 9). Agents reach the endpoints through `call_kiln_api`; the web UI and other clients may use them too. This is build step 3 of [architecture.md](../architecture.md) section 6; shared files are in its section 9.
 
 Out of scope: a reload of Kiln's own model list (it still loads once at app start), a disk cache, and the web UI's own models.dev fetch.
 
@@ -29,6 +29,8 @@ All three routes: `tags=["Providers & Models"]`, `openapi_extra=ALLOW_AGENT`, no
 | `sort` | `featured`, `price` or `newest` | none | | See step 5. |
 | `limit` | int | `25` | 1-200 | Page size. |
 | `offset` | int | `0` | >= 0 | Rows to skip. |
+
+The defaults are decisions: the list shows only what the user can run now (entries with status `ready`, not deprecated) unless the caller asks for more, and `featured=false` is the complement of `featured=true`. The providers route (1.3) has no such default: it lists every provider, each marked connected or not.
 
 Steps, in this order:
 
@@ -57,7 +59,7 @@ Lookup over the merged rows, with no status or deprecation filter:
 
 ### 1.3 `GET /api/model_info/providers`
 
-Parameter: `include_not_available` (bool, default `false`: also list providers that are not connected). Provider ids: the built-in provider list, then providers seen in model entries, then connected providers, without duplicates. Order: `ready_model_count` descending, then id.
+No parameter. The route lists every provider, each marked `connected` or `not_connected` (functional spec 8); nothing is hidden, so an agent can tell the user which provider to connect. Provider ids: the built-in provider list, then providers seen in model entries, then connected providers, without duplicates. Order: `ready_model_count` descending, then id, so the connected providers with models come first.
 
 ### 1.4 Errors
 
@@ -70,7 +72,7 @@ Kiln's error handler turns `HTTPException.detail` into `{"message": ...}`. FastA
 | `provider` on the list route is not a known provider id | 422 | `Unknown provider: <provider>. Provider ids: <sorted ids>.` |
 | `search` holds no letter and no digit | 422 | `search needs at least one letter or digit.` |
 
-Closest ids: the first three ids that the search of section 7 gives for `model_id` over all merged rows. Known provider ids are those of section 1.3. The 422 on an unknown provider exists because a wrong id (`google` for `gemini_api`) would otherwise give an empty list that reads as "no such models".
+Closest ids: the first three ids that the search of section 7 gives for `model_id` over all merged rows. Known provider ids are those of section 1.3. Both 422 cases are decisions. The 422 on an unknown provider exists because a wrong id (`google` for `gemini_api`) would otherwise give an empty list that reads as "no such models".
 
 ## 2. Response models
 
@@ -154,7 +156,7 @@ All under `app/desktop/studio_server/` (the status needs desktop code, and `libs
 | `services/model_info/view.py` | `gateway/model_info.py` | Port: `Offered`, `status` (no policy argument), `_merged`, the filters, the sorts, the three answers. New: search, `featured`, `include_notes`, the forgiving lookup, two domain errors. |
 | `services/model_info/service.py` | none | New: `ModelInfoService`, which gathers the inputs of each request. |
 
-Dropped from HT: `store.py`, `providers.py` except `PREFERENCE`, `model_policy.py`, `--no-model-catalog`. Edited Kiln files: `provider_api.py` (section 4), `desktop_server.py`, `kiln_ai/utils/config.py` and the root `conftest.py` (section 8), `kiln_ai/adapters/remote_config.py` (section 6.1).
+Dropped from HT: `store.py`, `providers.py` except `PREFERENCE`, `model_policy.py`, `--no-model-catalog`. Edited Kiln files: `provider_api.py` (section 4), `desktop_server.py`, `kiln_ai/utils/config.py` and the root `conftest.py` (section 8), `kiln_ai/adapters/remote_config.py` (section 6.1). The first three are also edited by the MCP server component; architecture section 9 has the combined result and says who changes what.
 
 ```
 # model_info_api.py
@@ -176,7 +178,7 @@ class ModelInfoService:
                  now: Callable[[], datetime] = utc_now) -> None
     async def list_models(self, query: ListModelsQuery) -> ModelInfoList
     async def model_details(self, model_id: str, provider: str | None) -> ModelInfoDetails
-    async def list_providers(self, include_not_available: bool) -> ModelInfoProviderList
+    async def list_providers(self) -> ModelInfoProviderList
 
 # services/model_info/view.py   (pure functions)
 class ListModelsQuery                          # frozen dataclass: one field per parameter of 1.1, same names and defaults
@@ -186,7 +188,7 @@ class Offered                                  # as HT: pairs, connected, order;
 def status(offered: Offered, provider: str, model: str) -> ModelInfoStatus
 def list_models(catalog: Catalog, offered: Offered, sources: ModelInfoSources, query: ListModelsQuery) -> ModelInfoList
 def model_details(catalog, offered, sources, model_id: str, provider: str | None) -> ModelInfoDetails
-def list_providers(catalog, offered, sources, include_not_available: bool) -> ModelInfoProviderList
+def list_providers(catalog, offered, sources) -> ModelInfoProviderList
 def search_rows(query: str, rows: Sequence[CatalogModel]) -> tuple[list[CatalogModel], bool]   # (best first, fuzzy)
 
 # services/model_info/catalog_build.py   (pure functions)
@@ -237,23 +239,26 @@ class ModelsDevCache:                          # implements ModelsDevSource
     @property
     def enabled(self) -> bool
     async def current(self) -> ModelsDevSnapshot     # never raises
-    async def aclose(self) -> None                   # cancels a refresh in flight; later calls start none
+    async def settle(self) -> None                   # waits for a refresh in flight, if any; for tests
+    async def aclose(self) -> None                   # cancels a refresh in flight; later calls start none; never raises
 ```
 
 The constructor does no I/O and creates no asyncio object. Fields: `_data`, `_etag`, `_loaded_at`, `_last_failure`, `_last_failure_at`, `_task: asyncio.Task | None`, `_closed`. `default_client()` returns `httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=True)`; one short-lived client per refresh. Memory only: no disk cache.
 
 ### 5.2 State machine
 
-The state is derived from the fields; it is not stored. `aclose()` from any state cancels the task, and no new task starts.
+The state is derived from the fields; it is not stored. `aclose()` from any state cancels the task, and no new task starts. The "Request waits" column is the rule of 5.3: only a first load, with no data at all, makes a request wait.
 
-| State | Condition | Answer `state` / `detail` | Leaves on |
-|---|---|---|---|
-| off | `enabled` is false | `unavailable` / `turned off` | never |
-| empty | no data, no task | `unavailable` / the last failure reason, or `not loaded` | `current()` -> loading, unless a failure is younger than `retry_after_empty` |
-| loading | no data, a task runs | `unavailable` / `loading` | 200 with a valid body -> fresh; any failure -> empty |
-| fresh | data, age < `max_age` | `ok` / null | 6 h pass -> stale |
-| stale | data, age >= `max_age`, no task | `stale` / the last failure reason, or null | `current()` -> refreshing, unless a failure is younger than `retry_after` |
-| refreshing | data, age >= `max_age`, a task runs | `stale` / `refresh running` | 200 -> fresh (new data, new ETag); 304 -> fresh (same data, `loaded_at` = now); any failure -> stale (last good data kept) |
+| State | Condition | Answer `state` / `detail` | Request waits | Leaves on |
+|---|---|---|---|---|
+| off | `enabled` is false | `unavailable` / `turned off` | no | never |
+| empty | no data, no task | `unavailable` / the last failure reason, or `not loaded` | no; a call that starts the load waits as in "loading" | `current()` -> loading, unless a failure is younger than `retry_after_empty` |
+| loading | no data, a task runs | `unavailable` / `loading` | up to `wait_secs` for the task | 200 with a valid body -> fresh; any failure -> empty |
+| fresh | data, age < `max_age` | `ok` / null | no | 6 h pass -> stale |
+| stale | data, age >= `max_age`, no task | `stale` / the last failure reason, or null | no | `current()` -> refreshing, unless a failure is younger than `retry_after`. The call that starts the refresh is answered at once from the stale data |
+| refreshing | data, age >= `max_age`, a task runs | `stale` / `refresh running` | no: answered at once from the stale data | 200 -> fresh (new data, new ETag); 304 -> fresh (same data, `loaded_at` = now); any failure -> stale (last good data kept) |
+
+The retry intervals (`retry_after` 10 minutes with data, `retry_after_empty` 1 minute without) are decisions.
 
 ### 5.3 `current()` and the refresh
 
@@ -264,10 +269,15 @@ current():
   if (no data or now - loaded_at >= max_age) and not closed:
       task = self._task, or None when it is done or belongs to another event loop
       if task is None and (no failure, or now - last_failure_at >= the retry interval of the state):
-          task = self._task = asyncio.create_task(self._refresh())
-      if task is not None:
+          task = self._task = asyncio.create_task(self._refresh())      # single flight: one task at a time
+      if task is not None and no data:                       # only a first load waits
           await asyncio.wait({task}, timeout=wait_secs)      # a timeout does not cancel the task
+      # with stale data: no await. The refresh runs in the background; this call answers from the stale data
   return the snapshot for the fields as they are now
+
+settle():     # tests only
+  task = self._task
+  if task is not None and not task.done(): await asyncio.wait({task})
 
 _refresh():   # never raises, except CancelledError
   await asyncio.wait_for(self._fetch(), fetch_timeout_secs)
@@ -285,7 +295,8 @@ _refresh():   # never raises, except CancelledError
 ```
 
 - **Lazy, no background loop.** The first model-info request starts the first load. A Kiln whose user never asks for model info sends nothing to models.dev. There is no timer and no start-up load: a start-up load would add a 0.7 MB download to every app start, and the conditional GET makes a load on demand cheap. The only task is the refresh that a request starts; it can outlive that request, and `lifespan` cancels it at shutdown.
-- **Bounded wait.** A request waits at most `wait_secs` (4 s) for models.dev, for a first load and for a reload. Then it answers with what there is; the task goes on, and the next request gets its result.
+- **Stale data is served at once.** When data exists but is older than `max_age`, the request is answered at once from that data (`state: stale`), and a single background refresh is started. The request does not wait for it; a later request gets the new data.
+- **Bounded wait, first load only.** Only a first load, with no data at all, makes a request wait: at most `wait_secs` (4 s). Then it answers from Kiln's own list (`state: unavailable`, `detail: loading`); the task goes on, and the next request gets its result.
 - **Single flight.** Between "is a task running" and `create_task` there is no `await`, so on one event loop no lock is needed. The other-loop guard matters only under Starlette's `TestClient` used without `with` (a new loop per request).
 - **No network.** With no data ever loaded, the endpoints answer from Kiln's list: `models_dev.state` is `unavailable` and every price, limit and date is null. Rows, status, notes, tags and ranks are complete.
 - **Privacy and CPU.** The GET has no header of ours and no query string. The parse and the two indexes take 0.2-0.3 s, so they run in `asyncio.to_thread`.
@@ -328,6 +339,7 @@ Edge cases: an entry with no `model_id` (2 today) is never joined and never `rea
 - For an offered pair the catalogue has, the entry takes `thinking_levels`, `default_thinking_level` and `default_structured_output_mode` from the `/api/available_models` item (it forces `json_schema` for Ollama and Docker, and applies user overrides). Write these as three explicit assignments, not `setattr`.
 - For an offered pair on a known model with no such entry, an entry is added from the item: flags, suggested-for, the three fields above. `provider_model_id` and the models.dev fields are null.
 - Models that only the answer has are appended, sorted by id, `display_name` = the item's `name`. These are fine-tunes (`kiln_fine_tune`, id `<project>::<task>::<finetune>`), user models (`user_model::<uuid>`, under their provider), legacy custom models (`<provider>::<model>`), untested Ollama and Docker tags, and OpenAI-compatible server models (`<server name>::<model>`, provider `openai_compatible`). They have no rank, notes, price or date, and `untested` is true where Kiln says so.
+- Two known limits, accepted. All OpenAI-compatible servers share one provider id, so they are one `openai_compatible` row in the providers list, and the server name is only inside the model id. A fine-tune is bound to a task, and `task_filter` is not carried, so the list can show a fine-tune of another task; the skill text carries the rule (section 9).
 
 ## 7. Name search
 
@@ -343,21 +355,25 @@ Checked on the 314 built-in names: `sonnet 4.5` finds `claude_sonnet_4_5`; `gpt5
 ## 8. Wiring, the off switch, agent policy
 
 ```
-# desktop_server.make_app, after connect_provider_api(app)
+# desktop_server.make_app, directly after connect_provider_api(app)
 models_dev_cache = ModelsDevCache(enabled=not Config.shared().skip_models_dev)
 app.state.models_dev_cache = models_dev_cache
 connect_model_info_api(app, available_models=available_models, models_dev=models_dev_cache)
 
-# desktop_server.lifespan, in the outer finally
+# desktop_server.lifespan, in the outer finally, after job_registry.events.shutdown()
+# and before the inner try that stops the background syncs
 cache = getattr(app.state, "models_dev_cache", None)
 if cache is not None:
     await cache.aclose()
 ```
 
+- **Shared file.** The MCP server component edits the same two functions. The combined `make_app` and `lifespan` are in architecture section 9.1, and that is the text to build from. For this component: the router can be anywhere after `connect_provider_api(app)` (it must come before `connect_kiln_mcp_server`, which is last so that its route index sees these routes); the `aclose()` call is the only line this component adds to the `finally` block, and `aclose()` never raises, so the lines after it still run.
+
 - **Off switch.** A new setting in `kiln_ai/utils/config.py`: `"skip_models_dev": ConfigProperty(bool, env_var="KILN_SKIP_MODELS_DEV", default=False, in_memory=True)`. It goes through `Config` because the conventions gate (`env-access`) allows new environment reads only in `Config` and the entry points, and `Config` parses booleans properly. It is separate from `KILN_SKIP_REMOTE_MODEL_LIST`; the facts show no blocker.
-- **Tests.** The root `conftest.py` gets a second autouse fixture that sets `KILN_SKIP_MODELS_DEV=true` (`monkeypatch.setenv`). `Config` reads the environment at each access, so every app a test builds has the cache off.
+- **Tests.** The root `conftest.py` gets one new autouse fixture, `skip_models_dev`, beside the existing `skip_remote_model_list`. It sets `KILN_SKIP_MODELS_DEV=true` (`monkeypatch.setenv`) and imports nothing. `Config` reads the environment at each access, so every app a test builds has the cache off. It is the only fixture this project adds to the root `conftest.py`; the MCP server's fixture, `kiln_mcp_tmp_root`, is in `app/desktop/conftest.py` (architecture section 9.2).
 - **Dev server.** `dev_env.py`, the `dev_desktop` make target and `openapi_schema.sh` do not set the new variable. So the dev server still skips the remote Kiln list (`origin: built_in`) and gets live prices on the first model-info request. Building the app (schema dump, `make annotations`) sends nothing, because the load is lazy.
-- **Agent policy.** `ALLOW_AGENT` on all three routes: read-only, no secret, no user data, the same policy as `/api/available_models`. They are not MCP-blocked. After adding them: `make annotations` (writes `get_api_model_info_models.json`, `get_api_model_info_model_details.json`, `get_api_model_info_providers.json`), `make schema` (`api_schema.d.ts`), and the skill's API reference regenerated in the same change. CI `check_api_bindings` fails otherwise.
+- **Agent policy.** `ALLOW_AGENT` on all three routes: read-only, no secret, no user data, the same policy as `/api/available_models`. They are not MCP-blocked. After adding them, in the same change: `make annotations` (writes `get_api_model_info_models.json`, `get_api_model_info_model_details.json`, `get_api_model_info_providers.json`) and `make schema` (`api_schema.d.ts`); the existing `check_api_bindings` workflow checks both. The skill's API reference is not regenerated in this step: its pipeline does not exist until build step 4, and the reference is generated there for the first time, with these three endpoints in it.
+- **The hosted Kiln Assistant.** The three annotation files are how the hosted Assistant service learns that it may call these routes. It picks them up when it next updates its Kiln version. Nothing is done in the hosted service in this project (architecture section 8).
 
 ## 9. Mapping for the skill text
 
@@ -369,20 +385,24 @@ if cache is not None:
 | `model_info(model_id)` | `GET /api/model_info/model_details` | `{"model_id": "<id>"}` | none needed (about 1.5 k characters); `del(.sources)` drops the source block |
 | `model_search(query)` | `GET /api/model_info/models` | `{"search": "<words>", "include_not_available": true, "include_deprecated": true}` | `.models \| map({(.model): .display_name}) \| add` |
 
-Points the skill text must carry: "featured" now means the ranked models (13 today), not "has editorial notes" (62), and tags give the wider sets (`recommended`, `top_value`, `top_fast`); the default list is what the user can run now; a null price is "no data", and `sources.models_dev.state` says why; the field names changed (`id` -> `model`, `name` -> `display_name`, `featured_rank` -> `kiln_featured_rank`, `providers[].id` -> `providers[].provider`, `providers[].model_id` -> `providers[].provider_model_id`, `supports_function_calling` -> `providers[].supports_tools`). New calls worth teaching: `{"sort": "price"}`; `{"tags": ["recommended"]}`; `GET /api/model_info/providers` with `.providers | map({provider, ready_model_count})`; `model_details` with `provider` and `.providers[0] | {thinking_levels, default_thinking_level, default_structured_output_mode}` before writing a run config.
+Points the skill text must carry: "featured" now means the ranked models (13 today), not "has editorial notes" (62), and tags give the wider sets (`recommended`, `top_value`, `top_fast`); the default list is what the user can run now; a fine-tune's id names its project and task (`<project>::<task>::<finetune>`), and a fine-tune is used only for its own task; when a model's provider is `not_connected`, the agent asks the user to connect it in the app (skill doc 4.4); a null price is "no data", and `sources.models_dev.state` says why; the field names changed (`id` -> `model`, `name` -> `display_name`, `featured_rank` -> `kiln_featured_rank`, `providers[].id` -> `providers[].provider`, `providers[].model_id` -> `providers[].provider_model_id`, `supports_function_calling` -> `providers[].supports_tools`). New calls worth teaching: `{"sort": "price"}`; `{"tags": ["recommended"]}`; `GET /api/model_info/providers` with `.providers | map({provider, status, ready_model_count})`; `model_details` with `provider` and `.providers[0] | {thinking_levels, default_thinking_level, default_structured_output_mode}` before writing a run config.
 
 ## 10. Response size
 
-The MCP tool's `body_limit` default is 30,000 characters (functional spec 5.6). The facts file measured HT's code on the real data: one row is 420-560 characters; a list with `limit=25` is 10-13 k; with `limit=50` it is 21-25 k, and 28 k with `include_not_available`; with `limit=200` it is 88-108 k; one details answer is 1.3-1.6 k; the providers list with `include_not_available` is 5.1 k (21 rows). So 50 rows are close to the limit and the default of 25 is safe.
+The MCP tool's `body_limit` default is 30,000 characters (functional spec 5.6). The facts file measured HT's code on the real data: one row is 420-560 characters; a list with `limit=25` is 10-13 k; with `limit=50` it is 21-25 k, and 28 k with `include_not_available`; with `limit=200` it is 88-108 k; one details answer is 1.3-1.6 k; the full providers list, unconnected providers included, is 5.1 k (21 rows). So 50 rows are close to the limit and the default of 25 is safe.
 
 A second measurement on the same data with this document's response shape (the `sources` block is 196 characters; the note keys are present and null) took the largest page of 25 over every offset, sort and flag: 18.1 k as compact JSON, which is the form the MCP tool measures (`mcp_server_and_api_tool.md`), and 19.8 k with default separators. With `include_notes`: 23.9 k and 25.5 k. The featured list with notes (13 rows) is 13.8 k. A caller that sets a higher `limit` is expected to add a `jq_filter`.
+
+`include_notes` has no hard size bound, and this is accepted. A note can be 2000 characters (6.1). Today's longest are 259 and 430, and the measured pages fit. Much longer notes in the remote config could pass 30,000 characters at `limit=25`; the agent then gets the "Body too long" error, which says what to do.
 
 ## 11. Python 3.10, dependencies, performance
 
 - **Python 3.10.** HT needs 3.11. Its three 3.11-only points are all in `fetch.py`, which is rewritten: `datetime.UTC` -> `timezone.utc`; `asyncio.timeout` -> `asyncio.wait_for`; and on 3.10 `asyncio.TimeoutError` is not the builtin `TimeoutError`, so catch it by name. The ported code (`X | None`, walrus, `statistics.median`, `date.fromisoformat` on `YYYY-MM-DD`) runs on 3.10.
 - **Type check and lint.** Replace `setattr(...)` and `**row.model_dump(include=...)` in the ported view code with explicit assignments and constructor calls. Rewrite comments that name HT's spec sections, runs or probes.
 - **Dependencies.** None new. `httpx` is already a dependency of core and server; the search uses `difflib`.
-- **Performance (measured).** models.dev: 6.78 MB of JSON, about 0.70 MB gzipped, 1.2 s to download, `json.loads` 0.13 s, 324 providers and 10,024 entries. The join of 314 models (729 entries) against prebuilt indexes takes 12 ms, and it runs only when a source changes. A reload on a normal day is one conditional GET. The search is 314 rows by two strings per call. The remaining cost per request is the `/api/available_models` logic, the same as the UI's own call.
+- **Performance (measured).** models.dev: 6.78 MB of JSON, about 0.70 MB gzipped, 1.2 s to download, `json.loads` 0.13 s, 324 providers and 10,024 entries. The join of 314 models (729 entries) against prebuilt indexes takes 12 ms, and it runs only when a source changes. A reload on a normal day is one conditional GET. The search is 314 rows by two strings per call. The remaining cost per request is the `/api/available_models` logic, the same as the UI's own call: synchronous `requests` calls to Ollama on the event loop (up to 5 s for an unreachable custom host) and a disk walk for fine-tunes. This is existing behaviour and is accepted; a cache of a few seconds is a follow-up.
+- **Two copies.** Until harness-tuner adopts these endpoints, it keeps its own copy of the join. A fix to the join goes to both, by hand, from the diff since the pinned commit.
+- **Age of Kiln's own data.** The model list is as old as the app start, and provider notes and `models_dev_id` values are as old as the installed version. `sources.kiln_model_list` reports the first; nothing reloads either (out of scope, see the top of this doc).
 
 ## 12. Test plan
 
@@ -390,9 +410,9 @@ Tests sit beside the source. None patches a module: every dependency is passed i
 
 **`test_catalog_build.py`** (port of HT `tests/test_model_catalog.py:74-500`, models built as `KilnModel`): prices, limits and dates from the fixture; price on the exact pair; model facts follow the provider preference; loose date (no exact match, earliest date, a deprecated entry counts, a short key is not used, an exact match with no date falls back); median (across every models.dev provider, needs three paid prices, a provider counts once at its lowest price, 0 left out); `kiln_suggested_for` names; `models_dev_id` is used; a provider without it is not joined; a bad price and a bad limit are dropped; tags cleaned and capped; a long note is cut; no models.dev data gives null prices and Kiln's data; `parse_models_dev` on bad JSON and on a non-object. Not ported: the raw-parse cases (Kiln's deserializer owns them), the built-in map cases, the store cases.
 
-**`test_models_dev.py`** (new). A `FakeClock` passed as `now`, and a `client_factory` that returns `httpx.AsyncClient(transport=httpx.MockTransport(handler))`; `wait_secs` and `fetch_timeout_secs` are hundredths of a second where a stall is tested. Cases: (1) first load gives `ok` data; the request has no `If-None-Match` and no header of ours; (2) `enabled=False`: `unavailable` / `turned off`, and a `client_factory` that raises is never called; (3) data younger than `max_age`: no request; (4) stale data: one request with `If-None-Match`; a 304 keeps the data object and moves `loaded_at`; a 200 replaces data and ETag; (5) each failure (non-200, timeout, transport error, over `max_bytes`, bad JSON, not an object) gives its reason and never raises; with no data the state is `unavailable`; with data it is `stale` and the data object is the old one; (6) no new request before `retry_after_empty` (no data) or `retry_after` (data), and one after it; (7) single flight: 20 concurrent `current()` calls make one request; (8) a stalled server: `current()` returns within `wait_secs` with `loading` (or `refresh running`), and after the handler is released the next call has the data; (9) `aclose()` cancels a running refresh, and a later `current()` starts none; a task left from another event loop is ignored.
+**`test_models_dev.py`** (new). A `FakeClock` passed as `now`, and a `client_factory` that returns `httpx.AsyncClient(transport=httpx.MockTransport(handler))`; `wait_secs` and `fetch_timeout_secs` are hundredths of a second where a stall is tested. Cases: (1) first load gives `ok` data; the request has no `If-None-Match` and no header of ours; (2) `enabled=False`: `unavailable` / `turned off`, and a `client_factory` that raises is never called; (3) data younger than `max_age`: no request; (4) stale data: the call that finds it is answered at once with `stale` and the old data object, and starts one request with `If-None-Match`; after `await cache.settle()`, a 304 has kept the data object and moved `loaded_at`, and a 200 has replaced data and ETag, and the next call is `ok`; (5) each failure (non-200, timeout, transport error, over `max_bytes`, bad JSON, not an object) gives its reason and never raises; with no data the state is `unavailable`; with data it is `stale` and the data object is the old one; (6) no new request before `retry_after_empty` (no data) or `retry_after` (data), and one after it; (7) single flight: 20 concurrent `current()` calls make one request; (8) a stalled server, first load: `current()` returns after `wait_secs` with `unavailable` / `loading`, and after the handler is released the next call has the data; (8b) a stalled server, stale data: `current()` returns at once, without waiting `wait_secs` (the test sets `wait_secs` to 60 and a short test timeout), with `stale` / `refresh running` and the old data object; a second call during the refresh starts no second request; after the handler is released and `settle()`, the next call is `ok` with the new data; (9) `aclose()` cancels a running refresh, and a later `current()` starts none; a task left from another event loop is ignored.
 
-**`test_view.py`** (port of HT `tests/test_gateway_model_info.py`, without the policy cases): the three statuses; `Offered` from a bad payload; ready entries only by default; `include_not_available`; deprecated left out by default; entry filters remove entries and then empty rows; a null value fails a filter; `reasoning_model` apart from thinking levels; the tag filter is ANY and a tag on an entry counts; price sort uses the median before the entries and a zero price never sorts; featured, price and newest with ties; paging and `total`; a pair the catalogue lacks; a model the catalogue lacks; server values win for an offered pair; details list every entry; provider counts and order; unconnected providers hidden by default. New: search ranks 0 to 3, the typo pass sets `fuzzy_match`, an empty result, search order against an explicit `sort`, a search with no letter or digit; `featured` true and false; `include_notes`; unknown provider; case-insensitive details lookup; closest ids in the not-found text; no models.dev data gives Kiln's rows with null prices.
+**`test_view.py`** (port of HT `tests/test_gateway_model_info.py`, without the policy cases): the three statuses; `Offered` from a bad payload; ready entries only by default; `include_not_available`; deprecated left out by default; entry filters remove entries and then empty rows; a null value fails a filter; `reasoning_model` apart from thinking levels; the tag filter is ANY and a tag on an entry counts; price sort uses the median before the entries and a zero price never sorts; featured, price and newest with ties; paging and `total`; a pair the catalogue lacks; a model the catalogue lacks; server values win for an offered pair; details list every entry; provider counts and order; unconnected providers are listed and marked `not_connected`. New: search ranks 0 to 3, the typo pass sets `fuzzy_match`, an empty result, search order against an explicit `sort`, a search with no letter or digit; `featured` true and false; `include_notes`; unknown provider; case-insensitive details lookup; closest ids in the not-found text; no models.dev data gives Kiln's rows with null prices.
 
 **`test_service.py`** (new): the catalogue is rebuilt when the models.dev data object changes and when the Kiln list changes, and not otherwise; `sources` for `remote_config` and `built_in`, with ages from the fake clock.
 
@@ -404,12 +424,10 @@ Tests sit beside the source. None patches a module: every dependency is passed i
 
 ## 13. Open items
 
-- **Legacy custom-model provider id (verify during implementation).** `/api/available_models` lists legacy custom models under `provider_id=openai_compatible`, `provider_name=kiln_custom_registry`, with id `<provider>::<model>`. Kiln's run code treats such ids only under `kiln_custom_registry`. Model info would show `openai_compatible` for them. Check that a run config with the pair the endpoint shows does run; if it does not, fix the provider id in `available_models()` before the skill tells agents to trust `provider`.
-- **Follow-up: the web UI's own models.dev fetch.** `app/web_ui/src/routes/(app)/models/price.ts` fetches models.dev in the browser and uses Kiln's raw provider id with no mapping. Out of scope here; it can move to these endpoints later.
-- **All OpenAI-compatible servers share one provider id**, so they are one `openai_compatible` row and the server name is only inside the model id. **Fine-tunes are bound to a task**, and `task_filter` is not carried, so an agent could pick a fine-tune of another task. Decide for each: a new field later, or a sentence in the skill.
-- **Search under the default filters.** A search for a model on an unconnected provider gives nothing unless `include_not_available` is set. The skill mapping sets it; a hint field ("N more with include_not_available") is a possible addition.
-- **Cost of the availability check.** Each request runs the `/api/available_models` logic: synchronous `requests` calls to Ollama on the event loop (up to 5 s for an unreachable custom host) and a disk walk for fine-tunes. Existing behaviour; a cache of a few seconds is an easy later change.
-- **Age of Kiln's own data.** The model list is as old as the app start, and provider notes and `models_dev_id` values are as old as the installed version. `sources.kiln_model_list` reports the first; nothing reloads either.
-- **Decisions made here that the binding file did not give**, for a person to confirm: the off switch as a `Config` setting named `skip_models_dev` / `KILN_SKIP_MODELS_DEV`; the 4 s wait also for a reload of stale data; the shorter retry interval (1 minute) while there is no data; 422 on an unknown provider id and on a search with no letter or digit; `featured=false` as the complement; the `ModelInfo` prefix on every response class; the catalogue memo in `ModelInfoService`.
-- **`include_notes` has no hard size bound.** Notes can be 2000 characters each. Today's longest are 259 and 430, and the measured pages fit; much longer notes in the remote config could pass 30,000 characters at `limit=25`.
-- **Two copies until harness-tuner adopts the endpoints:** fixes to the join must go to both, or HT's copy is frozen. **Unverified:** the size in memory of the slim models.dev form (estimate: a few MB); whether `ty` and ruff reject HT's `setattr` and `**model_dump` forms (they are rewritten anyway); how the hosted Assistant matches these paths to its annotations; models.dev's terms of use for a desktop app that fetches the file.
+To verify during implementation:
+
+- **Legacy custom-model provider id.** `/api/available_models` lists legacy custom models under `provider_id=openai_compatible`, `provider_name=kiln_custom_registry`, with id `<provider>::<model>`. Kiln's run code treats such ids only under `kiln_custom_registry`. Model info would show `openai_compatible` for them. Check that a run config with the pair the endpoint shows does run; if it does not, fix the provider id in `available_models()` before the skill tells agents to trust `provider`.
+- **Memory.** The size in memory of the slim models.dev form (estimate: a few MB).
+- **Lint and types.** Whether `ty` and ruff reject HT's `setattr` and `**model_dump` forms (they are rewritten anyway, section 11).
+
+This component has no owner decision of its own. The project's open items are in [architecture.md](../architecture.md) section 11, and the follow-ups (the web UI's `price.ts`, a cache for the availability check, a hint field for search, the models.dev terms of use, the hosted Assistant, harness-tuner adopting these endpoints) are in its section 8. The known limits are stated where they are designed: 6.3, section 7, section 10 and section 11.
