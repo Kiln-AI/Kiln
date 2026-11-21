@@ -167,7 +167,55 @@ def test_connect_api_key_openai_success(mock_connect_openai, client):
     )
     assert response.status_code == 200
     assert response.json() == {"message": "Connected to OpenAI"}
-    mock_connect_openai.assert_called_once_with("test_key")
+    mock_connect_openai.assert_called_once_with("test_key", reasoning_summaries=False)
+
+
+@patch("app.desktop.studio_server.provider_api.connect_openai")
+def test_connect_api_key_openai_passes_reasoning_summaries_option(
+    mock_connect_openai, client
+):
+    mock_connect_openai.return_value = {"message": "Connected to OpenAI"}
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={
+            "provider": "openai",
+            "key_data": {"API Key": "test_key"},
+            "options": {"reasoning_summaries": True},
+        },
+    )
+    assert response.status_code == 200
+    mock_connect_openai.assert_called_once_with("test_key", reasoning_summaries=True)
+
+
+@pytest.mark.parametrize("provider", ["openai", "groq"])
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["reasoning_summaries"],
+        "reasoning_summaries",
+        None,
+        {"reasoning_summaries": "true"},
+        {"reasoning_summaries": 1},
+    ],
+)
+def test_connect_api_key_rejects_invalid_options(client, provider, options):
+    with (
+        patch("app.desktop.studio_server.provider_api.connect_openai") as openai,
+        patch("app.desktop.studio_server.provider_api.connect_groq") as groq,
+    ):
+        response = client.post(
+            "/api/provider/connect_api_key",
+            json={
+                "provider": provider,
+                "key_data": {"API Key": "test_key"},
+                "options": options,
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"message": "Invalid options"}
+    openai.assert_not_called()
+    groq.assert_not_called()
 
 
 @patch("app.desktop.studio_server.provider_api.connect_siliconflow")
@@ -330,7 +378,9 @@ def test_connect_openai_success(mock_config_shared, mock_requests_get, client):
 
     assert response.status_code == 200
     assert response.json() == {"message": "Connected to OpenAI"}
-    assert mock_config.open_ai_api_key == "test_key"
+    mock_config.update_settings.assert_called_once_with(
+        {"open_ai_api_key": "test_key", "open_ai_reasoning_summaries": False}
+    )
 
 
 @patch("app.desktop.studio_server.provider_api.requests.get")
@@ -361,6 +411,83 @@ def test_connect_openai_request_exception(mock_requests_get, client):
 
     assert response.status_code == 400
     assert "Failed to connect to OpenAI. Error:" in response.json()["message"]
+
+
+def openai_models_response(status_code: int) -> MagicMock:
+    response = MagicMock()
+    response.status_code = status_code
+    return response
+
+
+@pytest.mark.parametrize(
+    "extra_payload, expected",
+    [
+        ({"options": {"reasoning_summaries": True}}, True),
+        ({"options": {"reasoning_summaries": False}}, False),
+        ({"options": {}}, False),
+        ({}, False),
+    ],
+)
+@patch("app.desktop.studio_server.provider_api.requests.get")
+def test_connect_openai_saves_reasoning_summaries_option(
+    mock_requests_get, client, extra_payload, expected
+):
+    mock_requests_get.return_value = openai_models_response(200)
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={
+            "provider": "openai",
+            "key_data": {"API Key": "test_key"},
+            **extra_payload,
+        },
+    )
+
+    assert response.status_code == 200
+    assert Config.shared().open_ai_api_key == "test_key"
+    assert Config.shared().open_ai_reasoning_summaries is expected
+
+
+@patch("app.desktop.studio_server.provider_api.requests.get")
+def test_connect_openai_without_option_turns_reasoning_summaries_off(
+    mock_requests_get, client
+):
+    Config.shared().open_ai_reasoning_summaries = True
+    mock_requests_get.return_value = openai_models_response(200)
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "openai", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 200
+    assert Config.shared().open_ai_reasoning_summaries is False
+
+
+@pytest.mark.parametrize(
+    "models_call, expected_status",
+    [
+        ({"return_value": openai_models_response(401)}, 401),
+        ({"side_effect": Exception("Network down")}, 400),
+    ],
+)
+def test_connect_openai_failed_key_check_saves_nothing(
+    client, monkeypatch, models_call, expected_status
+):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with patch("app.desktop.studio_server.provider_api.requests.get", **models_call):
+        response = client.post(
+            "/api/provider/connect_api_key",
+            json={
+                "provider": "openai",
+                "key_data": {"API Key": "test_key"},
+                "options": {"reasoning_summaries": True},
+            },
+        )
+
+    assert response.status_code == expected_status
+    assert Config.shared().open_ai_api_key is None
+    assert Config.shared().open_ai_reasoning_summaries is False
 
 
 @pytest.fixture
@@ -2283,10 +2410,27 @@ async def test_disconnect_api_key_openai(client, mock_config_all_providers):
 
         assert response.status_code == 200
         assert response.json() == {"message": "Provider disconnected"}
-        assert mock_config_all_providers.open_ai_api_key is None
+        mock_config_all_providers.update_settings.assert_called_once_with(
+            {"open_ai_api_key": None, "open_ai_reasoning_summaries": False}
+        )
 
         # Check it didn't unset the other providers
         assert mock_config_all_providers.groq_api_key is not None
+
+
+def test_disconnect_api_key_openai_turns_reasoning_summaries_off(client, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    Config.shared().open_ai_api_key = "test_key"
+    Config.shared().open_ai_reasoning_summaries = True
+
+    response = client.post(
+        "/api/provider/disconnect_api_key",
+        params={"provider_id": "openai"},
+    )
+
+    assert response.status_code == 200
+    assert Config.shared().open_ai_api_key is None
+    assert Config.shared().open_ai_reasoning_summaries is False
 
 
 @pytest.mark.asyncio
@@ -4855,6 +4999,55 @@ async def test_connect_openllm_rejects_plain_http_remote_with_key(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "base_url",
+    ["http://www.openllm.sh/v1", "http://192.168.1.20:8787/v1"],
+)
+async def test_connect_openllm_rejects_plain_http_remote_with_env_key(
+    openllm_mocks, base_url, monkeypatch
+):
+    mock_get, mock_shared = openllm_mocks
+    monkeypatch.setenv("OPENLLM_API_KEY", "sk-llm-from-env")
+
+    result = await connect_openllm({"Base URL - Optional": base_url})
+
+    assert result.status_code == 400
+    assert _json_body(result) == {
+        "message": "Failed to connect to OpenLLM. OPENLLM_API_KEY is set in the environment and would be sent to this Base URL. Use an https:// Base URL."
+    }
+    mock_get.assert_not_called()
+    mock_shared.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_openllm_allows_plain_http_remote_without_any_key(
+    openllm_mocks, monkeypatch
+):
+    mock_get, _ = openllm_mocks
+    monkeypatch.delenv("OPENLLM_API_KEY", raising=False)
+
+    result = await connect_openllm(
+        {"Base URL - Optional": "http://192.168.1.20:8787/v1"}
+    )
+
+    assert result.status_code == 200
+    mock_get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_connect_openllm_allows_https_remote_with_env_key(
+    openllm_mocks, monkeypatch
+):
+    mock_get, _ = openllm_mocks
+    monkeypatch.setenv("OPENLLM_API_KEY", "sk-llm-from-env")
+
+    result = await connect_openllm({"Base URL - Optional": "https://www.openllm.sh/v1"})
+
+    assert result.status_code == 200
+    mock_get.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url",
     ["http://127.0.0.1:8787/v1", "http://localhost:8787/v1", "http://[::1]:8787/v1"],
 )
 async def test_connect_openllm_allows_plain_http_loopback_with_key(
@@ -5052,6 +5245,7 @@ def test_openllm_model_details_keeps_id_verbatim_and_maps_json_mode():
         {"id": "no-capabilities"},
         {"id": "bad-capabilities", "capabilities": "chat"},
         {"id": 5, "capabilities": ["chat"]},
+        {"id": "", "capabilities": ["chat"]},
         {"capabilities": ["chat"]},
     ],
 )

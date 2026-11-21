@@ -94,10 +94,6 @@ tags_metadata = [
         "description": "Create and manage fine-tuning jobs.",
     },
     {
-        "name": "Prompt Optimization",
-        "description": "Run and monitor prompt optimization jobs.",
-    },
-    {
         "name": "Skills",
         "description": "Create and manage agent skills within projects.",
     },

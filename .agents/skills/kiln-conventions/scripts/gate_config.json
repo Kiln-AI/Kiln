@@ -39,7 +39,7 @@
   },
   "env_access_allowed": [
     "libs/core/kiln_ai/utils/config.py",
-    "app/desktop/desktop.py",
+    "app/desktop/desktop_main.py",
     "app/desktop/dev_server.py",
     "app/desktop/dev_app.py",
     "app/desktop/dev_env.py",

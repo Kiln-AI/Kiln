@@ -11,6 +11,7 @@ from kiln_ai.adapters.ml_model_list import (
     ModelParserID,
     ModelProviderName,
 )
+from kiln_ai.adapters.ml_provider_list import get_provider_info
 from kiln_ai.adapters.ollama_tools import OllamaConnection
 from kiln_ai.adapters.provider_tools import (
     LiteLlmCoreConfig,
@@ -42,6 +43,7 @@ from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.utils.config import Config
 
 
 @pytest.fixture(autouse=True)
@@ -287,6 +289,14 @@ def test_provider_name_from_id_case_sensitivity():
 )
 def test_provider_name_from_id_parametrized(provider_id, expected_name):
     assert provider_name_from_id(provider_id) == expected_name
+
+
+@pytest.mark.parametrize("provider", list(ModelProviderName))
+def test_provider_name_from_id_uses_provider_list(provider):
+    name = provider_name_from_id(provider.value)
+    assert name == get_provider_info(provider).friendly_name
+    assert name.strip()
+    assert not name.startswith("Unknown provider")
 
 
 def test_get_model_and_provider_valid():
@@ -1067,6 +1077,7 @@ def mock_config_for_lite_llm_core_config():
         # Set up all the config values
         config_instance.open_router_api_key = "test-openrouter-key"
         config_instance.open_ai_api_key = "test-openai-key"
+        config_instance.open_ai_reasoning_summaries = False
         config_instance.groq_api_key = "test-groq-key"
         config_instance.bedrock_access_key = "test-aws-access-key"
         config_instance.bedrock_secret_key = "test-aws-secret-key"
@@ -1314,6 +1325,35 @@ def test_lite_llm_core_config_for_provider_with_string(
     assert config == LiteLlmCoreConfig(
         additional_body_options={"api_key": "test-openai-key"}
     )
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_lite_llm_core_config_openai_reads_reasoning_summaries(enabled):
+    Config.shared().open_ai_reasoning_summaries = enabled
+
+    config = lite_llm_core_config_for_provider(ModelProviderName.openai)
+
+    assert config is not None
+    assert config.openai_reasoning_summaries is enabled
+
+
+def test_lite_llm_core_config_openai_stored_null_summaries_is_off():
+    with open(Config.settings_path(), "w") as f:
+        f.write("open_ai_reasoning_summaries: null\n")
+
+    config = lite_llm_core_config_for_provider(ModelProviderName.openai)
+
+    assert config is not None
+    assert config.openai_reasoning_summaries is False
+
+
+def test_lite_llm_core_config_non_openai_ignores_reasoning_summaries():
+    Config.shared().open_ai_reasoning_summaries = True
+
+    config = lite_llm_core_config_for_provider(ModelProviderName.openrouter)
+
+    assert config is not None
+    assert config.openai_reasoning_summaries is False
 
 
 def test_lite_llm_core_config_for_provider_unknown_provider():

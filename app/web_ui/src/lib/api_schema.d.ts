@@ -3120,152 +3120,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check Run Config
-         * @description Check if a run config is valid for a Prompt Optimization job by validating the model is supported.
-         */
-        get: operations["check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check Eval
-         * @description Check if an eval is valid for a Prompt Optimization job.
-         *     Validates that the eval has a default config and that the model is supported.
-         */
-        get: operations["check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start Prompt Optimization Job
-         * @description Start a prompt optimization job by zipping the project and sending it to the Kiln server.
-         *     Creates and saves a PromptOptimizationJob datamodel to track the job.
-         */
-        post: operations["start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Prompt Optimization Jobs
-         * @description List all Prompt Optimization jobs for a task.
-         *     Optionally update the status of non-final jobs from the remote server.
-         */
-        get: operations["list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Prompt Optimization Job
-         * @description Get a specific Prompt Optimization job and update its status from the remote server.
-         *     If the job has succeeded, create a prompt if one doesn't exist yet.
-         *     If the job is already in a settled state (succeeded, failed, cancelled),
-         *     skip the status update and return the cached model.
-         */
-        get: operations["get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/prompt_optimization_jobs/{job_id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Prompt Optimization Job Status
-         * @description Get the status of a Prompt Optimization job.
-         */
-        get: operations["get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/prompt_optimization_jobs/{job_id}/result": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Prompt Optimization Job Result
-         * @description Get the result of a prompt optimization job (includes status and output if completed).
-         */
-        get: operations["get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/copilot/clarify_spec": {
         parameters: {
             query?: never;
@@ -4413,7 +4267,6 @@ export interface components {
             tool_servers: components["schemas"]["AgentOverviewToolServers"];
             run_configs: components["schemas"]["AgentOverviewRunConfigs"];
             fine_tunes: components["schemas"]["AgentOverviewFineTunes"];
-            prompt_optimization_jobs: components["schemas"]["AgentOverviewPromptOptimizationJobs"];
             skills: components["schemas"]["AgentOverviewSkills"];
             /** Connected Providers */
             connected_providers: {
@@ -4530,11 +4383,6 @@ export interface components {
              * @description Type label (e.g. 'Custom', 'Frozen', 'Fine-Tune').
              */
             type: string;
-        };
-        /** AgentOverviewPromptOptimizationJobs */
-        AgentOverviewPromptOptimizationJobs: {
-            /** Total Count */
-            total_count: number;
         };
         /**
          * AgentOverviewPrompts
@@ -5392,28 +5240,6 @@ export interface components {
          * @enum {string}
          */
         ChatStrategy: "final_only" | "final_and_intermediate" | "two_message_cot" | "final_and_intermediate_r1_compatible";
-        /**
-         * CheckEvalResponse
-         * @description Response model for check_eval endpoint.
-         */
-        CheckEvalResponse: {
-            /** Has Default Config */
-            has_default_config: boolean;
-            /** Has Train Set */
-            has_train_set: boolean;
-            /** Model Is Supported */
-            model_is_supported: boolean;
-            /** Unsupported Reason */
-            unsupported_reason?: string | null;
-        };
-        /**
-         * CheckRunConfigResponse
-         * @description Response model for check_run_config endpoint.
-         */
-        CheckRunConfigResponse: {
-            /** Is Supported */
-            is_supported: boolean;
-        };
         /**
          * ChunkerConfig
          * @description Configuration for chunking extracted documents into smaller pieces.
@@ -9419,11 +9245,6 @@ export interface components {
              */
             ended_at?: string | null;
         };
-        /**
-         * JobStatus
-         * @enum {string}
-         */
-        JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
         JsonValue: unknown;
         /**
          * JudgeConfig
@@ -11164,87 +10985,6 @@ export interface components {
             leakage_examples: string;
         };
         /**
-         * PromptOptimizationJob
-         * @description The Kiln prompt optimization job datamodel.
-         */
-        PromptOptimizationJob: {
-            /**
-             * V
-             * @description Schema version for migration support.
-             * @default 1
-             */
-            v: number;
-            /**
-             * Id
-             * @description Unique identifier for this record.
-             */
-            id?: string | null;
-            /**
-             * Path
-             * @description File system path where the record is stored.
-             */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
-             */
-            created_at?: string;
-            /**
-             * Created By
-             * @description User ID of the creator.
-             */
-            created_by?: string;
-            /**
-             * Name
-             * @description The name of the prompt optimization job.
-             */
-            name: string;
-            /**
-             * Description
-             * @description A description of the prompt optimization job for you and your team.
-             */
-            description?: string | null;
-            /**
-             * Job Id
-             * @description The ID of the job on the remote Kiln server.
-             */
-            job_id: string;
-            /**
-             * Target Run Config Id
-             * @description The ID of the run configuration used for this job.
-             */
-            target_run_config_id: string;
-            /**
-             * Latest Status
-             * @description The latest known status of this prompt optimization job (pending, running, succeeded, failed, cancelled). Not updated in real time.
-             * @default pending
-             */
-            latest_status: string;
-            /**
-             * Optimized Prompt
-             * @description The optimized prompt result when the job succeeds.
-             */
-            optimized_prompt?: string | null;
-            /**
-             * Created Prompt Id
-             * @description The ID of the prompt created from this job's result, if any.
-             */
-            created_prompt_id?: string | null;
-            /**
-             * Created Run Config Id
-             * @description The ID of the run config created from this job's result, if any.
-             */
-            created_run_config_id?: string | null;
-            /**
-             * Eval Ids
-             * @description List of eval IDs used for this job.
-             */
-            eval_ids?: string[];
-            /** Model Type */
-            readonly model_type: string;
-        };
-        /**
          * PromptResponse
          * @description The available prompt generators and saved prompts for a task.
          */
@@ -11303,23 +11043,6 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
-        };
-        /**
-         * PublicPromptOptimizationJobResultResponse
-         * @description Public response model for prompt optimization job result containing only the optimized prompt.
-         */
-        PublicPromptOptimizationJobResultResponse: {
-            /** Optimized Prompt */
-            optimized_prompt: string;
-        };
-        /**
-         * PublicPromptOptimizationJobStatusResponse
-         * @description Public response model for prompt optimization job status.
-         */
-        PublicPromptOptimizationJobStatusResponse: {
-            /** Job Id */
-            job_id: string;
-            status: components["schemas"]["JobStatus"];
         };
         /** Question */
         Question: {
@@ -12985,13 +12708,6 @@ export interface components {
              * @description Identifier for the started data guide draft job.
              */
             job_id: string;
-        };
-        /** StartPromptOptimizationJobRequest */
-        StartPromptOptimizationJobRequest: {
-            /** Target Run Config Id */
-            target_run_config_id: string;
-            /** Eval Ids */
-            eval_ids: string[];
         };
         /**
          * StatisticsRequest
@@ -22269,255 +21985,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenFileResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get: {
-        parameters: {
-            query: {
-                /** @description The unique identifier of the run configuration. */
-                run_config_id: string;
-            };
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CheckRunConfigResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get: {
-        parameters: {
-            query: {
-                /** @description The unique identifier of the evaluation. */
-                eval_id: string;
-            };
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CheckEvalResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StartPromptOptimizationJobRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptOptimizationJob"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get: {
-        parameters: {
-            query?: {
-                /** @description Whether to update the status of non-final jobs from the remote server. */
-                update_status?: boolean;
-            };
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptOptimizationJob"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-                /** @description The unique identifier of the prompt optimization job. */
-                prompt_optimization_job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptOptimizationJob"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the job. */
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicPromptOptimizationJobStatusResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the job. */
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicPromptOptimizationJobResultResponse"];
                 };
             };
             /** @description Validation Error */

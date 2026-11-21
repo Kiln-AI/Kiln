@@ -232,7 +232,7 @@ class TestCheckEntitlements:
             mock_config.kiln_copilot_api_key = None
 
             response = client.get(
-                "/api/check_entitlements?feature_codes=prompt-optimization"
+                "/api/check_entitlements?feature_codes=example-feature"
             )
             assert response.status_code == 401
             assert "API key not configured" in response.json()["message"]
@@ -241,7 +241,7 @@ class TestCheckEntitlements:
         mock_response = MagicMock(
             spec=CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet
         )
-        mock_response.additional_properties = {"prompt-optimization": True}
+        mock_response.additional_properties = {"example-feature": True}
 
         mock_detailed_response = MagicMock()
         mock_detailed_response.status_code = 200
@@ -254,17 +254,17 @@ class TestCheckEntitlements:
             mock_check.return_value = mock_detailed_response
 
             response = client.get(
-                "/api/check_entitlements?feature_codes=prompt-optimization"
+                "/api/check_entitlements?feature_codes=example-feature"
             )
             assert response.status_code == 200
-            assert response.json() == {"prompt-optimization": True}
+            assert response.json() == {"example-feature": True}
             mock_check.assert_called_once()
 
     def test_check_entitlements_single_feature_false(self, client, mock_api_key):
         mock_response = MagicMock(
             spec=CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet
         )
-        mock_response.additional_properties = {"prompt-optimization": False}
+        mock_response.additional_properties = {"example-feature": False}
 
         mock_detailed_response = MagicMock()
         mock_detailed_response.status_code = 200
@@ -277,17 +277,17 @@ class TestCheckEntitlements:
             mock_check.return_value = mock_detailed_response
 
             response = client.get(
-                "/api/check_entitlements?feature_codes=prompt-optimization"
+                "/api/check_entitlements?feature_codes=example-feature"
             )
             assert response.status_code == 200
-            assert response.json() == {"prompt-optimization": False}
+            assert response.json() == {"example-feature": False}
 
     def test_check_entitlements_multiple_features(self, client, mock_api_key):
         mock_response = MagicMock(
             spec=CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet
         )
         mock_response.additional_properties = {
-            "prompt-optimization": True,
+            "example-feature": True,
             "advanced-analytics": False,
             "custom-models": True,
         }
@@ -303,11 +303,11 @@ class TestCheckEntitlements:
             mock_check.return_value = mock_detailed_response
 
             response = client.get(
-                "/api/check_entitlements?feature_codes=prompt-optimization,advanced-analytics,custom-models"
+                "/api/check_entitlements?feature_codes=example-feature,advanced-analytics,custom-models"
             )
             assert response.status_code == 200
             assert response.json() == {
-                "prompt-optimization": True,
+                "example-feature": True,
                 "advanced-analytics": False,
                 "custom-models": True,
             }
@@ -324,7 +324,7 @@ class TestCheckEntitlements:
             mock_check.return_value = mock_detailed_response
 
             response = client.get(
-                "/api/check_entitlements?feature_codes=prompt-optimization"
+                "/api/check_entitlements?feature_codes=example-feature"
             )
             assert response.status_code == 403
             assert "Forbidden: Invalid API key" in response.json()["message"]

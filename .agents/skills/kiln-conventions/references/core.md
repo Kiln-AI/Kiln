@@ -17,6 +17,7 @@
 
 - **`built_in_models` is replaced at runtime.** `remote_config.refresh_model_list` swaps its contents in place (`built_in_models[:] = …`, under `refresh_lock`) from a background thread started by `refresh_model_list_background`. Treat the list as read-only, iterate it fresh each time, and never keep a reference to a slice or a filtered copy across calls. The embedding and reranker lists behave the same way.
 - **`ModelName` is not the set of valid model names.** The remote list can add models whose names aren't members of the shipped `ModelName` enum, and `KilnModel.name` is a `str`. Compare against `KilnModel.name` strings; never validate or type user-provided model ids with `ModelName`. `ModelName` is fine for constants chosen at build time and inside the model list itself.
+- **`built_in_providers` (`kiln_ai.adapters.ml_provider_list`) is not refreshed.** It is a tuple fixed at release. `serialize_config` publishes it as `provider_list` for agents outside Kiln, but `deserialize_config_data` does not load it. It is the one Python source of friendly provider names: `provider_name_from_id` reads it.
 - `KILN_SKIP_REMOTE_MODEL_LIST=true` (`should_skip_remote_model_list`) turns the refresh off; the root `conftest.py` sets it for every test.
 
 ### Adapters are the hot path
@@ -43,6 +44,8 @@
 | An eval, fine-tune, RAG, chunker, extractor, embedding or reranker implementation | the matching folder under `adapters/` |
 | A tool an agent can call | `tools/` (built-ins in `tools/built_in_tools/`) |
 | A model or provider entry | `adapters/ml_model_list.py`, `ml_embedding_model_list.py`, `reranker_list.py` |
+| A provider's friendly name, models.dev id, notes or tags | `adapters/ml_provider_list.py` (`built_in_providers`) |
+| A tag for agent notes and tags, with its meaning | `adapters/model_agent_info.py` |
 | A CLI command | `cli/commands/`, registered in `cli/cli.py` |
 | A small, dependency-free helper | `utils/`, only if no domain module owns it (rules.md E19) |
 | Test support | `test_*.py` or `conftest.py`. The `pytest_*.py` modules in the package predate this rule; don't add more. |
@@ -53,11 +56,12 @@
 
 1. `ModelProviderName` in `datamodel/datamodel_enums.py`
 2. the key and env-var properties in `Config.__init__` (`utils/config.py`)
-3. `provider_warnings` and `provider_name_from_id` in `adapters/provider_tools.py`
-4. `lite_llm_core_config_for_provider` in `adapters/provider_tools.py`. Every case there reads `Config.shared().<key>`, so a new case FAILs `core-config-shared` (and `env-access` if it reads a base-URL env var). That is an H24 case: don't allowlist it; report it in your summary and the PR with the rule id, `path:line`, and "waits on provider config injection".
-5. `get_litellm_provider_info` in `utils/litellm.py`
-6. any provider branches in `LiteLlmAdapter.build_extra_body`
-7. the model entries in `ml_model_list.py`
+3. `provider_warnings` in `adapters/provider_tools.py`
+4. the provider's item in `built_in_providers` (`adapters/ml_provider_list.py`), in enum order. `provider_name_from_id` reads its friendly name, and `test_ml_provider_list.py` fails until it exists.
+5. `lite_llm_core_config_for_provider` in `adapters/provider_tools.py`. Every case there reads `Config.shared().<key>`, so a new case FAILs `core-config-shared` (and `env-access` if it reads a base-URL env var). That is an H24 case: don't allowlist it; report it in your summary and the PR with the rule id, `path:line`, and "waits on provider config injection".
+6. `get_litellm_provider_info` in `utils/litellm.py`
+7. any provider branches in `LiteLlmAdapter.build_extra_body`
+8. the model entries in `ml_model_list.py`
 
 ## Startup
 

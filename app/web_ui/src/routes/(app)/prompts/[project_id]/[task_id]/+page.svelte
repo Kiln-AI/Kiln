@@ -13,7 +13,6 @@
   import type { Task, ApiPrompt } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import Banner from "$lib/ui/banner.svelte"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -153,10 +152,6 @@
     ]}
     action_buttons={[
       {
-        label: "Optimizer Jobs",
-        href: `/prompt_optimization/${project_id}/${task_id}`,
-      },
-      {
         label: "Create Prompt",
         href: `/prompts/${project_id}/${task_id}/prompt_generators`,
         primary: true,
@@ -173,18 +168,6 @@
       </div>
     {:else}
       <div class="flex flex-col gap-6">
-        <Banner
-          title="Automatically Optimize Your Prompt"
-          description="Use Kiln's state-of-the-art prompt optimizer to automatically improve your prompt."
-          button_label="Create Optimized Prompt"
-          href={`/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`}
-        >
-          <div slot="icon" class="p-4 border rounded-lg bg-base-100">
-            <div class="h-12 w-12">
-              <img src="/images/animated_logo.svg" alt="Kiln Pro" />
-            </div>
-          </div>
-        </Banner>
         <a
           class="group text-left"
           href={`/prompts/${project_id}/${task_id}/edit_base_prompt`}

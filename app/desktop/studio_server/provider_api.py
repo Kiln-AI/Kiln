@@ -847,6 +847,15 @@ def connect_provider_api(app: FastAPI):
             )
         return api_key
 
+    def parse_connect_options(payload: dict) -> dict[str, bool]:
+        options = payload.get("options", {})
+        if not isinstance(options, dict) or not all(
+            isinstance(name, str) and isinstance(value, bool)
+            for name, value in options.items()
+        ):
+            raise HTTPException(status_code=400, detail="Invalid options")
+        return options
+
     @app.post(
         "/api/provider/connect_api_key",
         summary="Connect Provider API Key",
@@ -861,6 +870,7 @@ def connect_provider_api(app: FastAPI):
                 status_code=400,
                 content={"message": "Invalid key_data or provider"},
             )
+        options = parse_connect_options(payload)
 
         # Wandb is not a typical AI provider, but it's a provider you can connect through this UI/API
         if provider == "wandb":
@@ -891,7 +901,10 @@ def connect_provider_api(app: FastAPI):
 
         match typed_provider:
             case ModelProviderName.openai:
-                return await connect_openai(parse_api_key(key_data))
+                return await connect_openai(
+                    parse_api_key(key_data),
+                    reasoning_summaries=options.get("reasoning_summaries", False),
+                )
             case ModelProviderName.groq:
                 return await connect_groq(parse_api_key(key_data))
             case ModelProviderName.openrouter:
@@ -972,7 +985,9 @@ def connect_provider_api(app: FastAPI):
 
             match typed_provider_id:
                 case ModelProviderName.openai:
-                    Config.shared().open_ai_api_key = None
+                    Config.shared().update_settings(
+                        {"open_ai_api_key": None, "open_ai_reasoning_summaries": False}
+                    )
                 case ModelProviderName.groq:
                     Config.shared().groq_api_key = None
                 case ModelProviderName.openrouter:
@@ -1253,7 +1268,7 @@ async def connect_fireworks(key_data: dict):
         )
 
 
-async def connect_openai(key: str):
+async def connect_openai(key: str, reasoning_summaries: bool):
     try:
         headers = {
             "Authorization": f"Bearer {key}",
@@ -1275,7 +1290,9 @@ async def connect_openai(key: str):
             content={"message": f"Failed to connect to OpenAI. Error: {e!s}"},
         )
 
-    Config.shared().open_ai_api_key = key
+    Config.shared().update_settings(
+        {"open_ai_api_key": key, "open_ai_reasoning_summaries": reasoning_summaries}
+    )
 
     return JSONResponse(
         status_code=200,
@@ -1763,6 +1780,10 @@ def _openllm_field(key_data: dict, field: str) -> str | None:
     return value.strip() or None
 
 
+def _openllm_env_api_key() -> str | None:
+    return (os.environ.get("OPENLLM_API_KEY") or "").strip() or None
+
+
 def _openllm_auth_failure_message(base_url: str, api_key: str | None) -> str:
     if api_key:
         return "Invalid API key."
@@ -1813,14 +1834,22 @@ async def connect_openllm(key_data: dict):
             return _openllm_connect_error(
                 400, "Base URL must start with http:// or https://"
             )
-        if (
-            api_key
-            and base_url.startswith("http://")
+        is_remote_http = (
+            base_url.startswith("http://")
             and urlparse(base_url).hostname not in OPENLLM_LOOPBACK_HOSTS
-        ):
+        )
+        if api_key and is_remote_http:
             # Plain HTTP would send the API key in the clear to a remote host.
             return _openllm_connect_error(
                 400, "Use an https:// Base URL when connecting with an API key."
+            )
+        if not api_key and is_remote_http and _openllm_env_api_key():
+            # A keyless connection saves no key, so Config falls back to this
+            # environment key at call time and would send it over plain HTTP.
+            return _openllm_connect_error(
+                400,
+                "OPENLLM_API_KEY is set in the environment and would be sent to this Base URL. "
+                "Use an https:// Base URL.",
             )
 
         try:
@@ -2173,7 +2202,11 @@ def openllm_model_details(card: Dict[str, Any]) -> ModelDetails | None:
     """Builds the picker entry for one OpenLLM model card, or None if it is not a chat model."""
     model_id = card.get("id")
     capabilities = card.get("capabilities")
-    if not isinstance(model_id, str) or not isinstance(capabilities, list):
+    if (
+        not isinstance(model_id, str)
+        or not model_id
+        or not isinstance(capabilities, list)
+    ):
         return None
     if "chat" not in capabilities:
         return None

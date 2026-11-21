@@ -1,5 +1,6 @@
 _GENERATOR_LABELS: dict[str, str] = {
     "simple_prompt_builder": "Basic (Zero Shot)",
+    # Prompts saved by older Kiln versions carry this generator id; nothing creates new ones.
     "kiln_prompt_optimizer": "Kiln Optimized",
     "few_shot_prompt_builder": "Few-Shot",
     "multi_shot_prompt_builder": "Many-Shot",
