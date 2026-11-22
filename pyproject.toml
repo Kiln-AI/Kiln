@@ -27,6 +27,7 @@ dev = [
     "watchfiles>=1.1.0",
     "scalar-fastapi>=1.4.3",
     "ty==0.0.8",
+    "openapi2skill ; python_full_version >= '3.13'",
 ]
 
 [tool.uv]
@@ -45,6 +46,7 @@ kiln-mcp-server = { workspace = true }
 kiln-server = { workspace = true }
 kiln-studio-desktop = { workspace = true }
 kiln-ai = { workspace = true }
+openapi2skill = { git = "https://github.com/scosman/openapi2skill", rev = "c7c2ca55e5b5300e28678ba4e47e2ad6f5bd1d28" }
 
 [tool.ruff]
 exclude = [

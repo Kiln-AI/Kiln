@@ -72,6 +72,15 @@ def _walk(node: Traversable, prefix: str, files: dict[str, Traversable]) -> None
             files[key] = child
 
 
+def list_tree(root: Traversable) -> dict[str, Traversable]:
+    """Every file under `root` that the skill serves, keyed by its POSIX path
+    from `root`. Hidden names and `__pycache__` are skipped."""
+    files: dict[str, Traversable] = {}
+    if root.is_dir():
+        _walk(root, "", files)
+    return files
+
+
 def _parent(key: str) -> str:
     return key.rpartition("/")[0]
 
@@ -82,9 +91,7 @@ def build_index(root: Traversable | None = None) -> SkillIndex:
     Raises RuntimeError when the tree has no root `SKILL.md`.
     """
     root = root if root is not None else _shipped_root()
-    files: dict[str, Traversable] = {}
-    if root.is_dir():
-        _walk(root, "", files)
+    files = list_tree(root)
     if ROOT_FILE not in files:
         raise RuntimeError(E_NO_SKILL_MD)
 

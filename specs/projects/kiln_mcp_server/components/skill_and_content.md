@@ -370,7 +370,7 @@ Steps of `generate` (and `check`, up to step 7):
 2. `drop_blocked`: delete each operation whose `x-mcp-policy.permission` is `deny` (the key constant comes from `kiln_server.utils.agent_checks`); delete a path item left with no operation. Then, if any remaining operation has a method outside `ALLOWED_METHODS`, stop with exit 1: `call_kiln_api` cannot call it, so it must be blocked or changed.
 3. `normalise`: set `info.version` to `"0.0.0"`. The version changes at each release and must not make the folder stale.
 4. Write the spec to a temp file (`json.dumps(..., ensure_ascii=False)`, path order kept).
-5. `run_generator`: run `[sys.executable, "-m", "openapi2skill", "--spec", <file>, "--output", <tmp>/out]` with `PYTHONUTF8=1`. Stop on a non-zero exit, or on a stderr line that starts with `Warning: filename collision`. The output folder is the single child of `<tmp>/out` (its name is a timestamp). Read every file of its `reference/` folder; decode UTF-8; turn `\r\n` into `\n`. Ignore the generator's own `SKILL.md`. File names are kept as generated. Stop when the count of endpoint docs differs from the count of operations in the spec.
+5. `run_generator`: run `[sys.executable, "-m", "openapi2skill", "--spec", <file>, "--output", <tmp>/out]` with `PYTHONUTF8=1` and `PYTHONHASHSEED=0` (the generator iterates a set of method names, so without a fixed seed the order of a path's methods in a catalogue changes from run to run). Stop on a non-zero exit, or on a stderr line that starts with `Warning: filename collision` or `Warning: tag filename collision`. The output folder is the single child of `<tmp>/out` (its name is a timestamp). Read every file of its `reference/` folder; decode UTF-8; turn `\r\n` into `\n`. Ignore the generator's own `SKILL.md`. File names are kept as generated. Stop when the count of endpoint docs differs from the count of operations in the spec.
 6. `catalogue_index`: add `api_index.md` (the base name of `skill_files.API_CATALOGUE_INDEX_PATH`). For each `*_api_list.md`, read the tag from its first line (`# <Tag> API`) and count its table rows. Rows are in the order of the spec's `tags` array:
 
    ```
@@ -545,7 +545,7 @@ def check_tree(root: Path) -> list[Problem]
 | Rule id | Fails when |
 |---|---|
 | `tree-path` | A path from step 6 is not in the tree |
-| `tree-relative` | A link target contains `../` or `./`, or is a bare `name.md` |
+| `tree-relative` | A path is not written from the skill root: a link target (no scheme, not a pure anchor) contains `../` or `./`, starts with `/references/` or is `/SKILL.md`, or ends in `.md` and is not a skill path (a bare `name.md`, or a partial path such as `modes/a.md`); or a backticked span or prose token starts with `/references/` or is `/SKILL.md`. `kiln_skill` refuses a leading `/` (`E_ABS`), and a partial path names no file |
 | `tree-bare-name` | A backticked span or prose token equals the base name of a tree file and is not a full path. The dictionary is the base names that are unique in the tree, without `SKILL.md` |
 | `tree-call-syntax` | A file contains `skill(name=` or `kiln_skill` |
 | `tree-banned-term` | A file contains a term of `BANNED_TERMS` for its scope (table in section 9). The generated files under `references/knowledge/api_docs/` are exempt: their text comes from the API, and a route name may hold such a term |

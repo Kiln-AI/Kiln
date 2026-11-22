@@ -153,6 +153,7 @@ fi
 
 # OpenAPI schema check
 start_check "openapi schema" bash -c 'app/web_ui/src/lib/check_schema.sh'
+start_check "api reference" uv run python -m app.desktop.skill_api_reference check
 
 # Web UI checks
 if [ "$staged_only" = false ] || [[ "$changed_files" == *"app/web_ui/"* ]]; then

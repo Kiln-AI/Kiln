@@ -1,4 +1,4 @@
-.PHONY: dev dev_desktop ui schema annotations check package
+.PHONY: dev dev_desktop ui schema annotations api_docs check package
 
 SHELL := /bin/bash
 
@@ -30,6 +30,10 @@ schema:
 # Dump agent-check annotation JSON files from the running server's OpenAPI (server must be up on :8757).
 annotations:
 	uv run python -m kiln_server.utils.agent_checks.dump_annotations http://localhost:8757/openapi.json libs/server/kiln_server/utils/agent_checks/annotations
+
+# Regenerate the Kiln skill's API reference from the app's OpenAPI document (built in process; no server needed). Needs Python 3.13.
+api_docs:
+	uv run python -m app.desktop.skill_api_reference generate
 
 # Run formatting, linting, typechecking, tests, and builds via the repo checks script.
 check:
