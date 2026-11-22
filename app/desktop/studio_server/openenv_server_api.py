@@ -264,8 +264,6 @@ def connect_openenv_server_api(app: FastAPI):
             )
         except PydanticValidationError as e:
             raise HTTPException(status_code=400, detail=_friendly_error(e))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
         await _require_reachable(openenv_server)
         openenv_server.save_to_file()
         return _openenv_server_response(openenv_server)
@@ -336,8 +334,6 @@ def connect_openenv_server_api(app: FastAPI):
                 setattr(openenv_server, field, value)
         except PydanticValidationError as e:
             raise HTTPException(status_code=400, detail=_friendly_error(e))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
         if openenv_server.url != existing.url:
             await _require_reachable(openenv_server)
         openenv_server.save_to_file()

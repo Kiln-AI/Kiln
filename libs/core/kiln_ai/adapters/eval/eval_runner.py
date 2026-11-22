@@ -961,13 +961,9 @@ class EvalRunner:
             )
 
     def _reached_openenv_server_ids(self, run_config: TaskRunConfig) -> list[str]:
-        reached = self._reached_openenv_servers.get(run_config.id)
-        if reached is None:
-            reached = _reached_openenv_server_ids(
-                run_config, self.task.parent_project()
-            )
-            self._reached_openenv_servers[run_config.id] = reached
-        return reached
+        """The OpenEnv servers `run_config` reaches. Every job's run config is one the
+        runner was given, so this was worked out in `__init__`."""
+        return self._reached_openenv_servers[run_config.id]
 
     def _preload_skills(self) -> SkillsDict:
         """Collect all skill IDs from run configs and bulk-load them once."""

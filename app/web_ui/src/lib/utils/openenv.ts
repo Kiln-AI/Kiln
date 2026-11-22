@@ -48,16 +48,10 @@ export function openenv_server_url_error(value: unknown): string | null {
   if (!/^https?:\/\//i.test(text)) {
     return OPENENV_SERVER_URL_ERROR
   }
-  let parsed: URL
+  // With an http(s):// prefix, new URL() throws when there's no host.
   try {
-    parsed = new URL(text)
+    new URL(text)
   } catch {
-    return OPENENV_SERVER_URL_ERROR
-  }
-  if (
-    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
-    !parsed.hostname
-  ) {
     return OPENENV_SERVER_URL_ERROR
   }
   return null

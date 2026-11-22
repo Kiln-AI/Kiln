@@ -691,6 +691,16 @@ class TestResetSchema:
                 is None
             )
 
+    async def test_body_that_isnt_json_is_none(self, session_manager, project):
+        async def not_json(self, url, **kwargs):
+            return httpx.Response(200, text="<html>not json</html>")
+
+        with patch.object(httpx.AsyncClient, "get", not_json):
+            schema = await session_manager.reset_schema(
+                self._server(project, "http://127.0.0.1:1")
+            )
+        assert schema is None
+
     async def test_unreachable_url_is_an_error(self, session_manager, project):
         openenv_server = self._server(project, f"http://127.0.0.1:{free_port()}")
         with pytest.raises(OpenEnvError, match="did not answer /schema"):

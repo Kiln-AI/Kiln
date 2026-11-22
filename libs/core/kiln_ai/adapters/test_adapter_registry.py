@@ -8,6 +8,7 @@ from kiln_ai.adapters.adapter_registry import (
     adapter_for_task,
     load_skills_for_task,
     validate_openenv_tool_ids,
+    validate_run_config_openenv_tools,
     validate_run_config_tool_names,
 )
 from kiln_ai.adapters.ml_model_list import (
@@ -1441,6 +1442,15 @@ class TestValidateRunConfigToolNames:
                 task,
                 [build_openenv_tool_id(openenv_server_a.id, "graphql")],
                 ["graphql"],
+            )
+
+    def test_tools_without_openenv_need_no_project(self, basic_task):
+        validate_run_config_openenv_tools(basic_task, ["kiln_tool::add_numbers"], [])
+
+    def test_openenv_tools_need_a_project(self, basic_task):
+        with pytest.raises(ValueError, match="require the task to belong to a project"):
+            validate_run_config_openenv_tools(
+                basic_task, ["kiln_tool::openenv::acme::search"], []
             )
 
     def test_released_validate_openenv_tool_ids_needs_a_project(self, basic_task):

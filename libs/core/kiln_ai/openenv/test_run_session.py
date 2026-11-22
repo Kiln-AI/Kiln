@@ -37,6 +37,7 @@ from kiln_ai.openenv.run_session import (
     openenv_for_run,
 )
 from kiln_ai.openenv.session_manager import (
+    OpenEnvCapacityError,
     OpenEnvRejectedError,
     OpenEnvSessionManager,
     OpenEnvTransientError,
@@ -222,6 +223,20 @@ class TestSetupErrors:
             "OpenEnv server Acme is at capacity. Wait for a run to finish, or raise the "
             "server's session limit."
         )
+
+    async def test_full_at_reset(self, task, openenv_server, session_manager):
+        # Listing tools succeeds, then the server fills up before the reset.
+        with patch.object(
+            session_manager,
+            "start_episode",
+            side_effect=OpenEnvCapacityError("full"),
+        ):
+            with pytest.raises(OpenEnvRunError) as raised:
+                await _enter(
+                    task, _openenv_server_properties(openenv_server), session_manager
+                )
+        assert raised.value.kind == "at_capacity"
+        assert session_manager._sessions == {}
 
     async def test_reset_rejected(self, task, openenv_server, session_manager):
         with pytest.raises(OpenEnvRunError) as raised:

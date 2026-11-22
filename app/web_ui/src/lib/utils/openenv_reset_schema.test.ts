@@ -222,6 +222,7 @@ describe("reset_schema_to_form_schema", () => {
       "a root whose only field has no fields",
       object_schema({ a: object_schema({}) }),
     ],
+    ["a field that isn't a schema", object_schema({ a: true })],
     ["not an object", "schema"],
     ["null", null],
     [
@@ -230,6 +231,18 @@ describe("reset_schema_to_form_schema", () => {
     ],
   ])("returns null for %s", (_, schema) => {
     expect(reset_schema_to_form_schema(schema)).toBeNull()
+  })
+})
+
+describe("reset_schema_to_form_schema errors", () => {
+  it("throws an error that isn't about the schema's shape", () => {
+    const schema = {
+      type: "object",
+      get properties(): unknown {
+        throw new Error("read failed")
+      },
+    }
+    expect(() => reset_schema_to_form_schema(schema)).toThrow("read failed")
   })
 })
 
@@ -270,6 +283,41 @@ describe("kwargs_fit_form", () => {
     ["a nested object", { startup: { acting_user: "sam" } }],
   ])("fits %s", (_, kwargs) => {
     expect(kwargs_fit_form(kwargs, FORM_SCHEMA)).toEqual({ fits: true })
+  })
+
+  const NUMBER_AND_FLAG_SCHEMA: JsonSchemaProperty = {
+    type: "object",
+    properties: { ratio: { type: "number" }, flag: { type: "boolean" } },
+    required: [],
+  }
+
+  it("fits a number and a boolean", () => {
+    expect(
+      kwargs_fit_form({ ratio: 0.5, flag: false }, NUMBER_AND_FLAG_SCHEMA),
+    ).toEqual({ fits: true })
+  })
+
+  it.each([
+    ["a string for a number", { ratio: "0.5" }, "'ratio' isn't a number"],
+    ["infinity for a number", { ratio: Infinity }, "'ratio' isn't a number"],
+    ["a string for a boolean", { flag: "true" }, "'flag' isn't true or false"],
+  ])("doesn't fit %s", (_, kwargs, reason) => {
+    expect(kwargs_fit_form(kwargs, NUMBER_AND_FLAG_SCHEMA)).toEqual({
+      fits: false,
+      reason,
+    })
+  })
+
+  it("doesn't fit a field whose type the form has no control for", () => {
+    const schema = {
+      type: "object",
+      properties: { tags: { type: "array" } },
+      required: [],
+    } as unknown as JsonSchemaProperty
+    expect(kwargs_fit_form({ tags: ["a"] }, schema)).toEqual({
+      fits: false,
+      reason: "'tags' is an unsupported type",
+    })
   })
 
   it("fits an empty required object", () => {
