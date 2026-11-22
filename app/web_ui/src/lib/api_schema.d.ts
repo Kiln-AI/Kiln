@@ -1521,6 +1521,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/model_info/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Model Info
+         * @description List Kiln's models with prices, limits and release dates from
+         *     models.dev, and for each provider entry whether the user can run it
+         *     now (status). By default only entries the user can run now (status
+         *     ready, not deprecated) are listed. Rows with no listed entry are left
+         *     out. `total` counts the rows after all filters; page with `offset`.
+         */
+        get: operations["list_model_info_api_model_info_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/model_info/model_details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Model Info Details
+         * @description The full record of one model: every provider entry with its status,
+         *     prices, limits, capabilities, thinking levels, default output mode and
+         *     what Kiln suggests the model for. Read the entry of the provider you
+         *     will use before you write a run config. 404 when the model, or its entry
+         *     for `provider`, does not exist.
+         */
+        get: operations["get_model_info_details_api_model_info_model_details_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/model_info/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Model Info Providers
+         * @description Every model provider Kiln knows, each marked connected or
+         *     not_connected, with the number of models ready to run on it, and
+         *     Kiln's notes on data retention, rate limits and gotchas. Connected
+         *     providers with models come first.
+         */
+        get: operations["list_model_info_providers_api_model_info_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}": {
         parameters: {
             query?: never;
@@ -10161,6 +10232,420 @@ export interface components {
              */
             deprecated: boolean;
         };
+        /** ModelInfoDetails */
+        ModelInfoDetails: {
+            sources: components["schemas"]["ModelInfoSources"];
+            /**
+             * Model
+             * @description Kiln's model id. Use it in a run config.
+             */
+            model: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Family
+             * @description Kiln's model family.
+             */
+            family?: string | null;
+            /**
+             * Kiln Featured Rank
+             * @description Kiln's ranking, 1 first. Null: not featured.
+             */
+            kiln_featured_rank?: number | null;
+            /**
+             * Tags
+             * @description Kiln's model tags.
+             */
+            tags?: string[];
+            /**
+             * Release Date
+             * @description ISO date, from models.dev.
+             */
+            release_date?: string | null;
+            /**
+             * Release Date Estimated
+             * @description True: the date came from a match on the model's name only.
+             * @default false
+             */
+            release_date_estimated: boolean;
+            /**
+             * Knowledge Cutoff
+             * @description As models.dev writes it.
+             */
+            knowledge_cutoff?: string | null;
+            /**
+             * Context Window
+             * @description Tokens, from models.dev.
+             */
+            context_window?: number | null;
+            /**
+             * Max Output Tokens
+             * @description Tokens, from models.dev.
+             */
+            max_output_tokens?: number | null;
+            /**
+             * Open Weights
+             * @description From models.dev.
+             */
+            open_weights?: boolean | null;
+            /**
+             * Reasoning Model
+             * @description The model reasons before it answers, also when that is always on (models.dev).
+             */
+            reasoning_model?: boolean | null;
+            /**
+             * Has Thinking Levels
+             * @description At least one listed provider entry has thinking levels that a run config can set.
+             * @default false
+             */
+            has_thinking_levels: boolean;
+            /**
+             * Median Input Price
+             * @description USD per million tokens: the median price across the providers on models.dev.
+             */
+            median_input_price?: number | null;
+            /**
+             * Median Output Price
+             * @description USD per million tokens: the median price across the providers on models.dev.
+             */
+            median_output_price?: number | null;
+            /**
+             * Editorial Notes
+             * @description Kiln's notes for people.
+             */
+            editorial_notes?: string | null;
+            /**
+             * Agent Notes
+             * @description Kiln's notes for an agent that chooses or configures the model.
+             */
+            agent_notes?: string | null;
+            /**
+             * Providers
+             * @description Every provider entry, also deprecated and not available ones.
+             */
+            providers?: components["schemas"]["ModelInfoProviderEntryDetails"][];
+        };
+        /** ModelInfoKilnSource */
+        ModelInfoKilnSource: {
+            /**
+             * Origin
+             * @description remote_config: Kiln's remote model list was loaded in this process. built_in: the list shipped with the installed app.
+             * @enum {string}
+             */
+            origin: "remote_config" | "built_in";
+            /**
+             * Loaded At
+             * @description UTC time of the last good remote model list load. Null for built_in.
+             */
+            loaded_at?: string | null;
+            /**
+             * Age Seconds
+             * @description Seconds since loaded_at. Null for built_in.
+             */
+            age_seconds?: number | null;
+        };
+        /** ModelInfoList */
+        ModelInfoList: {
+            sources: components["schemas"]["ModelInfoSources"];
+            /**
+             * Total
+             * @description Rows after all filters, the same on every page.
+             */
+            total: number;
+            /**
+             * Fuzzy Match
+             * @description True: no model held the search words, and the rows are the closest names.
+             * @default false
+             */
+            fuzzy_match: boolean;
+            /** Models */
+            models?: components["schemas"]["ModelInfoRow"][];
+        };
+        /** ModelInfoModelsDevSource */
+        ModelInfoModelsDevSource: {
+            /**
+             * State
+             * @description ok: models.dev data younger than 6 hours. stale: older data is served, because a refresh failed or did not finish in time. unavailable: no models.dev data; every price, limit and date is null.
+             * @enum {string}
+             */
+            state: "ok" | "stale" | "unavailable";
+            /**
+             * Loaded At
+             * @description UTC time the models.dev data was fetched, or last confirmed unchanged.
+             */
+            loaded_at?: string | null;
+            /**
+             * Age Seconds
+             * @description Seconds since loaded_at.
+             */
+            age_seconds?: number | null;
+            /**
+             * Detail
+             * @description Null when ok. Else why the data is missing or old: turned off, loading, not loaded, refresh running, or the last failure reason.
+             */
+            detail?: string | null;
+        };
+        /** ModelInfoProviderEntryDetails */
+        ModelInfoProviderEntryDetails: {
+            /**
+             * Provider
+             * @description Kiln provider id.
+             */
+            provider: string;
+            /**
+             * Status
+             * @description ready: the user can run the model on this provider now. not_offered: the provider is connected, but does not offer this model (for example an Ollama model that is not installed). not_connected: the provider is not connected in Kiln.
+             * @enum {string}
+             */
+            status: "ready" | "not_offered" | "not_connected";
+            /**
+             * Provider Model Id
+             * @description The provider's own id for the model. Null for a model Kiln only knows from the user's setup.
+             */
+            provider_model_id?: string | null;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
+            /**
+             * Untested
+             * @description Kiln has not tested this model, usually one a user added. The supports_* fields do not apply.
+             * @default false
+             */
+            untested: boolean;
+            /**
+             * Input Price
+             * @description Input price, USD per million tokens. Null: no price data.
+             */
+            input_price?: number | null;
+            /**
+             * Output Price
+             * @description Output price, USD per million tokens. Null: no price data.
+             */
+            output_price?: number | null;
+            /**
+             * Cache Read Price
+             * @description Cache read price, USD per million tokens. Null: no price data.
+             */
+            cache_read_price?: number | null;
+            /**
+             * Cache Write Price
+             * @description Cache write price, USD per million tokens. Null: no price data.
+             */
+            cache_write_price?: number | null;
+            /**
+             * Context Window
+             * @description This provider's context window in tokens, from models.dev.
+             */
+            context_window?: number | null;
+            /**
+             * Max Output Tokens
+             * @description This provider's output limit in tokens, from models.dev.
+             */
+            max_output_tokens?: number | null;
+            /**
+             * Tags
+             * @description Kiln's tags for this provider entry.
+             */
+            tags?: string[];
+            /**
+             * Supports Tools
+             * @description Kiln's flag: tool calls work on this pair.
+             */
+            supports_tools?: boolean | null;
+            /**
+             * Supports Structured Output
+             * @description Kiln's flag: structured output works on this pair.
+             */
+            supports_structured_output?: boolean | null;
+            /**
+             * Supports Vision
+             * @description Kiln's flag: image input works on this pair.
+             */
+            supports_vision?: boolean | null;
+            /**
+             * Supports Temperature
+             * @description From models.dev.
+             */
+            supports_temperature?: boolean | null;
+            /**
+             * Thinking Levels
+             * @description The thinking levels a run config can set, in Kiln's order.
+             */
+            thinking_levels?: string[];
+            /** Default Thinking Level */
+            default_thinking_level?: string | null;
+            /**
+             * Default Structured Output Mode
+             * @description Kiln's suggested default output mode for the pair.
+             */
+            default_structured_output_mode?: string | null;
+            /**
+             * Kiln Suggested For
+             * @description Uses that Kiln suggests the model for: eval_judge, synthetic_data, document_extraction, synthetic_user.
+             */
+            kiln_suggested_for?: string[];
+        };
+        /** ModelInfoProviderEntryRow */
+        ModelInfoProviderEntryRow: {
+            /**
+             * Provider
+             * @description Kiln provider id.
+             */
+            provider: string;
+            /**
+             * Status
+             * @description ready: the user can run the model on this provider now. not_offered: the provider is connected, but does not offer this model (for example an Ollama model that is not installed). not_connected: the provider is not connected in Kiln.
+             * @enum {string}
+             */
+            status: "ready" | "not_offered" | "not_connected";
+            /**
+             * Input Price
+             * @description Input price, USD per million tokens. Null: no price data.
+             */
+            input_price?: number | null;
+            /**
+             * Output Price
+             * @description Output price, USD per million tokens. Null: no price data.
+             */
+            output_price?: number | null;
+            /**
+             * Tags
+             * @description Kiln's tags for this provider entry.
+             */
+            tags?: string[];
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
+        };
+        /** ModelInfoProviderList */
+        ModelInfoProviderList: {
+            sources: components["schemas"]["ModelInfoSources"];
+            /** Providers */
+            providers?: components["schemas"]["ModelInfoProviderRow"][];
+        };
+        /** ModelInfoProviderRow */
+        ModelInfoProviderRow: {
+            /**
+             * Provider
+             * @description Kiln provider id.
+             */
+            provider: string;
+            /**
+             * Name
+             * @description The provider's name in Kiln.
+             */
+            name?: string | null;
+            /**
+             * Status
+             * @description connected: the provider is set up in Kiln.
+             * @enum {string}
+             */
+            status: "connected" | "not_connected";
+            /**
+             * Ready Model Count
+             * @description Models the user can run on this provider now, deprecated and untested ones included.
+             * @default 0
+             */
+            ready_model_count: number;
+            /**
+             * Tags
+             * @description Kiln's provider tags.
+             */
+            tags?: string[];
+            /**
+             * Notes
+             * @description Kiln's provider notes: data retention, rate limits, gotchas.
+             */
+            notes?: string | null;
+        };
+        /** ModelInfoRow */
+        ModelInfoRow: {
+            /**
+             * Model
+             * @description Kiln's model id. Use it in a run config.
+             */
+            model: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Family
+             * @description Kiln's model family.
+             */
+            family?: string | null;
+            /**
+             * Kiln Featured Rank
+             * @description Kiln's ranking, 1 first. Null: not featured.
+             */
+            kiln_featured_rank?: number | null;
+            /**
+             * Tags
+             * @description Kiln's model tags, for example current, recommended, top_value.
+             */
+            tags?: string[];
+            /**
+             * Release Date
+             * @description ISO date, from models.dev.
+             */
+            release_date?: string | null;
+            /**
+             * Context Window
+             * @description Tokens, from models.dev.
+             */
+            context_window?: number | null;
+            /**
+             * Open Weights
+             * @description From models.dev.
+             */
+            open_weights?: boolean | null;
+            /**
+             * Reasoning Model
+             * @description The model reasons before it answers, also when that is always on (models.dev).
+             */
+            reasoning_model?: boolean | null;
+            /**
+             * Has Thinking Levels
+             * @description At least one listed provider entry has thinking levels that a run config can set.
+             * @default false
+             */
+            has_thinking_levels: boolean;
+            /**
+             * Median Input Price
+             * @description USD per million tokens: the median price across the providers on models.dev.
+             */
+            median_input_price?: number | null;
+            /**
+             * Median Output Price
+             * @description USD per million tokens: the median price across the providers on models.dev.
+             */
+            median_output_price?: number | null;
+            /**
+             * Editorial Notes
+             * @description Kiln's notes for people. Null unless include_notes is true.
+             */
+            editorial_notes?: string | null;
+            /**
+             * Agent Notes
+             * @description Kiln's notes for an agent that chooses or configures the model. Null unless include_notes is true.
+             */
+            agent_notes?: string | null;
+            /**
+             * Providers
+             * @description The provider entries that pass the filters.
+             */
+            providers?: components["schemas"]["ModelInfoProviderEntryRow"][];
+        };
+        /**
+         * ModelInfoSources
+         * @description Which data an answer is built from, and how old it is.
+         */
+        ModelInfoSources: {
+            kiln_model_list: components["schemas"]["ModelInfoKilnSource"];
+            models_dev: components["schemas"]["ModelInfoModelsDevSource"];
+        };
         /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
@@ -18089,6 +18574,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_model_info_api_model_info_models_get: {
+        parameters: {
+            query?: {
+                /** @description Name search on the model id and display name. Forgives case, spaces and punctuation; with no match, returns close names (fuzzy_match is true). Runs after the other filters. */
+                search?: string | null;
+                /** @description true: only models Kiln ranks as featured. false: only models without a featured rank. */
+                featured?: boolean | null;
+                /** @description Kiln provider id, for example openrouter or gemini_api. Keeps only that provider's entries. */
+                provider?: string | null;
+                /** @description Exact match on Kiln's model family. */
+                family?: string | null;
+                /** @description A model passes when it has ANY of these tags, on the model or on a listed provider entry. Repeat the parameter for several tags. */
+                tags?: string[] | null;
+                /** @description Filter provider entries on tool calls. */
+                supports_tools?: boolean | null;
+                /** @description Filter provider entries on image input. */
+                supports_vision?: boolean | null;
+                /** @description Filter provider entries on thinking levels a run config can set. */
+                has_thinking_levels?: boolean | null;
+                /** @description Filter models that reason before they answer (models.dev). An unknown value does not pass. */
+                reasoning_model?: boolean | null;
+                /** @description Filter models on open weights (models.dev). An unknown value does not pass. */
+                open_weights?: boolean | null;
+                /** @description Also list provider entries the user cannot run now (status not_offered or not_connected). Use it to look up a model id. */
+                include_not_available?: boolean;
+                /** @description Also list deprecated provider entries. */
+                include_deprecated?: boolean;
+                /** @description Fill editorial_notes and agent_notes in each row. */
+                include_notes?: boolean;
+                /** @description featured: Kiln's ranking. price: cheapest first, by median input + output price. newest: latest release first. Default: the featured order, or best match first with search. */
+                sort?: ("featured" | "price" | "newest") | null;
+                /** @description Page size. */
+                limit?: number;
+                /** @description Rows to skip. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelInfoList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_model_info_details_api_model_info_model_details_get: {
+        parameters: {
+            query: {
+                /** @description Kiln model id, as GET /api/model_info/models lists it. A query parameter, because ids of custom and fine-tuned models hold '/' and '::'. */
+                model_id: string;
+                /** @description Kiln provider id, for example openrouter or gemini_api. Keeps only that provider's entry. */
+                provider?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelInfoDetails"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_model_info_providers_api_model_info_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelInfoProviderList"];
                 };
             };
         };

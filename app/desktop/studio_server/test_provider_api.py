@@ -44,6 +44,7 @@ from app.desktop.studio_server.provider_api import (
     OllamaConnection,
     OpenAICompatibleProviderCache,
     all_fine_tuned_models,
+    available_models,
     available_ollama_embedding_models,
     available_ollama_models,
     connect_anthropic,
@@ -1861,6 +1862,52 @@ async def test_connect_ollama_does_not_save_unchanged_url():
         await connect_ollama("http://same-url:11434")
 
         mock_config_instance.save_setting.assert_not_called()
+
+
+@contextmanager
+def only_legacy_custom_models(*legacy_models: tuple[str, str]):
+    """No provider keys and no other model source; these legacy custom models."""
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = None
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patched_non_builtin_available_model_sources(),
+        patch(
+            "app.desktop.studio_server.provider_api.available_ollama_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
+            wraps=legacy_custom_models_as_available,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.get_legacy_custom_models",
+            return_value=list(legacy_models),
+        ),
+    ):
+        yield
+
+
+async def test_available_models_is_the_answer_of_the_route(client):
+    with only_legacy_custom_models(("openai", "gpt-x")):
+        answer = await available_models()
+        response = client.get("/api/available_models")
+    assert response.status_code == 200
+    assert response.json() == [p.model_dump(mode="json") for p in answer]
+
+
+async def test_legacy_custom_models_are_listed_under_the_custom_registry():
+    with only_legacy_custom_models(("openai", "gpt-x"), ("groq", "llama-y")):
+        answer = await available_models()
+    (provider,) = answer
+    assert (provider.provider_id, provider.provider_name) == (
+        "kiln_custom_registry",
+        "Custom Models",
+    )
+    assert [m.id for m in provider.models] == ["openai::gpt-x", "groq::llama-y"]
 
 
 def test_legacy_custom_models_as_available():

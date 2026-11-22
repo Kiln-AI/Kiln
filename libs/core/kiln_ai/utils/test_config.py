@@ -778,6 +778,13 @@ def test_oauth_token_hidden_in_git_sync_projects():
     assert project1_visible["pat_token"] == "ghp_secret_pat_value"
 
 
+def test_skip_models_dev_is_in_memory_and_off_by_default(monkeypatch):
+    monkeypatch.delenv("KILN_SKIP_MODELS_DEV", raising=False)
+    config = Config()
+    assert config._properties["skip_models_dev"].in_memory is True
+    assert config.skip_models_dev is False
+
+
 def test_typesafe_api_key_property():
     prop = Config()._properties["typesafe_api_key"]
     assert prop.env_var == "TYPESAFE_API_KEY"
@@ -787,6 +794,7 @@ def test_typesafe_api_key_property():
 ENV_BACKED_BOOL_PROPERTIES = [
     ("autosave_runs", "KILN_AUTOSAVE_RUNS"),
     ("enable_demo_tools", "ENABLE_DEMO_TOOLS"),
+    ("skip_models_dev", "KILN_SKIP_MODELS_DEV"),
 ]
 
 

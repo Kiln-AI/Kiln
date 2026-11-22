@@ -216,6 +216,13 @@ class Config:
                 default=8757,
                 in_memory=True,
             ),
+            # Turns off the models.dev load of the model info endpoints.
+            "skip_models_dev": ConfigProperty(
+                bool,
+                env_var="KILN_SKIP_MODELS_DEV",
+                default=False,
+                in_memory=True,
+            ),
             # Allow the user to set the path to lookup MCP server commands, like npx.
             "custom_mcp_path": ConfigProperty(
                 str,

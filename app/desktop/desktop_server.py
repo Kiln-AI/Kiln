@@ -40,12 +40,17 @@ from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.jobs.api import connect_jobs_api
 from app.desktop.studio_server.jobs.registry import job_registry
 from app.desktop.studio_server.kiln_mcp_mount import connect_kiln_mcp_server
+from app.desktop.studio_server.model_info_api import connect_model_info_api
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.openenv_server_api import connect_openenv_server_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
-from app.desktop.studio_server.provider_api import connect_provider_api
+from app.desktop.studio_server.provider_api import (
+    available_models,
+    connect_provider_api,
+)
 from app.desktop.studio_server.repair_api import connect_repair_api
 from app.desktop.studio_server.run_config_api import connect_run_config_api
+from app.desktop.studio_server.services.model_info.models_dev import ModelsDevCache
 from app.desktop.studio_server.settings_api import connect_settings
 from app.desktop.studio_server.skill_api import connect_skill_api
 from app.desktop.studio_server.tool_api import connect_tool_servers_api
@@ -124,6 +129,9 @@ async def lifespan(app: FastAPI):
         # lifespan shutdown after its graceful-shutdown wait, so the dev server
         # and server_config() both set timeout_graceful_shutdown to bound it.
         job_registry.events.shutdown()
+        models_dev_cache = getattr(app.state, "models_dev_cache", None)
+        if models_dev_cache is not None:
+            await models_dev_cache.aclose()
         try:
             await _stop_background_syncs()
         finally:
@@ -156,6 +164,11 @@ def make_app(
     # the browser to block git-sync error responses ("origin not allowed").
     app = kiln_server.make_app(lifespan=lifespan, extra_middleware=[GitSyncMiddleware])
     connect_provider_api(app)
+    models_dev_cache = ModelsDevCache(enabled=not config.skip_models_dev)
+    app.state.models_dev_cache = models_dev_cache
+    connect_model_info_api(
+        app, available_models=available_models, models_dev=models_dev_cache
+    )
     connect_prompt_api(app)
     connect_repair_api(app)
     connect_settings(app)
