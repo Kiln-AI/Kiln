@@ -213,13 +213,17 @@ async def _conversation_turn(
 ) -> AsyncIterator[OpenEnvRunHandle]:
     """Run one turn in the conversation's session. Afterwards the session is held under
     the new turn; after a failed turn it goes back under the parent, so the same turn
-    can be retried, unless the failure ended the session, this was the first turn, or
-    the turn was cancelled (possibly mid-message, so the session can't be trusted).
-    A model failure, even one a retry layer treats as run-ending (a rate limit), leaves
-    the environment's session usable, so it doesn't count as ending it."""
+    can be retried, unless the failure ended the session, this was the first turn, the
+    turn was cancelled (possibly mid-message, so the session can't be trusted), or the
+    turn called one of the environment's tools. A tool call may have changed the
+    environment, and the parent's history doesn't show it, so a retry would run against
+    a state its history doesn't explain. A model failure, even one a retry layer treats
+    as run-ending (a rate limit), leaves the environment's session usable, so it doesn't
+    count as ending it."""
     context = held.context
     manager = context.session_manager
     handle = OpenEnvRunHandle(context=context)
+    tool_calls_before = manager.tool_calls(context.episode)
     try:
         with _current_episode(context):
             yield handle
@@ -228,6 +232,7 @@ async def _conversation_turn(
             parent_run is None
             or not isinstance(e, Exception)
             or _ended_openenv_session(e)
+            or manager.tool_calls(context.episode) > tool_calls_before
         ):
             await manager.release(context.episode)
         else:

@@ -189,6 +189,7 @@ class _Session:
     episode_id: str
     ws: ClientConnection
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    tool_calls: int = 0
 
 
 class OpenEnvSessionManager:
@@ -316,6 +317,9 @@ class OpenEnvSessionManager:
             )
         try:
             async with session.lock:
+                # Counted once sent: the environment may act on a call whose reply
+                # never arrives.
+                session.tool_calls += 1
                 data = await self._request(
                     session.ws,
                     {
@@ -345,6 +349,12 @@ class OpenEnvSessionManager:
             error_code=error_code,
             error_details=error_details,
         )
+
+    def tool_calls(self, episode: OpenEnvEpisode) -> int:
+        """How many tool calls have been sent on the episode's live session, including
+        ones that failed after sending. 0 when the episode has no live session."""
+        session = self._sessions.get(episode.episode_id)
+        return session.tool_calls if session is not None else 0
 
     async def read_state(self, episode: OpenEnvEpisode) -> dict[str, JsonValue]:
         """Read the environment's state inside a live episode, leaving the session

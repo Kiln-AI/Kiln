@@ -684,6 +684,25 @@ class TestConversation:
         assert retried.openenv_episode.final_state is not None
         assert retried.openenv_episode.final_state["notes"] == ["one", "two"]
 
+    async def test_failed_turn_that_called_an_openenv_tool_ends_the_session(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager, note="one")
+        with pytest.raises(KilnRunError):
+            async with _conversation_turn(
+                multiturn_task, properties, session_manager, first
+            ):
+                tool = tool_from_id(properties.tools_config.tools[0], multiturn_task)
+                await tool.run(note="two")
+                raise KilnRunError(
+                    "rate limited", partial_trace=None, original=RuntimeError("429")
+                )
+        assert session_manager._sessions == {}
+        with pytest.raises(OpenEnvRunError) as raised:
+            await _turn(multiturn_task, properties, session_manager, parent=first)
+        assert raised.value.kind == "session_ended"
+
     async def test_turn_that_ends_the_session_releases_it(
         self, multiturn_task, openenv_server, session_manager
     ):

@@ -134,6 +134,21 @@ class TestRemoteSessions:
             await session_manager.call_tool(episode, "append_note", {"note": "late"})
         assert await session_manager.end_episode(final) is final
 
+    async def test_counts_tool_calls_per_session(
+        self, session_manager, remote_openenv_server
+    ):
+        one = await session_manager.start_episode(remote_openenv_server, {})
+        two = await session_manager.start_episode(remote_openenv_server, {})
+        assert session_manager.tool_calls(one) == 0
+        await session_manager.call_tool(one, "append_note", {"note": "hi"})
+        # A call the environment reports as an error still counts.
+        await session_manager.call_tool(one, "explode", {})
+        assert session_manager.tool_calls(one) == 2
+        assert session_manager.tool_calls(two) == 0
+        await session_manager.release(one)
+        assert session_manager.tool_calls(one) == 0
+        await session_manager.release(two)
+
     async def test_sessions_are_isolated(self, session_manager, remote_openenv_server):
         one = await session_manager.start_episode(
             remote_openenv_server, {"fixture_id": "one"}
