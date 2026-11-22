@@ -86,6 +86,7 @@ Before each reply, check that the user's message still fits this mode. If the us
 | **Model Create Configs** | Creating run configs, model parameters, naming validation | `references/knowledge/model_create_configs.md` |
 | **Evals** | Background on evals, eval pipeline, Eval Builder vs manual, agent's role | `references/knowledge/specs_and_evals.md` |
 | **Memory** | The project's durable memory — the six endpoints, scopes, what to read at the start of work, the write discipline, the tags | `references/knowledge/memory.md` |
+| **Project Files** | The project's files on disk — read directly when faster, write only through the API, never change a prompt, skill or run config in place | `references/knowledge/working_with_project_files.md` |
 
 ## Tools
 

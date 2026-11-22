@@ -56,9 +56,10 @@ Before each reply, check that the user's message still fits this mode. If the us
 | **RAG** | Document retrieval — what it is, how to set up | `references/knowledge/rag.md` |
 | **Tools** | MCP tool servers — what they are, how to configure | `references/knowledge/tools.md` |
 | **Code Tools** | Native Python functions registered as tools (Beta, trust-gated) — what they are, how they differ from code evals | `references/knowledge/code_tools.md` |
-| **Sub-Agents** | Kiln Task as Tool — sub-agent vocabulary mapping, 4-step setup workflow, tool name/description guidance | `references/knowledge/subagents.md` |
+| **Sub-Agents** | Kiln Task as Tool — sub-agent vocabulary mapping, 5-step setup workflow, tool name/description guidance | `references/knowledge/subagents.md` |
 | **Model Work** | Model tiers, pricing, capabilities, gap analysis, provider reference — canonical home for model questions | `references/knowledge/model_work.md` |
 | **Memory** | The project's durable memory — the six endpoints, scopes, what to read at the start of work, the write discipline, the tags | `references/knowledge/memory.md` |
+| **Project Files** | The project's files on disk — read directly when faster, write only through the API, never change a prompt, skill or run config in place | `references/knowledge/working_with_project_files.md` |
 | **Docs Index** | Index of all official Kiln help documentation articles — only loadable once this mode is entered | `references/docs/docs_index.md` |
 
 ## Tools
