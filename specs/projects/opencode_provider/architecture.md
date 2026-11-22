@@ -150,8 +150,7 @@ else:
 
 - **`src/lib/stores.ts`:** `opencode: "OpenCode"` in `provider_name_map`.
 - **`src/lib/ui/provider_image.ts`:** `opencode: "/images/opencode.svg"`, plus `static/images/opencode.svg`.
-  - The icon is a monochrome bare glyph using `currentColor`, with a cropped viewBox.
-  - Copy it from [`assets/opencode.svg`](./assets/opencode.svg). That file is the user-supplied OpenCode mark converted to `currentColor`: the frame is solid, and the inner block has `fill-opacity="0.25"`, matching the brand's two-tone mark.
+  - Copy [`assets/opencode.svg`](./assets/opencode.svg) as-is. It's the user-supplied OpenCode mark (transparent, light-theme version): a two-tone `#1F1F1F` glyph with the inner block at `fill-opacity="0.2"`. The user approved two-tone. Like many existing Kiln provider icons, it doesn't use `currentColor`.
 - **`connect_providers.svelte`:** a card with `name: "OpenCode"`, `id: "opencode"`, `featured: false` and `api_key_fields: ["API Key"]`. It uses the approved copy from the functional spec's [Connect Screen Copy](./functional_spec.md#connect-screen-copy): the description, the `api_key_warning` (the Go notice) and the three `api_key_steps`. Also add the status entry and the `opencode_api_key` connected check.
 - Regenerate `api_schema.d.ts` with `generate_schema.sh`.
 
