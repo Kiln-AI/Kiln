@@ -44,6 +44,7 @@ from kiln_ai.synthetic_user.parser import (
     SyntheticUserInfoParseError,
     parse_synthetic_user_info,
 )
+from kiln_ai.tools.openenv_reach import OpenEnvReachError, single_openenv_server_id
 from kiln_ai.utils.async_job_runner import (
     AsyncJobRunner,
     AsyncJobRunnerObserver,
@@ -193,8 +194,10 @@ async def run_cases_batch(
     failures fail immediately.
 
     A case with `openenv_reset` runs every turn in one episode on that
-    OpenEnv server, started from its reset, and its leaf run records the
-    ended episode. `openenv_session_manager` defaults to the shared one.
+    OpenEnv server, started from its reset. A case without one, whose run
+    config's tools reach an OpenEnv server, runs every turn in one episode
+    on that server with no reset arguments. Either way its leaf run records
+    the ended episode. `openenv_session_manager` defaults to the shared one.
 
     Yields:
       BatchStartedEvent — once, before any case runs.
@@ -224,7 +227,9 @@ async def run_cases_batch(
     # case's completion/failure event can report what was actually billed.
     failed_attempt_spend: dict[int, float] = {}
     openenv_targets = _OpenEnvTargets(
-        target_task, openenv_session_manager or shared_session_manager()
+        target_task,
+        target_run_config,
+        openenv_session_manager or shared_session_manager(),
     )
 
     async def _drive_job(job: tuple[int, SyntheticUserCase]) -> bool:
@@ -341,11 +346,17 @@ class _OpenEnvTarget:
 
 
 class _OpenEnvTargets:
-    """The OpenEnv servers one batch's grounded cases run on, each read once, on
-    first use. A failed read is not kept, so a retried case reads the server again."""
+    """The OpenEnv servers one batch's cases run on, each read once, on first use.
+    A failed read is not kept, so a retried case reads the server again."""
 
-    def __init__(self, task: Task, manager: OpenEnvSessionManager) -> None:
+    def __init__(
+        self,
+        task: Task,
+        run_config: KilnAgentRunConfigProperties,
+        manager: OpenEnvSessionManager,
+    ) -> None:
         self._task = task
+        self._run_config = run_config
         self.manager = manager
         self._targets: dict[str, _OpenEnvTarget] = {}
         self._lock = asyncio.Lock()
@@ -357,6 +368,19 @@ class _OpenEnvTargets:
                 target = await self._load(openenv_server_id)
                 self._targets[openenv_server_id] = target
             return target
+
+    def run_config_server_id(self) -> str | None:
+        """The one OpenEnv server the run config's tools reach, or None if they
+        reach none."""
+        tools_config = self._run_config.tools_config
+        tool_ids = list(tools_config.tools) if tools_config is not None else []
+        project = self._task.parent_project() if tool_ids else None
+        if project is None:
+            return None
+        try:
+            return single_openenv_server_id(project, tool_ids)
+        except OpenEnvReachError as e:
+            raise _CaseFailure("openenv_reach", e.message) from e
 
     async def _load(self, openenv_server_id: str) -> _OpenEnvTarget:
         project = self._task.parent_project()
@@ -379,16 +403,26 @@ class _OpenEnvTargets:
 async def _case_episode(
     case: SyntheticUserCase, openenv_targets: _OpenEnvTargets
 ) -> AsyncIterator[EpisodeScope | None]:
-    """The episode a grounded case runs in, bound for the whole drive. None for a
-    case without `openenv_reset`."""
-    if case.openenv_reset is None:
-        yield None
-        return
-    target = await openenv_targets.get(case.openenv_reset.openenv_server_id)
+    """The episode a case runs in, bound for the whole drive. A grounded case
+    starts from its `openenv_reset`. Any other case starts on the server its run
+    config's tools reach, with no reset arguments: the adapter can't hold an
+    unsaved run's session from one turn to the next. None when the run config
+    reaches no server."""
+    if case.openenv_reset is not None:
+        openenv_server_id = case.openenv_reset.openenv_server_id
+        reset_kwargs = case.openenv_reset.reset_kwargs
+    else:
+        run_config_server_id = openenv_targets.run_config_server_id()
+        if run_config_server_id is None:
+            yield None
+            return
+        openenv_server_id = run_config_server_id
+        reset_kwargs = {}
+    target = await openenv_targets.get(openenv_server_id)
     async with openenv_episode_scope(
         openenv_targets.manager,
         target.server,
-        case.openenv_reset.reset_kwargs,
+        reset_kwargs,
         target.tools,
     ) as scope:
         yield scope
@@ -702,9 +736,9 @@ def _make_target_invoker(
             task_run_config_id=task_run_config_id,
             # Each turn re-sends the conversation so far: cache it (Anthropic needs the hint).
             automatic_prompt_caching=True,
-            # A grounded case's turns run in the episode the runner binds for the
-            # whole drive; the adapter must not open one per turn.
-            open_openenv_session=case.openenv_reset is None,
+            # Every turn runs in the episode the runner binds for the whole
+            # drive; the adapter must not open one per turn.
+            open_openenv_session=False,
         ),
     )
     turn_index = 0

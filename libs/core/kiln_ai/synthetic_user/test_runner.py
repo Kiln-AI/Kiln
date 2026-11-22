@@ -27,6 +27,7 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 from kiln_ai.datamodel.usage import Usage
 from kiln_ai.openenv.session_manager import (
     OpenEnvSessionManager,
@@ -1229,7 +1230,9 @@ async def test_cancelled_case_writes_nothing_and_reraises(
             skills={},
             task_run_config_id=None,
             failed_attempt_spend={},
-            openenv_targets=runner_mod._OpenEnvTargets(fake_task, Mock()),
+            openenv_targets=runner_mod._OpenEnvTargets(
+                fake_task, _target_run_config(), Mock()
+            ),
         )
     )
     await asyncio.wait_for(reached_turn_two.wait(), timeout=1.0)
@@ -1427,7 +1430,7 @@ async def test_grounded_leaf_records_the_ended_episode(
 
 
 @pytest.mark.asyncio
-async def test_ungrounded_case_opens_no_episode(
+async def test_case_without_openenv_tools_opens_no_episode(
     openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     task, _server = openenv_project
@@ -1458,9 +1461,59 @@ async def test_ungrounded_case_opens_no_episode(
     (completed,) = [e for e in events if isinstance(e, CaseCompletedEvent)]
     assert completed.openenv_episode is None
     assert episode_ids == [None, None]
-    assert [cfg.open_openenv_session for cfg in adapter_configs] == [True]
+    assert [cfg.open_openenv_session for cfg in adapter_configs] == [False]
     assert grounded_flags == [False]
     start_episode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ungrounded_case_on_openenv_tools_drives_every_turn_in_one_episode(
+    openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An unsaved run has no id for the adapter to hold its session under, so
+    # without the runner's episode the session would close after turn 1.
+    task, server = openenv_project
+    adapter_configs, episode_ids = _patch_episode_adapter(monkeypatch, session_manager)
+    leaves: list[Any] = []
+    real_tag_leaf = runner_mod._tag_leaf
+
+    def _record_leaf(leaf, batch_tag, *, ended_by_su):
+        leaves.append(leaf)
+        real_tag_leaf(leaf, batch_tag, ended_by_su=ended_by_su)
+
+    monkeypatch.setattr(runner_mod, "_tag_leaf", _record_leaf)
+    _patch_su_driver(monkeypatch, replies_per_case=["second message"])
+    run_config = _target_run_config().model_copy(
+        update={
+            "tools_config": ToolsRunConfig(
+                tools=[build_openenv_tool_id(server.id, "append_note")]
+            )
+        }
+    )
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case(0)],
+            target_task=task,
+            target_run_config=run_config,
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    (completed,) = [e for e in events if isinstance(e, CaseCompletedEvent)]
+    assert len(episode_ids) == 2
+    assert episode_ids[0] is not None and episode_ids[0] == episode_ids[1]
+    assert [cfg.open_openenv_session for cfg in adapter_configs] == [False]
+    (leaf,) = leaves
+    episode = leaf.openenv_episode
+    assert isinstance(episode, OpenEnvEpisode)
+    assert episode.reset.reset_kwargs == {}
+    assert episode.final_state is not None
+    assert episode.final_state["notes"] == ["seed-0", "second message"]
+    assert completed.openenv_episode is episode
+    assert session_manager._sessions == {}
 
 
 @pytest.mark.asyncio
