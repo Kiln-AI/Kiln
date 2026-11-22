@@ -41,7 +41,7 @@ dependencies = ["kiln-ai", "kiln-server", "fastapi>=0.115.4", "starlette>=1.3.1"
 [tool.uv.sources]  kiln-ai = { workspace = true }   kiln-server = { workspace = true }
 ```
 
-No console script. No `license` field or licence file: a person adds those. Hatchling finds the package because the folder name equals the normalised project name.
+No console script. No `license` field and no licence file (owner decision): the package is covered by the repository's licence files and is not published. Hatchling finds the package because the folder name equals the normalised project name.
 
 **Wiring.**
 
@@ -303,7 +303,7 @@ async def run_with_progress(work: Coroutine[Any, Any, T], send: ProgressSender |
         if not task.done(): task.cancel()            # the handler was cancelled: client gone, or shutdown
 ```
 
-- The interval is 2 s and the first update comes 2 s after the call starts. 2 s is the design value: it is below the shortest known default tool timeout of the supported agents. The real agents cannot be run in this environment, so the value is confirmed in the manual sanity phase (build step 9), not before (functional spec 5.8). It is one field, `ApiToolDeps.progress_interval`. `asyncio.wait` is used because `asyncio.timeout` and `TaskGroup` do not exist on Python 3.10.
+- The interval is 2 s and the first update comes 2 s after the call starts. 2 s is the design value: it is below the shortest known default tool timeout of the supported agents. The real agents cannot be run in this environment, so the value is confirmed in the manual sanity phase (build step 10), not before (functional spec 5.8). It is one field, `ApiToolDeps.progress_interval`. `asyncio.wait` is used because `asyncio.timeout` and `TaskGroup` do not exist on Python 3.10.
 - `Context.report_progress` does nothing when the client sent no `progressToken` [V]. With a token, the updates reach the client in stateless SSE mode through the real middleware stack [V]. The SSE response also carries a `: ping` comment every 15 s (`sse_starlette`); it keeps the connection open but does not reset an MCP tool timeout.
 
 ### 4.5 Temp files (`api_tool/tmp_files.py`)
@@ -487,9 +487,9 @@ No test reaches the network. The package's tests never import `app.desktop`.
 To verify during implementation:
 
 1. **Quit with a call in flight.** `timeout_graceful_shutdown=2` is decided (2.2). The hang was shown on `ThreadedServer`, not on the Tk app. Verify quit on a real build with a tool call in flight.
-2. **Agent CLIs** (manual sanity phase, build step 9). Not run against this server: whether Claude Code and Codex send a `progressToken`, how each reacts to a 405 on `GET /mcp`, and their tool timeouts. The 2 s progress interval is the design value and is confirmed there (4.4).
+2. **Agent CLIs** (manual sanity phase, build step 10). Not run against this server: whether Claude Code and Codex send a `progressToken`, how each reacts to a 405 on `GET /mcp`, and their tool timeouts. The 2 s progress interval is the design value and is confirmed there (4.4).
 3. **Packaged build.** No full PyInstaller build was run: the first proof that the package and its data are bundled, and that `app/mcp/` does not shadow the SDK, is the `build_desktop.yml` artifact.
 4. **Windows.** `0.0.0.0` as a client target (the reason for `local_api_base_url`) and the proxy case behind `trust_env=False` were not tried.
 5. **`download_extraction`.** It stays allowed as text (6.3). The content type of extraction output files was not checked; check it when the block list test is written.
 
-Owner decisions are in [architecture.md](../architecture.md) section 11. Item 4 there concerns this component: the licence metadata for `app/mcp/pyproject.toml` (this doc adds none), and adding `app/mcp` to the release version-bump steps (the four other members carry 1.2.1).
+Owner decisions are in [architecture.md](../architecture.md) section 11. Item 4 there concerns this component: `app/mcp/pyproject.toml` sets no licence field, carries the same version as the other workspace members (1.2.1 today), and is bumped with them at release.

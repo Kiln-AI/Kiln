@@ -23,7 +23,7 @@ A standard `AppPage`, with a breadcrumb back to Settings.
 
 - **Title:** Connect Your Agent
 - **Subtitle:** Use Kiln from Claude Code, Codex, OpenCode and other coding agents.
-- **Docs link:** in the usual `AppPage` location under the subtitle ("Read the Docs"), linking to the docs page for this feature.
+- **Docs link:** none for now. When the docs page for this feature is live, a "Read the Docs" link goes in the usual `AppPage` location under the subtitle.
 
 Content, top to bottom:
 

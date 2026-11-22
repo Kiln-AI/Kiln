@@ -560,11 +560,13 @@ Not in this port: the harness-tuner skills `kiln-task-setup` and `experiment-cos
 | `SKILL.md` | `Kiln Assistant`, `always in context`, `turn 0` |
 | Knowledge trees | the 54 operation names of harness-tuner's gateway (names only, from its `gateway/ops.py`), `install_skill_bundle`, `gateway`, `the tuner`, `harness-tuner`, `kiln-harness-tuner`, `the planner`, `the builder`, `the analyzer`, `the probe`, `scratch folder` |
 
-**Needs a person.** The items are listed once, in [architecture.md](../architecture.md) section 11. Their gates in this phase:
+**Reviews by people.** They are a phase of their own, build step 9 (architecture section 6), after the content is in place and the error probe is done. They do not gate the batches of this phase. What is reviewed, and what each batch leaves ready for it:
 
-- Item 5, the sandbox wording (the statement that user code runs with no network or filesystem sandbox, functional spec 15): before batches 5 and 11 merge.
-- Item 5, the public-source claims: the 19 priors in the knowledge are all marked `Source: public`, and the tree holds no link. Before batch 7 merges.
-- Item 1, the owner's read of `SKILL.md` (after batch 4) and of `train_val_test.md` (after batch 9), and the stance rule of batch 13.
+- The sandbox wording (the statement that user code runs with no network or filesystem sandbox, functional spec 15), by a security owner. Batches 5 and 11 touch it; they keep the statement as the source has it and list the two files in the phase notes.
+- The public-source claims, by a person: the 19 priors in the knowledge are all marked `Source: public`, and the tree holds no link. Batch 7 lists them in the phase notes. Case studies need a person's approval before they are committed, as before.
+- `SKILL.md` (written in batch 4) and `train_val_test.md` (batch 9), read by the owner.
+
+Changes from these reviews are made before the manual sanity check (build step 10).
 
 ## 10. Test plan
 
@@ -595,4 +597,4 @@ To verify during implementation:
 - **`misspell`** over the ported text (batches 6 and 13).
 - **`alwaysLoad`**: whether it holds in every Claude Code configuration. Manual sanity phase.
 
-Owner decisions and person reviews are in [architecture.md](../architecture.md) section 11: item 1 (the stance conflict, and the owner's read of `SKILL.md` and `train_val_test.md`), item 2 (the home of the knowledge backlog), item 5 (the sandbox wording, the public-source claims, case studies). Section 9 above says before which batch each is needed. Follow-ups (the help-article refresh, the harness-tuner skills that are not ported) are in architecture section 8.
+Owner decisions are in [architecture.md](../architecture.md) section 11: where the sources disagree the knowledge's playbooks win, and the wider overlap follows the owner-reviewed merge proposal (item 1); the knowledge backlog is not ported (item 2). The reviews by people (the sandbox wording, the public-source claims, case studies, the owner's read of `SKILL.md` and `train_val_test.md`) are build step 9, after the content is in place. Follow-ups (the help-article refresh, the harness-tuner skills that are not ported) are in architecture section 8.

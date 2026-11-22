@@ -149,20 +149,21 @@ The components depend on each other in this order; the implementation plan follo
 6. The content port and edit (it needs 2 to 5: the text must match the block list, the model info endpoints, the generated API docs and the checks). Its last batch tunes the server and tool texts.
 7. The Connect page, the install guide, README, and the rename of the `kiln_mcp` help text.
 8. Probe the real API for unclear errors and missing route descriptions; fix them (section 10).
-9. Manual sanity check.
-10. Optional later, only if step 9 shows a need: a "load the endpoint doc first" check that keeps the server stateless.
+9. Reviews by people, on the content as it stands after step 8: a security owner reads the sandbox wording in `code_tools.md` and `judge_types.md`; a person confirms the knowledge's public-source claims and approves case studies; the owner reads `SKILL.md` and `train_val_test.md`. Their changes are made before step 10.
+10. Manual sanity check.
+11. Optional later, only if step 10 shows a need: a "load the endpoint doc first" check that keeps the server stateless.
 
 ## 7. Risks
 
 - **Agent tool timeouts.** The SDK sends progress only when the client asks for it. An agent with a short default timeout and no progress support can give up on a long call. The install guide sets longer timeouts for the agents known to need it; the sanity check confirms it.
-- **The progress interval is a design value.** It is 2 seconds. The real agents cannot be run in this environment, so the value is confirmed in the manual sanity phase (step 9), which also checks that each agent sends a progress token.
+- **The progress interval is a design value.** It is 2 seconds. The real agents cannot be run in this environment, so the value is confirmed in the manual sanity phase (step 10), which also checks that each agent sends a progress token.
 - **The content edit is large.** Two sources written for other readers (a dedicated assistant, and fenced loop agents) become one skill for a general coding agent. It is its own phase, done in batches, each verified by a check.
 - **Drift while two knowledge copies exist.** Harness-tuner keeps its copy until spec two is adopted. The port records the harness-tuner commit it was made from, and later fixes are ported by hand from the diff since that commit (skill component doc, section 9).
 - **Packaging.** The skill tree must be bundled explicitly, and `app/mcp/` must stay a plain folder. Both are covered by tests, but a full packaged build is only verified on a real build.
 
 ## 8. Follow-ups outside this spec
 
-- Docs pages in the separate docs repo (the feature page the app links to, and "which MCP is which"), and their final URLs.
+- Docs pages in the separate docs repo (the feature page, and "which MCP is which"), and their final URLs. When the feature page is live, the Connect page gets its "Read the Docs" link.
 - Publishing `agent_install.md` at `https://kiln.tech/agent_install.md`, then the URL switch in this repo.
 - The hosted Kiln Assistant: the `POST` data-guide route and the three model info routes change the agent-policy annotation files in this repo. The hosted service picks them up when it next updates its Kiln version. Nothing is done there in this project.
 - The web UI's own models.dev price fetch could use the model info endpoints.
@@ -248,14 +249,14 @@ Build step 8 (functional spec 11). It runs after the content is in place, so the
 - **Regenerated in the same change.** A changed message or description changes the OpenAPI document. Each such change also regenerates the API reference (`make api_docs`), `api_schema.d.ts` (`make schema`) and the agent-policy annotations (`make annotations`), so the checks stay green.
 - **Exit test.** A checked-in test, `app/desktop/studio_server/test_route_descriptions.py`: every operation of `make_app().openapi()` that is not MCP-blocked has a non-empty `description`. The probe findings (endpoint, the old message, the fix, or "left as is" with the reason) are recorded in the phase plan.
 
-## 11. Open items
+## 11. Owner decisions
 
-These wait for the owner or for a named person. They are listed here once; the component docs point here.
+These were open; the owner has ruled on each.
 
-1. **The stance conflict in the content.** Where the Assistant's "audit the prompt first" guidance and the knowledge's playbook order disagree, which wins. Proposed: the knowledge wins. The owner reads the resulting `SKILL.md` and `train_val_test.md`.
-2. **The home of harness-tuner's knowledge backlog** after the move. It is not ported, and the maintenance skill drops that procedure.
-3. **Whether the app release waits for the docs page.** Until the page exists, "Read the Docs" on the Connect page points at the README section.
-4. **Licence metadata** for `app/mcp/pyproject.toml`, and adding `app/mcp` to the release version-bump steps. Both are a person's task.
-5. **Reviews by a person.** A security owner reads the sandbox wording in `code_tools.md` and `judge_types.md`. A person confirms the knowledge's public-source claims and approves case studies.
+1. **Where the two content sources disagree, the knowledge's playbooks win.** The wider overlap between the Assistant's experiment guidance and the knowledge (what to keep, fold or remove) follows a merge proposal that the owner reviews before the content phase; its rulings go into the skill component doc, section 9.
+2. **Harness-tuner's knowledge backlog is not ported.** The maintenance skill drops that procedure.
+3. **No docs link until the docs page is live.** The Connect page has no "Read the Docs" link in this project. It is added when the docs page exists (section 8).
+4. **No licence field** is set in `app/mcp/pyproject.toml`: the package is covered by the repository's licence files and is not published. The package carries the same version as the other workspace members and is bumped with them at release.
+5. **Reviews by people are a phase of their own** (build step 9).
 
 Things to verify during implementation are in the "Open items" section of each component doc.

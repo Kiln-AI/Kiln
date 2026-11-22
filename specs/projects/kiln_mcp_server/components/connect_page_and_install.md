@@ -55,7 +55,7 @@ Sibling screen: the Edit Task form (`settings/edit_task/[project_id]/[task_id]/`
 
 | Element | House control used | Sibling it matches | Justification if custom |
 |---|---|---|---|
-| Title, subtitle, "Read the Docs", breadcrumb | `AppPage` | Edit Task header | |
+| Title, subtitle, breadcrumb | `AppPage` | Edit Task header | |
 | Prompt box | `CalloutCard`, no icon slot | Settings callout | |
 | Lead-in line in the box | `<p class="text-sm text-gray-500">` | `Callout` description | |
 | Prompt text | `<p class="text-base font-medium">` | `Callout` title | |
@@ -86,9 +86,6 @@ export const MCP_PATH = "/mcp"
 // The one place the guide URL is set. Later: "https://kiln.tech/agent_install.md" (4.1).
 export const AGENT_INSTALL_GUIDE_URL =
   "https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md"
-// Later: "https://docs.kiln.tech/docs/connect-your-agent" (section 7).
-export const CONNECT_AGENT_DOCS_URL =
-  "https://github.com/Kiln-AI/Kiln#use-kiln-from-your-coding-agent"
 export const BASE_PROMPT =
   `Install Kiln's app, skill, and MCP following the guide here: ${AGENT_INSTALL_GUIDE_URL}`
 
@@ -120,8 +117,6 @@ State: three constants set once in the instance script, `origin = app_origin()`,
 <AppPage
   title="Connect Your Agent"
   subtitle="Use Kiln from Claude Code, Codex, OpenCode and other coding agents."
-  sub_subtitle="Read the Docs"
-  sub_subtitle_link={CONNECT_AGENT_DOCS_URL}
   breadcrumbs={[{ label: "Settings", href: "/settings" }]}
 >
   <div class="flex flex-col gap-6 max-w-2xl">
@@ -158,7 +153,7 @@ Below the `sm` breakpoint the prompt row stacks, so the Copy button sits under t
 - **Buttons.** Both Copy controls are real buttons with distinct accessible names ("Copy prompt", "Copy MCP server URL"); the visible label is the start of the name. The `aria-live="polite"` span announces the result.
 - **Text.** The prompt and URL are plain selectable text; `select-all` selects the whole string on one click; `translate="no"` stops browser translation from changing what the user reads against what is copied.
 - **Clipboard failure.** `navigator.clipboard` is missing outside a secure context (Kiln opened over plain HTTP on a non-loopback host, for example with `KILN_LOCAL_API_HOST=0.0.0.0`). The button stays "Copy" and the user selects the text. No error is shown (UI design: no error state). This is a known limit, accepted: the Copy buttons need a secure context. The page still shows the origin the user opened, which is the right address for that user.
-- **Owned by shared controls, not changed here.** The docs link opens in a new tab (`AppPage`). `Collapse` works from the keyboard through its checkbox, which has no accessible name today.
+- **Owned by shared controls, not changed here.** `Collapse` works from the keyboard through its checkbox, which has no accessible name today.
 
 ## 4. `agent_install.md`
 
@@ -383,9 +378,9 @@ Elsewhere:
 1. **New page "Connect Your Agent"**, intended URL `https://docs.kiln.tech/docs/connect-your-agent`. Content: what it is; the one prompt; what the agent sets up (MCP server `kiln`, stub skill); `/kiln` (`$kiln` in Codex); manual setup (the URL, and a link to the guide's per-agent notes); a non-default address; Kiln must be running, and the offline message; `save_to_tmpfile` files are on Kiln's machine (functional spec 5.7); no authentication, loopback by default; free, with some functions needing Kiln Pro.
 2. **New page "Kiln and MCP: which is which"** (functional spec 12), intended URL `https://docs.kiln.tech/docs/kiln-and-mcp`. Four entries, each with its purpose and a link: Kiln MCP server; Kiln project tools MCP server (`kiln_mcp`), with "not the way to connect a coding agent"; remote and local MCP tool servers; an MCP tool as a task.
 3. Existing page `tools-and-mcp`: a note at the top that links to page 2. Any page that documents `kiln_mcp`: rename to "Kiln project tools MCP server".
-4. When page 1 is live, in this repo: set `CONNECT_AGENT_DOCS_URL` to its URL and add it to the README `## Docs` list.
+4. When page 1 is live, in this repo: add a "Read the Docs" link to the Connect page (`AppPage` `sub_subtitle` and `sub_subtitle_link`) with its URL, and add it to the README `## Docs` list.
 
-Until page 1 exists, "Read the Docs" points to the README section, `https://github.com/Kiln-AI/Kiln#use-kiln-from-your-coding-agent`, which exists as soon as this work is on `main`. A docs URL that does not exist yet would be a dead link in a released app. This interim target is a decision. The slugs `connect-your-agent` and `kiln-and-mcp` are proposals for the docs owner.
+Until page 1 exists, the Connect page has no docs link at all (owner decision): a link is added only when the page it points to is live. The slugs `connect-your-agent` and `kiln-and-mcp` are proposals for the docs owner.
 
 ## 8. Test plan
 
@@ -412,7 +407,7 @@ Setup: `vi.mock("./connect_agent", …)` with `importOriginal`, replacing only `
 - Default address: `connect-agent-prompt` text equals `BASE_PROMPT`; `connect-agent-mcp-url` text is `http://localhost:8757/mcp`.
 - Origin `http://127.0.0.1:8757`: the prompt equals `BASE_PROMPT` (no extra sentence); the URL is `http://127.0.0.1:8757/mcp` (the real origin).
 - Origin `http://localhost:9000`: the prompt ends with " The Kiln MCP server is at http://localhost:9000/mcp."; the URL is `http://localhost:9000/mcp`.
-- Header: title "Connect Your Agent"; the subtitle; a link "Read the Docs" with `href` `CONNECT_AGENT_DOCS_URL` and `target="_blank"`; a breadcrumb link "Settings" to `/settings`. The lead-in and the "Then ask your agent to work with Kiln, or type /kiln." line are present.
+- Header: title "Connect Your Agent"; the subtitle; no "Read the Docs" link; a breadcrumb link "Settings" to `/settings`. The lead-in and the "Then ask your agent to work with Kiln, or type /kiln." line are present.
 - Copy prompt: click `connect-agent-copy-prompt`; `writeText` is called once with the full prompt (with the extra sentence on the other address); the label is "Copied"; after 1500 ms it is "Copy".
 - Copy URL: the same for `connect-agent-copy-url` with the MCP URL. A click on one button does not change the other's label. Clipboard rejects, and `navigator.clipboard` undefined: no throw; the label stays "Copy".
 - "Set up manually" is closed by default: the collapse checkbox is not checked. Exactly one element has class `btn-primary`. The accessible names are "Copy prompt" and "Copy MCP server URL". Unmount while a timer runs: no error.
@@ -426,7 +421,7 @@ Setup: `vi.mock("./connect_agent", …)` with `importOriginal`, replacing only `
 
 To verify during implementation:
 
-- **Per-agent details.** Every unverified row of table 4.4. They are checked against the real CLIs in the manual sanity phase (build step 9), and the guide is corrected from what that finds.
+- **Per-agent details.** Every unverified row of table 4.4. They are checked against the real CLIs in the manual sanity phase (build step 10), and the guide is corrected from what that finds.
 - **The `--help` block.** Paste the real output of `kiln_mcp --help` into the README after the change (section 6).
 - **The page under `vite dev`.** Check by hand that the prompt and the URL name the API port, not the Vite port (3.3).
 
