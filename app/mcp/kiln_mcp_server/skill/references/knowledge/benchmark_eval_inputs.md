@@ -1,0 +1,82 @@
+---
+name: benchmark_eval_inputs
+description: |
+  EvalInput-backed benchmark evals: on-disk eval input datasets with reference data, generate-then-score eval runs (including synthetic-user multi-turn drives), and the recipe for benchmarking a candidate run config. Load when: an eval's test split is EvalInput-backed, someone mentions eval inputs / benchmark datasets / reference data, or you need to score a new run config on a benchmark task.
+---
+# Knowledge: EvalInput Benchmark Evals
+
+Most evals score **stored** dataset runs (their `test` split is `task_run`-backed). A second kind of eval carries its **own input dataset** — EvalInputs — and **generates** a fresh response per (eval input × run config) at eval time, then scores it against per-item reference data. These are benchmark evals: run one against a candidate run config and you get an apples-to-apples score without any stored runs existing first.
+
+## API Docs
+
+Load the relevant endpoint doc **before** making each API call — they have request body schemas, response fields, and parameter details.
+
+| Endpoint | Load |
+|----------|------|
+| Eval Inputs — API catalog (no CRUD endpoints yet; read this first) | `references/knowledge/api_docs/eval_inputs_api_list.md` |
+| Evals API catalog | `references/knowledge/api_docs/evals_api_list.md` |
+| GET evals list | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals.md` |
+| GET eval progress (dataset_size = matching EvalInputs) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_progress.md` |
+| GET per-eval-config score summary | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_score_summary.md` |
+| GET eval run results (per-item drill-down) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_run_config_run_config_id_results.md` |
+
+## Recognizing a benchmark eval
+
+`GET /api/projects/{pid}/tasks/{tid}/evals` — an eval carries a **`splits`** map (`test` / `train` / `val`), and a **benchmark eval** is one whose `test` split is EvalInput-backed: **`splits["test"].source == "eval_input"`** (a stored-dataset eval has `source == "task_run"` instead). (On older servers the signal was the now-deprecated `eval_input_filter_id` / `eval_set_filter_id` fields — always null on current builds; read `splits` instead.) `GET /evals/{eid}/progress` → `dataset_size` counts the matching EvalInputs.
+
+## EvalInputs: the dataset rows
+
+EvalInputs live on disk under the task (`eval_inputs/<id>/eval_input.kiln`). **There is no HTTP API for them yet** — you cannot list, create, or edit EvalInputs via `call_kiln_api`; treat the dataset as fixed and route dataset changes to the user. Each row has:
+
+- `data` — what to run, one of two types:
+
+| Type | Fields | At eval time the runner… |
+|------|--------|--------------------------|
+| `single_turn` | `user_message: {text}` | runs the task once with that message against the run config |
+| `multi_turn_synthetic` | `first_message: {text}`, `synthetic_user_info: {persona, goal, behavior_guidance?, turns?, su_model_name?, su_model_provider?}` | drives a **live multi-turn conversation**: a synthetic user (playing `persona`, pursuing `goal`) talks to the run config for up to `turns` turns (default 5); the SU model defaults to the target run config's own model |
+
+- `reference` — optional flat dict of ground truth for scoring (see reference_data below)
+- `tags` — filtering labels; the eval's `test` split filter selects the rows carrying its tag
+
+## Generation is shared across evals
+
+Driven conversations are keyed by (eval input, run config): the produced leaf run is tagged `sei_<eval_input_id>` (plus `synthetic_eval_drive_<eval_id>`) and stamped with the run config id. Any later eval scoring the same pair **reuses the stored conversation instead of re-driving it** — so running a second benchmark eval over the same dataset and run config only pays for judging, not generation. Eval jobs are also idempotent per item: re-triggering a job skips already-scored items and sweeps only the failures.
+
+## reference_data: how ground truth reaches the scorer
+
+The EvalInput's `reference` dict flows into scoring as `reference_data`:
+
+- **Code evals** receive it as the `reference_data` parameter of their `score()` function (the full `score()` contract and the judge-type menu live in `references/knowledge/judge_types.md`).
+- **LLM judges** see it in the Jinja prompt template as `reference_data.*` — e.g. `{{ reference_data.expected_answer }}` or `{% for c in reference_data.llm_judge_criteria_blocking %}`.
+
+House conventions: flat dict, snake_case, `expected_*` keys for ground truth (`expected_answer`, `expected_tool_name`, …), `llm_judge_criteria_*` lists for per-item judge criteria. A scorer referencing a missing reference key skips that item gracefully (`skipped_reason` on the result row) rather than erroring.
+
+Only the EvalInput lane delivers `reference_data` — evals over stored TaskRuns (test split `source == "task_run"`) get `reference_data: null`.
+
+**Authoring evals, judges, and EvalInputs is not your job** — eval creation routes to the Eval Builder UI per `references/knowledge/specs_and_evals.md`, and EvalInput datasets have no API. Your job is running benchmarks and reading scores.
+
+## The recipe: benchmark a candidate run config
+
+To answer "how does model/prompt X do on this benchmark?":
+
+1. **Create the candidate run config** (or find its `rcid`) — `references/knowledge/model_create_configs.md`.
+2. **Enumerate the benchmark evals** — `GET /evals`, keep those whose `test` split is EvalInput-backed (`splits["test"].source == "eval_input"`); note each eval's default judge `current_config_id` (a benchmark task often has several, e.g. one code eval + one judge per bucket).
+3. **Deep-link the run** — running the benchmark is a UI action. Send the user to the Compare page for this task (`/specs/{pid}/{tid}/compare?columns=N&models={candidate_rcid}...`) to run the benchmark evals for the candidate config(s), then read the scores once they've run. Benchmark runs can be sizeable — each `multi_turn_synthetic` item drives up to `turns` conversation turns (SU model call + full agent invocation per turn, tools included) **per run config**, plus a scoring call per eval × item — the UI shows the cost at run time.
+4. **Read scores per eval** — `GET /evals/{eid}/eval_config/{ecid}/score_summary` → `results[rcid][score_key].mean_score` plus `run_config_percent_complete[rcid]` and `dataset_size`. Compare the candidate's means against the incumbent rcid's means in the same response.
+5. **Report** per the response-assembly rules in `references/knowledge/eval_scores.md` (deep links, coverage, significance).
+
+The `run_comparison` / `run_calibration` endpoints behind the UI Run button are SSE streams — you deep-link the user rather than calling them.
+
+## Reading scores: use score_summary, not the batch summary
+
+- `GET .../evals/{eid}/eval_config/{ecid}/score_summary` **fully supports benchmark evals** — scores are keyed by run config and mean per score key, completion measured against the EvalInput count.
+- `GET .../eval_results_summary` (the batch scorecard endpoint) includes EvalInput-backed evals (`dataset_size` counts matching EvalInputs). If it returns empty `evals_by_id` on a benchmark task you are on an older server — fall back to looping `score_summary` over the benchmark evals' default configs.
+- `GET .../results` rows for this lane carry `eval_input_id` (with `dataset_id: null`) plus the item's `reference_data` — join per-item scores across run configs on `eval_input_id` (e.g. for paired significance tests per `references/knowledge/eval_scores.md`). Rows with `skipped_reason` set were not scored — surface them, don't average them.
+
+## UI Deep Links
+
+| Action | Path |
+|--------|------|
+| Benchmark eval detail / results (usually spec-less → legacy) | `/specs/{pid}/{tid}/legacy/{eval_id}` |
+| Candidate run config | `/optimize/{pid}/{tid}/run_config/{rcid}` |
+| A driven conversation leaf (tagged `sei_<eval_input_id>`) | `/dataset/{pid}/{tid}/{run_id}/run` |

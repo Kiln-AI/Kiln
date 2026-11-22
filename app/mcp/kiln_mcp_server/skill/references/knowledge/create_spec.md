@@ -1,0 +1,125 @@
+---
+name: create_spec
+description: |
+  Knowledge for creating evals (quality requirements) — guided conversation, eval types, Eval Builder deep-links. Loaded by the Project Operations mode.
+---
+# Create Eval
+
+Reference knowledge for guiding eval creation conversations and deep-linking to the Kiln Eval Builder. The agent discusses what to evaluate; the UI handles the creation workflow.
+
+## Knowledge Required
+
+- `references/knowledge/specs_and_evals.md` — for background on what evals are, the eval pipeline hierarchy, and agent's role
+- `references/knowledge/judge_types.md` — the judge menu, when the concern is mechanical (a deterministic check) or the user wants a code eval rather than an LLM judge
+
+## API Docs
+
+Load the relevant endpoint doc **before** making each API call.
+
+| Endpoint | Load |
+|----------|------|
+| Specs API catalog (data model) | `references/knowledge/api_docs/specs_api_list.md` |
+| GET task (check `default_run_config_id`) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id.md` |
+| GET specs list | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_specs.md` |
+| GET list evals | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals.md` |
+| GET list eval configs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs.md` |
+
+These are **read-only** — verify what exists before and after the user builds in the UI. **Never call the eval-creation REST endpoints** (`POST /specs`, `spec_with_copilot`, the copilot clarify/refine/question endpoints, `create_evaluator`, `create_eval_config`) — eval creation always goes through the Eval Builder UI, even when the user asks you to "just create it via the API".
+
+## Suggested Questions
+
+1. **What's the problem?** "What's not working, or what quality dimension do you want to measure?" (bug, missing behavior, formatting, hallucinations, tone)
+2. **Have they seen specific failures?** Examples of bad outputs help choose the right eval type.
+3. **Do they have a Kiln Pro account?** Deep-link to Provider Settings to check — this determines whether to recommend the guided Eval Builder flow or manual setup.
+
+## Eval Creation Approaches
+
+
+
+### Discuss What to Evaluate
+
+Eval content is **domain-expert territory**. The agent does not know the regression surface — the user does. Never assume what evals a task needs.
+
+1. Propose eval ideas conversationally — "For this task, you might care about: X, Y, Z. Which of these matter? What else?"
+2. Help the user articulate each eval — ask what "good" looks like, what failure modes they've seen
+3. Recommend an eval type from the reference below and explain why
+4. **Always include an Eval Builder deep-link** ([Eval Builder](/specs/{pid}/{tid}/spec_builder?type={spec_type}) — `?type=desired_behaviour` for "should do X" asks, `?type=issue` for bugs/regressions) — even for conceptual questions about evals, give the user a link so they can act immediately
+5. Link to relevant blog posts when they add value (see Reference section at end of file)
+
+**Exception — cold start help:** When the user explicitly asks the agent to write eval content ("help me with the cold start", "write the description and examples"), write it out immediately. Produce the full description, correct and incorrect behavior examples in one message.
+
+### Choose the Creation Method
+
+Always present both options and help the user choose:
+
+**Option 1: Eval Builder (Recommended)** — A guided conversation flow in the UI that handles eval creation automatically: turns rough ideas into refined evals, generates synthetic test data, calibrates the judge prompt, and creates the full Spec → Eval → EvalConfig pipeline.
+
+**Prerequisite:** Requires a **Kiln Pro** account. Deep-link to [Provider Settings](/settings/providers) to check. A complete eval with the Eval Builder takes ~5 minutes vs 30+ minutes for manual setup.
+
+**Option 2: Manual Setup** — If Kiln Pro is not configured, evals can be created through the Eval Builder UI or Select Template pages without the guided flow. The user defines the eval definition, examples, and judge config themselves.
+
+**Note:** Both options are UI flows. There is no agent API path — never create evals via the REST API (see API Docs above). API-created evals are spec-less legacy rows with no EvalConfig, judge prompt, or tagged data.
+
+### Deep-Link to Eval Builder
+
+When the user is ready, send them to the Eval Builder with context. Put the eval type in the URL — `?type=desired_behaviour` for "should do X" asks, `?type=issue` for bugs/regressions (values from the `spec_type` reference below):
+
+> "That sounds like a regression test for [issue]. Let me link you to the Eval Builder where you can define it with examples:
+> [Create Eval](/specs/{pid}/{tid}/spec_builder?type=issue)
+>
+> A few things to include:
+> - Definition: describe the failure mode clearly
+> - Examples: 1-2 inputs where the bug occurred, with the correct expected output"
+
+Deep-link to the [Eval Builder](/specs/{pid}/{tid}/spec_builder?type={spec_type}).
+
+**Default run config reminder.** Evals run against the task's default run config. Alongside the Eval Builder handoff, check the task's `default_run_config_id` (GET task): if set, remind the user which config is linked ([Run Config](/optimize/{pid}/{tid}/run_config/{rcid})); if null, remind them to set a default run config first ([Run Configs](/optimize/{pid}/{tid})).
+
+### Verify Creation
+
+After the user creates evals in the UI, verify via API:
+
+```
+# read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_specs.md
+call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/specs", jq_filter="[.[] | {id, name, spec_type, priority}]")
+```
+
+Confirm the evals look right and suggest running them to get baseline scores. (The underlying API still uses `specs` and `spec_type` field names — that's the data-model name; surface them to the user as "evals".)
+
+## Eval Type Reference
+
+These `spec_type` values create **LLM-judge** evals. When the concern is mechanical (an exact value, a regex, a required tool call, a step budget), a deterministic check or a code eval fits better and skips the spec step — deep-link `/specs/{pid}/{tid}/spec_builder?judge={type}&workflow=manual` and see `references/knowledge/judge_types.md` for the menu and type values.
+
+The underlying `spec_type` enum (kept for API compatibility) defines the kind of eval:
+
+### Functionality
+| Type | Use When |
+|------|----------|
+| `desired_behaviour` | Agent should do something specific |
+| `issue` | Agent exhibits a specific problem (bugs, regressions) |
+| `tone` | Voice/tone requirements |
+| `formatting` | Output format rules |
+| `localization` | Language/locale rules |
+
+### Task Performance
+| Type | Use When |
+|------|----------|
+| `appropriate_tool_use` | Agent should use tools correctly |
+| `reference_answer_accuracy` | Output must match a reference answer (RAG only)|
+
+### Accuracy
+| Type | Use When |
+|------|----------|
+| `factual_correctness` | No factual errors |
+| `hallucinations` | No fabricated information |
+| `completeness` | Output must be thorough |
+
+### Safety
+| Type | Use When |
+|------|----------|
+| `toxicity` | No toxic content |
+| `bias` | No biased content |
+| `jailbreak` | Resist jailbreak attempts |
+| `prompt_leakage` | Don't leak system prompt |
+
+**Reference:** [The Requirements Layer Your AI System is Missing](https://kiln.tech/blog/requirements_layer_your_ai_system_is_missing), [Many Small Evals Beat One Big Eval, Every Time](https://kiln.tech/blog/you_need_many_small_evals_for_ai_products).

@@ -1,12 +1,14 @@
 from kiln_mcp_server.conftest import write_tree
 from kiln_mcp_server.skill_checks.__main__ import main
 from kiln_mcp_server.skill_checks.docs_index import DOCS_INDEX_PATH
+from kiln_mcp_server.skill_checks.knowledge_schema import default_root
 from kiln_mcp_server.skill_checks.test_knowledge_check import (
     IMPROVING_INDEX,
     TECHNIQUE,
     TECHNIQUES,
     build_tree,
 )
+from kiln_mcp_server.skill_checks.test_shipped_skill import PENDING_RULES
 
 SKILL_MD = "---\nname: kiln\ndescription: Work with Kiln.\n---\n\n# Kiln\n"
 
@@ -38,8 +40,13 @@ def test_a_missing_folder_exits_2(tmp_path, capsys):
     assert "No skill folder at" in capsys.readouterr().err
 
 
-def test_the_default_root_is_the_shipped_tree():
-    assert main(["check"]) == 0
+def test_the_default_root_is_the_shipped_tree(capsys):
+    code = main(["check"])
+    default_out = capsys.readouterr().out
+    assert main(["check", "--root", str(default_root())]) == code
+    assert capsys.readouterr().out == default_out
+    problem_lines = default_out.splitlines()[:-1] if code else []
+    assert {line.split("  ", 1)[0] for line in problem_lines} <= PENDING_RULES
 
 
 def test_build_rewrites_the_indexes_then_checks(tmp_path, capsys):

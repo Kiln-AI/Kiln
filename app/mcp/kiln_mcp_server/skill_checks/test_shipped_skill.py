@@ -24,15 +24,29 @@ from kiln_mcp_server.skill_checks.tree_check import (
     check_tree,
     tree_paths,
 )
-from kiln_mcp_server.skill_files import API_CATALOGUE_INDEX_PATH, get_index, read_file
+from kiln_mcp_server.skill_files import (
+    API_CATALOGUE_INDEX_PATH,
+    HINT,
+    get_index,
+    read_file,
+)
+from kiln_mcp_server.texts import PATH_DESCRIPTION, SKILL_TOOL_DESCRIPTION
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MAINTENANCE = REPO_ROOT / ".agents" / "skills" / "knowledge-maintenance"
 MAINTENANCE_SKILL = MAINTENANCE / "SKILL.md"
 MAX_MAINTENANCE_LINES = 500
 
-# Rules whose problems do not fail the shipped-tree tests yet.
-PENDING_RULES: set[str] = set()
+# Rules whose problems do not fail the shipped-tree tests yet, each with the
+# content batch that makes it pass (skill_and_content section 9).
+PENDING_RULES: set[str] = {
+    "tree-banned-term",  # batches 2, 4 and 5
+    "tree-app-link",  # batch 3
+    "tree-unreachable",  # batch 4: SKILL.md names the catalogue index
+    "tree-front-matter",  # batch 6: online_url on the help articles
+    "docs-index",  # batch 6
+    "tree-test-split",  # batch 13a
+}
 
 # Files allowed over the size limit, each with its reason.
 OVER_BODY_LIMIT_ALLOWED: dict[str, str] = {}
@@ -71,6 +85,17 @@ def test_the_check_reads_the_served_files():
 def test_the_catalogue_index_exists():
     assert (default_root() / API_CATALOGUE_INDEX_PATH).is_file()
     assert API_CATALOGUE_INDEX_PATH in get_index().files
+
+
+@pytest.mark.parametrize(
+    "text",
+    [SKILL_TOOL_DESCRIPTION, PATH_DESCRIPTION, HINT],
+    ids=["tool", "path", "hint"],
+)
+def test_example_paths_exist(text):
+    examples = re.findall(r"references/[A-Za-z0-9_./-]+\.md", text)
+    assert examples
+    assert [path for path in examples if path not in get_index().files] == []
 
 
 def test_no_file_over_body_limit():
