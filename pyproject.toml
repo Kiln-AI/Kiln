@@ -9,6 +9,7 @@ dependencies = [
     "certifi>=2024.8.30",
     "jq>=1.11.0",
     "kiln-ai==0.5.3",
+    "kiln-mcp-server",
     "kiln-server",
     "kiln-studio-desktop",
 ]
@@ -37,9 +38,10 @@ exclude-newer-package = { pyinstaller = "2026-09-13T00:00:00Z" }
 override-dependencies = []
 
 [tool.uv.workspace]
-members = ["libs/core", "libs/server", "app/desktop"]
+members = ["libs/core", "libs/server", "app/mcp", "app/desktop"]
 
 [tool.uv.sources]
+kiln-mcp-server = { workspace = true }
 kiln-server = { workspace = true }
 kiln-studio-desktop = { workspace = true }
 kiln-ai = { workspace = true }

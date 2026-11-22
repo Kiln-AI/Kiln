@@ -8,7 +8,7 @@ The order follows [architecture.md](architecture.md) section 6. Each phase names
 
 ## Phases
 
-- [ ] Phase 1: The `app/mcp` project, the server mounted in the desktop app at `/mcp`, and `kiln_skill` serving a placeholder skill tree. PyInstaller hook, workspace and CI wiring. ([mcp_server_and_api_tool](components/mcp_server_and_api_tool.md) sections 1–2; [skill_and_content](components/skill_and_content.md) sections 2–3; architecture section 9)
+- [x] Phase 1: The `app/mcp` project, the server mounted in the desktop app at `/mcp`, and `kiln_skill` serving a placeholder skill tree. PyInstaller hook, workspace and CI wiring. ([mcp_server_and_api_tool](components/mcp_server_and_api_tool.md) sections 1–2; [skill_and_content](components/skill_and_content.md) sections 2–3; architecture section 9)
 - [ ] Phase 2: `call_kiln_api`. The `KilnApiCallTool` refactor in `libs/core`, the MCP tool and its pipeline, the route index, the policy seam and the `x-mcp-policy` tag, `body_limit`, `save_to_tmpfile`, progress updates. The end-to-end test on the real desktop app. (mcp_server_and_api_tool sections 3–6.2, 9–10)
 - [ ] Phase 3: The block list annotations and their tests, and the data guide route from `PUT` to `POST` with its web UI call sites and regenerated files. (mcp_server_and_api_tool sections 6.3 and 7; [mcp_block_list_review](research/mcp_block_list_review.md))
 - [ ] Phase 4: Model info endpoints and the models.dev cache. ([model_info](components/model_info.md))
@@ -23,6 +23,7 @@ The order follows [architecture.md](architecture.md) section 6. Each phase names
 - [ ] Phase 13: Reviews by people: the sandbox wording, the knowledge's public-source claims and case studies, and the owner's read of `SKILL.md`, `train_val_test.md` and the two new guides. Apply their changes. (architecture section 6, step 9)
 - [ ] Phase 14: Manual sanity check with real agents, and the fixes it leads to. Decide whether phase 15 is needed. (functional spec section 16)
 - [ ] Phase 15 (optional): a "load the endpoint doc first" check that keeps the server stateless. Only if phase 14 shows agents calling endpoints wrongly because they skipped the docs. (functional spec section 5.9)
+- [ ] **Phase 16: Backlog.** Review open backlog items with the user, then close or dismiss each through the standard phase flow.
 
 ## Notes
 

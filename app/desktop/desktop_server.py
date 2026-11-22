@@ -39,6 +39,7 @@ from app.desktop.studio_server.finetune_api import connect_fine_tune_api
 from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.jobs.api import connect_jobs_api
 from app.desktop.studio_server.jobs.registry import job_registry
+from app.desktop.studio_server.kiln_mcp_mount import connect_kiln_mcp_server
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.openenv_server_api import connect_openenv_server_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
@@ -114,13 +115,14 @@ async def lifespan(app: FastAPI):
 
     try:
         await _start_background_syncs()
-        yield
+        async with app.state.kiln_mcp_server.run():
+            yield
     finally:
         # End open SSE subscriptions so a UI holding the jobs stream open can't
         # keep the worker alive (e.g. block a dev-server hot reload). Pure
         # observer teardown — jobs keep running. Note uvicorn only reaches
         # lifespan shutdown after its graceful-shutdown wait, so the dev server
-        # also sets timeout_graceful_shutdown to bound that wait.
+        # and server_config() both set timeout_graceful_shutdown to bound it.
         job_registry.events.shutdown()
         try:
             await _stop_background_syncs()
@@ -130,7 +132,18 @@ async def lifespan(app: FastAPI):
             datamodel_strict_mode.set_strict_mode(original_strict_mode)
 
 
-def make_app(tk_root: tk.Tk | None = None):
+def make_app(
+    tk_root: tk.Tk | None = None,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+):
+    """Build the desktop app for a server bound to `host` and `port`. A value
+    left out is the configured one, which is what the dev server binds to."""
+    config = Config.shared()
+    bound_host = host if host is not None else config.kiln_local_api_host
+    bound_port = port if port is not None else config.kiln_local_api_port
+
     setup_litellm_logging()
 
     if not should_skip_remote_model_list():
@@ -164,6 +177,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_dev_tools(app)
     connect_chat_api(app)
     connect_jobs_api(app)
+    connect_kiln_mcp_server(app, host=bound_host, port=bound_port)
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app
@@ -171,11 +185,14 @@ def make_app(tk_root: tk.Tk | None = None):
 
 def server_config(port: int, host: str, tk_root: tk.Tk | None = None):
     return uvicorn.Config(
-        make_app(tk_root=tk_root),
+        make_app(tk_root=tk_root, host=host, port=port),
         host=host,
         port=port,
         use_colors=False,
         log_config=log_config(),
+        # uvicorn waits for open connections before lifespan shutdown; an agent's
+        # tool call in flight would otherwise block quitting the app.
+        timeout_graceful_shutdown=2,
     )
 
 

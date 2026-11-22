@@ -47,6 +47,10 @@ jobs:
         run: uv build
         working-directory: ./libs/server
 
+      - name: Build MCP Server
+        run: uv build
+        working-directory: ./app/mcp
+
   # The web host serves web app routes off the file system, and Windows rejects
   # filenames that our routes allow. Only a real Windows file system catches that,
   # so run the web host tests there. Scoped to one test file to stay quick.
