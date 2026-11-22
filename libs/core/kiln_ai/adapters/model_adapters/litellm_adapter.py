@@ -47,6 +47,9 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     RunOutput,
     Usage,
 )
+from kiln_ai.adapters.model_adapters.conversation_affinity import (
+    affinity_completion_kwargs,
+)
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.adapters.retry_classification import is_run_ending_tool_error
 from kiln_ai.datamodel.datamodel_enums import InputType
@@ -888,6 +891,7 @@ class LiteLlmAdapter(BaseAdapter):
     ) -> dict[str, Any]:
         run_config = as_kiln_agent_run_config(self.run_config)
         extra_body = self.build_extra_body(provider)
+        affinity_kwargs = affinity_completion_kwargs(provider.name, messages)
 
         # Merge all parameters into a single kwargs dict for litellm
         completion_kwargs = {
@@ -902,6 +906,7 @@ class LiteLlmAdapter(BaseAdapter):
             # Better to ignore them than to fail the model call.
             # https://docs.litellm.ai/docs/completion/input
             "drop_params": True,
+            **affinity_kwargs,
             **extra_body,
             **self._additional_body_options,
         }

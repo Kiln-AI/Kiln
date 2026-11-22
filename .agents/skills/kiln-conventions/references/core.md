@@ -61,7 +61,8 @@
 5. `lite_llm_core_config_for_provider` in `adapters/provider_tools.py`. Every case there reads `Config.shared().<key>`, so a new case FAILs `core-config-shared` (and `env-access` if it reads a base-URL env var). That is an H24 case: don't allowlist it; report it in your summary and the PR with the rule id, `path:line`, and "waits on provider config injection".
 6. `get_litellm_provider_info` in `utils/litellm.py`
 7. any provider branches in `LiteLlmAdapter.build_extra_body`
-8. the model entries in `ml_model_list.py`
+8. its affinity param in `adapters/model_adapters/conversation_affinity.py`, if the provider documents one: `PROMPT_KEYED_PARAM_BY_PROVIDER` for a cache key shared by one system prompt (`prompt_cache_key`), `CONVERSATION_KEYED_PARAM_BY_PROVIDER` for a session id (`session_id`). Leave it out otherwise: LiteLLM forwards these params, and providers that don't know them may reject the request.
+9. the model entries in `ml_model_list.py`
 
 ## Startup
 

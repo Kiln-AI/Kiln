@@ -386,6 +386,15 @@ async def test_bridged_requests_go_to_responses_with_store_false(plain_task):
 
 
 @respx.mock
+async def test_bridged_requests_send_the_same_prompt_cache_key(plain_task):
+    _, route, _ = await run_add_tool_loop(plain_task, [REASONING_ITEM, ADD_CALL])
+
+    first_key = request_body(route, 0)["prompt_cache_key"]
+    assert isinstance(first_key, str) and first_key
+    assert request_body(route, 1)["prompt_cache_key"] == first_key
+
+
+@respx.mock
 async def test_reply_with_text_and_tool_call_runs_tool(plain_task):
     run, _, add_spy = await run_add_tool_loop(
         plain_task, [REASONING_ITEM, NARRATION_MESSAGE, ADD_CALL]
