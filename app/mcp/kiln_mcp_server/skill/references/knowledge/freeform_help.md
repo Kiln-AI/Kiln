@@ -15,7 +15,7 @@ These are reference knowledge files. Load as needed based on what the user is as
 |-----------|-----------------|------|
 | **Evals** | What specs are, types, eval pipeline hierarchy, agent's role with specs | `references/knowledge/specs_and_evals.md` |
 | **Eval Scores & Scorecards** | Score reading patterns, jq filters, scorecard building, comparison tables | `references/knowledge/eval_scores.md` |
-| **Model Work** | Recommend models, assess existing configs, tier guide, pricing, provider reference, cost estimation. **Use Model Info MCP tools** (`model_info_featured`, `model_info`, `model_search`) for live data first — see SKILL.md → MCP Tools | `references/knowledge/model_work.md` |
+| **Model Work** | Recommend models, assess existing configs, tier guide, pricing, provider reference, cost estimation. **Use the model info endpoints** (`GET /api/model_info/models`, `GET /api/model_info/model_details`) for live data first — see `references/knowledge/model_work.md` | `references/knowledge/model_work.md` |
 | **Run Config Creation** | Creating run configs, model parameters, naming validation | `references/knowledge/model_create_configs.md` |
 | **Tools** | MCP tool servers — local, remote, Kiln task tools | `references/knowledge/tools.md` |
 | **RAG** | Document retrieval — document library and RAG setup | `references/knowledge/rag.md` |

@@ -1,7 +1,7 @@
 ---
 name: model_work
 description: |
-  Model recommendation, gap analysis, tier taxonomy, MCP tool usage, provider reference, and cost estimation — everything you need to answer "what model should I use?" or "what models am I missing?" in one file. Loaded by Improve Task. When the answer is "create a run config with this model," hand off to references/knowledge/model_create_configs.md.
+  Model recommendation, gap analysis, tier taxonomy, the model info endpoints, provider reference, and cost estimation — everything you need to answer "what model should I use?" or "what models am I missing?" in one file. Loaded by Improve Task. When the answer is "create a run config with this model," hand off to references/knowledge/model_create_configs.md.
 ---
 # Knowledge: Model Work (Selection, Assessment, Research)
 
@@ -9,22 +9,28 @@ One-file home for model questions: **recommend** (what to try), **assess** (what
 
 When the next step is **building a run config** with a chosen model, hand off to `references/knowledge/model_create_configs.md`. When the next step is **reading scores to rank models**, hand off to `references/knowledge/eval_scores.md`.
 
-## Model Info MCP Tools (the source of truth for all model facts)
+## Model Info Endpoints (the source of truth for all model facts)
 
-All pricing, capability, and recommendation data comes from MCP tools — **never from priors, never from `available_models`**.
+All pricing, capability, and recommendation data comes from the model info endpoints, called with `call_kiln_api` — **never from priors, never from `available_models`**. Read the endpoint doc before the first call.
 
-- **`model_info_featured()`** — curated ranked list with editorial notes, pricing, capabilities, providers. Start here for "what model should I use?", tier overviews, and provider-filtered browsing ("what's on Groq?" — filter the `providers` field).
-- **`model_search(query)`** → **`model_info(model_id)`** — when the user names a specific model. Search first if you don't have the exact Kiln model ID.
+| Question | Call | Endpoint doc |
+|----------|------|--------------|
+| What model should I use? Tier overviews, the curated ranked list | `GET /api/model_info/models` with `featured=true`; add `include_notes=true` for Kiln's editorial and agent notes. For provider browsing ("what's on Groq?"), add `provider` | `references/knowledge/api_docs/get_api_model_info_models.md` |
+| The user names a specific model | `GET /api/model_info/models` with `search`, to get the exact Kiln model ID | `references/knowledge/api_docs/get_api_model_info_models.md` |
+| Full details of one model: every provider entry with its status, prices, limits, capabilities and thinking levels | `GET /api/model_info/model_details` with `model_id` (and `provider` for one entry) | `references/knowledge/api_docs/get_api_model_info_model_details.md` |
+| Which providers Kiln knows, which are connected, Kiln's notes on each | `GET /api/model_info/providers` | `references/knowledge/api_docs/get_api_model_info_providers.md` |
 
-> ⚠️ `model_search` is for a **specific named model**, not for enumerating a provider's catalog. Use `model_info_featured` + filter for provider browsing — it's one call instead of a search loop.
+By default `GET /api/model_info/models` lists only the provider entries the user can run now (status `ready`). To look up a model on a provider that is not connected, pass `include_not_available=true`.
 
-> ⚠️ **Model homepage / repo / paper / leaderboard URLs are not in MCP responses.** Don't emit them from priors — see `references/modes/improve_task.md` Response Contract item 7 (and the matching item in `references/modes/learn_about_kiln.md`) for the canonical rule and the "no curated link" phrasing.
+> ⚠️ `search` is for a **specific named model**, not for enumerating a provider's catalog. Filter the list with `provider` for provider browsing — it's one call instead of a search loop.
+
+> ⚠️ **Model homepage / repo / paper / leaderboard URLs are not in the model info responses.** Don't emit them from priors — see `references/modes/improve_task.md` Response Contract item 7 (and the matching item in `references/modes/learn_about_kiln.md`) for the canonical rule and the "no curated link" phrasing.
 
 ## Shared Rules (apply to every turn in this file)
 
 ### `available_models` API — Provider Connectivity Only
 
-The `available_models` API (via `call_kiln_api`) tells you which providers are connected and which models are accessible through them. It has **no pricing, no quality tiers, no recommendations** — do NOT use it for model selection. Use `model_info_featured` / `model_info` for that.
+The `available_models` API (via `call_kiln_api`) tells you which providers are connected and which models are accessible through them. It has **no pricing, no quality tiers, no recommendations** — do NOT use it for model selection. Use the model info endpoints for that.
 
 But: you MUST check `available_models` before creating a run config to confirm the chosen model is accessible through the user's connected providers.
 
@@ -44,7 +50,7 @@ When answering "what's the cheapest / best model?" without a task context, alway
 
 ### Proportion Recommendations to Real Gaps
 
-For "cheaper / reduce cost / faster" asks, the lead-recommendation gate lives in `references/modes/improve_task.md` Response Contract item 1 — quality-preserving mid-tier picks (Strong/Balanced or Fast tier; pull current names from `model_info_featured`, never name them from priors), never an Ultra-Fast/Cheapest floor model unless the user named a provider lock-in. When comparing speed or cost across options, name the multiplier (e.g. "~10× slower" / "~5× faster on Cerebras/Groq vs. native"), not the ordering. Options within ~2× are a tie; options ≥5× better lead unambiguously.
+For "cheaper / reduce cost / faster" asks, the lead-recommendation gate lives in `references/modes/improve_task.md` Response Contract item 1 — quality-preserving mid-tier picks (Strong/Balanced or Fast tier; pull current names from `GET /api/model_info/models`, never name them from priors), never an Ultra-Fast/Cheapest floor model unless the user named a provider lock-in. When comparing speed or cost across options, name the multiplier (e.g. "~10× slower" / "~5× faster on Cerebras/Groq vs. native"), not the ordering. Options within ~2× are a tie; options ≥5× better lead unambiguously.
 
 ## API Docs
 
@@ -56,6 +62,9 @@ Load the relevant endpoint doc **before** each call.
 | Run configs — catalog | `references/knowledge/api_docs/run_configs_api_list.md` |
 | Evals — catalog | `references/knowledge/api_docs/evals_api_list.md` |
 | Tasks — catalog | `references/knowledge/api_docs/tasks_api_list.md` |
+| GET model info list and search | `references/knowledge/api_docs/get_api_model_info_models.md` |
+| GET model info details | `references/knowledge/api_docs/get_api_model_info_model_details.md` |
+| GET model info providers | `references/knowledge/api_docs/get_api_model_info_providers.md` |
 | GET list available models | `references/knowledge/api_docs/get_api_available_models.md` |
 | GET available providers | `references/knowledge/api_docs/get_api_settings_available_providers.md` |
 | GET list provider models | `references/knowledge/api_docs/get_api_providers_models.md` |
@@ -65,7 +74,7 @@ Load the relevant endpoint doc **before** each call.
 
 ## Model Tier Categories
 
-Use these tier names when discussing models. `model_info_featured()` returns the current ranked list; each model's `editorial_notes` and pricing place it in a tier.
+Use these tier names when discussing models. `GET /api/model_info/models` with `featured=true` returns the current ranked list; each model's `editorial_notes` (with `include_notes=true`) and pricing place it in a tier.
 
 | Tier | Description | When to use |
 |------|-------------|-------------|
@@ -95,16 +104,16 @@ Reasoning models use the `thinking_level` parameter (`"low"` / `"medium"` / `"hi
 
 ## Open-Weight Models
 
-For local/on-prem/privacy cases, check `open_weights` via `model_info(model_id)`. Search by family with `model_search("Llama")`, `model_search("Qwen")`, etc. For VRAM sizing: **N GB RAM ≈ N-billion-parameter model** at int8 (e.g., 32 GB → 32B). See also `references/knowledge/local_private_on_prem.md` for the end-to-end local workflow.
+For local/on-prem/privacy cases, check `open_weights` in `GET /api/model_info/models` (or filter with `open_weights=true`). Search by family with `search=Llama`, `search=Qwen`, etc., or filter on `family`. For VRAM sizing: **N GB RAM ≈ N-billion-parameter model** at int8 (e.g., 32 GB → 32B). See also `references/knowledge/local_private_on_prem.md` for the end-to-end local workflow.
 
 ## Cost Estimation
 
-Get live numbers from `model_info(model_id)` / `model_info_featured()` — fields `input_price_per_million` and `output_price_per_million`.
+Get live numbers from `GET /api/model_info/model_details` — each provider entry's `input_price` and `output_price`, in USD per million tokens. `GET /api/model_info/models` also gives `median_input_price` and `median_output_price` across providers.
 
 **Multipliers to apply:**
 - **OpenRouter** adds ~10–30% markup over native provider pricing.
 - **Reasoning models** at `thinking_level: "high"` can 2–5× the output token count (thinking tokens are billed).
-- **Eval judge calls** add a per-item judge cost on top of each task call — pull the judge model's price from `model_info_featured()` rather than assuming one. Judges run offline/in batch, so a cheaper, slightly slower model is usually the right judge; factor its price in when estimating eval batch costs.
+- **Eval judge calls** add a per-item judge cost on top of each task call — pull the judge model's price from the model info endpoints rather than assuming one. Judges run offline/in batch, so a cheaper, slightly slower model is usually the right judge; factor its price in when estimating eval batch costs.
 
 **Formula:**
 ```
@@ -120,12 +129,12 @@ Typical task: ~2K input, ~500 output. Multiply by dataset size for batch.
 
 User asks "what's cheapest?", "what's best?", "what's good for code generation?" without naming a task.
 
-1. `model_info_featured()` → answer from results.
+1. `GET /api/model_info/models` with `featured=true` → answer from results.
 2. Apply the provider-availability caveat.
 3. Use specific numbers (`~$0.003/call`, not `$$`).
 4. Offer a follow-up: "If you tell me which task this is for, I can assess your existing configs and recommend specific upgrades."
 
-**Proceed with best match + state assumption — never block pricing on task scope.** Pricing/tier answers are global (from `model_info_featured`). If the *only* ambiguity is "which task should I apply this to?", answer the pricing question first, then offer the task-specific follow-up. Do not stall with "which task?" before naming a model — that question is the follow-up, not the gate.
+**Proceed with best match + state assumption — never block pricing on task scope.** Pricing/tier answers are global (from the model info endpoints). If the *only* ambiguity is "which task should I apply this to?", answer the pricing question first, then offer the task-specific follow-up. Do not stall with "which task?" before naming a model — that question is the follow-up, not the gate.
 
 Do **not** load `references/knowledge/model_create_configs.md` for this workflow — there's no task to create a config on.
 
@@ -135,9 +144,9 @@ User is on a task and asks "what do I have?", "what am I missing?", "what better
 
 ### Step 1 — Map Existing Configs
 
-Use `agent_overview.run_configs.items` (name, model_name, model_provider) from the mode's bootstrap. Look up each model via `model_info(model_id)` and map each config to a tier per the table above.
+Use `agent_overview.run_configs.items` (name, model_name, model_provider) from the mode's bootstrap. Look up each model via `GET /api/model_info/model_details` and map each config to a tier per the table above.
 
-Report coverage by tier, naming concrete models only from the Step 1 `model_info` lookups — e.g. "You have Frontier and Strong covered, but no Fast or Reasoning config yet." Never recite specific model names from memory; the catalog moves and the tiers are capability heuristics, not a fixed roster.
+Report coverage by tier, naming concrete models only from the Step 1 lookups — e.g. "You have Frontier and Strong covered, but no Fast or Reasoning config yet." Never recite specific model names from memory; the catalog moves and the tiers are capability heuristics, not a fixed roster.
 
 **If coverage is complete across relevant tiers, say so and stop** unless the user explicitly asked "what else is available?". Don't invent work.
 
@@ -145,10 +154,10 @@ Report coverage by tier, naming concrete models only from the Step 1 `model_info
 
 If tiers are missing or the user asks what's available:
 
-1. `model_info_featured()` → curated ranked list.
+1. `GET /api/model_info/models` with `featured=true` → curated ranked list.
 2. Check connected providers (call `available_models`, or infer from existing configs — see Shared Rules).
 3. Cross-reference: models in featured list, accessible via connected providers, that the user doesn't already have.
-4. `model_info(model_id)` for detailed pricing/capabilities on interesting candidates.
+4. `GET /api/model_info/model_details` for detailed pricing/capabilities on interesting candidates.
 
 ### Step 3 — Present Recommendations
 

@@ -90,7 +90,7 @@ One call returns scores across **all evals and all run configs** for the task. R
 
 When `eval_results_summary` and the per-eval `eval_configs_score_summary` fallback both return `dataset_size: 0` (or empty score blocks) for every spec the user wants to rank across, the user is mid-setup — eval configs exist but no eval runs have completed. **Do not stop at "no scores yet."** Produce three outputs in this order:
 
-1. A **model + cost table** of the candidate run configs (model, provider, input/output $/M, est. $/call from `model_info`), with a `/optimize/{pid}/{tid}/run_config/{rcid}` deep-link per row. State explicitly that ranking is by cost only because no eval data exists yet.
+1. A **model + cost table** of the candidate run configs (model, provider, input/output $/M, est. $/call from `GET /api/model_info/model_details`), with a `/optimize/{pid}/{tid}/run_config/{rcid}` deep-link per row. State explicitly that ranking is by cost only because no eval data exists yet.
 2. A **Compare link** of the form `/specs/{pid}/{tid}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` populated with all candidate rcids URL-encoded and comma-joined — the UI compare view renders run outputs side-by-side and lets the user inspect quality manually while eval runs accumulate.
 3. The standard remediation block ("To get scores, run each eval from the spec page") — but as a *follow-up*, not as the entire answer.
 

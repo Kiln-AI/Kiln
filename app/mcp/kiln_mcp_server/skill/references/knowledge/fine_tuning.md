@@ -61,7 +61,7 @@ Use Kiln's [tool-use eval](references/docs/evals-and-specs/evaluate-appropriate-
 
 ## Cost Guidance
 
-**Specific per-token training costs and live fine-tuned inference costs are not available through Kiln's APIs or model_info tools.** Never invent dollar figures or per-token training pricing — those are provider-specific and change frequently. Direct the user to the provider's current pricing page.
+**Specific per-token training costs and live fine-tuned inference costs are not available through Kiln's APIs, the model info endpoints included.** Never invent dollar figures or per-token training pricing — those are provider-specific and change frequently. Direct the user to the provider's current pricing page.
 
 ### Authoritative cost examples (from the Kiln docs' demo project)
 

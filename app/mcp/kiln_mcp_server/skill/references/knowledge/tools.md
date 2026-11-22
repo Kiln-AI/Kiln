@@ -148,7 +148,7 @@ Don't walk the user through SDK code — point at the docs page online and the A
 
 Two failure modes worth flagging proactively:
 
-1. **Pick a tool-capable model.** Tool calling needs models trained for it. Pre-flight via `model_info` / `model_info_featured` MCP tools — the `tools` capability flag is what matters. Kiln will warn in-UI when the chosen model lacks tool support, but the warning is dismissible — call it out in your recommendation.
+1. **Pick a tool-capable model.** Tool calling needs models trained for it. Pre-flight via `GET /api/model_info/model_details` — the `supports_tools` flag of the provider entry is what matters. Kiln will warn in-UI when the chosen model lacks tool support, but the warning is dismissible — call it out in your recommendation.
 2. **Don't add too many tools.** Each tool's name + description is in every prompt; dozens of tools fill the context and dilute attention. Be selective — start with the tools the task actually needs, add more only when a real gap shows up.
 
 ## Secrets management (one-line summary)

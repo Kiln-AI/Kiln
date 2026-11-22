@@ -48,7 +48,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## Before Creating a Config
 
-1. **Find the exact Kiln model ID:** Use `model_search(query)` to fuzzy-match the model name, then `model_info(model_id)` to confirm details, pricing, and which providers support it.
+1. **Find the exact Kiln model ID:** Use `GET /api/model_info/models` with `search` to fuzzy-match the model name (`references/knowledge/api_docs/get_api_model_info_models.md`), then `GET /api/model_info/model_details` to confirm details, pricing, and which providers support it (`references/knowledge/api_docs/get_api_model_info_model_details.md`).
 2. **Verify the `(model_id, provider_id)` pair is actually served — not just that the provider is connected.** A connected provider does not mean every model exists on that provider; e.g. Cerebras is connected does not imply `gpt_oss_120b` is served on Cerebras. Use `available_models` and check the **pair**:
 
    Read `references/knowledge/api_docs/get_api_available_models.md`, then:

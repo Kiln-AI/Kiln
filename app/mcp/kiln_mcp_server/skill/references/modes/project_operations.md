@@ -88,7 +88,7 @@ Before any API call or POST in this mode, resolve `(pid, tid)` using the cases b
 | **Model Create Configs** | Creating run configs, model parameters, naming validation | `references/knowledge/model_create_configs.md` |
 | **Evals** | Background on evals, eval pipeline, Eval Builder vs manual, agent's role | `references/knowledge/specs_and_evals.md` |
 
-## MCP Tools
+## Tools
 
 ### Kiln API
 
@@ -102,13 +102,9 @@ call_kiln_api("METHOD", "/api/path", ...)
 - **Anticipate fields and pull them in one call.** Reuse prior responses already in context before re-fetching; widen the filter on your next call instead of calling the same endpoint twice.
 - **Before any `POST /api/projects/{pid}/tasks/{tid}/run_configs`**, load `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md` **immediately before** the POST — not after a 422. Also resolve a real `prompt_id` via `GET /prompts` first — the list returns IDs in their prefixed form (`id::<raw>`), which is what run_configs demands. If you just POSTed the prompt yourself, the POST response `id` is the **bare** form; wrap it as `id::<raw>` for the run_config `prompt_id`, or re-fetch from `GET /prompts` to get the prefixed form. Never send the literal string `simple_prompt_builder` as `prompt_id`.
 
-### Model Info Tools
+### Model Info
 
-For model selection when creating run configs:
-
-- **`model_info_featured()`** — curated recommendations with pricing and capabilities.
-- **`model_search(query)`** — fuzzy name search. Returns Kiln model IDs.
-- **`model_info(model_id)`** — full details for one model by ID.
+For model selection when creating run configs, use the model info endpoints: `GET /api/model_info/models` (the curated list, or a name search with `search`) and `GET /api/model_info/model_details` (one model, every provider entry). See `references/knowledge/model_work.md`.
 
 ## Mode Transitions
 

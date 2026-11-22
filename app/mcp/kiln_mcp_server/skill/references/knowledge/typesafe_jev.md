@@ -11,7 +11,7 @@ Jev answers typed questions about an input and returns a probability per possibl
 
 - `references/knowledge/provider_setup.md` — connecting the provider, reading connectivity state
 - `references/knowledge/judge_types.md` — the judge menu; Jev serves the LLM judge type; deterministic checks and code evals take the work Jev should not do
-- `references/knowledge/model_work.md` — the mandatory connected-providers check and `model_info_featured` for the current model name
+- `references/knowledge/model_work.md` — the mandatory connected-providers check and the model info endpoints for the current model name
 
 ## Check it exists before recommending it
 

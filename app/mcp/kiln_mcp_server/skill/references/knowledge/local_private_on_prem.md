@@ -89,7 +89,7 @@ If the user really means VPC, the approach is different — they'll use the same
 Plan and run a set of experiments using open-weight models. Read `references/modes/improve_task.md` for how to run the experiments, using these constraints:
 - Only use models they have available
 - Only use models that fit their RAM/parameter limit
-- Only use open-weight models — use `model_info_featured()` and filter for `open_weights: true`, or `model_search(query)` → `model_info(model_id)` and check the `open_weights` field. See also `references/knowledge/model_work.md` → Open-Weight Models for size guidance
+- Only use open-weight models — use `GET /api/model_info/models` with `open_weights=true`, or find the model with `search` and check `open_weights` in `GET /api/model_info/model_details`. See also `references/knowledge/model_work.md` → Open-Weight Models for size guidance
 
 ### Select New Default
 
