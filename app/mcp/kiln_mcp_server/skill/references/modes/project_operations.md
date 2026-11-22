@@ -85,6 +85,7 @@ Before each reply, check that the user's message still fits this mode. If the us
 | **Provider Setup** | Provider/API key help — connecting/disconnecting providers, **reading current connectivity state**, **distinguishing configured-for-this-task vs connected-to-workspace**, troubleshooting | `references/knowledge/provider_setup.md` |
 | **Model Create Configs** | Creating run configs, model parameters, naming validation | `references/knowledge/model_create_configs.md` |
 | **Evals** | Background on evals, eval pipeline, Eval Builder vs manual, agent's role | `references/knowledge/specs_and_evals.md` |
+| **Memory** | The project's durable memory — the six endpoints, scopes, what to read at the start of work, the write discipline, the tags | `references/knowledge/memory.md` |
 
 ## Tools
 

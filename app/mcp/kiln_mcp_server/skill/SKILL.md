@@ -98,6 +98,7 @@ The knowledge files list the pages of their own areas.
 - `references/levers/index.md` — the parts of a Kiln agent that an experiment can change (prompt, model, run parameters, output mode, tools, skills, a new tool), and how to change each one.
 - `references/improving_agents/index.md` — what to try to make an agent better: the smells, the playbooks and the techniques, and how to read them.
 - `references/knowledge/train_val_test.md` — the split rule for improving an agent, which call reads which split, and the leak rules. Read it before you measure or compare run configs.
+- `references/knowledge/memory.md` — the project's durable memory: what to read at the start of Kiln work, what to record and how. Read it before you read or write a memory.
 - `references/knowledge/model_work.md` — models: which to choose, their prices, providers and capabilities, through the model info endpoints.
 
 ## What you cannot do over this connection

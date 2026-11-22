@@ -125,6 +125,7 @@ Load the bundle, then drill into sub-dependencies declared in each knowledge fil
 | **Data Guides** | Task Data Guides for synthetic data — authoring flows (manual / Kiln Pro), the refine loop, how the guide shapes generation | `references/knowledge/data_guides.md` |
 | **Judge Types** | The eval judge menu — LLM judge, deterministic checks (exact/contains/pattern/set/tool-call/step-count), code evals; selection rule, the code-eval `score()` contract, gotchas | `references/knowledge/judge_types.md` |
 | **TypeSafe AI (Jev)** | Classification-only provider for judges and closed-set structured tasks — where it fits, what it rejects, judge tips, reading its probabilities | `references/knowledge/typesafe_jev.md` |
+| **Memory** | The project's durable memory — the six endpoints, scopes, what to read at the start of work, the write discipline, the tags | `references/knowledge/memory.md` |
 
 ## Tools
 
