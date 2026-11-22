@@ -1,11 +1,10 @@
 ---
 description: Kiln Issues are an AI-native issue tracker for AI teams
 icon: bug
+online_url: https://docs.kiln.tech/docs/issues
 ---
 
 # Issues
-
-<figure><img src="../.gitbook/assets/issuesbg-2.png" alt=""><figcaption></figcaption></figure>
 
 Software teams have tools like Github Issues and JIRA for tracking issues. What should AI product teams use?
 
@@ -35,8 +34,6 @@ To create an issue, select the Issue template when creating an Eval on the Eval 
 * Failure example (optional but recommended): an example of what failure looks like. Be sure to include this if the issue is subtle, subjective, or difficult to understand without examples.
 * Passing example (optional)
 
-<figure><img src="../.gitbook/assets/Screenshot 2025-07-17 at 1.40.52 PM.png" alt="" width="375"><figcaption><p>Create Issue UI</p></figcaption></figure>
-
 ### Evaluating An Issue
 
 Issues are evals in the Kiln UI, but they go beyond a basic eval. Issue Evals have custom synthetic data gen templates, understanding that we want to generate inputs that reproduce a specific issue. It will help you easily create data samples from a single description (and optional examples).
@@ -47,8 +44,6 @@ Once you're done setting up your Issue Eval, you can use it to:
 * Ensuring the issue never regresses: keep running prior issue evals to ensure you don't accidentally regress the issue
 
 Here's an example of the eval compare screen, ensuring several issues don't regress or are improved as they iterate/improve the AI system:
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-07-17 at 1.39.06 PM.png" alt="" width="375"><figcaption><p>Comparing several issues at one time</p></figcaption></figure>
 
 ### Philosophy: AI Product Evals work Best with Many Small Issue Evals <a href="#setup-team-evals" id="setup-team-evals"></a>
 

@@ -8,7 +8,11 @@ import pytest
 
 from kiln_mcp_server.api_tool.tool import DEFAULT_BODY_LIMIT
 from kiln_mcp_server.skill_checks.__main__ import run_check
-from kiln_mcp_server.skill_checks.docs_index import DOCS_INDEX_RULE
+from kiln_mcp_server.skill_checks.docs_index import (
+    DOCS_INDEX_PATH,
+    DOCS_INDEX_RULE,
+    render_docs_index,
+)
 from kiln_mcp_server.skill_checks.knowledge_check import KNOWLEDGE_RULES, check
 from kiln_mcp_server.skill_checks.knowledge_load import load
 from kiln_mcp_server.skill_checks.knowledge_schema import (
@@ -47,8 +51,6 @@ MAX_MAINTENANCE_LINES = 500
 # Rules whose problems do not fail the shipped-tree tests yet, each with the
 # content batch that makes it pass (skill_and_content section 9).
 PENDING_RULES: set[str] = {
-    "tree-front-matter",  # batch 6: online_url on the help articles
-    "docs-index",  # batch 6
     "tree-test-split",  # batch 13a
 }
 
@@ -221,6 +223,11 @@ def test_address_replacement_covers_every_app_link():
     texts = {key: read_file(key, index) for key in index.files}
     assert any(DEFAULT_ORIGIN in text for text in texts.values())
     assert [key for key, text in texts.items() if UNREPLACED_ADDRESS.search(text)] == []
+
+
+def test_docs_index_is_current():
+    root = default_root()
+    assert read_file(DOCS_INDEX_PATH, get_index()) == render_docs_index(root)
 
 
 def test_no_file_over_body_limit():

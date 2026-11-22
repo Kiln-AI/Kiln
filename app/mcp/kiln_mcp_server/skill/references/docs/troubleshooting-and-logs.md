@@ -1,6 +1,7 @@
 ---
 description: How to troubleshoot errors from the logs
 icon: user-helmet-safety
+online_url: https://docs.kiln.tech/docs/troubleshooting-and-logs
 ---
 
 # Troubleshooting & Logs

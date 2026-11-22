@@ -1,6 +1,7 @@
 ---
 description: How to take ideas from the lab (Kiln) into your product
 icon: industry-windows
+online_url: https://docs.kiln.tech/docs/productionizing-kiln
 ---
 
 # Productionizing Kiln

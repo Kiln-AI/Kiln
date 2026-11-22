@@ -1,11 +1,10 @@
 ---
 description: Tag, Filter, Sort, Import, Freeze and Split
 icon: tag
+online_url: https://docs.kiln.tech/docs/organizing-datasets
 ---
 
 # Organizing Datasets
-
-<figure><img src="../.gitbook/assets/dataset-2 (1).png" alt=""><figcaption></figcaption></figure>
 
 ### Using Tags to Organize Your Dataset
 
@@ -25,7 +24,7 @@ Some examples of how you might use tags within a team:
 
 The dataset view offers a number of tools that make working with large datasets easier:
 
-* Filter: Tap the filter button (![](<../.gitbook/assets/filter 2.png>)) to filter to specific tags
+* Filter: Tap the filter button to filter to specific tags
 * Sort: You can sort by any column by clicking its header
 * Multi-select: you can enter "selection" mode by clicking the select button
   * Select any row by clicking it
@@ -50,8 +49,6 @@ The format must be a CSV file with a header row. The following columns are suppo
 * `reasoning` \[Optional] - If you model is a reasoning model that output reasoning/thinking text before the output (for example, R1, QwQ, etc), you can provide that text here. This will be visible in the UI, and available for fine-tuning a reasoning model.
 * `chain_of_thought` \[Optional] - If you model output chain-of-thought text before the output, you can provide that text here. This will be visible in the UI, and available for fine-tuning a thinking model.
 * `tags` \[Optional] - comma separated string listing the tags you want to add to this row. For example: `tag1, tag2`.
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-03-15 at 12.59.27 PM.png" alt="" width="375"><figcaption><p>The CSV Import UI</p></figcaption></figure>
 
 {% hint style="info" %}
 If you prefer working in python, or have a complex import use case, our Python SDK can be used to add data to a Kiln project. It includes validators that ensures your data conforms to the needed schemas.

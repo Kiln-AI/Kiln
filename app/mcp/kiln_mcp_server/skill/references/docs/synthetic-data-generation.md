@@ -1,6 +1,7 @@
 ---
 description: Generate synthetic data for fine-tuning or evaluation
 icon: robot
+online_url: https://docs.kiln.tech/docs/synthetic-data-generation
 ---
 
 # Synthetic Data Generation
@@ -44,14 +45,10 @@ First select a goal for your dataset generation: Evals or Fine-Tuning. This is a
 * **Fine-Tuning**: generate high quality outputs across a broad range of possible inputs, to help your model learn how to respond to a range of requests. This can include generating inputs that commonly produce issues, and outputs that avoid that issue.
 * **Evals**: Intentionally generate a mix of good and bad inputs and outputs. We'll use the bad outputs to ensure the judge model can properly assess failures, and we'll use the bad inputs to ensure your task no longer has the issue.
 
-<figure><img src="../.gitbook/assets/Screenshot 2025-07-16 at 10.15.49 AM.png" alt="" width="375"><figcaption><p>Select a Goal</p></figcaption></figure>
-
 Selecting the goal will set up two properties:
 
 * **Template:** A Kiln prompt template to guide the data gen. You can edit this template before running data gen.
 * **Tag Assignments:** which dataset tags will be assigned to generated data. This could be a single tag like `fine_tuning_data` or a randomly assigned split like `eval_data: 80%, golden_data: 20%`.
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-07-16 at 10.21.14 AM (1).png" alt="" width="375"><figcaption><p>Goals drive the template and tag assignments</p></figcaption></figure>
 
 #### Choose A Data Gen Model
 
@@ -60,8 +57,6 @@ Selecting the goal will set up two properties:
 {% endhint %}
 
 We highly recommend choosing a large capable model for data gen. While your task may work on smaller models, data gen is more complex. It requires reasoning about a range of possible inputs, probing edge cases, and more. It benefits from a large model with a long context.
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-07-16 at 10.38.10 AM.png" alt="" width="375"><figcaption><p>Recommended models are tagged in the dropdown</p></figcaption></figure>
 
 If generating content to evaluate how your model responds to inappropriate requests (bias, jailbreaking, maliciousness, etc.), choose an uncensored model like Grok. Censored models like GPT 4o will refuse to generate some types of content.
 
@@ -82,15 +77,9 @@ Kiln generates synthetic data in 4 stages:
 
 A common issue with synthetic data generation is that if you ask a model to generate synthetic data 1000 times, you get 1000 very similar outputs. Kiln addresses this by first generating a tree of diverse topics, then generating data targeting on individual topics.
 
-<figure><img src="../.gitbook/assets/Screenshot 2025-01-05 at 12.06.43 PM.png" alt="" width="302"><figcaption><p>Example Topic Tree for a "Newspaper Headline" Task</p></figcaption></figure>
-
 Kiln can use AI models to generate a topic tree for you from your task's prompt. It uses the prompt to ensure the topics are relevant to your goal. See the example above, the model knew it was building topics for newspaper headlines and generated appropriate topics. To generate topics, click "Add Topics":
 
-<figure><img src="../.gitbook/assets/Screenshot 2025-09-11 at 1.45.58 PM.png" alt="" width="375"><figcaption><p>Generate Topics Dialog</p></figcaption></figure>
-
 You can nest sub-topics under any topic, forming the tree. Adding layers allows you to quickly generate a significant amount of diverse data. Hover any topic's "..." menu to expose a "Add Subtopics" button:
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-09-22 at 7.17.28 PM.png" alt="" width="219"><figcaption><p>"Add Subtopic" from ... menu</p></figcaption></figure>
 
 You can manually add topics instead of using synthetic topic generation. Select the "or manually add topics" option at the bottom of the "Generate Topics" dialog.
 
@@ -102,11 +91,7 @@ Model inputs are the data passed into your task. When normally running your task
 
 Click "Generate Inputs" button to generate model inputs using an AI model:
 
-<figure><img src="../.gitbook/assets/Screenshot 2025-09-11 at 1.37.16 PM.png" alt="" width="375"><figcaption><p>Generate Model Inputs Dialog</p></figcaption></figure>
-
 This will produce inputs under each topic in your data table:
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-09-22 at 7.19.49 PM.png" alt="" width="375"><figcaption><p>Generated model inputs for the "Joke Generator" task</p></figcaption></figure>
 
 Review the quality of inputs and ensure you're happy with them before proceeding. You can delete individual inputs for manual curation, or delete them all, [edit the generation prompt with more guidance](references/docs/synthetic-data-generation.md#automatic-templates-and-custom-prompting), and then try generating again to get better quality data.
 
@@ -114,11 +99,7 @@ Review the quality of inputs and ensure you're happy with them before proceeding
 
 Once you have generated all of the inputs you want, click "Generate Outputs" to generate outputs to present options for generation:
 
-<figure><img src="../.gitbook/assets/Screenshot 2025-07-16 at 10.56.16 AM.png" alt="" width="375"><figcaption></figcaption></figure>
-
 Generating will result in outputs for each input:
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-09-22 at 7.21.43 PM.png" alt="" width="375"><figcaption><p>Synthetic Input/Output pairs under a topic</p></figcaption></figure>
 
 Review the quality of outputs and ensure you're happy with them before proceeding. You can delete individual outputs for manual curation, or delete them all, [edit the generation prompt](references/docs/synthetic-data-generation.md#automatic-templates-and-custom-prompting) with more guidance, and then try generating again to get better quality data.
 
@@ -126,19 +107,13 @@ Review the quality of outputs and ensure you're happy with them before proceedin
 
 Use the Kiln synthetic data UI to review your data. Once you're happy with the data, click "Save All" to save it into your dataset for use in evals and fine-tuning.
 
-<figure><img src="../.gitbook/assets/Screenshot 2025-09-22 at 7.27.27 PM.png" alt="" width="375"><figcaption><p>Saving All Data</p></figcaption></figure>
-
 The data will automatically be tagged with appropriate tags, based on the goal you selected ([see details](references/docs/synthetic-data-generation.md#tagging)):
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-09-11 at 1.41.25 PM.png" alt=""><figcaption><p>The tags which will be assigned are shown in the UI</p></figcaption></figure>
 
 Once saved, you can view all of your saved data in the Dataset tab.
 
 ### Automatic Templates and Custom Prompting
 
 When you select a goal, we'll select the corresponding prompt template. These are built into Kiln and help guide data generation for a variety of tasks.
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-07-16 at 10.42.02 AM.png" alt="" width="375"><figcaption><p>Selecting a Template</p></figcaption></figure>
 
 When creating synthetic data for an eval there are two additional powerful options:
 
@@ -156,8 +131,6 @@ Some examples of custom prompts/edits:
 * Generate content for global topics, not only US-centric
 * Generate examples in Spanish
 * The model is having trouble classifying sentiment of sarcastic messages. Generate sarcastic messages.
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-07-16 at 10.48.14 AM.png" alt="" width="375"><figcaption><p>Editing a template</p></figcaption></figure>
 
 {% hint style="info" %}
 Often custom guidance is used for producing adversarial content: poor quality or inappropriate content. This is done to ensure an [evaluation](references/docs/evals-and-specs/evaluations.md) can detect and fail this sort of content.
@@ -192,4 +165,3 @@ All synthetic data will be assigned a series of [tags](references/docs/organizin
 * A unique tag to identify the data session (e.g. `synthetic_session_12345`)
 * Custom tags. These are setup automatically when you select a goal, but you can edit before generating data:
 
-<figure><img src="../.gitbook/assets/Screenshot 2025-07-16 at 11.13.57 AM.png" alt="" width="375"><figcaption><p>Editing Tag Assignments</p></figcaption></figure>

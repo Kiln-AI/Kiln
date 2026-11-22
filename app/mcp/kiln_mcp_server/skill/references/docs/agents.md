@@ -1,11 +1,10 @@
 ---
 description: Building Agentic AI systems has never been easier
 icon: circle-nodes
+online_url: https://docs.kiln.tech/docs/agents
 ---
 
 # Agents
-
-<figure><img src="../.gitbook/assets/agentsbg-2.png" alt=""><figcaption></figcaption></figure>
 
 Ah "agents", the most overloaded term in AI! The word "Agents" means different things to different people, but the good news is Kiln supports all the patterns typically associated with "agentic systems". Let's break down the common agent features, and how to build them in Kiln!
 
@@ -30,15 +29,11 @@ Kiln has full support for this pattern via Kiln Task as Tools:
 
 In Kiln you can make any Kiln Task into a tool which other tasks can then call. This gives you the flexibility to create multi-actor patterns by organizing a hierarchy of tasks:
 
-<figure><img src="../.gitbook/assets/subtask-diagram.png" alt="" width="375"><figcaption><p>A Kiln task, able to call other Kiln tasks as tools</p></figcaption></figure>
-
 To create a Kiln Task as Tool follow these steps:
 
 **Step 1: Create a Kiln Task**
 
 First create a new task. Select "New Task" in the project menu in the sidebar, and fill out the form with a name and prompt.
-
-<figure><img src="../.gitbook/assets/new task.png" alt="" width="275"><figcaption></figcaption></figure>
 
 **Step 2: Add Tools**
 
@@ -49,8 +44,6 @@ If you haven't already and this task requires tools, add tools to your project f
 Each Kiln task is run with a "run configuration" which specifies which model is used, which prompt is used, which tools are allowed, and more. Since you want your tool calls to be completely consistent, you must first create and save a run configuration.
 
 The easiest way to create a run configuration is from the "Run" tab in Kiln. You can tweak every parameter, run the task to ensure it works, then save it when you're happy.
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-10-03 at 1.48.21 PM.png" alt="" width="375"><figcaption><p>Creating a run configuration in the "Run" tab</p></figcaption></figure>
 
 **Step 3: Create a Kiln Task as Tool**
 
@@ -73,21 +66,15 @@ For example:
 * **Best:** web\_researcher - "This tool can search and scrape the web for information. Ask it a question and it will research using the web, and reply with a summarized answer."
 {% endhint %}
 
-<figure><img src="../.gitbook/assets/Screenshot 2025-10-03 at 1.58.39 PM.png" alt="" width="375"><figcaption><p>Creating a Kiln Task as Tool</p></figcaption></figure>
-
 **Step 4: Use Your Task as Tool**
 
 To use your new subtask, simply select it from the "Tools & Search" dropdown on the Run tab.
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-10-03 at 2.10.42 PM.png" alt="" width="375"><figcaption><p>Adding a Kiln task as tool subtask</p></figcaption></figure>
 
 If you always want this task to have access to this tool, use the "Save current options" and "Set as task default" links to create a default run configuration including this task.
 
 **Step 5: Viewing Tool Calls**
 
 When you run a task that has access to subtasks, you're able to view the tool/task invocations in the "All Messages" list. Click the "Messages" link to see the subtasks message list.
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-10-03 at 2.16.13 PM.png" alt="" width="375"><figcaption></figcaption></figure>
 
 #### Context Management
 
@@ -105,8 +92,6 @@ Let's look at a visual example of an agent which requires many web-searches to b
 
 * **Without Sub-Agents**: the context becomes very large very quickly. Entire webpages are loaded into context and stay there. Data we don't need, like web pages that didn't yield useful information, keep taking context room forever. Later calls need to process a large number of tokens to generate the next new token (increasing cost).
 * **With Sub-Agents**: each web-research task is performed in its own sub-agent. The results of the webpages are summarized and only the important details are returned to the main task. The context of the main task stays focused and small. Each subtask is also smaller and more focused. Irrelevant data is dropped when the subtask ends. Costs are lower by approximately a factor of 4.
-
-<figure><img src="../.gitbook/assets/contextmgmt.png" alt=""><figcaption></figcaption></figure>
 
 ### Goal Directed, Autonomy, & Reasoning
 

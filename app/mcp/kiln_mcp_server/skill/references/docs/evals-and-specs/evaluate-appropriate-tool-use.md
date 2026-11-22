@@ -1,10 +1,9 @@
 ---
 description: Test your model's ability to appropriately invoke tools
+online_url: https://docs.kiln.tech/docs/evals-and-specs/evaluate-appropriate-tool-use
 ---
 
 # Evaluate Appropriate Tool Use
-
-<figure><img src="../../.gitbook/assets/tool_use.png" alt=""><figcaption></figcaption></figure>
 
 {% hint style="success" %}
 **It doesn't matter how well a tool works if it isn't invoked when needed.**&#x20;
@@ -125,7 +124,5 @@ Once you have a judge set up, you can evaluate different configurations for runn
 * Different sets of available tools (testing with varying numbers of tools can help identify optimal tool configurations)
 
 You will also be able to see the tools available to each run configuration. Keep in mind that any run configuration without access to the tool you are evaluating will produce unreliable scores, as the model cannot actually invoke the tool being tested.
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-11-14 at 1.33.24 PM.png" alt="" width="375"><figcaption><p>Comparing Run Configurations</p></figcaption></figure>
 
 For detailed guidance on selecting and comparing task model options, see [Finding the Ideal Run Method](references/docs/evals-and-specs/evaluations.md#finding-the-ideal-run-method).

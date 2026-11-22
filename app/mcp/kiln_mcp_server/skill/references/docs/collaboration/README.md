@@ -1,11 +1,10 @@
 ---
 description: How to collaborate with your team using Kiln
 icon: people-arrows
+online_url: https://docs.kiln.tech/docs/collaboration
 ---
 
 # Collaboration
-
-<figure><img src="../../.gitbook/assets/Collab2.png" alt=""><figcaption></figcaption></figure>
 
 ### Designed for Techies and Non-techies Alike
 

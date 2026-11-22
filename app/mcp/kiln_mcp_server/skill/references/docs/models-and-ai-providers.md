@@ -3,19 +3,16 @@ description: >-
   Connect to Ollama, OpenAI, OpenRouter, AWS, Azure, Vertex, Together,
   Fireworks, and more
 icon: crystal-ball
+online_url: https://docs.kiln.tech/docs/models-and-ai-providers
 ---
 
 # Models and AI Providers
-
-<figure><img src="../.gitbook/assets/Models (1).png" alt=""><figcaption></figcaption></figure>
 
 ## Skip the Guesswork: Kiln Suggests Models
 
 Picking a model for a specific task can be hard. Each has different capabilities such as supported JSON modes, reasoning support, API features (logprobs, temperature) and censorship levels. Some work great for synthetic data and evals, others no so much.
 
 We have written over 2000 test cases testing each popular model, on each AI provider, for each important feature. The tests are updated weekly, and we publish these capabilities in our model library. With this knowledge, the Kiln app automatically suggests appropriate models and model settings for each task. It will even warn you if you select a model that's unlikely to work. Read more on our blog: [I wrote 2000 LLM test cases so you don't have to](https://kiln.tech/blog/i_wrote_2000_llm_test_cases_so_you_dont_have_to).
-
-<figure><img src="../.gitbook/assets/beware-2.png" alt="" width="375"><figcaption><p>Kiln's model selector is task aware</p></figcaption></figure>
 
 ## Connecting AI Providers
 
@@ -65,8 +62,6 @@ Included models are models that have been tested to work with Kiln's various fea
 To use these models simply connect any AI provider from the Settings page. Once connected, you can select these model from the model dropdown on the Run screen. The dropdown will warn if you attempt to use a model that doesn't support a feature (like structured output or synthetic data generation).
 
 View all available models in our [model library on our webpage](https://kiln.tech/model_library) or the models tab in app. We update this list as new models come out.
-
-<figure><img src="../.gitbook/assets/model_library.png" alt="Kiln Model Library" width="350"><figcaption><p>The Kiln Model Library</p></figcaption></figure>
 
 You can request we add models on our [Discord](https://kiln.tech/discord).
 

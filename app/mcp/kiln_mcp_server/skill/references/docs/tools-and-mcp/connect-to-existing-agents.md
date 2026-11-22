@@ -1,5 +1,6 @@
 ---
 description: You can connect Kiln Evals to existing agents on any platform, using MCP
+online_url: https://docs.kiln.tech/docs/tools-and-mcp/connect-to-existing-agents
 ---
 
 # Connect to Existing Agents
@@ -35,13 +36,9 @@ This is the preferred option if you're just getting started and don't already ha
 
 To create a new task from a tool, click `Settings > Manage Tools > Tool Server > Individual Tool > [...] Menu > Create Task from Tool`.
 
-<figure><img src="../../.gitbook/assets/Screenshot 2026-02-20 at 2.36.57 PM.png" alt="" width="276"><figcaption></figcaption></figure>
-
 #### Option 2: Use a Wrapper Agent
 
 Any existing Kiln task can call your MCP tools. You can give your existing agents in Kiln access to your external MCP tools by selecting them in the `Tools & Search` dropdown on the run screen.
-
-<figure><img src="../../.gitbook/assets/Screenshot 2026-02-20 at 2.38.22 PM.png" alt="Select Tools on the Run Screen" width="375"><figcaption></figcaption></figure>
 
 This is a great approach if your task's input/output schemas doesn't exactly match your tool's input/output schemas. The wrapping LLM agent can follow instructions, and call the tool with the needed parameters.
 
@@ -56,8 +53,4 @@ If it doesn't match, we suggest either using a wrapper agent (option 2) or modif
 {% endhint %}
 
 To connect an MCP tool to an existing task, click  `Settings > Manage Tools > Tool Server > Individual Tool > [...] Menu > Run Task with Tool > Run Task Directly`.
-
-<figure><img src="../../.gitbook/assets/Screenshot 2026-02-20 at 2.47.25 PM.png" alt="" width="375"><figcaption></figcaption></figure>
-
-
 

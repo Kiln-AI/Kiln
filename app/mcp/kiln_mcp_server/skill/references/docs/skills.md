@@ -1,6 +1,7 @@
 ---
 description: Load more instructions, depending on the goal (Progressive Prompt Enhancement)
 icon: puzzle-piece
+online_url: https://docs.kiln.tech/docs/skills
 ---
 
 # Skills
@@ -119,7 +120,7 @@ Kiln offers three ways to extend your agent's capabilities. Here's how to choose
 
 Skills can also be compared to [RAG](references/docs/documents-and-search-rag.md). Both have pros and cons for adding knowledge to a system:
 
-<table data-full-width="true"><thead><tr><th>Feature</th><th>Skills</th><th>RAG</th></tr></thead><tbody><tr><td><strong>Max Documents</strong></td><td>Typically &#x3C;50</td><td>Unlimited</td></tr><tr><td><strong>Context Impact</strong></td><td>Low: ~100 tokens per document for name and description.</td><td>Very Low: 1 tool definition for all documents.</td></tr><tr><td><strong>Chunking</strong></td><td>Manually create skills and reference files.</td><td>Automatic chunking of larger docs.</td></tr><tr><td><strong>Control</strong></td><td>High: define the exact skill and reference file content. Descriptions can prompt the agent exactly when to load each skill.</td><td>Low: documents are automatically chunked (split) and indexed. The agent needs to guess search terms to find relevant information.</td></tr><tr><td><strong>Deployment Complexity</strong></td><td>Low: no additional effort if your toolchain supports it (like <a href="https://docs.kiln.tech/developers/python-library-quickstart">Kiln SDK</a>).</td><td>High: requires vector database hosting, and jobs to process and index documents.</td></tr><tr><td><strong>Progressive Disclosure</strong></td><td>Yes - can link to reference files, forming a nested hierarchy of knowledge</td><td>Yes - can muli-hop.</td></tr></tbody></table>
+<table data-full-width="true"><thead><tr><th>Feature</th><th>Skills</th><th>RAG</th></tr></thead><tbody><tr><td><strong>Max Documents</strong></td><td>Typically &#x3C;50</td><td>Unlimited</td></tr><tr><td><strong>Context Impact</strong></td><td>Low: ~100 tokens per document for name and description.</td><td>Very Low: 1 tool definition for all documents.</td></tr><tr><td><strong>Chunking</strong></td><td>Manually create skills and reference files.</td><td>Automatic chunking of larger docs.</td></tr><tr><td><strong>Control</strong></td><td>High: define the exact skill and reference file content. Descriptions can prompt the agent exactly when to load each skill.</td><td>Low: documents are automatically chunked (split) and indexed. The agent needs to guess search terms to find relevant information.</td></tr><tr><td><strong>Deployment Complexity</strong></td><td>Low: no additional effort if your toolchain supports it (like <a href="https://docs.kiln.tech/developers/python-library-quickstart">Kiln SDK</a>).</td><td>High: requires vector database hosting, and jobs to process and index documents.</td></tr><tr><td><strong>Progressive Disclosure</strong></td><td>Yes - can link to reference files, forming a nested hierarchy of knowledge</td><td>Yes - can multi-hop.</td></tr></tbody></table>
 
 ### Best Practices
 

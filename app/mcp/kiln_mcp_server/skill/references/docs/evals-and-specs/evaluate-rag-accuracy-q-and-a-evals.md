@@ -2,6 +2,7 @@
 description: >-
   Know your Kiln Search tools find the right answer with RAG evals and synthetic
   Q&A data
+online_url: https://docs.kiln.tech/docs/evals-and-specs/evaluate-rag-accuracy-q-and-a-evals
 ---
 
 # Evaluate RAG Accuracy: Q\&A Evals
@@ -35,8 +36,6 @@ This guide walks through the RAG-specific workflow for reference answer accuracy
 * Finding the Ideal Run Configuration
 
 For general eval concepts like judges, run configurations, and comparing results, see Evaluations.
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-11-14 at 12.47.34 PM (1).png" alt="" width="375"><figcaption><p>The RAG Eval Process</p></figcaption></figure>
 
 ### Creating a Reference Answer Accuracy Eval
 

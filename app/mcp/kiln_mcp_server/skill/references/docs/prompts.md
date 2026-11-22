@@ -1,6 +1,7 @@
 ---
 description: How to use our prompt generators, or create your own prompt
 icon: pen-to-square
+online_url: https://docs.kiln.tech/docs/prompts
 ---
 
 # Prompts
@@ -9,8 +10,6 @@ Kiln offers several methods to build and manage prompts
 
 * [Prompt Generators](references/docs/prompts.md#prompt-generators): Kiln can automatically generate many popular prompt styles from your task and dataset (few-shot, many-shot, chain of thought, chain of thought multi-shot, and more). The more you use your task, and rate the results, the richer your prompts become.
 * [Custom Prompts](references/docs/prompts.md#custom-prompts): manually create, save and share any prompt.
-
-<figure><img src="../.gitbook/assets/Prompts.png" alt=""><figcaption></figcaption></figure>
 
 ## Viewing, Managing & Sharing Prompts
 
@@ -34,8 +33,6 @@ When creating a new prompt, there are several fields:
 ## Using Prompts
 
 You can select any available prompt or prompt generator from the prompt dropdown:
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-01-09 at 6.27.57 PM.png" alt="" width="310"><figcaption><p>Select a Prompt</p></figcaption></figure>
 
 {% hint style="info" %}
 You can start typing to filter this list, which can make it easy to find a prompt by name.

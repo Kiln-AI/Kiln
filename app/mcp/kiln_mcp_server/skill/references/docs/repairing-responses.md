@@ -1,11 +1,10 @@
 ---
 description: '"Teach the model, you will" - ML Yoda'
 icon: hammer
+online_url: https://docs.kiln.tech/docs/repairing-responses
 ---
 
 # Repairing Responses
-
-<figure><img src="../.gitbook/assets/Repair.png" alt=""><figcaption></figcaption></figure>
 
 Kiln offers a somewhat novel option in our "Run" UI and data model: repairs. Instead of simply evaluating/rating AI responses, we offer the ability to "repair" any responses which are reviewed less than 5-stars.
 

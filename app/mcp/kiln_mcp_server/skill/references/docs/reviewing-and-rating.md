@@ -1,13 +1,12 @@
 ---
 description: Ratings help multi-shot prompting, fine-tuning, evals, and more
 icon: star
+online_url: https://docs.kiln.tech/docs/reviewing-and-rating
 ---
 
 # Reviewing and Rating
 
 Kiln includes a rating interface for rating dataset entries. This can be used to score the quality of the generated data, or to evaluate the quality of a model.
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-01-05 at 12.12.38 PM (1).png" alt="" width="341"><figcaption><p>Rating UI in Kiln Desktop</p></figcaption></figure>
 
 ### When Rating Options Appear
 
@@ -31,7 +30,7 @@ Older version of Kiln had the concept of "task requirements": a rating criteria 
 Each rating option has a number of parameters:
 
 * Name: the name of the requirement, which will appear in the rating UI. Limited in length to fit in the UI, but you can add more content in the instructions field below.
-* Instructions: more details about the requirement. These will be available to reviewers in the UI (under the ![](<../.gitbook/assets/Screenshot 2025-01-05 at 12.18.52 PM (1).png>) icon).
+* Instructions: more details about the requirement. These will be available to reviewers in the UI (under the icon).
 * Rating Type: one of 5-star, pass/fail, pass/fail/critical.
 * Priority: how important this criteria is to the task.
 

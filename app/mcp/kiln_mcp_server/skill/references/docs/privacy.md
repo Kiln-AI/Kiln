@@ -1,11 +1,10 @@
 ---
 description: Kiln is private by design
 icon: shield-keyhole
+online_url: https://docs.kiln.tech/docs/privacy
 ---
 
 # Privacy
-
-<figure><img src="../.gitbook/assets/Privacy.png" alt=""><figcaption></figcaption></figure>
 
 Kiln is local software that runs on your computer, not the cloud. Your dataset is stored locally on your own hard drive.
 

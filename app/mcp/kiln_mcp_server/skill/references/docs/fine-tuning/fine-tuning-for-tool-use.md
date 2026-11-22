@@ -1,5 +1,6 @@
 ---
 description: Build fine-tuned models for calling a set of tools, like MCP
+online_url: https://docs.kiln.tech/docs/fine-tuning/fine-tuning-for-tool-use
 ---
 
 # Fine-Tuning for Tool Use
@@ -30,13 +31,7 @@ Kiln makes building a tool-calling training dataset easy:
 2. Click “Create Fine Tune”.
 3.  Select the set of tools that the model should learn to call.
 
-    <figure><img src="../../.gitbook/assets/Screenshot 2026-01-08 at 8.07.16 PM (2).png" alt="" width="375"><figcaption><p>Selecting tools available to the fine-tuned model</p></figcaption></figure>
-
-
 4.  Click “Add Fine-Tuning Data” to launch Kiln's synthetic data generation tool.
-
-    <figure><img src="../../.gitbook/assets/image.png" alt="" width="375"><figcaption></figcaption></figure>
-
 
 5. Generate synthetic training data using Kiln's [synthetic data gen](references/docs/synthetic-data-generation.md) tool. It will automatically select the correct tools for you when generating sample outputs.
 
@@ -59,8 +54,6 @@ The answer is typically [_distillation_](https://en.wikipedia.org/wiki/Knowledge
 #### Create a Tool Calling Fine-Tune
 
 Once you’ve created a training set, return to the “Create a Fine Tune” screen to start training. Select a base model, the tools you want, and the dataset you’ve created to start training. See our [fine-tuning guide](references/docs/fine-tuning/fine-tuning-guide.md) for additional details.
-
-<figure><img src="../../.gitbook/assets/Screenshot 2026-01-08 at 9.01.36 PM.png" alt="" width="375"><figcaption></figcaption></figure>
 
 {% hint style="info" %}
 You must select a base model that supports tool calling. Kiln will disable tool calling training if the selected base model was not trained for tool calling.

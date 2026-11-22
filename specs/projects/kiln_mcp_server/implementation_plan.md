@@ -14,7 +14,7 @@ The order follows [architecture.md](architecture.md) section 6. Each phase names
 - [x] Phase 4: Model info endpoints and the models.dev cache. ([model_info](components/model_info.md))
 - [x] Phase 5: The API reference pipeline, its freshness check, and the skill-tree check. The API reference is generated for the first time. (skill_and_content sections 5, 6 and 8)
 - [x] Phase 6: The knowledge tooling port, the `knowledge-maintenance` skill and the knowledge backlog, with the new `using_harness_tuner` entry. (skill_and_content section 7)
-- [ ] Phase 7: Content, part 1: import the Assistant's skill and adapt it. Batches 1–6: references, model info wording, link templates, identity and on-demand loading, blocked-capability wording, help-article URLs. (skill_and_content sections 4 and 9)
+- [x] Phase 7: Content, part 1: import the Assistant's skill and adapt it. Batches 1–6: references, model info wording, link templates, identity and on-demand loading, blocked-capability wording, help-article URLs. (skill_and_content sections 4 and 9)
 - [ ] Phase 8: Content, part 2: import the knowledge and reword it. Batches 7–9: import and link rewrite, loop vocabulary, `train_val_test.md`. (skill_and_content sections 4.5 and 9)
 - [ ] Phase 9: Content, part 3: the new and rewritten guides. Batches 10–12 and 13a: `memory.md`, code tools and MCP wiring, the project-files guide, `run_an_experiment.md`, `diagnose_an_agent.md`, and the improve-task router. (skill_and_content sections 9.1–9.4)
 - [ ] Phase 10: Content, part 4: wire the knowledge into the Assistant's files, turn on every remaining check, and tune the server and tool texts. Batches 13b and 14. (skill_and_content section 9; mcp_server_and_api_tool section 2.4)

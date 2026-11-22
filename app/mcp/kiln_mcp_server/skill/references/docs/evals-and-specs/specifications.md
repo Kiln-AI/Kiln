@@ -2,6 +2,7 @@
 description: >-
   The Kiln Eval Builder combines evals, synthetic data generation, automatic judge prompt creation,
   and edge case detection into one easy to use feature
+online_url: https://docs.kiln.tech/docs/evals-and-specs/specifications
 ---
 
 # Eval Builder
@@ -15,8 +16,6 @@ description: >-
 {% endhint %}
 
 ### What is the Kiln Eval Builder?&#x20;
-
-<figure><img src="../../.gitbook/assets/specs img (1).png" alt="" width="375"><figcaption></figcaption></figure>
 
 The Kiln Eval Builder combines Kiln’s best features into one interactive tool: evals, synthetic data generation, automatic judge prompt creation, and edge case detection. Together they go beyond making an eval manually in several ways:
 

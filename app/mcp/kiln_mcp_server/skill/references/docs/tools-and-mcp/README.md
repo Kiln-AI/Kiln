@@ -1,6 +1,7 @@
 ---
 description: Connect powerful tools to your Kiln tasks
 icon: hammer
+online_url: https://docs.kiln.tech/docs/tools-and-mcp
 ---
 
 # Tools & MCP
@@ -41,11 +42,7 @@ Kiln has several popular MCP servers pre-configured. You can get started with th
 * [Stock Quotes by Twelve Data](https://github.com/twelvedata/mcp): Realtime access to stock quotes and other market data. Requires a Twelve Data API key.
 * [Control Github by Github](https://github.com/github/github-mcp-server): Manage repos, issues, PRs and workflows. Requires a GitHub Access Token.
 
-<figure><img src="../../.gitbook/assets/Screenshot 2025-09-04 at 1.47.57 PM (1).png" alt=""><figcaption><p>Example tools on the "Add Tools" screen</p></figcaption></figure>
-
 You may need to install developer tools like Node.js or Deno before running these MCP servers. In each case, there’s a header at the top with a link to the appropriate dependency:
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-09-04 at 1.45.40 PM.png" alt="" width="375"><figcaption><p>Example dependency warning</p></figcaption></figure>
 
 ### Adding Custom MCP Servers
 
@@ -93,8 +90,6 @@ Once you’ve found a remote MCP server you want to connect, click "Tools” > �
 
 Once you’ve connected tools, you can use them in any of your tasks. On the “Run” screen you can select which tools will be available to the model under “Advanced”. You can select any number of tools, then run your task as you normally would.
 
-<figure><img src="../../.gitbook/assets/Screenshot 2025-09-04 at 2.08.06 PM.png" alt="" width="182"><figcaption></figcaption></figure>
-
 ### Viewing Tool Calls
 
 {% hint style="info" %}
@@ -104,8 +99,6 @@ The model may or may not choose to use the tools you provide. If you find the mo
 Tool calls happen behind the scenes, between the user message and the model's final output.
 
 If you want to view which tools were called, their arguments, and their results look at the "All Messages" section on the "Run" screen or when viewing a dataset entry. You'll be able to see tool calls the model makes, as well as the tool's response:
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-09-22 at 11.49.42 AM.png" alt="A Trace Including Tool Calls" width="375"><figcaption><p>A Trace Showing a Tool Call</p></figcaption></figure>
 
 ## Guidance / Understanding Tools
 
@@ -117,15 +110,11 @@ Kiln tests every model for its capabilities to minimize guesswork; you can read 
 
 When you select a model in Kiln, you’ll see a warning if tools are not supported. While you can still try these models, they are likely to fail:
 
-<figure><img src="../../.gitbook/assets/Screenshot 2025-09-05 at 2.24.36 PM.png" alt="" width="375"><figcaption><p>Ignore the warnings at your peril</p></figcaption></figure>
-
 ### Don’t Add Too Many Tools
 
 When you add tools to a task run, the model processes their names and descriptions as part of its context. Adding a few relevant tools can be a great way to improve task performance, but if you add dozens or hundreds you’ll both fill your context and dilute the model’s attention. The right number will depend on your task and the base model, but be selective when adding tools.
 
 See our [video guide at 7m23s](https://youtu.be/qh0FIrLMrII?si=CHiJ1CCen_2MA5A3\&t=443) for a discussion of these concepts:
-
-<figure><img src="../../.gitbook/assets/Context-2.png" alt=""><figcaption></figcaption></figure>
 
 ### Synthetic Data & Fine-Tuning with Tools
 
@@ -136,8 +125,6 @@ At this time, Kiln doesn’t support tool calling for synthetic data and fine-tu
 Often MCP servers require secrets, like API keys. However, Kiln projects are designed to be [shared across teams with Git](references/docs/collaboration/) and you don’t want to commit secrets in a Git repo.
 
 To address this, Kiln allows you to mark headers and environment variables as secrets. Secrets are never stored in the Kiln project files, which are designed to be shared/synced. If a team member adds a tool which requires secrets, anyone who syncs it will have to re-enter the secrets in settings before using the tool. Non-secret headers and environment variables will be synced automatically.
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-09-05 at 3.42.28 PM.png" alt="" width="375"><figcaption><p>Identify secrets on tool setup</p></figcaption></figure>
 
 ## Kiln MCP Server
 

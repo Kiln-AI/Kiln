@@ -1,5 +1,6 @@
 ---
 description: Fine tuning 9 Models in 18 minutes
+online_url: https://docs.kiln.tech/docs/fine-tuning/fine-tuning-guide
 ---
 
 # Fine Tuning Guide
@@ -150,8 +151,6 @@ Meanwhile our fastest fine-tune (Llama 3.2 1b) is about 10x faster and 150x chea
 ### Track Training Metrics with Weights & Biases
 
 Kiln supports tracking training metrics with the tool [Weights & Biases](https://wandb.ai/site/) . Configure your W\&B API key in `Settings > AI Providers & Models > Weights & Biases` before starting your fine-tuning job. Metrics will appear for any training jobs on Fireworks or Together. OpenAI doesn't support W\&B, but provides similar metrics in their own dashboard, which is linked from the Kiln Fine Tune page.
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-03-19 at 7.27.16 PM.png" alt="" width="287"><figcaption><p>Weights and Biases Metrics</p></figcaption></figure>
 
 ### Next Steps
 

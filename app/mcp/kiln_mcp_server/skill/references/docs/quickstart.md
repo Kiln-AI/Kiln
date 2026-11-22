@@ -1,11 +1,10 @@
 ---
 description: Download our app for MacOS, Windows or Linux
 icon: person-running-fast
+online_url: https://docs.kiln.tech/docs/quickstart
 ---
 
 # Quickstart
-
-<figure><img src="../.gitbook/assets/desktop_app-2.png" alt=""><figcaption></figcaption></figure>
 
 * :desktop: **macOS, Windows and Linux**: run our app anywhere.
 * 🧑‍💻 **Intuitive UI**: Our UI is designed for anyone, from AI novices to experts.
@@ -15,7 +14,7 @@ icon: person-running-fast
 
 MacOS and Windows: download the [latest release](https://github.com/Kiln-AI/Kiln/releases/latest). Be sure to download the correct version (Windows, Mac for Apple Silicon, Mac for Intel).
 
-[![Download button](https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0)](https://github.com/Kiln-AI/Kiln/releases/latest)
+[Download button](https://github.com/Kiln-AI/Kiln/releases/latest)
 
 Next, install the app:
 
@@ -61,8 +60,6 @@ Try our sample task for a quick exploration, or define your own custom task for 
 ### Next: Video Guides and Docs
 
 Our end to end demo walks you through all the major features of Kiln in a 20 minute video:
-
-<p align="center"><a href="references/docs/end-to-end-project-demo.md"><img src="../.gitbook/assets/Screenshot 2025-07-28 at 11.26.08 AM.png" alt="Download button"></a></p>
 
 Our documents explain each feature, and how to use it:
 

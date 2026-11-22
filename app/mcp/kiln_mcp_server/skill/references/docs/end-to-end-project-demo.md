@@ -3,6 +3,7 @@ description: >-
   Video walkthrough of creating tasks, evals, fine-tuning, synthetic data gen,
   and more!
 icon: youtube
+online_url: https://docs.kiln.tech/docs/end-to-end-project-demo
 ---
 
 # End to End Project Demo

@@ -2,11 +2,10 @@
 description: >-
   Prompt generators build prompts for you combing best practices and data from
   your dataset
+online_url: https://docs.kiln.tech/docs/prompts/prompt-generators
 ---
 
 # Prompt Generators
-
-<figure><img src="../../.gitbook/assets/Prompts.png" alt=""><figcaption></figcaption></figure>
 
 ### Prompt Generator Inputs
 

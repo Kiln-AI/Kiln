@@ -1,11 +1,10 @@
 ---
 description: Git, even if you've never used a terminal
 icon: github
+online_url: https://docs.kiln.tech/docs/collaboration/automatic-git-sync
 ---
 
 # Automatic Git Sync
-
-<figure><img src="../../.gitbook/assets/git_collab.png" alt=""><figcaption></figcaption></figure>
 
 {% hint style="info" %}
 **Automatic Git Sync is in Beta**&#x20;

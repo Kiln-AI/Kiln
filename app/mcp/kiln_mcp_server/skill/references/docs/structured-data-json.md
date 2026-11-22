@@ -1,10 +1,9 @@
 ---
 icon: brackets-curly
+online_url: https://docs.kiln.tech/docs/structured-data-json
 ---
 
 # Structured Data / JSON
-
-<figure><img src="../.gitbook/assets/json.png" alt=""><figcaption></figcaption></figure>
 
 Structured data is a first-class citizen in Kiln.
 
@@ -21,8 +20,6 @@ Our easy-to-use visual schema builder lets you create and use structured schemas
 {% hint style="info" %}
 You can't edit the input/output schemas after creating a task, as that would invalidate all prior data. Create a new task with your updated schema instead.
 {% endhint %}
-
-<figure><img src="../.gitbook/assets/Screenshot 2025-01-08 at 12.38.31 PM.png" alt="" width="375"><figcaption><p>Kiln's Visual Schema Editor</p></figcaption></figure>
 
 ### Raw JSON Schema
 

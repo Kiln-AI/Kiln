@@ -1,6 +1,7 @@
 ---
 description: We'd love to chat!
 icon: envelope
+online_url: https://docs.kiln.tech/docs/contact-us
 ---
 
 # Contact Us

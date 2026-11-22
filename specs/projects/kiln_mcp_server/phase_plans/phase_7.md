@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Phase 7: Content, part 1: import the Assistant's skill and adapt it
@@ -41,3 +41,4 @@ After batch 6 the rules still pending are those owned by later phases: `tree-spl
 ## Notes for the reviews by people
 
 - Sandbox wording (functional spec 15), for the security owner: batch 5 touched the statement that user code runs with no network or filesystem sandbox in `references/knowledge/code_tools.md` and `references/knowledge/judge_types.md`. The statement is kept as the source has it.
+- Still open: the public help URLs were not requested. This environment's network blocks `docs.kiln.tech`, so neither the 34 `online_url` values nor the `https://docs.kiln.tech/developers/...` links of batch 1 were checked. Request each one in phase 13 or 14.

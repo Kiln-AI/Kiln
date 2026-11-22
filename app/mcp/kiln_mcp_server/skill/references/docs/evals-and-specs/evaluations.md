@@ -1,10 +1,9 @@
 ---
 description: Evaluate the quality of your models/tasks using state-of-the-art evals
+online_url: https://docs.kiln.tech/docs/evals-and-specs/evaluations
 ---
 
 # Evaluations
-
-<figure><img src="../../.gitbook/assets/eval_header.png" alt=""><figcaption></figcaption></figure>
 
 {% hint style="success" %}
 The [**Kiln Eval Builder**](references/docs/evals-and-specs/specifications.md) is an even easier way to build evals. It reduces 6 manual steps into one interactive flow.
@@ -58,8 +57,6 @@ Working with Evals in Kiln is easy. We'll walk through the flow of creating your
 * [Finding the Ideal Judge](references/docs/evals-and-specs/evaluations.md#finding-the-ideal-judge)
 * [Finding the Ideal Run Method](references/docs/evals-and-specs/evaluations.md#finding-the-ideal-run-method)
 * [Iterate and Expand](references/docs/evals-and-specs/evaluations.md#iterate-and-expand)
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-06-27 at 10.52.26 AM.png" alt="" width="188"><figcaption><p>Kiln's UI will guide you</p></figcaption></figure>
 
 ### Creating an Eval
 
@@ -201,8 +198,6 @@ If after rating your golden set doesn't a range of content (for example, one sco
 
 If you've launched the synthetic data generator from the evals UI, it will know to assign the needed tags in the appropriate ratio. There's no need to manually tag dataset items.
 
-<figure><img src="../../.gitbook/assets/Screenshot 2025-07-16 at 12.52.18 PM.png" alt=""><figcaption><p>Data gen will populate target tags when launched from Evals</p></figcaption></figure>
-
 <details>
 
 <summary>Adding tags manually</summary>
@@ -231,8 +226,6 @@ You can create this set now, or generate it later.
 Next we'll add human ratings, so we can measure how well our eval judge performs compared to a human. If you have a subject matter expert for your task, get them to perform this step. See our [collaboration guide](references/docs/collaboration/) for how to work together on a Kiln project.
 
 The `Rate Golden Dataset` button in the eval screen will take you to the dataset view filtered to your golden dataset (the items which need ratings). Once fully rated, this will get a checkmark and you can proceed to the next step
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-06-27 at 11.13.51 AM.png" alt="" width="375"><figcaption></figcaption></figure>
 
 {% hint style="success" %}
 You can use the left/right keyboard keys to quickly move between items. Only the golden dataset needs ratings, not the eval\_set.
@@ -345,8 +338,6 @@ If you see "N/A" scores in your correlation table, it means more data is needed.
 
 Once you have a winner, click the "Set as default" button to make this judge the default for your eval.
 
-<figure><img src="../../.gitbook/assets/Screenshot 2025-06-27 at 11.20.02 AM.png" alt="" width="179"><figcaption><p>Select the default judge</p></figcaption></figure>
-
 ### Finding the Ideal Run Method
 
 Now that we have an evaluator we trust, we can use it to rapidly evaluate a variety of methods of running our task. We call this a "Run Method" and it includes the model (including fine-tunes), the model provider, and the prompt.
@@ -380,11 +371,7 @@ When you want to try a new model or prompt, you'll want to make sure the new met
 
 Kiln's compare view makes it easy to compare run methods across many evals. It also lets you compare the cost difference of each method:
 
-<figure><img src="../../.gitbook/assets/Screenshot 2025-07-17 at 1.39.06 PM (1).png" alt="" width="375"><figcaption><p>Comparing several run methods across all evals</p></figcaption></figure>
-
 Click "Compare" in the "Evals" tab to launch this feature:
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-07-17 at 2.16.51 PM.png" alt="" width="375"><figcaption></figcaption></figure>
 
 ### Philosophy: AI Product Evals work Best with Many Small Evals <a href="#setup-team-evals" id="setup-team-evals"></a>
 

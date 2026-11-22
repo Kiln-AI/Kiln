@@ -1,5 +1,6 @@
 ---
 description: Built a reasoning model, like o3 or R1, for your use case
+online_url: https://docs.kiln.tech/docs/fine-tuning/guide-train-a-reasoning-model
 ---
 
 # Train a Reasoning Model
@@ -26,8 +27,6 @@ When developing your training data with our [synthetic data generation](referenc
 
 See below for [how to choose between reasoning and chain of thought](references/docs/fine-tuning/guide-train-a-reasoning-model.md#choosing-between-reasoning-and-chain-of-thought).
 
-<figure><img src="../../.gitbook/assets/run method.png" alt="" width="375"><figcaption><p>Synthetic Data Run Options</p></figcaption></figure>
-
 {% hint style="info" %}
 If you're using multi-shot prompting, also ensure your prompt examples have appropriate reasoning data. Consider a [custom prompt](references/docs/prompts.md#custom-prompts-saved-prompts) with examples demonstrating ideal reasoning for your task.
 {% endhint %}
@@ -36,21 +35,15 @@ If you're using multi-shot prompting, also ensure your prompt examples have appr
 
 When creating your fine-tuning dataset, be sure to filter it to samples with reasoning/thinking checking "Filter to Reasoning Samples" as shown here:
 
-<figure><img src="../../.gitbook/assets/filter to reasoning.png" alt="" width="375"><figcaption><p>Filtering your training dataset</p></figcaption></figure>
-
 ### Choose the correct training strategy
 
 To train your own reasoning model, you must select the `Thinking - Learn both thinking and final response` in the `Reasoning` dropdown of Step 3. This will include the reasoning data when fine-tuning.
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-05-26 at 9.18.25 PM.png" alt="" width="375"><figcaption><p>Select this on the "Create Fine Tune" screen</p></figcaption></figure>
 
 If you select `Disabled` the fine-tune will only learn from the final result, not the reasoning. This is still a valid approach and could produce a viable model for your task. However, it won't produce a model with learned reasoning skills.
 
 ### Call your fine-tuned model with the appropriate prompt
 
 When you call any fine-tune, we always recommend calling it with the same prompt used in training.
-
-<figure><img src="../../.gitbook/assets/Screenshot 2025-02-05 at 9.56.17 AM.png" alt="" width="341"><figcaption><p>Kiln's Inference UI Options</p></figcaption></figure>
 
 If calling your model from custom code, follow the chat call flow described in our [reasoning docs](references/docs/reasoning-and-chain-of-thought.md#chain-of-thought-call-flow-non-reasoning-model), and use the prompts used to fine-tune the model which can be found by clicking the model in the "Fine Tune" tab of Kiln's UI.
 

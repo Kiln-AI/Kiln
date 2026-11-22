@@ -1,11 +1,10 @@
 ---
 description: Improve your model's quality with inference time scaling
 icon: brain
+online_url: https://docs.kiln.tech/docs/reasoning-and-chain-of-thought
 ---
 
 # Reasoning & Chain of Thought
-
-<figure><img src="../.gitbook/assets/reasoning (1).png" alt=""><figcaption></figcaption></figure>
 
 {% hint style="info" %}
 Want to dive in and build a reasoning model? See our [Guide for Training A Reasoning Model](references/docs/fine-tuning/guide-train-a-reasoning-model.md)
