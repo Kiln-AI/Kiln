@@ -3,6 +3,7 @@ from pathlib import Path
 
 from kiln_mcp_server import texts
 from kiln_mcp_server.texts import (
+    CALL_KILN_API_DESCRIPTION,
     PATH_DESCRIPTION,
     SERVER_INSTRUCTIONS,
     SKILL_TOOL_DESCRIPTION,
@@ -39,6 +40,12 @@ def test_skill_tool_description_names_the_slash_command():
 def test_path_description_says_how_to_use_the_argument():
     assert PATH_DESCRIPTION.startswith("Optional.")
     assert "relative to the skill root" in PATH_DESCRIPTION
+
+
+def test_call_kiln_api_description_sends_the_agent_to_the_skill_first():
+    assert CALL_KILN_API_DESCRIPTION.startswith("Call the Kiln REST API.")
+    for name in ("`kiln_skill`", "`body_limit`", "`save_to_tmpfile`", "`jq_filter`"):
+        assert name in CALL_KILN_API_DESCRIPTION
 
 
 def test_texts_module_imports_nothing():

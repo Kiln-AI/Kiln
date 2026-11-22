@@ -9,7 +9,7 @@ The order follows [architecture.md](architecture.md) section 6. Each phase names
 ## Phases
 
 - [x] Phase 1: The `app/mcp` project, the server mounted in the desktop app at `/mcp`, and `kiln_skill` serving a placeholder skill tree. PyInstaller hook, workspace and CI wiring. ([mcp_server_and_api_tool](components/mcp_server_and_api_tool.md) sections 1–2; [skill_and_content](components/skill_and_content.md) sections 2–3; architecture section 9)
-- [ ] Phase 2: `call_kiln_api`. The `KilnApiCallTool` refactor in `libs/core`, the MCP tool and its pipeline, the route index, the policy seam and the `x-mcp-policy` tag, `body_limit`, `save_to_tmpfile`, progress updates. The end-to-end test on the real desktop app. (mcp_server_and_api_tool sections 3–6.2, 9–10)
+- [x] Phase 2: `call_kiln_api`. The `KilnApiCallTool` refactor in `libs/core`, the MCP tool and its pipeline, the route index, the policy seam and the `x-mcp-policy` tag, `body_limit`, `save_to_tmpfile`, progress updates. The end-to-end test on the real desktop app. (mcp_server_and_api_tool sections 3–6.2, 9–10)
 - [ ] Phase 3: The block list annotations and their tests, and the data guide route from `PUT` to `POST` with its web UI call sites and regenerated files. (mcp_server_and_api_tool sections 6.3 and 7; [mcp_block_list_review](research/mcp_block_list_review.md))
 - [ ] Phase 4: Model info endpoints and the models.dev cache. ([model_info](components/model_info.md))
 - [ ] Phase 5: The API reference pipeline, its freshness check, and the skill-tree check. The API reference is generated for the first time. (skill_and_content sections 5, 6 and 8)

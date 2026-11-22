@@ -7,7 +7,13 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from kiln_ai.utils.config import MCP_SECRETS_KEY, Config, ConfigProperty, _get_user_id
+from kiln_ai.utils.config import (
+    MCP_SECRETS_KEY,
+    Config,
+    ConfigProperty,
+    _get_user_id,
+    local_api_base_url,
+)
 
 
 @pytest.fixture
@@ -930,3 +936,26 @@ def test_open_ai_reasoning_summaries_defaults_to_false(default_config):
     reloaded = Config(properties=default_config._properties)
     assert reloaded.open_ai_reasoning_summaries is True
     assert default_config._properties["open_ai_reasoning_summaries"].sensitive is False
+
+
+@pytest.mark.parametrize(
+    "host,expected",
+    [
+        ("127.0.0.1", "http://127.0.0.1:8757"),
+        ("localhost", "http://localhost:8757"),
+        ("0.0.0.0", "http://127.0.0.1:8757"),
+        ("", "http://127.0.0.1:8757"),
+        ("::", "http://[::1]:8757"),
+        ("::1", "http://[::1]:8757"),
+        ("[::1]", "http://[::1]:8757"),
+        ("192.168.1.5", "http://192.168.1.5:8757"),
+    ],
+)
+def test_local_api_base_url(host, expected):
+    assert local_api_base_url(host, 8757) == expected
+
+
+def test_kiln_local_api_base_url_reaches_a_wildcard_bind_on_loopback(monkeypatch):
+    monkeypatch.setenv("KILN_LOCAL_API_HOST", "::")
+    monkeypatch.setenv("KILN_LOCAL_API_PORT", "9000")
+    assert Config.shared().kiln_local_api_base_url() == "http://[::1]:9000"

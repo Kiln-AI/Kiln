@@ -17,6 +17,16 @@ Rules:
 - Confirm with the user before a destructive or irreversible operation."""
 )
 
+CALL_KILN_API_DESCRIPTION = """Call the Kiln REST API. Makes one HTTP request to the running Kiln app and returns JSON with `status_code` and `body`.
+
+Call `kiln_skill` first. Endpoint paths, request bodies, response fields and useful jq filters are in the skill's API reference, one doc per endpoint, not here. Read the endpoint's doc before you call it. Do not guess paths.
+
+A non-2xx answer from the API is returned as data (`status_code` and the API's error body), not as a tool failure. Read it and act on it.
+
+Large responses: a GET whose body is longer than `body_limit` characters returns an error and no body. Narrow the request with `jq_filter`, paging or filter parameters, or set `save_to_tmpfile` to get a file path in place of the body.
+
+Streaming endpoints (text/event-stream): the tool reads the stream to its end and returns body = {"event_count": N, "message": "..."}. The end of the stream does not mean the job succeeded: check its status afterwards. A call can run for minutes."""
+
 SKILL_TOOL_DESCRIPTION = (
     """Load the Kiln skill: the instructions for working with Kiln.
 

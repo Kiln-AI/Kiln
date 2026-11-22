@@ -262,7 +262,7 @@ class Config:
             return None
 
     def kiln_local_api_base_url(self) -> str:
-        return f"http://{self.kiln_local_api_host}:{self.kiln_local_api_port}"
+        return local_api_base_url(self.kiln_local_api_host, self.kiln_local_api_port)
 
     def __getattr__(self, name: str) -> Any:
         if name == "_properties":
@@ -410,6 +410,23 @@ class Config:
 
 _TRUE_STRINGS = {"true", "1", "yes", "on"}
 _FALSE_STRINGS = {"false", "0", "no", "off"}
+
+
+def local_api_base_url(host: str, port: int) -> str:
+    """The URL a process on this machine uses to call a Kiln server bound to
+    `host` and `port`.
+
+    A wildcard bind is reached on loopback: `::` on `::1`, because an IPv6-only
+    socket does not accept IPv4. IPv6 addresses are written in brackets.
+    """
+    host = host.strip("[]")
+    if host in ("", "0.0.0.0"):
+        host = "127.0.0.1"
+    elif host == "::":
+        host = "::1"
+    if ":" in host:
+        host = f"[{host}]"
+    return f"http://{host}:{port}"
 
 
 def _raw_default(property_config: ConfigProperty) -> Any:
