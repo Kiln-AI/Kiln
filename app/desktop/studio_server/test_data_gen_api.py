@@ -708,7 +708,7 @@ def test_save_and_get_data_gen_guide(
         "# Reference Examples\n\n## Example 1\n```input\nx\n```\n\n```output\ny\n```\n\n"
         "# Guidelines & Rules\n\n<output_semantic>\n\n## Cholesterol\nIf cholesterol is high, never have low LDL.\n\n</output_semantic>"
     )
-    response = client.put(
+    response = client.post(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": body},
     )
@@ -745,7 +745,7 @@ def test_save_data_gen_guide_defaults_source_to_manual(
 ):
     """First save without an explicit `source` defaults to 'manual' for
     back-compat. Existing guides on disk also default to 'manual'."""
-    response = client.put(
+    response = client.post(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": "body"},
     )
@@ -760,7 +760,7 @@ def test_save_data_gen_guide_persists_kiln_pro_source(
 ):
     """When the copilot flow saves a guide it sends source='kiln_pro'; the
     backend persists it so refine can branch on it later."""
-    response = client.put(
+    response = client.post(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": "body", "source": "kiln_pro"},
     )
@@ -776,11 +776,11 @@ def test_save_data_gen_guide_edit_preserves_existing_source(
     """Editing/refining a guide without sending `source` preserves whatever
     source the existing guide already had — otherwise editing a kiln_pro guide
     would silently flip it to manual and pick the wrong refine branch next time."""
-    client.put(
+    client.post(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": "original", "source": "kiln_pro"},
     )
-    response = client.put(
+    response = client.post(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": "edited"},
     )
@@ -796,7 +796,7 @@ def test_save_data_gen_guide_rejects_blank(
 ):
     """Blank/whitespace-only guides are rejected with 400 — DELETE is the
     correct way to remove a guide."""
-    response = client.put(
+    response = client.post(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": "   \n  "},
     )
@@ -810,7 +810,7 @@ def test_delete_data_gen_guide(
     client,
 ):
     # First save a guide
-    client.put(
+    client.post(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": "some guide body"},
     )
@@ -834,14 +834,14 @@ def test_save_data_gen_guide_overwrites_previous(
     client,
 ):
     # Save first guide
-    first_response = client.put(
+    first_response = client.post(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": "first body"},
     )
     first_id = first_response.json()["id"]
 
     # Overwrite with second
-    response = client.put(
+    response = client.post(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": "second body"},
     )
@@ -859,6 +859,14 @@ def test_save_data_gen_guide_overwrites_previous(
     reloaded_task = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded_task is not None
     assert len(reloaded_task.data_guides()) == 1
+
+
+def test_save_data_gen_guide_is_not_a_put(mock_task_from_id, client):
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "body"},
+    )
+    assert response.status_code == 405
 
 
 # --- _resolve_data_guide / _combine_guidance helpers ---

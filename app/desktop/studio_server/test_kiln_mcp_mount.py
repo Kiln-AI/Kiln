@@ -178,6 +178,9 @@ async def _agent_session(url: str) -> dict[str, CallToolResult]:
                 "unknown": await client.call_tool(
                     "call_kiln_api", {"method": "GET", "url_path": "/api/nope"}
                 ),
+                "blocked": await client.call_tool(
+                    "call_kiln_api", {"method": "GET", "url_path": "/api/jobs/events"}
+                ),
             }
 
 
@@ -198,4 +201,8 @@ def test_end_to_end_on_the_running_app():
     assert results["unknown"].isError is True
     assert _text(results["unknown"]).startswith(
         "No Kiln API endpoint matches GET /api/nope."
+    )
+    assert results["blocked"].isError is True
+    assert _text(results["blocked"]).startswith(
+        "The endpoint GET /api/jobs/events is not available to agents over MCP."
     )

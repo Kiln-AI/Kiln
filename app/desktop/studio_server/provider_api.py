@@ -51,7 +51,7 @@ from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
-from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT, with_mcp_deny
 from pydantic import BaseModel, Field
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
@@ -564,7 +564,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/openai_compatible",
         summary="Add OpenAI Compatible Provider",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def save_openai_compatible_providers(
         config: OpenAICompatibleProviderConfig,
@@ -595,7 +595,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/openai_compatible",
         summary="Delete OpenAI Compatible Provider",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def delete_openai_compatible_providers(
         name: Annotated[
@@ -852,7 +852,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/connect_api_key",
         summary="Connect Provider API Key",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def connect_api_key(payload: dict):
         provider = payload.get("provider")
@@ -949,7 +949,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/disconnect_api_key",
         summary="Disconnect Provider API Key",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def disconnect_api_key(
         provider_id: Annotated[
@@ -1038,7 +1038,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/create_kiln_copilot_api_key",
         summary="Create Kiln Copilot API Key",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def create_kiln_copilot_api_key(
         payload: CreateKilnCopilotApiKeyRequest,

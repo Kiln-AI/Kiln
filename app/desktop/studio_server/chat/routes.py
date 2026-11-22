@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import no_write_lock
-from kiln_server.utils.agent_checks.policy import DENY_AGENT
+from kiln_server.utils.agent_checks.policy import DENY_AGENT, with_mcp_deny
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.chat import (
@@ -134,7 +134,7 @@ def connect_chat_api(app: FastAPI) -> None:
         "/api/chat/execute-tools",
         summary="Execute approved client tools and continue chat stream",
         tags=["Copilot"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     @no_write_lock
     async def post_execute_tools(body: ExecuteToolsRequest) -> StreamingResponse:
@@ -291,7 +291,7 @@ def connect_chat_api(app: FastAPI) -> None:
         "/api/chat",
         summary="Stream Chat",
         tags=["Copilot"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     @no_write_lock
     async def chat(body: ChatRequest) -> StreamingResponse:

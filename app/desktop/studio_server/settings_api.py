@@ -7,6 +7,7 @@ from kiln_server.project_api import project_from_id
 from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
+    with_mcp_deny,
 )
 
 from app.desktop.log_config import get_log_file_path
@@ -29,7 +30,7 @@ def connect_settings(app: FastAPI):
         "/api/settings",
         summary="Update Settings",
         tags=["Settings & Utilities"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     def update_settings(
         new_settings: dict[str, int | float | str | bool | list | None],
@@ -63,8 +64,10 @@ def connect_settings(app: FastAPI):
         "/api/open_logs",
         summary="Open Logs Folder",
         tags=["Settings & Utilities"],
-        openapi_extra=agent_policy_require_approval(
-            "This will open an external application to view logs. Allow?"
+        openapi_extra=with_mcp_deny(
+            agent_policy_require_approval(
+                "This will open an external application to view logs. Allow?"
+            )
         ),
     )
     def open_logs():
@@ -79,7 +82,7 @@ def connect_settings(app: FastAPI):
         "/api/open_project_folder/{project_id}",
         summary="Open Project Folder",
         tags=["Settings & Utilities"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     def open_project_folder(
         project_id: Annotated[

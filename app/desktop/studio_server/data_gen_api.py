@@ -1089,7 +1089,7 @@ The topic path for this sample is:
         task = task_from_id(project_id, task_id)
         return task.current_data_guide()
 
-    @app.put(
+    @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         summary="Save Task Data Guide",
         tags=["Synthetic Data"],

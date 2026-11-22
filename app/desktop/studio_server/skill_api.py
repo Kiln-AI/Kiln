@@ -14,6 +14,7 @@ from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
     agent_policy_require_approval,
+    with_mcp_deny,
 )
 from pydantic import BaseModel, Field
 
@@ -211,7 +212,7 @@ def connect_skill_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/skills/{skill_id}/open_enclosing_folder",
         tags=["Skills"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def open_skill_enclosing_folder(
         project_id: Annotated[

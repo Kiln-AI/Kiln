@@ -14,6 +14,7 @@ from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
+    with_mcp_deny,
 )
 from pydantic import BaseModel, Field, ValidationError
 
@@ -196,7 +197,7 @@ def connect_jobs_api(app: FastAPI) -> None:
         "/api/jobs/events",
         summary="Stream Job Events",
         tags=["Jobs"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=with_mcp_deny(ALLOW_AGENT),
     )
     async def stream_job_events(
         job_id: Annotated[

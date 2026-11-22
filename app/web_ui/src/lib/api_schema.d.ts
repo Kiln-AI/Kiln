@@ -1871,9 +1871,9 @@ export interface paths {
         };
         /** Get Task Data Guide */
         get: operations["get_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_get"];
+        put?: never;
         /** Save Task Data Guide */
-        put: operations["save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_put"];
-        post?: never;
+        post: operations["save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_post"];
         /** Delete Task Data Guide */
         delete: operations["delete_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_delete"];
         options?: never;
@@ -18803,7 +18803,7 @@ export interface operations {
             };
         };
     };
-    save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_put: {
+    save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_post: {
         parameters: {
             query?: never;
             header?: never;
