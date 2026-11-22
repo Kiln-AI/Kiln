@@ -281,6 +281,21 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "OpenCode",
+      id: "opencode",
+      description:
+        "Pay-as-you-go access to models from Anthropic, OpenAI, Google and more, billed to your OpenCode credits.",
+      featured: false,
+      api_key_warning:
+        "Uses OpenCode's pay-as-you-go credits. OpenCode Go subscriptions aren't supported.",
+      api_key_steps: [
+        "Sign in to OpenCode Console at https://opencode.ai/console and add pay-as-you-go credits to your workspace.",
+        "Open Account, then Personal API keys, and click Add API key.",
+        "Copy the key and paste it below.",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       hide_in_onboarding: true,
@@ -430,6 +445,12 @@
       custom_description: null,
     },
     typesafe: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    opencode: {
       connected: false,
       connecting: false,
       error: null,
@@ -842,6 +863,9 @@
       }
       if (data["typesafe_api_key"]) {
         status.typesafe.connected = true
+      }
+      if (data["opencode_api_key"]) {
+        status.opencode.connected = true
       }
       if (data["kiln_copilot_api_key"]) {
         status.kiln_copilot.connected = true

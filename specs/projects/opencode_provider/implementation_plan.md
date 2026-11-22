@@ -13,7 +13,7 @@ PR 1 is phases 1–2 and can merge whenever it's ready. PR 2 is phase 3 and merg
   - the `built_in_providers` item
   - cost from `usage.cost`
   - the wire tests: request, cost, errors, and the provider-text-kept tests
-- [ ] Phase 2: Connect, disconnect and web UI, part of PR 1:
+- [x] Phase 2: Connect, disconnect and web UI, part of PR 1:
   - `connect_opencode` and the disconnect case, with tests
   - the regenerated API schema
   - `provider_name_map`, the icon from `assets/opencode.svg`, and the connect card with the approved copy

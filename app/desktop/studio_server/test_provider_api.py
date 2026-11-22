@@ -1,3 +1,4 @@
+import asyncio
 import json
 from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
@@ -56,6 +57,7 @@ from app.desktop.studio_server.provider_api import (
     connect_groq,
     connect_huggingface,
     connect_ollama,
+    connect_opencode,
     connect_openrouter,
     connect_provider_api,
     connect_siliconflow,
@@ -134,6 +136,7 @@ def patched_non_builtin_available_model_sources(patch_openai_compatible: bool = 
         "featherless_ai",
         "cloudflare",
         "typesafe",
+        "opencode",
     ],
 )
 def test_connect_api_key_invalid_payload(client, provider):
@@ -2389,6 +2392,7 @@ def mock_config_all_providers():
     mock_config.cloudflare_account_id = "test_key"
     mock_config.cloudflare_ai_gateway_id = "test_key"
     mock_config.typesafe_api_key = "test_key"
+    mock_config.opencode_api_key = "test_key"
     return mock_config
 
 
@@ -4988,3 +4992,162 @@ def test_connect_api_key_typesafe_success(mock_connect_typesafe, client):
 
     assert response.status_code == 200
     mock_connect_typesafe.assert_called_once_with("test_key")
+
+
+OPENCODE_INVALID_KEY_MESSAGE = (
+    "Invalid OpenCode API key. Use a pay-as-you-go API key from OpenCode Console; "
+    "OpenCode Go subscriptions aren't supported."
+)
+
+
+def _opencode_response(status_code: int) -> MagicMock:
+    response = MagicMock()
+    response.status_code = status_code
+    return response
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_opencode_success(mock_config_shared, mock_httpx_get):
+    mock_httpx_get.return_value = _opencode_response(200)
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_opencode("oc_sk_test")
+
+    mock_httpx_get.assert_called_once_with(
+        "https://opencode.ai/inference/v1/models",
+        headers={"Authorization": "Bearer oc_sk_test"},
+        timeout=10,
+        follow_redirects=True,
+    )
+    assert mock_config.opencode_api_key == "oc_sk_test"
+    assert result.status_code == 200
+    assert json.loads(result.body) == {"message": "Connected to OpenCode"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [401, 403])
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_opencode_invalid_api_key(
+    mock_config_shared, mock_httpx_get, status_code
+):
+    mock_httpx_get.return_value = _opencode_response(status_code)
+
+    result = await connect_opencode("oc_sk_bad")
+
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert json.loads(result.body) == {"message": OPENCODE_INVALID_KEY_MESSAGE}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 402, 429, 500, 503])
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_opencode_other_error(
+    mock_config_shared, mock_httpx_get, status_code
+):
+    mock_httpx_get.return_value = _opencode_response(status_code)
+
+    result = await connect_opencode("oc_sk_test")
+
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert json.loads(result.body) == {
+        "message": f"Failed to connect to OpenCode. Error: [{status_code}]"
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx.ConnectError("Connection refused"),
+        httpx.ReadTimeout("Timed out"),
+    ],
+)
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_opencode_network_error(
+    mock_config_shared, mock_httpx_get, error
+):
+    mock_httpx_get.side_effect = error
+
+    result = await connect_opencode("oc_sk_test")
+
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert json.loads(result.body) == {
+        "message": "Couldn't reach OpenCode. Check your network connection and try again."
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "key",
+    [" oc_sk_test ", "oc_sk_test\n", "oc_sk_test\r\n", "\u201coc_sk_test\u201d"],
+)
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_opencode_malformed_key(mock_config_shared, monkeypatch, key):
+    # h11 rejects whitespace and CR/LF in header values only inside httpx's real
+    # transport, which mocking AsyncClient.get or respx skips, so this test sends to
+    # a local server.
+    requests_received = 0
+
+    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        nonlocal requests_received
+        try:
+            await reader.readuntil(b"\r\n\r\n")
+        except asyncio.IncompleteReadError:
+            writer.close()
+            return
+        requests_received += 1
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    monkeypatch.setattr(
+        "app.desktop.studio_server.provider_api.OPENCODE_MODELS_URL",
+        f"http://127.0.0.1:{port}/inference/v1/models",
+    )
+    async with server:
+        result = await connect_opencode(key)
+
+    assert requests_received == 0
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert json.loads(result.body) == {"message": OPENCODE_INVALID_KEY_MESSAGE}
+
+
+@patch("app.desktop.studio_server.provider_api.connect_opencode")
+def test_connect_api_key_opencode_success(mock_connect_opencode, client):
+    mock_connect_opencode.return_value = {"message": "Connected to OpenCode"}
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "opencode", "key_data": {"API Key": "oc_sk_test"}},
+    )
+
+    assert response.status_code == 200
+    mock_connect_opencode.assert_called_once_with("oc_sk_test")
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_opencode(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "opencode"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Provider disconnected"}
+        assert mock_config_all_providers.opencode_api_key is None
+        assert mock_config_all_providers.typesafe_api_key is not None
