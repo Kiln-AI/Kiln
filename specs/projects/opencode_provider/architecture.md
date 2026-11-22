@@ -63,6 +63,11 @@ These are real OpenCode errors run through LiteLLM 1.105.7 and Kiln's `format_er
 | Unknown model, 400 | `BadRequestError`: "…Upstream request failed: Model is unavailable." | "An unexpected error occurred." | no / no |
 | Out of credits, 402 | Not testable live. LiteLLM's mapping sends 402 to `APIError(status_code=402)`. | "An unexpected error occurred." | no / no |
 
+**Where the text survives today (verified):**
+- Non-streaming: `litellm.acompletion` isn't wrapped anywhere in `LiteLlmAdapter` (`acompletion_checking_response`, `_run_model_turn`). `BaseAdapter`'s one `except Exception as e` (`base_adapter.py:352–367`) builds `KilnRunError(original=e)` with the unmodified LiteLLM exception. So `str(exc.original)` is, for example, `"litellm.APIError: APIError: OpenAIException - Model glm-5.2 has been deprecated. Use glm-5.3 instead."`, and `exc.original.status_code == 410`.
+- Streaming: `AdapterStream` errors aren't wrapped in a `KilnRunError`, so the LiteLLM exception is raised as-is. The probe's streaming run gave the same text.
+- Nothing in this project changes that. The [Testing Strategy](#testing-strategy) adds tests that pin it.
+
 OpenCode's text is good. Kiln's generic fallback hides it, which is a deliberate cross-provider policy against leaking provider internals. This project doesn't change that. The 403, 410 and 400 cases can only happen with custom model IDs or admin changes, because Kiln lists only default-enabled, current models. That leaves out-of-credits as the one case worth handling, and it isn't specific to OpenCode.
 
 ### LiteLLM's OpenCode support
@@ -193,6 +198,7 @@ The unit tests use pytest. The wire tests follow `test_cloudflare_litellm.py`: t
   - A run with a known OpenAI model name still uses `usage.cost` when LiteLLM's `response_cost` differs (patch the price map, or use a `gpt-*` ID whose LiteLLM price is different).
   - When `usage.cost` is missing, the run has no cost.
   - An `int` cost of 0 is recorded as 0.0.
+- **Provider text kept:** for each recorded OpenCode error body (402, 403, 410, 400, and the free-model 429), run a real `LiteLlmAdapter` invocation through respx, non-streaming and streaming. Assert that the exception Kiln keeps (`KilnRunError.original` non-streaming; the raised exception when streaming) has OpenCode's `error.message` in `str()` and the right `status_code`. This is the guarantee the separate UI project will build on.
 - **Errors:** a recorded 402 body gives an `APIError` with `status_code == 402`, the new message, and `is_batch_fatal_error` True. A 401 stays an `AuthenticationError`, and a plain 429 stays a retryable `RateLimitError`. These pin LiteLLM's mapping, so an upgrade that changes it shows up.
 
 **Other new or extended tests:**

@@ -96,6 +96,12 @@ OpenCode's own error messages are clear, and LiteLLM keeps them intact (see the 
 | Model disabled for the workspace, retired, or unknown | 403, 410 or 400 | The existing generic error. Kiln lists only default-enabled, current models, so these occur only with custom model IDs or after an admin change. |
 | Free model (custom model ID only) | 429 `FreeUsageLimitError` | Treated as a rate limit by the existing handling. Kiln never lists free models. |
 
+**Provider text is kept.** For every row above, OpenCode's own message must reach Kiln unchanged in the exception Kiln keeps:
+- Non-streaming runs: `KilnRunError.original`.
+- Streaming runs: the exception that's raised, which isn't wrapped in a `KilnRunError`.
+
+The status code must be kept too. Kiln doesn't show this text to the user in this project; showing it in the run page and elsewhere is a separate project. This project only guarantees that the text is there, and tests that it is.
+
 The pay-as-you-go versus OpenCode Go distinction is made on the connect screen (the warning and the key steps), in the connect error for a rejected key, and in the missing-key warning. A generic provider rule can't name OpenCode Go, so the 402 message doesn't.
 
 ## Model Catalog
