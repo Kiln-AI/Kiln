@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Functional Spec: OpenCode Provider
@@ -74,7 +74,7 @@ The connect screen's help text explains how to create a key and that the workspa
 - **Auth:** `Authorization: Bearer <key>`.
 - **Path:** Kiln's existing OpenAI-compatible LiteLLM flow, with a fixed base URL and the stored key. It's wired the way other OpenAI-compatible hosts are, with no OpenCode-specific adapter.
 - **Translation:** for models whose native API isn't Chat Completions (Claude, GPT, Gemini, Grok, Muse, some Qwen), OpenCode translates the request. Kiln treats this as a black box. Each model's capability flags come from the per-model paid tests run through this path, not from the model's flags on its native provider (see [Model Catalog](#model-catalog)).
-- **Session header:** see [Session Header](#session-header). This item is still open.
+- **Session header:** see [Session Header](#session-header).
 
 ## Cost
 
@@ -86,16 +86,14 @@ OpenCode reports the cost of each call in USD, in the response's `usage.cost` fi
 
 ## Session Header
 
-**Open: waiting on the user's answer to Q7.** The draft below assumes the recommended option.
+**Decided in architecture.** OpenCode asks clients to send `x-opencode-session: <stable id>` so it can route a conversation to the same backend and reuse its prompt cache. It's optional on pay-as-you-go.
 
-OpenCode asks clients to send `x-opencode-session: <stable id>` so it can route a conversation to the same backend and reuse its prompt cache. It's optional on pay-as-you-go.
+The architecture step chooses one of these, based on how much complexity each adds to Kiln's OpenAI-compatible call path:
 
-Draft behavior:
+- **A:** one session ID per task run, sent on every model call in that run (tool loops, two-step chain-of-thought or structured output), and one ID per multi-turn chat across all its turns. Separate runs, such as separate rows of an eval, get separate IDs.
+- **C:** one session ID per task, shared across runs, which may also cache a shared system prompt across eval rows. Before choosing it, the architecture step must check that it doesn't pin a task's parallel calls to one backend in a way that hurts throughput.
 
-- Each Kiln task run sends one session ID on every model call it makes. A run makes several calls when it uses tools, or when it uses two-step chain-of-thought or structured output.
-- A multi-turn chat uses one session ID for all of its turns.
-- IDs are opaque random strings, not derived from user data.
-- Separate runs, such as separate rows of an eval, get separate session IDs.
+A or C is preferred. Sending no header is the fallback only if both add unreasonable complexity. Whichever is chosen, IDs are opaque random strings that aren't derived from user data.
 
 ## Errors
 
@@ -143,7 +141,7 @@ Follow the model-maintenance skill's rule for new providers:
 
 ## Connect Screen Copy
 
-Draft strings, to be finalized in UI design (or here, if UI design is skipped):
+Approved strings. There's no separate UI design step for this project.
 
 - **Card description:** "Pay-as-you-go access to models from Anthropic, OpenAI, Google and more, with one API key."
 - **Key steps:**
@@ -154,7 +152,7 @@ Draft strings, to be finalized in UI design (or here, if UI design is skipped):
 
 ## Testing
 
-- **Unit tests:** the config field, connect validation (valid key, invalid key, network failure), the LiteLLM wiring (base URL, key, model ID passthrough), cost recording (with and without `usage.cost`, streaming and non-streaming), the session header if adopted, and the error mapping, using recorded error bodies.
+- **Unit tests:** the config field, connect validation (valid key, invalid key, network failure), the LiteLLM wiring (base URL, key, model ID passthrough), cost recording (with and without `usage.cost`, streaming and non-streaming), the session header, and the error mapping, using recorded error bodies.
 - **Per-model paid tests:** these run automatically for each OpenCode entry in `ml_model_list.py`, as for other providers. They set the final flags.
 - **Live tests:** use `OPENCODE_API_KEY`. In this cloud environment, the key is saved as a network secret for `opencode.ai`, so tests set the env var to a placeholder and the proxy injects the real key.
 
