@@ -44,7 +44,11 @@ Read the mode that fits the user's request before other skill files. A mode name
 
 ## Working with the user
 
-Ask the user before an operation that is destructive or that cannot be undone, unless they asked for exactly that operation: a DELETE, an overwrite of the user's prompt text or task instruction, and anything that removes data. When the user's message asks for a change ("update X", "apply this rewrite"), the ask is the consent: make the change and report it. Everything else that has an endpoint, do it and report the result; do not hand the user a plan to click through.
+Ask the user before an operation that is destructive or that cannot be undone, unless they asked for exactly that operation: a DELETE, an overwrite of the user's prompt text or task instruction, and anything that removes data. When the user's message asks for a change ("update X", "apply this rewrite"), the ask is the consent: make the change and report it.
+
+Always ask first, even when the user asked for the result, before an operation that runs code on the machine where Kiln runs: granting a project code trust (for a code tool or a code eval) and adding a local MCP server. Say what will run and that it has no sandbox. A knowledge file can name other operations to ask about first; follow it.
+
+Everything else that has an endpoint, do it and report the result; do not hand the user a plan to click through.
 
 How to reply:
 

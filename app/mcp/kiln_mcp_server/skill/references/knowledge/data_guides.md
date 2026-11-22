@@ -23,11 +23,11 @@ Load the relevant endpoint doc **before** making each API call.
 | POST preview inputs from a draft guide (not persisted) | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_data_gen_guide_preview.md` |
 | POST refine the guide via metaprompter (returns markdown — does **not** save) | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_data_gen_guide_refine.md` |
 
-These five are the **only** guide endpoints you call. The Kiln Pro draft-job flow is UI-only — never call its endpoints (see below).
+These five are the guide endpoints. The Kiln Pro draft job has its own endpoints in the same catalog; prefer the app for it (see below).
 
 ## Rigid facts
 
-- **One guide per task.** `POST` creates or overwrites in place — there is no list, no versions. `POST` with a blank body is a **400**; removing a guide is `DELETE` (approval-gated).
+- **One guide per task.** `POST` creates or overwrites in place — there is no list, no versions. `POST` with a blank body is a **400**; removing a guide is `DELETE` (ask the user first).
 - **`source` is `manual` or `kiln_pro`**, and the refine pipeline branches on it (manual = full-guide edits; kiln_pro = surgical feedback-only edits). **Omit `source` on an edit POST** to preserve the existing value — always sending `"manual"` silently flips a Kiln Pro guide onto the wrong refine branch.
 - **Where the guide applies:** topic generation (only its `# Semantics` section) and input generation (the whole guide). **Never output generation.** Precedence at generation time: per-call guidance > the Data Guide > model defaults; an eval template's stage guidance also overrides the guide.
 - **Guide shapes:** manual guides start as `# Reference Inputs` (`## Example N` blocks — user-owned ground truth, preserved verbatim on refine); refined/Kiln Pro guides use `# Semantics`, `# Style`, `# Presentation Defaults` (Kiln Pro: these three only).
@@ -42,7 +42,7 @@ These five are the **only** guide endpoints you call. The Kiln Pro draft-job flo
 
 Both converge on the same review loop: generate ~5 preview inputs → the user rates each Realistic / Needs Work → feedback → refine → repeat → save.
 
-**The Kiln Pro flow is UI-only — do not drive it via API.** The draft job runs on Kiln's cloud in the background (up to 200 real examples, each ≤200k chars, schema-validated for structured tasks; the user can leave the page and an in-app progress widget tracks it). Route the user to the Kiln Pro setup page (deep links below); the draft lands in the same review-and-refine loop, and only saving persists it.
+**Prefer the app for the Kiln Pro flow.** The draft job runs on Kiln's cloud in the background (up to 200 real examples, each ≤200k chars, schema-validated for structured tasks; the user can leave the page and an in-app progress widget tracks it). Route the user to the Kiln Pro setup page (deep links below); the draft lands in the same review-and-refine loop, and only saving persists it.
 
 ## API semantics traps
 
@@ -61,9 +61,9 @@ Both converge on the same review loop: generate ~5 preview inputs → the user r
 ## Agent's role
 
 1. **Recommend a guide before SDG on a task without one** — check with a `GET`; without a guide, generation guesses at input realism.
-2. **Default to the UI flows via deep links** — the chooser and review loop are built for rating and iteration. When the user asks you to *just do it*, the API path is sanctioned: draft (or job-draft) → `data_gen_guide_preview` → show samples → refine with their feedback → `POST` (preview/refine/job-start require approval).
+2. **Default to the UI flows via deep links** — the chooser and review loop are built for rating and iteration. When the user asks you to *just do it*, use the API: draft (or job-draft) → `data_gen_guide_preview` → show samples → refine with their feedback → `POST`. Preview, refine and the Kiln Pro job start run model calls (the job on Kiln's cloud): tell the user before you start them.
 3. When generating synthetic data (`generate_categories` / `generate_inputs`), leave `data_guide` unset to inherit the saved guide; pass `""` only when the user explicitly wants generation without it.
-4. **Bulk generation belongs in the UI.** For "make me N examples" asks, set up the surface and deep-link the [Synthetic Data page](http://localhost:8757/generate/{project_id}/{task_id}/synth) rather than driving dozens of generate/save calls in chat. If you do save samples via API, load `save_sample`'s api_doc first — its body carries strict source/model metadata that 422s when hand-rolled.
+4. **Bulk generation is best done in the app.** For "make me N examples" asks, set up the surface and deep-link the [Synthetic Data page](http://localhost:8757/generate/{project_id}/{task_id}/synth) rather than driving dozens of generate/save calls in chat. If you do save samples via API, load `save_sample`'s api_doc first — its body carries strict source/model metadata that 422s when hand-rolled.
 
 ## UI Deep Links
 

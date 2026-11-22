@@ -14,6 +14,10 @@ Load the relevant endpoint doc **before** making each API call — they have req
 | Catalog — Specs API (data model behind evals) | `references/knowledge/api_docs/specs_api_list.md` |
 | Catalog — Evals API | `references/knowledge/api_docs/evals_api_list.md` |
 | Catalog — Run configs & eval scores | `references/knowledge/api_docs/run_configs_api_list.md` |
+| Catalog — Jobs (running an eval) | `references/knowledge/api_docs/jobs_api_list.md` |
+| POST run an eval job | `references/knowledge/api_docs/post_api_jobs_evals_run.md` |
+| POST wait for jobs | `references/knowledge/api_docs/post_api_jobs_wait.md` |
+| GET job errors | `references/knowledge/api_docs/get_api_jobs_id_errors.md` |
 | GET list specs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_specs.md` |
 | GET get spec | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_specs_spec_id.md` |
 | PATCH update spec | `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_specs_spec_id.md` |
@@ -69,11 +73,13 @@ The judge doesn't have to be an LLM. When the concern is **mechanical**, a deter
 
 ## What is Kiln Pro?
 
-**Kiln Pro** is Kiln's paid cloud account that powers server-side features the desktop app can't run locally — the **Eval Builder** (guided eval creation) and the **Kiln Assistant** chat backend. Registration is free inside the app; paid tiers unlock higher usage limits. Connect or check status at [Provider Settings](http://localhost:8757/settings/providers).
+**Kiln Pro** is Kiln's paid cloud account that powers server-side features the desktop app can't run locally — the **Eval Builder** (guided eval creation) and the **Kiln Assistant** chat backend. Registration is free inside the app; paid tiers unlock higher usage limits. The user signs in at [Kiln Pro](http://localhost:8757/settings/providers/kiln_pro); this connection cannot sign in for them.
+
+**Kiln Pro is not connected, or its key is not valid.** When an API error says so, tell the user which function needs Kiln Pro (for example the Eval Builder), and ask them to sign in at [Kiln Pro](http://localhost:8757/settings/providers/kiln_pro). Then try again.
 
 ## The Agent's Role with Evals
 
-**You guide the conversation, the UI does the creation.** The Kiln Eval Builder has a guided workflow that generates clarifying questions, produces synthetic test data, creates eval configs (judges), and tags data automatically. Trying to replicate this via API calls is worse in every way.
+**Recommend the Eval Builder for a new eval.** Its guided workflow generates clarifying questions, produces synthetic test data, creates the judge, and tags the data. Building the same by hand through the API gives a weaker eval, so the Eval Builder is the default.
 
 **Your job:**
 1. Recognize that the user needs an eval (from their intent)
@@ -81,21 +87,22 @@ The judge doesn't have to be an LLM. When the concern is **mechanical**, a deter
 3. Identify the right eval type
 4. Deep-link them to the Eval Builder with context, `?type=` preselected (see the UI Deep Links table)
 5. Remind them about the default run config — evals run against it. If the task's `default_run_config_id` is set, name and link it ([Run Config](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid})); if null, tell them to set one first ([Run Configs](http://localhost:8757/optimize/{project_id}/{task_id}))
-6. After they create evals, read scores and build comparison tables
+6. Once the eval exists, run it (below), read the scores and build comparison tables
 
-**What you do NOT do:**
-- Create evals via the REST API — even when the user asks you to "just create it via the API", route to the Eval Builder instead
-- Create eval configs manually
-- Manage tags manually
+**When the user asks you to create the eval through the API**, you can: `POST /api/projects/{project_id}/tasks/{task_id}/specs` creates the spec and its eval (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_specs.md`). Tell the user what it lacks next to the Eval Builder: no generated data and no judge aligned with their ratings. Add a judge with `references/knowledge/judge_types.md` before the eval can score.
 
-## Running evals — deep-link the user to the UI
+## Running an eval
 
-**There is no agent API to run an eval — running one is a UI action.** When the user wants to run or kick off evals, deep-link them to the **Run** button and read the scores after they've run it. (The `run_comparison` / `run_calibration` endpoints behind that button are UI SSE streams — you don't call them.)
+An eval runs as a background job: one job runs one split of one eval, with one judge, against one run config. Read the endpoint docs first: `references/knowledge/api_docs/post_api_jobs_evals_run.md`, `references/knowledge/api_docs/post_api_jobs_wait.md` and `references/knowledge/api_docs/get_api_jobs_id_errors.md`.
 
-1. **Verify readiness** — an eval config (judge) exists and its dataset is non-empty (`eval_results_summary`; `/evals/{eid}/progress` is fine for a readiness check). If a prerequisite is missing (no eval config, empty dataset), name it exactly with a deep link to fix it.
-2. **Deep-link the run.** Send the user to the **Compare page** — `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` — where the **Run Eval** button runs the eval on the eval dataset for the pinned/named run config(s) and shows the numbers. For a single eval, the spec page's Run button works too: `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}`.
-3. **Cost is shown in the UI at run time.** Runs execute real model inferences (≈ dataset size × run configs × evals) and can be sizeable. If the user asks, give a rough estimate before they click — but the run and its confirmation happen in the UI, so you don't gate it yourself.
-4. **Read the scores** once they've run — present them per `references/knowledge/eval_scores.md` (`score_summary` / `eval_results_summary`) with the prepopulated Compare link (a Compare link with no `models=` renders empty).
+1. **Check readiness.** The eval needs a judge (its default judge is `current_config_id`) and items in the split you run (`GET .../evals/{eval_id}/progress`, or `eval_results_summary`). If a prerequisite is missing (no judge, an empty split), name it exactly, with a deep link to fix it.
+2. **Start the job.** `POST /api/jobs/evals/run` with `project_id`, `task_id`, `eval_id`, `eval_config_id` (the default judge unless the user picked another), `run_config_id` and `split`. `split` is required: `train`, `val` or `test`; there is no default. Items already scored for this judge and run config are skipped, so starting the same job again only sweeps what is missing. To try a run config on a few items first, pass `item_ids`.
+3. **Mind the cost.** A job runs real model calls: about one task call and one judge call per item, and for a multi-turn item a full driven conversation. When the run is large, tell the user the size (items × run configs × evals) before you start it.
+4. **Wait for it.** `POST /api/jobs/wait` with the job IDs (one wait covers several jobs). A 504 means the wait timed out, not the job: wait again. A job with the status `paused` never ends by itself; ask the user, or resume it with `POST /api/jobs/{id}/resume`.
+5. **Read the errors.** A job that ends `succeeded` can still have items that failed. Read `GET /api/jobs/{id}/errors` and the coverage (items scored out of items in the split) before you report a score; name the failures and their cause.
+6. **Read the scores** — present them per `references/knowledge/eval_scores.md` (`score_summary` / `eval_results_summary`) with the prepopulated Compare link (a Compare link with no `models=` renders empty).
+
+The user can also run an eval in the app: the **Run Eval** button on the Compare page (`http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...`) or on the spec page (`http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}`). The `run_comparison` and `run_calibration` endpoints behind those buttons are event streams for the app; use the job above.
 
 ## Underlying Data Hierarchy
 
@@ -113,7 +120,7 @@ Spec  ──references──>  Eval  ──contains──>  EvalConfig(s)  ─�
 - **EvalConfig**: The judge — how to score. An LLM judge (model + prompt), a deterministic check, or a code eval (see `references/knowledge/judge_types.md`)
 - **EvalRun**: A single evaluation result — one dataset item scored by one judge for one run config
 
-The Eval Builder UI creates all of these automatically. The simple REST API only creates Spec + Eval.
+The Eval Builder creates all of these automatically. `POST .../specs` creates the Spec and its Eval; a judge is added separately.
 
 ## Eval Design Principles
 
@@ -145,7 +152,7 @@ Dataset items carry string tags, and an eval selects its items by tag. On curren
 
 The slug is the eval name lowercased with spaces→underscores. (Older evals used flat `eval_set_filter_id` / `train_set_filter_id` fields and `eval_` / `eval_golden_` tag names — both deprecated; read the `splits` map and the `test_`/`train_`/`val_`/`golden_` tags instead.)
 
-Tags and splits are managed automatically by the Eval Builder — you do not create, assign, or manage them manually.
+Tags and splits are managed automatically by the Eval Builder; don't rename or reassign them by hand.
 
 ## Priority Levels
 

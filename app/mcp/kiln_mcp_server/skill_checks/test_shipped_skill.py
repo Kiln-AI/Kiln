@@ -47,7 +47,6 @@ MAX_MAINTENANCE_LINES = 500
 # Rules whose problems do not fail the shipped-tree tests yet, each with the
 # content batch that makes it pass (skill_and_content section 9).
 PENDING_RULES: set[str] = {
-    "tree-banned-term",  # batches 2, 4 and 5
     "tree-front-matter",  # batch 6: online_url on the help articles
     "docs-index",  # batch 6
     "tree-test-split",  # batch 13a

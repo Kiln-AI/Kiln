@@ -1,7 +1,7 @@
 ---
 name: tools
 description: |
-  MCP tool server setup: local MCP, remote MCP, Kiln task-as-tool, demo/pre-made tools. Load when: user wants to "add a tool", "connect MCP", "set up web search / Github / Slack / Python interpreter / filesystem", says the agent "needs to call an API", or any mention of integrating an external capability. Owns vocabulary mapping, demo tools list, MCP UI-only-wiring callout (sub-agent wiring lives in references/knowledge/subagents.md), per-type field guidance, and tool selection guidance.
+  MCP tool server setup: local MCP, remote MCP, Kiln task-as-tool, demo/pre-made tools. Load when: user wants to "add a tool", "connect MCP", "set up web search / Github / Slack / Python interpreter / filesystem", says the agent "needs to call an API", or any mention of integrating an external capability. Owns vocabulary mapping, demo tools list, MCP wiring through the API (sub-agent wiring lives in references/knowledge/subagents.md), per-type field guidance, and tool selection guidance.
 ---
 # Knowledge: Tools (MCP Tool Servers)
 
@@ -52,12 +52,12 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## The Agent's Role with Tools
 
-**You detect the need and link to the UI.** Tool setup (connecting MCP servers, configuring commands, testing) is complex and best done in the Kiln UI.
+**You detect the need and do the setup through the API.** The user can also do it in the app at `http://localhost:8757/tools/{project_id}/add_tools`; link it when they prefer that.
 
 1. Recognize that the user's problem is a tool problem (not a prompt or model problem)
 2. Suggest the right type of tool (local MCP, remote MCP, Kiln task-as-tool, RAG)
-3. Deep-link to the tools UI
-4. After setup, remind the user to enable `tools_config` in their run config
+3. Add it (see "Wiring an MCP server" below), then check the tools it exposes
+4. Attach the tool to a run config through `tools_config` (see the end of this file)
 
 ## Tool Types
 
@@ -65,7 +65,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 |------|-----------|-------------|
 | **Local MCP Server** | A program running locally on the user's machine (typically Python, Node.js, or a uvx/npx-installable CLI). Communicates over stdio. | Custom API wrappers, internal services on a private network, anything the user wants running on their own hardware |
 | **Remote MCP Server** | An MCP server reachable over HTTP at a URL the user provides | Hosted/SaaS integrations (Github MCP, Firecrawl, etc.), shared team servers, anything already running somewhere |
-| **Kiln Task Tool** | Another Kiln task exposed as a tool | Sub-agent patterns — see `references/knowledge/subagents.md` (full workflow including the user-approval step for wiring lives there) |
+| **Kiln Task Tool** | Another Kiln task exposed as a tool | Sub-agent patterns — see `references/knowledge/subagents.md` (full workflow, including when to ask the user first, lives there) |
 | **Kiln Search (RAG)** | Built-in document search over indexed PDFs/text | When the agent needs the user's own documents — `references/knowledge/rag.md` owns the setup flow |
 | **Demo / Pre-made tools** | One-click pre-configured popular MCP servers | Fastest way to get the user started — see Demo tools list below |
 
@@ -88,22 +88,24 @@ For anything not in this list — internal services, niche SaaS, custom integrat
 - `references/knowledge/api_docs/get_api_demo_tools.md` — `GET /api/demo_tools` returns whether demo tools are enabled (boolean).
 - `references/knowledge/api_docs/post_api_demo_tools.md` — `POST /api/demo_tools?enable_demo_tools=true|false` toggles them.
 
-## ⚠️ MCP wiring is UI-only
+## Wiring an MCP server
 
-**MCP server connect endpoints are denied to the agent** — tool-server creation for arbitrary MCP servers goes through the UI:
+The connect endpoints add a tool server to the project:
 
-- `POST /api/projects/{project_id}/connect_local_mcp`
-- `POST /api/projects/{project_id}/connect_remote_mcp`
+- `POST /api/projects/{project_id}/connect_local_mcp` — `references/knowledge/api_docs/post_api_projects_project_id_connect_local_mcp.md`
+- `POST /api/projects/{project_id}/connect_remote_mcp` — `references/knowledge/api_docs/post_api_projects_project_id_connect_remote_mcp.md`
 
-**Correct flow when the user wants an MCP server wired up:** deep-link to `http://localhost:8757/tools/{project_id}/add_tools` with the tool type identified ("Local MCP" / "Remote MCP" / a specific demo) and the relevant field values pre-filled in your suggestion (name, command, URL, etc.). Offer to explain any field if asked. **Do not** speculate about *why* the endpoint is denied — it just is. Use third-person framing ("the docs note this endpoint is reserved for the UI"), not first-person ("when I try it") — you didn't try it in this session.
+1. **Draft the server** with the user: the type ("Local MCP" / "Remote MCP" / a specific demo) and the field values (name, command and arguments, or URL and headers; see "Setup Field Reference" below). Mark API keys and tokens as secrets. A secret value comes from the user; if they would rather not share it in the conversation, they add the server in the app at `http://localhost:8757/tools/{project_id}/add_tools`.
+2. **Ask the user first** before you add a local MCP server: it runs a program on the machine where Kiln runs. For a remote server, the URL must come from the user.
+3. **Connect it**, then read `GET /api/projects/{project_id}/tool_servers/{tool_server_id}/config` to check that it exposes the tools you expect. A server that lists no tools usually has a wrong command, path or key; fix the field and edit the server (`PATCH .../edit_local_mcp/{tool_server_id}` or `.../edit_remote_mcp/{tool_server_id}`). For a local server, a change to its command, arguments or environment runs a different program: ask the user first, as in step 2.
 
-**Sub-agent wiring is different.** `POST /api/projects/{project_id}/kiln_task_tool` is allowed, but the agent must **draft the tool body and ask the user for approval before posting** (it adds a tool server to the project). Full flow lives in `references/knowledge/subagents.md`.
+**Sub-agent wiring** goes through `POST /api/projects/{project_id}/kiln_task_tool`: draft the tool body and ask the user first, since it adds a tool server to the project. Full flow lives in `references/knowledge/subagents.md`.
 
-The READ side (`GET available_tools`, `GET available_tool_servers`, `GET tool_servers/{id}/config`) is fully callable — use it freely to inspect current state before making suggestions.
+The READ side (`GET available_tools`, `GET available_tool_servers`, `GET tool_servers/{id}/config`) needs no confirmation — use it freely to inspect current state before making suggestions.
 
 ## Setup Field Reference
 
-When walking the user through Add Tools in the UI, these are the fields they'll see — explain whichever ones they ask about.
+These are the fields of a tool server, in the connect request and on the Add Tools page — explain whichever ones the user asks about.
 
 ### Local MCP — fields
 
@@ -138,11 +140,11 @@ Aim for the third style: name a role, describe behavior, hint at input/output sh
 ## Connecting an existing external agent via MCP
 
 If the user already has an agent built outside Kiln and wants Kiln to evaluate or call it: wrap the existing agent in an MCP server (Python, JS, Go, Rust, Java SDKs all available — see `references/docs/tools-and-mcp/connect-to-existing-agents.md`), then connect it as a Remote MCP. From there they can either:
-1. Create a new Kiln task from one of the wrapped MCP tool's signature (`POST /api/projects/{project_id}/create_task_from_tool` — also UI-driven).
+1. Create a new Kiln task from one of the wrapped MCP tool's signature (`POST /api/projects/{project_id}/create_task_from_tool`; see `references/knowledge/api_docs/post_api_projects_project_id_create_task_from_tool.md`).
 2. Use a wrapper Kiln task that calls the MCP tool as one of its tools.
 3. Connect the MCP tool directly as an MCP run config on an existing Kiln task — input/output schemas must match exactly (`POST /api/projects/{project_id}/tasks/{task_id}/mcp_run_config`).
 
-Don't walk the user through SDK code — point at the docs page online and the Add Tools UI.
+Don't walk the user through SDK code — point at the docs page online; connect the wrapped server as a Remote MCP as above.
 
 ## Tool selection guidance
 
@@ -171,12 +173,12 @@ The flows above are for Kiln calling external tools (Kiln-as-MCP-client). Kiln c
 | View tool server (after wired) | `http://localhost:8757/tools/{project_id}/tool_servers/{ts_id}` |
 | Use a tool in a run | `http://localhost:8757/run?tool_id={tool_id}` |
 
-## Checking Tool State (read-side — fully callable)
+## Checking Tool State (read side)
 
-These are NOT denied — call them freely to ground recommendations in current state:
+Call these freely to ground recommendations in current state:
 
 - `references/knowledge/api_docs/get_api_projects_project_id_available_tools.md` — `GET /api/projects/{project_id}/available_tools` lists every tool the project can call (across all servers).
 - `references/knowledge/api_docs/get_api_projects_project_id_available_tool_servers.md` — `GET /api/projects/{project_id}/available_tool_servers` lists connected tool servers (one row per Local MCP / Remote MCP / Kiln Task server). Returns `missing_secrets` per server — useful to flag when a server is wired but a teammate hasn't entered their key yet.
 - `references/knowledge/api_docs/get_api_projects_project_id_tool_servers_tool_server_id_config.md` — `GET /api/projects/{project_id}/tool_servers/{tool_server_id}/config` returns one server's full config (command, URL, headers — minus secret values) plus the list of tools it exposes (`available_tools[]` with name, description, inputSchema). Use this when the user says "what is `<tool_server>` set up to do?"
 
-After the user enables a tool in the UI, remind them to attach it to the run config they want to use it from — tool wiring at the project level isn't enough; the run config must list the tool ID under `tools_config`.
+After a tool server is added, attach its tool to the run config that should use it — tool wiring at the project level isn't enough; the run config must list the tool ID under `tools_config.tools`. A run config cannot be edited, so create a new one with the tool listed (`references/knowledge/model_create_configs.md`).

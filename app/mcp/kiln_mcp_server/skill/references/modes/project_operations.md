@@ -21,7 +21,7 @@ Every substantive reply in this mode follows this shape:
 4. **Deep links** — clickable links to navigate to the new resources
 5. **End on the outcome, not a question.** A trailing "Shall I…?" / "Would you like A or B?" is a contract violation — pose the choice *instead of* reporting, never in addition. **Declarative deferred-action closers count too** — *"I'll apply this once you…"*, *"just say the word"*, *"let me know when ready and I'll…"*, *"happy to update it if you approve"* hand the next action back to the user in statement form and are the same violation. If the user's message directly asks for the change, draft and execute in the same turn; the ask is the consent.
 
-**Default to executing.** Creating projects, tasks, run configs, prompts, and evals are all direct actions — do them, then report. Confirm only for irreversible/destructive operations (DELETE, overwrite of user prompt text).
+**Default to executing.** Creating projects, tasks, run configs, prompts, and evals are all direct actions — do them, then report. Confirm only for irreversible/destructive operations (DELETE, overwrite of user prompt text). Also ask first for the operations that the section "Working with the user" of `SKILL.md`, or the knowledge file you follow, names.
 
 ## Endpoint Conventions
 
@@ -75,7 +75,7 @@ Before each reply, check that the user's message still fits this mode. If the us
 | Knowledge | What It Provides | Load |
 |-----------|-----------------|------|
 | **Create Task** | Building a new AI agent task from scratch — requirements, prompt drafting, task creation, initial config, initial evals | `references/knowledge/create_task.md` |
-| **Sub-Agents** | Creating a parent task whose role includes calling another task as a sub-agent — end-to-end workflow with user-approval step for wiring | `references/knowledge/subagents.md` |
+| **Sub-Agents** | Creating a parent task whose role includes calling another task as a sub-agent — end-to-end workflow, asking the user before the wiring | `references/knowledge/subagents.md` |
 | **Create Eval** | Eval creation guidance — eval types, Eval Builder deep-links, manual flow | `references/knowledge/create_spec.md` |
 | **Data Guides** | Task Data Guides for synthetic data — authoring flows (manual / Kiln Pro), refine loop, deep links | `references/knowledge/data_guides.md` |
 | **Judge Types** | The eval judge menu — LLM judge, deterministic checks, code evals; selection rule + code-eval `score()` contract | `references/knowledge/judge_types.md` |

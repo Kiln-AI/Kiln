@@ -9,11 +9,11 @@ An eval's judge (`EvalConfig`) is not only an LLM. There are **8 judge types**: 
 
 Reach for this file whenever the user asks what eval/judge types exist, which to use, "was a tool called correctly", or wants help writing a code-eval `score()` function.
 
-**Your surface is knowledge + UI deep links.** Judge creation and testing happen in the UI — you don't drive judge endpoints. Your job: explain the menu, help the user choose the right type, draft code-eval `score()` functions with them, and deep-link the right creation page.
+**You create and test judges through the API.** Your job: explain the menu, help the user choose the right type, draft code-eval `score()` functions with them, test the judge, and save it ("Creating judges" below). The user can also build a judge in the app; deep-link the creation page when they prefer that.
 
 ## Knowledge Required
 
-- `references/knowledge/specs_and_evals.md` — eval hierarchy, the Eval Builder-first rule, running evals (UI deep-link)
+- `references/knowledge/specs_and_evals.md` — eval hierarchy, the Eval Builder-first rule, running an eval
 - `references/knowledge/benchmark_eval_inputs.md` — how `reference_data` reaches scorers on EvalInput-backed evals
 
 ## The judge menu
@@ -48,11 +48,11 @@ The four extraction checks (`exact_match`, `contains`, `pattern_match`, `set_che
 
 ## Code evals
 
-The user writes a Python `score()` function; Kiln runs it in a subprocess per eval item. The user authors and saves it **in the UI** (CodeMirror editor + judge test pane); your role is drafting and explaining. (A code eval *scores* a run; for user Python that *runs during* the task as a callable tool, see `references/knowledge/code_tools.md` — same sandbox and trust gate, different purpose.)
+The user writes a Python `score()` function; Kiln runs it in a subprocess per eval item. You draft it with the user, test it, and save it as a judge through the API; the user can also author it in the app (CodeMirror editor + judge test pane). (A code eval *scores* a run; for user Python that *runs during* the task as a callable tool, see `references/knowledge/code_tools.md` — same sandbox and trust gate, different purpose.)
 
 **Drafting `score()` code is in scope.** Code destined for a Kiln artifact (a code-eval scorer, a code tool) is Kiln-feature work.
 
-**Always caveat drafted code — you cannot run or verify it.** When you hand the user a `score()` function, say plainly that it is a starting point you haven't executed: they should read the logic, confirm it matches what they actually want to measure, and run it in the judge test pane on real samples before trusting it. Don't present a draft as known-correct. This is not optional politeness — the sandbox has real gotchas (helper return shapes, keyword-only tool calls, plain-float returns) and a plausible-looking scorer can be subtly wrong.
+**Test drafted code before you save it, and caveat what the test did not cover.** A `score()` function is a starting point: the user should read the logic and confirm it matches what they actually want to measure. Run it on real samples with the judge test endpoints ("Trust and testing" below) before saving, and say which samples you tested. Don't present a draft as known-correct. This is not optional politeness — the sandbox has real gotchas (helper return shapes, keyword-only tool calls, plain-float returns) and a plausible-looking scorer can be subtly wrong.
 
 ### The contract
 
@@ -73,18 +73,24 @@ The user writes a Python `score()` function; Kiln runs it in a subprocess per ev
 
 There are **no import restrictions** — but only what ships in the Kiln app's bundled Python is importable, and there is no `pip install` at runtime. Safe to rely on: the **standard library** plus `pydantic`, `httpx`, `requests`, `numpy`, `scipy`, `pandas`, `bs4`, `jinja2`, `yaml`, `PIL`, `jsonschema`, `regex`, `tiktoken`, `aiohttp`, `dateutil`, `nltk`, `networkx`, `tenacity`. **Not bundled** (tell users before they write code against them): `sklearn`, `lxml`, `rapidfuzz`, `polars`, `matplotlib`, `statsmodels`, `sympy`, `markdown`, `orjson`. When in doubt, prefer stdlib.
 
-### Trust and testing (UI-only)
+### Trust and testing
 
-- There is no resource sandbox (network and filesystem are open; only crash isolation + the timeout) — hence the **trust gate**: the user must click "I Trust this Code" in the UI, per project, per app session. **Never call the `add_code_trust` endpoints; never present code from anywhere but the user's own session as trustworthy.**
-- The judge **test pane** ("Test your judge on real data before saving") is the iteration loop — have the user paste your draft there, test on a real sample, and save. The test endpoints are agent-forbidden; you cannot dry-run a scorer.
+- There is no resource sandbox (network and filesystem are open; only crash isolation + the timeout) — hence the **trust gate**: a code eval runs only in a project with code trust, granted per project, per app session. Read the state with `GET /api/projects/{project_id}/add_code_trust`. When the project is not trusted, **ask the user first**: say that the code runs on the machine where Kiln runs, with no sandbox, and grant trust (`POST /api/projects/{project_id}/add_code_trust`) only when they agree. **Never present code from anywhere but the user's own session as trustworthy.**
+- Test a judge before you save it: `POST /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval` for an existing eval, `POST /api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft` for an eval that is not created yet. Test on real samples, fix, and test again. A code eval's test runs the code, so it needs trust too.
 
 ## The v2 LLM judge
 
 `properties`: `prompt_template` (Jinja over `final_message`/`trace`/`task_input`/`reference_data` — it must reference the output or the save is rejected), `model_name` + `model_provider` (inside properties), optional `system_prompt`, `judge_instructions`, `reference_keys`, and `g_eval: bool`. **Keep `g_eval: false`** — `true` switches to logprob-weighted scoring and fails on models/providers without logprobs; same reasoning as the legacy "never `g_eval`" rule in `references/knowledge/specs_and_evals.md`. TypeSafe AI's Jev models serve this judge type for pass/fail and bounded scores, with `g_eval` off; see `references/knowledge/typesafe_jev.md`.
 
-## Creating judges — UI deep links
+## Creating judges
 
-Eval and judge creation route to the UI (the Eval Builder-first rule from `references/knowledge/specs_and_evals.md` is unchanged — you deep-link, the user builds):
+Through the API, after the test above:
+
+- **Any judge type** — `POST /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_eval_config` (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_evals_eval_id_create_eval_config.md`), with `type: v2` and the `properties` of the chosen type.
+- **An LLM judge with the server's default prompt** — `POST /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_llm_judge_config` (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_evals_eval_id_create_llm_judge_config.md`).
+- A new judge is not the eval's default judge. Make it the default with `POST .../set_current_eval_config/{eval_config_id}` when the user wants it to be; scores of different judges are not comparable.
+
+For a new eval, the Eval Builder comes first (`references/knowledge/specs_and_evals.md`). The user can also build a judge in the app:
 
 | Action | Link |
 |--------|------|
@@ -92,8 +98,6 @@ Eval and judge creation route to the UI (the Eval Builder-first rule from `refer
 | New LLM-judge eval (guided, templated) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}` per `references/knowledge/create_spec.md` |
 | Add a judge to an existing eval (picker) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config` |
 | Add a specific judge type to an existing eval | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config/{type}` |
-
-For a code eval, the complete handoff is: your drafted `score()` code block + the creation deep link + a reminder to test in the pane before saving (and that the app will ask for code trust).
 
 ## Reading results
 

@@ -81,7 +81,7 @@ If the user really means VPC, the approach is different — they'll use the same
 ### Connect Provider
 
 - Skip if they already have OpenRouter connected or said they wouldn't connect another provider
-- If they need it: Ask them to connect to OpenRouter, deep-linking to the Add Provider page [Add Provider](http://localhost:8757/settings/providers). Load `references/knowledge/provider_setup.md` for detailed guidance.
+- If they need it: ask them to connect OpenRouter in the app, at [Providers](http://localhost:8757/settings/providers) — this connection cannot connect a provider key. Load `references/knowledge/provider_setup.md` for detailed guidance.
 - If they only have providers with closed weight models (OpenAI, Anthropic, Gemini API): inform them we'll need either Ollama or a provider with open-weight models.
 
 ### Run Experiments

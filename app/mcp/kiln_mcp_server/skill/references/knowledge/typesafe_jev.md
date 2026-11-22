@@ -62,7 +62,7 @@ The assistant's levers are the spec text and its examples, the task description,
 
 ## As an eval judge
 
-- Create the judge in the UI judge picker as an **LLM as Judge** with the TypeSafe AI model. Judge creation is UI-only, as in `references/knowledge/judge_types.md`.
+- Create the judge as an **LLM as Judge** with the TypeSafe AI model, as `references/knowledge/judge_types.md` ("Creating judges") describes.
 - **Use the current LLM judge type, not a legacy judge.** A legacy `llm_as_judge` config sends its evaluation steps as thinking instructions, which Jev never receives, so a legacy judge on Jev scores with no rubric and no warning. The current judge embeds the spec and its examples in the prompt, which Jev does read.
 - **Prefer pass/fail scores.** A 1-to-5 score reaches Jev as the digit levels "1" to "5" plus the score instruction. The vendor's own docs show that shape scoring a cosmetic bug at 0.55 with confidence 0.33 where described levels scored it 0.0 with confidence 1.0, because "the model has nothing to match against". Measured in Kiln: digit levels track described levels on clear items and drift by up to a quarter of a probability point on borderline ones. Split a graded criterion into pass/fail items.
 - **Write the rubric for a literal reader.** Put the exact condition, its boundary cases, and pass and fail examples in the spec's desired-behaviour text; Kiln sends the pass and fail options with no descriptions of their own, so the spec is the only place the meaning lives. The vendor's test: "When you look at a wrong answer and find yourself explaining what you really meant, that explanation is the missing half of the instruction."

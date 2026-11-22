@@ -38,9 +38,11 @@ But: you MUST check `available_models` before creating a run config to confirm t
 
 Connected providers come from the bootstrap `agent_overview.connected_providers`. Before proposing any models, surface them to the user ("I see OpenRouter and OpenAI connected — I'll stick to models on those unless you want to add more") and deep-link [Provider Settings](http://localhost:8757/settings/providers). Only recommend models from connected providers unless the user explicitly asks about adding one.
 
-### Batch Run Config Creation (3+) Requires Approval
+**No provider is connected for the model.** When the model info endpoints show the status `not_connected` for the provider a model needs, name the provider and ask the user to connect it in the app, at [Provider Settings](http://localhost:8757/settings/providers) — this connection cannot connect a provider key. Or offer a model whose status is `ready`.
 
-When creating **3+ run configs** in one plan, show the proposed list (model, tier, provider, key params) and wait for approval. 1–2 configs are fine to just create.
+### Ask Before Creating 3+ Run Configs
+
+When creating **3+ run configs** in one plan, show the proposed list (model, tier, provider, key params) and ask the user first. 1–2 configs are fine to just create.
 
 ### Provider-Availability Caveat
 

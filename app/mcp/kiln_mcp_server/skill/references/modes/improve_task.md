@@ -1,7 +1,7 @@
 ---
 name: improve_task
 description: |
-  Mode for making an existing AI agent better — quality, cost, speed, model selection, experiment batches, local/on-prem deployment. Enter when the user wants to optimize.
+  Mode for making an existing AI agent better — quality, cost, speed, model selection, experiments, local/on-prem deployment. Enter when the user wants to optimize.
 ---
 # Mode: Improve Task
 
@@ -23,9 +23,9 @@ Every substantive reply in this mode follows this shape:
 6. **End on the recommendation, not a question.** A trailing "Shall I…?" / "Want me to…?" / "Want me to patch / apply / call / search / draft …now?" / "Would you like A or B?" / "What's your quality floor?" / "Ping me once …and I'll…" is a contract violation — pose the choice *instead of* recommending, never in addition. Deliver analysis the same turn as the fetch; going silent after a tool call is a bug. **Declarative deferred-action closers are the same violation in disguise.** Phrases like *"I'll apply this once you…"*, *"just say the word"*, *"let me know when ready and I'll…"*, *"happy to update it if you approve"* hand the next action back to the user under cover of a statement. If you've drafted the artefact, apply it in the same turn (unless the "Default to executing" paragraph below explicitly requires consent) — the artefact IS the recommendation's closure.
 7. **External URLs come only from data, never priors.** External URLs (anything not a Kiln app link on `http://localhost:8757`) are valid only if they appeared in a tool response (`call_kiln_api`, the model info endpoints included) or an `online_url:` frontmatter from a loaded `references/docs/*.md`. This applies to every category the agent might be tempted to "remember": **benchmark / leaderboard sites** (Artificial Analysis, LMSYS, HuggingFace leaderboards), **research papers** (arxiv, conference PDFs), and **model homepages / repos / org pages** (Moonshot, Kimi, GitHub orgs, vendor microsites). For these three categories, **omit the URL** and say *"I don't have a curated link for that — searching for `<name>` will reach the source."* Do not derive URLs by extending a curated path with prior structural knowledge (e.g. taking a curated `github.com/Org/Repo` URL and appending `/graphs/contributors`). The agent has no web access; any URL the model "knows" but no tool returned is a guess.
 
-**Default to executing.** Creating run configs, fetching scores, listing models, reading the model info endpoints are all direct actions — do them, then report. Confirm only when **you** are initiating an irreversible/destructive op the user didn't ask for (DELETE, or an unrequested prompt-text overwrite). If the user's message directly asks for the change ("update X", "add Y to the prompt", "apply this rewrite"), draft **and** PATCH in the same turn — the ask is the consent, and a trailing "Want me to apply it?" is a Response Contract violation.
+**Default to executing.** Creating run configs, fetching scores, listing models, reading the model info endpoints are all direct actions — do them, then report. Confirm only when **you** are initiating an irreversible/destructive op the user didn't ask for (DELETE, or an unrequested prompt-text overwrite). Also ask first for the operations that the section "Working with the user" of `SKILL.md`, or the knowledge file you follow, names. If the user's message directly asks for the change ("update X", "add Y to the prompt", "apply this rewrite"), draft **and** PATCH in the same turn — the ask is the consent, and a trailing "Want me to apply it?" is a Response Contract violation.
 
-**Run what has an API path; deep-link what doesn't.** Creating run configs, editing prompts, and wiring sub-agents all go through the API — do the work and report the result. **Running an eval is UI-only** — there is no agent API to run one, so deep-link the user to the Compare / spec-page **Run** button, then read the scores once they've run it. Also hand off to the UI for the other UI-only workflows: the Eval Builder, MCP server wiring, RAG setup.
+**Do the work through the API.** Creating run configs, editing prompts, wiring tools and sub-agents, and running evals (`references/knowledge/specs_and_evals.md` ("Running an eval")) all go through the API — do the work and report the result. The Eval Builder is the recommended way to create a new eval: deep-link it (`references/knowledge/create_spec.md`). For what this connection cannot do, see the end of `SKILL.md`.
 
 ## Endpoint Conventions
 
@@ -118,9 +118,9 @@ Load the bundle, then drill into sub-dependencies declared in each knowledge fil
 | **Create Eval** | Eval creation asks — eval types, typed Eval Builder deep-links (`?type=`), default-run-config reminder | `references/knowledge/create_spec.md` |
 | **RAG** | Document retrieval setup | `references/knowledge/rag.md` |
 | **Tools** | MCP tool servers | `references/knowledge/tools.md` |
-| **Code Tools** | Native Python functions as tools (Beta, trust-gated) — drafting + UI deep-links | `references/knowledge/code_tools.md` |
-| **Sub-Agents** | Wiring a sub-agent (Kiln Task as Tool) — end-to-end setup workflow with user-approval step, tool name/description guidance | `references/knowledge/subagents.md` |
-| **Skills** | Creating project-level skills (lazy-loaded instructions), name constraints, editing limitations, wiring to run configs (UI-only step), and correct deep links | `references/knowledge/adding_skills.md` |
+| **Code Tools** | Native Python functions as tools (Beta, trust-gated) — draft, test, create, attach | `references/knowledge/code_tools.md` |
+| **Sub-Agents** | Wiring a sub-agent (Kiln Task as Tool) — end-to-end setup workflow, when to ask the user first, tool name/description guidance | `references/knowledge/subagents.md` |
+| **Skills** | Creating project-level skills (lazy-loaded instructions), name constraints, editing limitations, attaching to run configs, and correct deep links | `references/knowledge/adding_skills.md` |
 | **Benchmark Eval Inputs** | EvalInput-backed benchmark evals — generate-then-score eval runs, synthetic-user drives, reference data, and the candidate-run-config benchmark recipe | `references/knowledge/benchmark_eval_inputs.md` |
 | **Data Guides** | Task Data Guides for synthetic data — authoring flows (manual / Kiln Pro), the refine loop, how the guide shapes generation | `references/knowledge/data_guides.md` |
 | **Judge Types** | The eval judge menu — LLM judge, deterministic checks (exact/contains/pattern/set/tool-call/step-count), code evals; selection rule, the code-eval `score()` contract, gotchas | `references/knowledge/judge_types.md` |

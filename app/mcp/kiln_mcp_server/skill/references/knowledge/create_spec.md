@@ -5,7 +5,7 @@ description: |
 ---
 # Create Eval
 
-Reference knowledge for guiding eval creation conversations and deep-linking to the Kiln Eval Builder. The agent discusses what to evaluate; the UI handles the creation workflow.
+Reference knowledge for guiding eval creation conversations and deep-linking to the Kiln Eval Builder. The agent discusses what to evaluate; the Eval Builder is the recommended way to create the eval.
 
 ## Knowledge Required
 
@@ -24,13 +24,13 @@ Load the relevant endpoint doc **before** making each API call.
 | GET list evals | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals.md` |
 | GET list eval configs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs.md` |
 
-These are **read-only** — verify what exists before and after the user builds in the UI. **Never call the eval-creation REST endpoints** (`POST /specs`, `spec_with_copilot`, the copilot clarify/refine/question endpoints, `create_evaluator`, `create_eval_config`) — eval creation always goes through the Eval Builder UI, even when the user asks you to "just create it via the API".
+Use them to verify what exists before and after the user builds the eval. Recommend the Eval Builder for creation. When the user asks you to create the eval through the API, follow `references/knowledge/specs_and_evals.md` ("The Agent's Role with Evals") and add a judge with `references/knowledge/judge_types.md`.
 
 ## Suggested Questions
 
 1. **What's the problem?** "What's not working, or what quality dimension do you want to measure?" (bug, missing behavior, formatting, hallucinations, tone)
 2. **Have they seen specific failures?** Examples of bad outputs help choose the right eval type.
-3. **Do they have a Kiln Pro account?** Deep-link to Provider Settings to check — this determines whether to recommend the guided Eval Builder flow or manual setup.
+3. **Do they have a Kiln Pro account?** This determines whether to recommend the guided Eval Builder flow or manual setup. If they are not signed in, ask them to sign in at [Kiln Pro](http://localhost:8757/settings/providers/kiln_pro).
 
 ## Eval Creation Approaches
 
@@ -54,11 +54,11 @@ Always present both options and help the user choose:
 
 **Option 1: Eval Builder (Recommended)** — A guided conversation flow in the UI that handles eval creation automatically: turns rough ideas into refined evals, generates synthetic test data, calibrates the judge prompt, and creates the full Spec → Eval → EvalConfig pipeline.
 
-**Prerequisite:** Requires a **Kiln Pro** account. Deep-link to [Provider Settings](http://localhost:8757/settings/providers) to check. A complete eval with the Eval Builder takes ~5 minutes vs 30+ minutes for manual setup.
+**Prerequisite:** Requires a **Kiln Pro** account; the user signs in at [Kiln Pro](http://localhost:8757/settings/providers/kiln_pro). A complete eval with the Eval Builder takes ~5 minutes vs 30+ minutes for manual setup.
 
 **Option 2: Manual Setup** — If Kiln Pro is not configured, evals can be created through the Eval Builder UI or Select Template pages without the guided flow. The user defines the eval definition, examples, and judge config themselves.
 
-**Note:** Both options are UI flows. There is no agent API path — never create evals via the REST API (see API Docs above). API-created evals are spec-less legacy rows with no EvalConfig, judge prompt, or tagged data.
+**Note:** Both options are flows in the app. An eval created through the API (`references/knowledge/specs_and_evals.md`) has none of the Eval Builder's generated data or aligned judge; an eval made with `create_evaluator` is a spec-less legacy eval with no judge. Say so when the user asks for the API path.
 
 ### Deep-Link to Eval Builder
 
@@ -77,7 +77,7 @@ Deep-link to the [Eval Builder](http://localhost:8757/specs/{project_id}/{task_i
 
 ### Verify Creation
 
-After the user creates evals in the UI, verify via API:
+After the user creates evals, verify via API:
 
 ```
 # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_specs.md

@@ -13,7 +13,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 | Endpoint | Load |
 |----------|------|
-| Eval Inputs — API catalog (no CRUD endpoints yet; read this first) | `references/knowledge/api_docs/eval_inputs_api_list.md` |
+| Eval Inputs — API catalog (list, create, update, delete) | `references/knowledge/api_docs/eval_inputs_api_list.md` |
 | Evals API catalog | `references/knowledge/api_docs/evals_api_list.md` |
 | GET evals list | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals.md` |
 | GET eval progress (dataset_size = matching EvalInputs) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_progress.md` |
@@ -26,7 +26,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## EvalInputs: the dataset rows
 
-EvalInputs live on disk under the task (`eval_inputs/<id>/eval_input.kiln`). **There is no HTTP API for them yet** — you cannot list, create, or edit EvalInputs via `call_kiln_api`; treat the dataset as fixed and route dataset changes to the user. Each row has:
+EvalInputs live on disk under the task (`eval_inputs/<id>/eval_input.kiln`). The Eval Inputs endpoints list, create, update and delete them (`references/knowledge/api_docs/eval_inputs_api_list.md`); an update changes the tags and the reference data only, never `data`. Change a benchmark's dataset only when the user asks for it. Each row has:
 
 - `data` — what to run, one of two types:
 
@@ -53,7 +53,7 @@ House conventions: flat dict, snake_case, `expected_*` keys for ground truth (`e
 
 Only the EvalInput lane delivers `reference_data` — evals over stored TaskRuns (test split `source == "task_run"`) get `reference_data: null`.
 
-**Authoring evals, judges, and EvalInputs is not your job** — eval creation routes to the Eval Builder UI per `references/knowledge/specs_and_evals.md`, and EvalInput datasets have no API. Your job is running benchmarks and reading scores.
+**Your job here is running benchmarks and reading scores.** For creating an eval, the Eval Builder comes first (`references/knowledge/specs_and_evals.md`); a judge is `references/knowledge/judge_types.md`.
 
 ## The recipe: benchmark a candidate run config
 
@@ -61,11 +61,11 @@ To answer "how does model/prompt X do on this benchmark?":
 
 1. **Create the candidate run config** (or find its `rcid`) — `references/knowledge/model_create_configs.md`.
 2. **Enumerate the benchmark evals** — `GET /evals`, keep those whose `test` split is EvalInput-backed (`splits["test"].source == "eval_input"`); note each eval's default judge `current_config_id` (a benchmark task often has several, e.g. one code eval + one judge per bucket).
-3. **Deep-link the run** — running the benchmark is a UI action. Send the user to the Compare page for this task (`http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={candidate_rcid}...`) to run the benchmark evals for the candidate config(s), then read the scores once they've run. Benchmark runs can be sizeable — each `multi_turn_synthetic` item drives up to `turns` conversation turns (SU model call + full agent invocation per turn, tools included) **per run config**, plus a scoring call per eval × item — the UI shows the cost at run time.
+3. **Run the benchmark evals** for the candidate config(s): one eval job per eval × run config, as `references/knowledge/specs_and_evals.md` ("Running an eval"). Benchmark runs can be sizeable — each `multi_turn_synthetic` item drives up to `turns` conversation turns (SU model call + full agent invocation per turn, tools included) **per run config**, plus a scoring call per eval × item — tell the user the size before you start a large run. The user can also run them from the Compare page (`http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={candidate_rcid}...`).
 4. **Read scores per eval** — `GET /evals/{eid}/eval_config/{ecid}/score_summary` → `results[rcid][score_key].mean_score` plus `run_config_percent_complete[rcid]` and `dataset_size`. Compare the candidate's means against the incumbent rcid's means in the same response.
 5. **Report** per the response-assembly rules in `references/knowledge/eval_scores.md` (deep links, coverage, significance).
 
-The `run_comparison` / `run_calibration` endpoints behind the UI Run button are SSE streams — you deep-link the user rather than calling them.
+The `run_comparison` / `run_calibration` endpoints behind the app's Run button are event streams for the app; use the eval job instead.
 
 ## Reading scores: use score_summary, not the batch summary
 

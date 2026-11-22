@@ -1,6 +1,8 @@
 import json
 import os
+import re
 import sys
+from collections import defaultdict
 
 import pytest
 from fastapi import FastAPI
@@ -8,11 +10,13 @@ from fastapi.routing import APIRoute
 from kiln_mcp_server.skill_checks.api_reference import (
     CATALOGUE_SUFFIX,
     INDEX_NAME,
+    TARGET,
     ApiReferenceError,
     diff_folder,
     endpoint_doc_name,
     render,
 )
+from kiln_mcp_server.skill_files import get_index, read_file
 from kiln_server.utils.agent_checks import is_mcp_denied
 
 from app.desktop import skill_api_reference
@@ -50,6 +54,92 @@ def test_committed_docs_match_the_block_list():
     }
     assert committed == allowed
     assert not committed & blocked
+
+
+_PATH_CHAR = r"A-Za-z0-9_\-/{}"
+_PARAM = r"(?:\{[^}/\s]*\}|[^/\s`'\"()|]+)"
+
+
+def _path_pattern(template: str) -> re.Pattern[str]:
+    """Matches `template` as written in a skill file: a `{param}` stands for
+    any `{...}` placeholder or one concrete path segment."""
+    parts = re.split(r"\{[^}]+\}", template)
+    body = _PARAM.join(re.escape(part) for part in parts)
+    return re.compile(rf"(?<![{_PATH_CHAR}]){body}(?![{_PATH_CHAR}])")
+
+
+def _blocked_endpoint_hits(
+    text: str, blocked: dict[str, set[str]], allowed: dict[str, set[str]]
+) -> list[str]:
+    """`METHOD path` of each blocked endpoint that a line of `text` names. A
+    path that also has an allowed method counts only when a blocked method
+    is on the same line."""
+    hits = []
+    for line in text.split("\n"):
+        for template, methods in blocked.items():
+            if not _path_pattern(template).search(line):
+                continue
+            if not allowed.get(template):
+                hits.extend(f"{m} {template}" for m in sorted(methods))
+                continue
+            hits.extend(
+                f"{m} {template}"
+                for m in sorted(methods)
+                if re.search(rf"\b{m}\b", line)
+            )
+    return hits
+
+
+def _routes_by_policy() -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    blocked: dict[str, set[str]] = defaultdict(set)
+    allowed: dict[str, set[str]] = defaultdict(set)
+    for route in make_app().routes:
+        if isinstance(route, APIRoute):
+            target = blocked if is_mcp_denied(route.openapi_extra) else allowed
+            target[route.path].update(route.methods)
+    return blocked, allowed
+
+
+def test_no_skill_file_names_a_blocked_endpoint():
+    blocked, allowed = _routes_by_policy()
+    assert blocked
+    index = get_index()
+    hits = {
+        key: found
+        for key in index.files
+        if not key.startswith(TARGET + "/")
+        and (found := _blocked_endpoint_hits(read_file(key, index), blocked, allowed))
+    }
+    assert hits == {}
+
+
+BLOCKED = {"/api/provider/connect_api_key": {"POST"}, "/api/settings": {"POST"}}
+ALLOWED = {"/api/settings": {"GET"}}
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        (
+            "Call `POST /api/provider/connect_api_key`.",
+            ["POST /api/provider/connect_api_key"],
+        ),
+        ("/api/provider/connect_api_key_v2", []),
+        ("Read `GET /api/settings` first.", []),
+        ("`POST /api/settings` writes it.", ["POST /api/settings"]),
+        ("`GET /api/settings/available_providers`", []),
+    ],
+)
+def test_the_blocked_endpoint_matcher(line, expected):
+    assert _blocked_endpoint_hits(line, BLOCKED, ALLOWED) == expected
+
+
+def test_a_path_parameter_matches_a_placeholder_or_a_segment():
+    pattern = _path_pattern("/api/projects/{project_id}/open")
+    assert pattern.search("`/api/projects/{project_id}/open`")
+    assert pattern.search("/api/projects/123/open")
+    assert not pattern.search("/api/projects/123/open_logs")
+    assert not pattern.search("/api/projects/a/b/open")
 
 
 def test_current_spec_skips_the_remote_model_list(monkeypatch):

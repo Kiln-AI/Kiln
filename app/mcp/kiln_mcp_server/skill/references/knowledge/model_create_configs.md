@@ -9,11 +9,11 @@ All paths in this file are relative to the skill root (the directory containing 
 
 ## Knowledge Required
 
-- `references/knowledge/model_work.md` — for shared rules (provider checking, batch approval), tier categories, and provider reference
+- `references/knowledge/model_work.md` — for shared rules (provider checking, asking before 3+ run configs), tier categories, and provider reference
 
 ## Shared Rules
 
-**See `references/knowledge/model_work.md` → Shared Rules** for the full rules on `available_models` API usage, batch config approval, and checking connected providers. Those rules apply here too.
+**See `references/knowledge/model_work.md` → Shared Rules** for the full rules on `available_models` API usage, asking before 3+ run configs, and checking connected providers. Those rules apply here too.
 
 ## API Docs
 

@@ -90,7 +90,7 @@ Present the result as a small table (Output, Input, Source/model, Rating, Usage,
 Based on the assessment, identify what's missing and suggest next steps. Common gaps and their remedies:
 
 - **No specs** → "You need specs to measure quality. Let's create some." Load `references/knowledge/create_spec.md`
-- **No eval data** → "Specs exist but no evals have run. Let's trigger them." Link to spec pages
+- **No eval data** → "Specs exist but no evals have run. Let's run them." Run them with the eval job of `references/knowledge/specs_and_evals.md` ("Running an eval")
 - **Only one run config** → "You only have one config. Let's experiment with alternatives." Read `references/modes/improve_task.md`
 - **Low scores** → "Some scores are below target. Let's investigate." Read `references/modes/improve_task.md`
 - **No connected providers** → "You need at least one provider." Load `references/knowledge/provider_setup.md`

@@ -24,8 +24,8 @@ Load the relevant endpoint doc **before** making each API call. When you need to
 
 | Endpoint | Load |
 |----------|------|
-| **Catalog:** Settings & utilities (ping, settings, logs, entitlements) | `references/knowledge/api_docs/settings_utilities_api_list.md` |
-| **Catalog:** Providers & models (available models, API keys, user models) | `references/knowledge/api_docs/providers_models_api_list.md` |
+| **Catalog:** Settings & utilities (ping, settings, entitlements) | `references/knowledge/api_docs/settings_utilities_api_list.md` |
+| **Catalog:** Providers & models (available models, user models) | `references/knowledge/api_docs/providers_models_api_list.md` |
 | **Catalog:** Projects (list / get / create projects) | `references/knowledge/api_docs/projects_api_list.md` |
 | GET `/ping` (server health) | `references/knowledge/api_docs/get_ping.md` |
 | GET `/api/settings` (read settings) | `references/knowledge/api_docs/get_api_settings.md` |
@@ -64,12 +64,12 @@ Read `references/knowledge/api_docs/get_api_available_models.md`, then:
 `call_kiln_api("GET", "/api/available_models", jq_filter="[.[] | .provider_id] | unique")`
 3. **Only if the symptom looks server-level** (total unresponsiveness, all endpoints failing), check Kiln server health:
 Read `references/knowledge/api_docs/get_ping.md`, then:
-`call_kiln_api("GET", "/api/ping")`
+`call_kiln_api("GET", "/ping")`
 4. **Deep-link to relevant settings:**
    - [Provider Settings](http://localhost:8757/settings/providers) — for connectivity issues
    - [Add/manage tools](http://localhost:8757/tools/{project_id}/add_tools) — for tool configuration issues
    - [Task settings](http://localhost:8757/settings/edit_task/{project_id}/{task_id}) — for task configuration issues
-5. **If you can't diagnose it:** Suggest checking server logs or searching [Kiln docs](https://docs.kiln.tech/)
+5. **If you can't diagnose it:** ask the user to open the application logs in the app, at [Settings](http://localhost:8757/settings) (the row "Application Logs") — this connection cannot open them — or search [Kiln docs](https://docs.kiln.tech/)
 
 ### Handle "How Do I..." Questions
 

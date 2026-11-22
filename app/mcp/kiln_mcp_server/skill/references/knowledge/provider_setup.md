@@ -27,9 +27,10 @@ Load the relevant endpoint doc **before** making each API call. For provider and
 
 ## Reading Connectivity State
 
-When the user asks which providers they have connected (or implies it — e.g. while filtering model recommendations to "available" / "connected" providers), use the canonical sources below. Do **not** guess at `/api/providers`, `/api/settings/connectors`, or `/api/settings` endpoints; none exist.
+When the user asks which providers they have connected (or implies it — e.g. while filtering model recommendations to "available" / "connected" providers), use the canonical sources below. Do **not** guess at `/api/providers` or `/api/settings/connectors`; neither exists. `GET /api/settings` exists but does not report connectivity.
 
 - **In Project Operations / Improve Task mode** (after the `agent_overview` bootstrap): `agent_overview.connected_providers` is the canonical workspace-wide map. Shape: `{provider_id: {connected: true|false}}`. **Workspace-wide means every provider with a valid API key globally — NOT filtered to the current task.** Re-using the snapshot already in context is correct; do not re-fetch from a separate provider endpoint.
+- **Every provider Kiln knows, each marked `connected` or `not_connected`:** `GET /api/model_info/providers` (read `references/knowledge/api_docs/get_api_model_info_providers.md` first), with the number of models ready on each.
 - **No task loaded** (Learn About Kiln, freeform questions): `GET /api/available_models` with `jq_filter="[.[] | .provider_id] | unique"` (load `references/knowledge/api_docs/get_api_available_models.md` first). This is the runtime endpoint — only providers with working credentials appear, so it doubles as a credential-validity check.
 
 ### Configured vs connected — keep the sets distinct
@@ -109,6 +110,10 @@ Only use this explanation when the user seems confused. If they're technical and
 
 ### Connect the Provider
 
+Connecting or disconnecting a provider API key, and adding or removing an OpenAI-compatible provider, are things to ask the user to do in the app, at [Providers](http://localhost:8757/settings/providers): the key never passes through this connection. Ollama and Docker Model Runner have no key and connect through the API (`POST /api/provider/ollama/connect`, `POST /api/provider/docker_model_runner/connect`; see the API Docs table).
+
+**No provider is connected for the model.** When the model info endpoints show the status `not_connected` for the provider you need (`GET /api/model_info/model_details`, or `GET /api/model_info/providers`), name the provider and ask the user to connect it at [Providers](http://localhost:8757/settings/providers), or offer a model whose status is `ready`.
+
 Deep-link the user to the provider setup page:
 
 > "Let's get you connected. Head to the provider setup page — you'll enter your API key there:
@@ -130,12 +135,8 @@ If their provider shows up → success, continue to model/config selection. If n
 
 ### Custom Models (OpenAI-compatible)
 
-When the user wants to add a custom or OpenAI-compatible model, offer **both** paths and let them pick:
-
-- **API (fast):** `POST /api/provider/openai_compatible` — agent fills in the model_id, base_url, and api_key.
-- **UI (more control):** [Add Custom Model](http://localhost:8757/settings/providers/add_models) — form with advanced settings, visual defaults, and a test-connection button.
-
-Default to offering both. Only pick the API path unilaterally if the user has explicitly said "just do it" or the context makes manual UI entry impractical.
+- **An OpenAI-compatible provider** (a base URL and an API key): ask the user to add it in the app, at [Providers](http://localhost:8757/settings/providers). This connection cannot add or remove one.
+- **A custom model on a connected provider:** `POST /api/settings/user_models` (`references/knowledge/api_docs/post_api_settings_user_models.md`), or the user adds it at [Add Custom Model](http://localhost:8757/settings/providers/add_models) — a form with advanced settings, visual defaults, and a test-connection button.
 
 ### IT Handoff (If Needed)
 
@@ -155,6 +156,10 @@ When the user needs to ask their IT team for help, give them this checklist to f
 > - OpenRouter: https://openrouter.ai/keys
 
 Adapt the checklist to the specific provider they need.
+
+## Kiln Pro
+
+**Kiln Pro is not connected, or its key is not valid.** When an API error says so, tell the user which function needs Kiln Pro (for example the Eval Builder, or the Kiln Pro data guide draft), and ask them to sign in at [Kiln Pro](http://localhost:8757/settings/providers/kiln_pro). This connection cannot sign in for them. Then try again.
 
 ## Provider Reference (quick lookup)
 

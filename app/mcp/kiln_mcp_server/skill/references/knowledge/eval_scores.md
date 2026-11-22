@@ -83,7 +83,7 @@ One call returns scores across **all evals and all run configs** for the task. R
 >
 > 1. [Open the spec](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}) or [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder) if no spec exists yet
 > 2. [Add a judge (eval config)](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}/{eval_id}/eval_configs)
-> 3. Run the eval — click the run button on the [spec page](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id})
+> 3. Run the eval — I can start it, or click **Run Eval** on the [spec page](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id})
 > 4. Re-check scores here — I'll pull a fresh scorecard
 
 ### Specs configured, scores empty — the Compare-link fallback
@@ -92,7 +92,7 @@ When `eval_results_summary` and the per-eval `eval_configs_score_summary` fallba
 
 1. A **model + cost table** of the candidate run configs (model, provider, input/output $/M, est. $/call from `GET /api/model_info/model_details`), with a `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` deep-link per row. State explicitly that ranking is by cost only because no eval data exists yet.
 2. A **Compare link** of the form `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` populated with all candidate rcids URL-encoded and comma-joined — the UI compare view renders run outputs side-by-side and lets the user inspect quality manually while eval runs accumulate.
-3. The standard remediation block ("To get scores, run each eval from the spec page") — but as a *follow-up*, not as the entire answer.
+3. The standard remediation block ("To get scores, run each eval"; you can start the runs yourself per `references/knowledge/specs_and_evals.md` ("Running an eval")) — but as a *follow-up*, not as the entire answer.
 
 This applies to "rank my configs", "which should I ship?", and "what's the cheapest passing model?" asks when scores are empty. The cost ladder + manual-Compare path is a real partial answer; "no eval data exists, run your evals first" alone is not.
 
@@ -103,7 +103,7 @@ If the user asks for a model ranking on a task but the task has no specs or no e
 1. [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder) — define 1–3 quality dimensions (what "good" looks like)
 2. [Add a judge (eval config)](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}/{eval_id}/eval_configs) — pick the judge model and prompt
 3. [Run configs page](http://localhost:8757/optimize/{project_id}/{task_id}) — ensure at least 2 configs exist to rank against each other; create candidates with `references/knowledge/model_create_configs.md` if needed
-4. Run the eval from the spec page
+4. Run the eval — the eval job of `references/knowledge/specs_and_evals.md` ("Running an eval")
 5. Come back and ask for the scorecard — I'll pull `eval_results_summary` once scores exist
 
 State this as the answer to the ranking question, not as a deferral. The user asked how to rank models; the ranking requires these steps; these steps are the answer.

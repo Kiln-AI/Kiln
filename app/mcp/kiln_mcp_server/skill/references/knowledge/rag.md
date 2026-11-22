@@ -28,24 +28,35 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## The Agent's Role with RAG
 
-**You detect the need and link to the UI.** RAG setup involves multiple complex steps (upload docs, configure extraction, chunking, embedding, vector store) that the Kiln UI handles with a guided workflow.
+**You detect the need and set it up.** RAG setup involves multiple steps (upload docs, configure extraction, chunking, embedding, vector store). The app's Create Search Tool flow does them with recommended templates, so it is the default; deep-link it. When the user asks you to do it through the API, you can (below).
 
 1. Recognize that the user's problem is a knowledge problem (not a prompt or model problem)
 2. Explain RAG briefly and why it helps
-3. Deep-link to the document library and RAG setup
-4. After setup, remind the user to enable the RAG tool in their run config via `tools_config`
+3. Check the state: is the library set up, which documents and RAG configs exist ("Checking RAG State" below)
+4. Set it up: in the app (deep links below), or through the API ("Setting up RAG through the API" below)
+5. Attach the search tool to a run config via `tools_config` — a new run config, since run configs cannot be edited
 
 ### Kiln RAG constraints (do not contradict)
 
-- **RAG config creation lives inside the Create Search Tool flow** — there is no standalone "Create RAG Config" UI; deep-link [Create Search Tool](`http://localhost:8757/docs/rag_configs/{project_id}/add_search_tool`) and let it orchestrate end-to-end.
-- **The UI has recommended templates.** Don't enumerate embedding, chunker, or reranker choices — hand off; only one vector store is supported, so never present it as a choice.
+- **RAG config creation lives inside the Create Search Tool flow** — there is no standalone "Create RAG Config" UI; deep-link [Create Search Tool](http://localhost:8757/docs/rag_configs/{project_id}/add_search_tool) and let it orchestrate end-to-end.
+- **The app has recommended templates.** Don't enumerate embedding, chunker, or reranker choices to the user — recommend the app flow; only one vector store is supported, so never present it as a choice.
 - **Extraction applies to PDFs / Office / images — skipped for `.txt` / `.md` inputs.** Don't narrate an extractor step for plain-text uploads.
 - **Tags scope indexing, not search.** A doc can be tagged at upload and a RAG config can be scoped to that tag; there is no query-time tag filter.
-- **Run configs are immutable.** Workflow: edit the prompt → test in [/run](`http://localhost:8757/run`) → save a new run config (including the search tool) once it's working. Never say "edit your run config".
+- **Run configs are immutable.** Workflow: edit the prompt → test on the [Run page](http://localhost:8757/run) → save a new run config (including the search tool) once it's working. Never say "edit your run config".
 
 ### Running / re-indexing a RAG config
 
-If you do trigger indexing via the API, `GET /api/projects/{project_id}/rag_configs/{rcid}/run` runs the ingestion (extract → chunk → embed → index) and **streams progress via SSE**. It requires user approval. This is **not** a background job — there is no `rag` job type, no job id, and `POST /api/jobs/rag` would 404. For a one-off readiness/progress read without streaming, use `POST /api/projects/{project_id}/rag_configs/progress` (see `references/knowledge/api_docs/documents_api_list.md`). The runner skips already-processed docs, so re-running is safe.
+`GET /api/projects/{project_id}/rag_configs/{rcid}/run` runs the ingestion (extract → chunk → embed → index) and **streams progress via SSE**. It runs extraction and embedding model calls over every document, so tell the user before you start it. When the stream ends, read the progress below to check the result. This is **not** a background job — there is no `rag` job type, no job id, and `POST /api/jobs/rag` would 404. For a one-off readiness/progress read without streaming, use `POST /api/projects/{project_id}/rag_configs/progress` (see `references/knowledge/api_docs/documents_api_list.md`). The runner skips already-processed docs, so re-running is safe.
+
+### Setting up RAG through the API
+
+Read `references/knowledge/api_docs/documents_api_list.md` and each endpoint doc first.
+
+1. **Documents.** The user adds files in the app's document library (`http://localhost:8757/docs/library/{project_id}`): `call_kiln_api` sends JSON, not files. List them with `GET /api/projects/{project_id}/documents`.
+2. **The four parts.** A RAG config needs an extractor, a chunker, an embedding and a vector store config. Reuse existing ones (`GET .../extractor_configs`, `.../chunker_configs`, `.../embedding_configs`, `.../vector_store_configs`) or create them (`POST .../create_extractor_config` and the matching endpoints).
+3. **The RAG config** — `POST /api/projects/{project_id}/rag_configs/create_rag_config` with the four IDs, optional `tags` to scope it, and the `tool_name` and `tool_description` that the agent reads (see `references/knowledge/tools.md`, "Tool name & description guidance").
+4. **Index** with the run above, then check the progress.
+5. **Search it** with `POST .../rag_configs/{rag_config_id}/search` on a question the user expects, before you attach it.
 
 ## UI Deep Links
 

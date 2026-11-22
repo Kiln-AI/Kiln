@@ -2,7 +2,7 @@
 name: adding_skills
 description: |
   Creating, editing, and wiring project-level skills to run configs. Covers API endpoints,
-  name constraints, editing limitations, and the UI-only step for adding skills to run configs.
+  name constraints, editing limitations, and attaching skills to run configs.
 ---
 
 # Knowledge: Skills (Progressive Prompt Enhancement)
@@ -62,21 +62,21 @@ Walk the user through this before POSTing. The agent should print it back and co
 3. Body has no all-caps imperative walls; every rule has its reason attached.
 4. Body fits one focused archetype — no embedded second skill.
 5. Examples are minimal and representative, not narrowly-tuned variants.
-6. The skill will be wired to a specific run config in the UI after creation (user knows which one).
+6. The user knows which run config the skill will be attached to after creation.
 
 ## Editing limitation
 
-Skills **cannot be edited** after creation (body or description). Clone via UI instead; the original stays intact so historical eval scores remain valid. Only archiving (`is_archived`) is API-writable post-creation.
+Skills **cannot be edited** after creation (body or description). To change one, create a new skill from its content (`GET /api/projects/{project_id}/skills/{skill_id}/content`, edit, then `POST`), or the user clones it in the app; the original stays intact so historical eval scores remain valid. Only archiving (`is_archived`) is API-writable post-creation.
 
 ## Workflow: create + wire
 
 1. **Create via API** — POST to `/api/projects/{project_id}/skills` with name, description, body.
-2. **Wire to run config — UI only** — PATCH `/run_configs/{rcid}` does not expose skills. Direct the user to the Run screen → Advanced → Skills section to add the skill to their config(s). Deep-link: `http://localhost:8757/run?run_config_id={rcid}` or `http://localhost:8757/optimize/{project_id}/{task_id}` to navigate there.
+2. **Attach it to a run config** — a skill reaches the agent as a tool: its tool ID is in `GET /api/projects/{project_id}/available_tools` (the "Skills" set; the ID is `kiln_tool::skill::<skill_id>`). A run config cannot be edited (`PATCH .../run_configs/{rcid}` changes the name, starred and prompt name only), so create a new run config whose `tools_config.tools` lists the skill's tool ID, copying the rest of the parent (`references/knowledge/model_create_configs.md`). The user can also add a skill on the Run screen → Advanced → Skills (`http://localhost:8757/run?run_config_id={rcid}`).
 3. **Report back** — after creation confirm: skill ID, name, and the deep-link to the skill detail page (`http://localhost:8757/skills/{project_id}/{sid}`).
 
 ## Deep links
 
 - `http://localhost:8757/skills/{project_id}` — project skills list
 - `http://localhost:8757/skills/{project_id}/{sid}` — skill detail page (after creation, link here to confirm)
-- `http://localhost:8757/run?run_config_id={rcid}` — Run screen pre-loaded with a config (user adds skill under Advanced → Skills)
-- `http://localhost:8757/optimize/{project_id}/{task_id}` — run configs list (user opens a config to wire the skill)
+- `http://localhost:8757/run?run_config_id={rcid}` — Run screen pre-loaded with a config (the user can add a skill under Advanced → Skills)
+- `http://localhost:8757/optimize/{project_id}/{task_id}` — run configs list

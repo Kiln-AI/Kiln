@@ -37,3 +37,7 @@ After batch 6 the rules still pending are those owned by later phases: `tree-spl
 - `test_no_skill_file_names_a_blocked_endpoint`: no shipped file outside `api_docs/` names the path of an MCP-blocked endpoint (with the `/api/settings` same-line rule), plus synthetic cases of the matcher.
 - `test_docs_index_is_current`: `docs_index.md` equals `render_docs_index` of the shipped tree.
 - The existing shipped-tree tests (`test_the_shipped_tree_passes_every_check`, `test_the_full_check_passes`, `test_no_file_over_body_limit`, the PyInstaller bundling test) pass after every batch with the batch's `PENDING_RULES`.
+
+## Notes for the reviews by people
+
+- Sandbox wording (functional spec 15), for the security owner: batch 5 touched the statement that user code runs with no network or filesystem sandbox in `references/knowledge/code_tools.md` and `references/knowledge/judge_types.md`. The statement is kept as the source has it.
