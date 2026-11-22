@@ -61,7 +61,7 @@ The connect screen's help text explains how to create a key and that the workspa
 
 1. On the connect-provider screen, the user opens OpenCode and pastes an API key.
 2. Kiln validates the key before saving it.
-   - An invalid or revoked key must fail the connect with "Invalid OpenCode API key". Kiln must never save a key that it knows fails.
+   - An invalid or revoked key must fail the connect with "Invalid OpenCode API key", and the message must say a pay-as-you-go Console key is needed. Kiln must never save a key that it knows fails.
    - A valid key on a workspace with no credits still connects. Calls then fail at run time with a clear message (see [Errors](#errors)). Credits are a billing state that changes over time, so they shouldn't block connecting.
    - A network failure (OpenCode unreachable, timeout) fails the connect with a message saying Kiln couldn't reach OpenCode. It doesn't claim the key is invalid.
    - The architecture step picks the validation call. The first choice is a free authenticated call, such as `GET /inference/v1/models` if that endpoint rejects bad keys. If no free call distinguishes good keys from bad ones, the fallback is a 1-token chat completion on the cheapest paid model, which costs a fraction of a cent.
@@ -97,15 +97,19 @@ A or C is preferred. Sending no header is the fallback only if both add unreason
 
 ## Errors
 
-The architecture step records the real status code and body for each case with a live test, and confirms which LiteLLM exception each one produces.
+The status codes below were recorded live on Nov 22, 2026, except where marked. See [architecture.md](./architecture.md) for the evidence and the Kiln mapping.
 
-| Case | Expected from OpenCode | Kiln behavior |
+Every OpenCode error a user can act on must say what to do, and must make clear that Kiln's OpenCode provider uses **pay-as-you-go credits, not an OpenCode Go subscription**. A user who connected a Go-only key without reading the connect screen must still understand the problem from the error alone.
+
+| Case | OpenCode returns | Kiln behavior |
 |---|---|---|
-| Invalid or revoked key | 401 | Authentication error. It's batch-fatal, as for other providers. |
-| Workspace out of credits, or over its budget | To be confirmed (likely 402 or 403) | A clear message telling the user to add credits or raise the budget in OpenCode Console. It's batch-fatal, because retrying won't help. |
-| Free model requested (e.g. a custom model ID) | 403 | A message saying OpenCode's free models only work inside OpenCode. Kiln never lists these models, so this only happens with a hand-entered model ID. |
-| Rate limit | 429 | Must reach callers as `litellm.RateLimitError`: retryable and not batch-fatal, so one throttled call never aborts an eval run. |
-| Model retired by OpenCode | To be confirmed (likely 404) | The standard model-not-found error. |
+| Invalid, revoked or expired key | 401 (per OpenCode's docs) | Authentication error. It's batch-fatal, as for other providers. |
+| Workspace out of pay-as-you-go credits, including a Go-only workspace with no credits | 402 `Insufficient account funds` (per OpenCode's billing docs) | The message says the OpenCode workspace is out of pay-as-you-go credits and to add credits in OpenCode Console. It also says that OpenCode Go subscriptions don't work with this provider. It's batch-fatal and not retried. |
+| Model disabled for the workspace | 403 `permission_error`: "Model access is disabled…" | The message says the model is disabled for the user's OpenCode workspace, and where to enable it. It's batch-fatal and not retried. |
+| Free model requested (only possible with a custom model ID) | 429 `FreeUsageLimitError` | The message says OpenCode's free models only work inside the OpenCode app, and that this provider uses paid pay-as-you-go models, not OpenCode Go. It's not retried, even though the status is 429. |
+| Model retired by OpenCode | 410 `ModelDeprecated`, which names the replacement | The message says OpenCode retired the model and names the replacement model. It's batch-fatal and not retried. |
+| Rate limit | 429 (other than the free-model error) | Must reach callers as `litellm.RateLimitError`: retryable and not batch-fatal, so one throttled call never aborts an eval run. |
+| Unknown model ID | 400 "Model is unavailable" | The standard bad-request error. |
 | Upstream or translation failure | 5xx | The standard provider error. It's retryable where Kiln already retries 5xx errors. |
 
 ## Model Catalog
@@ -143,12 +147,12 @@ Follow the model-maintenance skill's rule for new providers:
 
 Approved strings. There's no separate UI design step for this project.
 
-- **Card description:** "Pay-as-you-go access to models from Anthropic, OpenAI, Google and more, with one API key."
+- **Card description:** "Pay-as-you-go access to models from Anthropic, OpenAI, Google and more, billed to your OpenCode credits."
+- **Warning, shown above the key field:** "Uses OpenCode's pay-as-you-go credits. OpenCode Go subscriptions aren't supported."
 - **Key steps:**
-  1. "Sign in to OpenCode Console and add credits to your workspace."
+  1. "Sign in to OpenCode Console at https://opencode.ai/console and add pay-as-you-go credits to your workspace."
   2. "Open Account, then Personal API keys, and click Add API key."
   3. "Copy the key and paste it below."
-- **Link:** OpenCode Console sign-in. The exact URL is confirmed in architecture.
 
 ## Testing
 
