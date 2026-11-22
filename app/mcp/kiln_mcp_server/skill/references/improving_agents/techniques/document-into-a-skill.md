@@ -50,19 +50,22 @@ The change is a new [skill](references/levers/skill.md), and the lookup tool
 dropped on the same new run config
 ([tool_config](references/levers/tool_config.md)).
 
-1. **Get the documents themselves.** You need the documents to do this.
-   You may have them from existing traces, or from additional context from
-   the user. If you lack them, do not attempt this method. For the move
-   that drops the tool, a part of a document is not enough: the same arm
+1. **Get the documents themselves.** You need the documents to do this. You
+   may have them from existing traces, or from additional context from the
+   user. If you lack them, do not attempt this method. For the move that
+   drops the tool, a part of a document is not enough: the same candidate
    drops the tool, so a section that the bundle leaves out loses its facts
    with no sign.
 2. **Build the bundle from the document**, never from the train items: one
    `references/` file for each section, and a body that maps each file. The
-   steps are in the `kiln-harness-tuner-experiment-build` skill,
-   `references/skill-authoring.md`, sections 2 and 3. Section 4 ends with
-   this same move. When the path index does not fit in the description,
-   group the sections.
-3. **Drop the lookup tool on the same arm.** With both, the agent chooses,
+   Kiln API creates a skill with a body only (the lever
+   [skill](references/levers/skill.md)), so a bundle with `references/`
+   files is built when running Kiln Harness Tuner. A new version of an
+   existing skill made over the API loses that skill's reference files. How
+   to write the description and the body in Kiln is in
+   `references/knowledge/adding_skills.md`. When the path index does not fit
+   in the description, group the sections.
+3. **Drop the lookup tool on the same candidate.** With both, the agent chooses,
    and the result does not tell which path it took. Remove each mention of
    the tool in the prompt and in other skills.
 4. When the document cannot move (it is too large, or it changes often),
@@ -71,17 +74,17 @@ dropped on the same new run config
 
 ## Check that it took effect
 
-Smoke on two or three train items that need the document. In each trace,
-find the read of the right section file before the answer, and no call to
-the dropped tool.
+Run the candidate on two or three train items that need the document. In
+each trace, find the read of the right section file before the answer, and
+no call to the dropped tool.
 
 ## Budget
 
 Medium cost: a bundle to write from the document, and a measurement on its
-target evals. When it fixes its target, the val gate measures every eval
-before a promotion, the evals that the document touches too. On a small
-budget, take it when the traces show wrong parts read, or many lookup
-calls for one fact.
+target evals. When it fixes its target, the confirmation on val measures
+every eval before a candidate becomes the baseline, the evals that the
+document touches too. On a small budget, take it when the traces show wrong
+parts read, or many lookup calls for one fact.
 
 ## If it does not move the evals
 

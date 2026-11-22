@@ -54,9 +54,6 @@ MAX_MAINTENANCE_LINES = 500
 # Rules whose problems do not fail the shipped-tree tests yet, each with the
 # content batch that makes it pass (skill_and_content section 9).
 PENDING_RULES: set[str] = {
-    "tree-banned-term",  # batch 8: the loop's words in the knowledge trees
-    "tree-path",  # batch 8: the knowledge names files of skills that are not ported
-    "size",  # batch 8: two knowledge documents are shortened in their wording
     "tree-split-pointer",  # batch 9
     "tree-test-split",  # batch 13a
 }

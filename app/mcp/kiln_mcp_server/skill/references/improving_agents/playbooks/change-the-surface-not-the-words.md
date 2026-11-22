@@ -1,6 +1,6 @@
 ---
 title: Change the surface, not the words
-description: Two text changes failed on one issue, or the failure is mechanical. Change what the model touches before the words it reads. A policy failure comes here only after two text arms failed.
+description: Two text changes failed on one issue, or the failure is mechanical. Change what the model touches before the words it reads. A policy failure comes here only after two text changes failed.
 reviewed: 2026-11-16
 kind: failure
 applies_to: all
@@ -19,9 +19,9 @@ This playbook applies in two cases:
   tool, so the tool's own text is the very strong preference for that
   rule.
 - **Two text changes failed on one issue.** A text change is a `prompt`
-  arm, or a `skill` arm that only changes words (a description, a body).
-  Your input's `lever_attempts` counts the arms opened on each issue and
-  lever, with any outcome. The experiment records say which of them
+  candidate, or a `skill` candidate that only changes words (a description,
+  a body). Count the candidates opened on each issue and lever, with any
+  outcome, from your experiment records. The records say which of them
   failed.
 
 Instruction text is the cheapest change to build. For a mechanical
@@ -55,26 +55,25 @@ and [faulty inherited skill](references/improving_agents/smells/faulty-inherited
    [long prompt into a skill](references/improving_agents/techniques/long-prompt-into-a-skill.md),
    or a new version of an inherited skill,
    [rewrite an inherited skill](references/improving_agents/techniques/rewrite-an-inherited-skill.md).
-4. **A policy failure, after two failed text arms.** A policy failure is
+4. **A policy failure, after two failed text candidates.** A policy failure is
    not mechanical: the agent breaks a rule of the business that only words
    can carry (who gets a refund, which case needs a person). Its first
-   text arm is
+   text candidate is
    [policy as step-by-step procedures](references/improving_agents/techniques/policy-as-step-by-step-procedures.md),
-   through the normal path, not through this playbook. When two text arms
-   already failed on a policy issue, change the structure: put the
+   through the normal path, not through this playbook. When two text
+   candidates already failed on a policy issue, change the structure: put the
    procedures in a skill, with one reference file for each procedure
    ([long prompt into a skill](references/improving_agents/techniques/long-prompt-into-a-skill.md)).
    Or defer the issue (step 5).
-5. When no surface change fits the issue, defer the issue with the reason
-   in `rejected_summary`.
+5. When no surface change fits the issue, defer the issue, and report the
+   reason to the user.
 
-When a wrapper, a guard or a tool takes over a step, the same arm removes
+When a wrapper, a guard or a tool takes over a step, the same candidate removes
 the prompt text that asked the model to do that step.
 
 ## What not to do yet
 
-- No third text arm on the same issue after two failed. The planner's
-  skill gives the count and the rule.
+- No third text candidate on the same issue after two failed.
 - No prompt list of rules for a mechanical failure. A wrapper removes the
   failure.
 - No model swap to hide a mechanical failure. The cause stays in the
@@ -84,7 +83,7 @@ the prompt text that asked the model to do that step.
 
 The order does not change with the budget. A wrapper costs more to build
 than a text change. On a small budget, that cost is still lower than more
-text arms that cannot win.
+text candidates that cannot win.
 
 ## Priors
 

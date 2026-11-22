@@ -1,6 +1,6 @@
 ---
 title: Prune one group at a time
-description: Find what helps in a large harness - remove one group (a prompt section, a skill, a set of tools) on each arm and measure it, or add groups one at a time to a bare base.
+description: Find what helps in a large harness - remove one group (a prompt section, a skill, a set of tools) on each candidate and measure it, or add groups one at a time to a bare base.
 reviewed: 2026-11-13
 status: active
 levers:
@@ -25,8 +25,8 @@ cost: low
 
 ## When not to use
 
-- **The harness is small.** There is little to remove, and each arm costs
-  a measurement.
+- **The harness is small.** There is little to remove, and each candidate
+  costs a measurement.
 - **The budget cannot pay one measurement for each group.** Remove only
   the group that a smell or a trace names.
 - **A group is there for a guard**: a safety rule, a rule that the product
@@ -51,15 +51,17 @@ tools with one job ([tool_config](references/levers/tool_config.md)).
 1. **List the groups.** A group is one thing that can be on or off: one
    section, one skill, the tools of one job.
 2. **Choose the direction.**
-   - **Leave one out**: each arm removes one group from the baseline.
-   - **Add one in**: from a base with no group of that kind, each arm adds
-     one group. This gives the effect of each group alone. It costs one
-     arm for the bare base.
-3. **One group for each arm.** Two groups on one arm do not tell which one
-   moved the eval.
-4. **Measure the arm on its target evals**: the evals that the group is
-   for. When the arm holds its target, the val gate measures every eval
-   before a promotion, the evals that the group could change too.
+   - **Leave one out**: each candidate removes one group from the
+     baseline.
+   - **Add one in**: from a base with no group of that kind, each candidate
+     adds one group. This gives the effect of each group alone. It costs
+     one candidate for the bare base.
+3. **One group for each candidate.** Two groups on one candidate do not
+   tell which one moved the eval.
+4. **Measure the candidate on its target evals**: the evals that the group
+   is for. When the candidate holds its target, the confirmation on val
+   measures every eval before a candidate becomes the baseline, the evals
+   that the group could change too.
 5. **Remove each mention** of a removed skill or tool in the prompt and in
    the other skills.
 6. **Then act on the results.** Keep the groups that help. Drop the groups
@@ -69,15 +71,15 @@ tools with one job ([tool_config](references/levers/tool_config.md)).
 ## Check that it took effect
 
 Read the new run config against the parent: exactly one group is gone or
-added. The reference check finds no name that points at nothing. A smoke
-shows no call to a removed tool or skill.
+added. Search the text yourself: no name points at nothing. A run on a few
+train items shows no call to a removed tool or skill.
 
 ## Budget
 
-Low cost for each arm, and many arms for the whole set. On a small budget,
-prune only the group that a smell or the traces name. On a large budget, a
-full pass over the groups is a good early step: it makes every later
-measurement cheaper.
+Low cost for each candidate, and many candidates for the whole set. On a
+small budget, prune only the group that a smell or the traces name. On a
+large budget, a full pass over the groups is a good early step: it makes
+every later measurement cheaper.
 
 ## If it does not move the evals
 

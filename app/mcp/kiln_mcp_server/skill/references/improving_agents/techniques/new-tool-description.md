@@ -67,8 +67,8 @@ fixed: a clone of a code tool with the new description, or a wrapper of an
 MCP or built-in tool. See the lever [new_tool](references/levers/new_tool.md) for
 the build, and drop the old tool on the same run config.
 
-1. **Name the decision point.** From the analyzer's findings or the
-   traces: which tool, and whether the failure came before, with or after
+1. **Name the decision point.** From your analysis of the results or
+   the traces: which tool, and whether the failure came before, with or after
    the call.
 2. **Write the description for that decision.** Say what the tool does,
    when to call it, and when not to. When the failure is a preamble or a
@@ -81,18 +81,19 @@ the build, and drop the old tool on the same run config.
    agent uses. The new tool needs a fresh function name in any case.
 5. **Keep it short.** The description is read on every call of every
    item. Do not copy the whole prompt into it.
-6. **Move the rule out of the prompt.** On the same arm, remove the prompt
+6. **Move the rule out of the prompt.** On the same candidate, remove the prompt
    text about this tool that the new description now states.
 7. **Write from the traces and the tool**, never from the text of an eval
    or from a train item.
 
 ## Check that it took effect
 
-Read the new run config: the new tool is attached, the old one is gone,
-and the description that the model sees (`get_tool_definition`) is the
-new text. The prompt no longer states the rule that moved. Then smoke two
-or three train items that failed at that call, and count the calls in the
-right form.
+Read the new run config: the new tool is attached, the old one is gone, and
+the description that the model sees
+(`references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_tools_tool_id_definition.md`)
+is the new text. The prompt no longer states the rule that moved. Then run
+the candidate on two or three train items that failed at that call, and
+count the calls in the right form.
 
 ## Budget
 
@@ -115,7 +116,7 @@ None yet.
 Medium, for a failure at the decision point of one call. It is field
 practice: the description and the parameters of a tool say what the call
 is and what form it takes. The preference for the description over the
-prompt is a design choice of the tuner: the prompt does not change with
+prompt is a design choice of Kiln Harness Tuner: the prompt does not change with
 the tool set. It is not a claim that a description works better than a
 prompt line. Low, for a change of description with no failure that it
 targets: a longer description can add steps.

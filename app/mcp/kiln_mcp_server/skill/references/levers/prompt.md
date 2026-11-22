@@ -20,20 +20,27 @@ and optional `chain_of_thought_instructions`. A run config names one prompt
 in its `prompt_id`.
 
 The task's own instruction and requirements are not the prompt of a run
-config. The tuner does not change the task.
+config. An experiment does not change the task.
 
 ## How to change it
 
 1. Read the prompt that the parent run config runs with:
-   `get_run_config` gives the `prompt_id` and the frozen prompt, and
-   `get_prompt_text` gives the text that a prompt id renders.
-   `list_prompts` lists the task's saved prompts.
+   `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md`
+   gives the `prompt_id` and the frozen prompt, and
+   `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_gen_prompt_prompt_id.md`
+   gives the text that a prompt id renders.
+   `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_prompts.md`
+   lists the task's saved prompts.
 2. Write the new text. Start from the parent's text and change only what
    the experiment's hypothesis names.
-3. Save it as a new prompt with `create_prompt` (`name`, `prompt`, and
-   `chain_of_thought_instructions` when the parent has them).
-4. Create a new run config with `create_run_config`. Copy every property of
-   the parent, and set `prompt_id` to the new prompt (`id::<id>`).
+3. Save it as a new prompt with
+   `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_prompts.md`
+   (`name`, `prompt`, and `chain_of_thought_instructions` when the parent
+   has them).
+4. Create a new run config with
+   `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md`.
+   Copy every property of the parent, and set `prompt_id` to the new prompt
+   (`id::<id>`).
 
 Rules of the object:
 
@@ -46,9 +53,10 @@ Rules of the object:
 ## Limits
 
 - No value from a train item goes into the prompt: no item id, number,
-  sentence or expected value. Code searches each build for copies before it
-  measures the build.
-- No text copied from an eval or its judge. The judge-copy check refuses it.
+  sentence or expected value. Search each build for copies yourself before
+  you measure it.
+- No text copied from an eval or its judge. Check each build for it
+  yourself.
 - The prompt is in the context of every call, so each line costs tokens on
   every item. A long prompt has its own smell:
   [very long prompt](references/improving_agents/smells/very-long-prompt.md).
@@ -58,8 +66,7 @@ Rules of the object:
 
 ## See also
 
-- The `kiln-harness-tuner-experiment-build` skill: the build discipline,
-  provenance, and what text you may add.
-- The `kiln-task-setup` skill: the prompt and run-config payloads, and the
-  known platform bugs.
-- The `kiln-harness-tuner-gateway` skill: the fields of each operation.
+- `references/knowledge/prompt_rewrite.md`: how to read a prompt and
+  create a saved prompt in Kiln, and the prompt types.
+- `references/knowledge/model_create_configs.md`: the run config payload,
+  and the name rules.

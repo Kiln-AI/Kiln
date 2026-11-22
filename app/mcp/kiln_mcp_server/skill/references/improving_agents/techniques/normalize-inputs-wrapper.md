@@ -68,22 +68,24 @@ has this shape.
 4. **Keep the parameter names** of the wrapped tool, so that the calls in
    the agent's habit still fit.
 5. **Remove the prompt text on input formats** that the wrapper takes
-   over, on the same arm. A form that the wrapper cannot map, and that the
+   over, on the same candidate. A form that the wrapper cannot map, and that the
    model must know, goes in the parameter description.
 
 ## Check that it took effect
 
-Dry-run the wrapper with each malformed form from the traces. Each one
-maps, or returns an error that names the valid values. Then smoke two or
-three train items that had malformed calls, and count the failed calls.
+Dry-run the wrapper with each malformed form from the traces. Each one maps,
+or returns an error that names the valid values. Then run the candidate on
+two or three train items that had malformed calls, and count the failed
+calls.
 
 ## Budget
 
 Medium cost: a wrapper with a mapping, a dry run for each form, and a
-measurement on its target evals. When it fixes its target, the val gate
-measures every eval before a promotion, the evals that the tool touches
-too. A good step on any budget when malformed calls recur in the traces,
-because it removes a failure that text can only ask the model to avoid.
+measurement on its target evals. When it fixes its target, the confirmation
+on val measures every eval before a candidate becomes the baseline, the
+evals that the tool touches too. A good step on any budget when malformed
+calls recur in the traces, because it removes a failure that text can only
+ask the model to avoid.
 
 ## If it does not move the evals
 

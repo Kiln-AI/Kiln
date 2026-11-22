@@ -38,13 +38,13 @@ cost: low
 - **The overlapping tools each do part of the job well.** Dropping one
   leaves the agent with a worse tool for that part:
   [consolidate tools](references/improving_agents/techniques/consolidate-tools.md).
-- **The agent has few tools.** There is little to gain, and each arm costs
-  a measurement.
+- **The agent has few tools.** There is little to gain, and each candidate
+  costs a measurement.
 - **An eval scores the tool calls.** An eval made from the Kiln template
   `tool_call`, a `tool_call_check` eval config, or a judge whose criteria
   name a tool can expect a tool that you drop. Read the spec of that eval
-  first. Keep the tools that it expects, or list that eval in the arm's
-  `evaluation_target` as a stated coupling.
+  first. Keep the tools that it expects, or name that eval as a target eval
+  of the experiment, as a stated coupling.
 
 ## Alternatives
 
@@ -67,11 +67,11 @@ tool.
 2. **Choose the scope.** Keep the tools that the traces use. Drop the
    tools with no call, and, of a pair with one job, the one that the
    agent uses less or uses wrongly.
-3. **One reason on each arm.** Drop the unused tools on one arm, and an
-   overlapping tool on another, so that each result tells which change
-   moved it.
+3. **One reason on each candidate.** Drop the unused tools on one
+   candidate, and an overlapping tool on another, so that each result
+   tells which change moved it.
 4. **Remove each mention** of a dropped tool in the prompt and in the
-   attached skills. The reference check finds a name that points at
+   attached skills. Search the text yourself for a name that points at
    nothing.
 5. **A wrapper keeps its own calls.** A code tool can still call a tool in
    its allowlist when that tool is not attached. Dropping a tool from the
@@ -79,8 +79,8 @@ tool.
 
 ## Check that it took effect
 
-Read the new run config against the parent: only the named tools are
-gone. The reference check finds no dangling name. A smoke on two or three
+Read the new run config against the parent: only the named tools are gone.
+Search the text yourself: no name points at nothing. A run on two or three
 train items shows no call to a dropped tool and no attempt to find one.
 
 ## Budget

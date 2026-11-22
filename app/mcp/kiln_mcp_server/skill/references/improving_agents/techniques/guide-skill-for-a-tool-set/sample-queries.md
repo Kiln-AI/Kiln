@@ -104,7 +104,7 @@ Result: one row, one number of orders.
 
 ## How to check the samples
 
-Smoke two or three train items that need the query tool. In each trace,
-find the read of the body or of an area file, then a query that has the
-shape of a sample. When the agent reads the file and writes a query of
-another shape, the samples do not match its questions.
+Run the candidate on two or three train items that need the query tool. In
+each trace, find the read of the body or of an area file, then a query that
+has the shape of a sample. When the agent reads the file and writes a query
+of another shape, the samples do not match its questions.

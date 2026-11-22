@@ -89,8 +89,8 @@ often not plain from the field names.
 
 ## How to check the leaf files
 
-Smoke two or three train items that need a complex query. In each trace,
-find the read of the right area file before the query, and no error on a
-name that does not exist. When the agent reads the wrong area file, the
-contents line or the body's map does not name the key terms of the
+Run the candidate on two or three train items that need a complex query. In
+each trace, find the read of the right area file before the query, and no
+error on a name that does not exist. When the agent reads the wrong area
+file, the contents line or the body's map does not name the key terms of the
 question.

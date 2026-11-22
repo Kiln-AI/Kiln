@@ -18,7 +18,7 @@ cost: medium
   catalogue, a policy, a schema, a set of past cases.
 - The traces show invented facts, or general answers where a specific one
   was needed, and no read of a source before the answer.
-- The knowledge exists in a form that the tuner can reach: a search tool,
+- The knowledge exists in a form that you can reach: a search tool,
   a RAG tool or an MCP tool that the run config does not attach, or text
   that can go in a skill.
 
@@ -32,7 +32,7 @@ cost: medium
   private facts either.
 - **Do not narrow the answer to a closed list of topics** in place of a
   source. A list does not add the facts.
-- The tuner cannot create a RAG config. When no tool exists and the
+- An experiment does not create a RAG config. When no tool exists and the
   knowledge is too large for a skill, this technique is out of reach.
 
 ## Alternatives
@@ -48,28 +48,28 @@ The change is one of two, on a new run config: attach a tool that exists
 ([tool_config](references/levers/tool_config.md)), or write the knowledge into a
 [skill](references/levers/skill.md).
 
-1. **Find the source.** Read `list_available_tools` for a search, RAG or
-   MCP tool that holds the knowledge. Read the task instruction and the
-   attached skills for knowledge that is named and not given.
+1. **Find the source.** Read
+   `references/knowledge/api_docs/get_api_projects_project_id_available_tools.md`
+   for a search, RAG or MCP tool that holds the knowledge. Read the task
+   instruction and the attached skills for knowledge that is named and not
+   given.
 2. **Attach the tool**, when one exists. The model reads its description to
    decide whether to call it. When the description does not say what the
    source holds, a wrapper with a new description is a second
    change.
-3. **Or write a skill**, when the tuner has the text of the knowledge.
+3. **Or write a skill**, when you have the text of the knowledge.
    The sources for the skill's text are:
    - the task instruction;
    - existing skills and prompts;
    - the output of a tool that the run config can attach;
    - documents that the user supplied.
 
-   The builder's own knowledge alone is usually not enough. It can be
-   enough when the builder's model is much stronger than the agent's
-   runtime model, for example a frontier builder that writes for a small
-   local model. It is not enough when the two models are peers: the agent
-   already knows what the builder knows. The train labels are never a
-   source (step 5). The shape of the bundle is in the
-   `kiln-harness-tuner-experiment-build` skill,
-   `references/skill-authoring.md`, section 2.
+   Your own knowledge alone is usually not enough. It can be enough when
+   your model is much stronger than the agent's runtime model, for example
+   a frontier model that writes for a small local model. It is not enough
+   when the two models are peers: the agent already knows what you know.
+   The train labels are never a source (step 5). How to write a skill in
+   Kiln is in `references/knowledge/adding_skills.md`.
 4. **Choose the content by what the agent does with it.** Worked examples
    of correct work (for a query agent: example queries) can help more than
    general notes about the domain. Records that do not match the question
@@ -80,21 +80,22 @@ The change is one of two, on a new run config: attach a tool that exists
    labels can show which rule the agent misses; they are not a source of
    the skill's facts.
 6. A prompt line that tells the agent to use the source is part of the
-   hypothesis, or a second arm. Scope discipline is the next step:
+   hypothesis, or a second candidate. Scope discipline is the next step:
    [answer only from the source](references/improving_agents/techniques/answer-only-from-the-source.md).
 
 ## Check that it took effect
 
-Smoke on two or three train items whose answers were not grounded. In each
-trace, find the call to the tool or the read of the skill before the
-answer, and the fact from the source in the answer. When the agent never
-looks, the source did not reach the decision.
+Run the candidate on two or three train items whose answers were not
+grounded. In each trace, find the call to the tool or the read of the skill
+before the answer, and the fact from the source in the answer. When the
+agent never looks, the source did not reach the decision.
 
 ## Budget
 
 Medium cost: a tool to attach is cheap, a skill to write is not, and both
 need a measurement on their target evals. When it fixes its target, the
-val gate measures every eval before a promotion, the evals that the
+confirmation on val measures every eval before a candidate becomes the
+baseline, the evals that the
 knowledge touches too. On a small budget, take it when the traces show
 answers that need facts the agent does not have. It is the first step for
 that failure.
@@ -107,7 +108,7 @@ improve, the source does not hold what the answers need, or the agent
 answers past it. When the traces show that the agent read the source and
 still answered past it, the source can be right. Plan the source together
 with the rule of [answer only from the source](references/improving_agents/techniques/answer-only-from-the-source.md)
-on one arm, and name both in the hypothesis.
+on one candidate, and name both in the hypothesis.
 
 ## Priors
 
@@ -126,6 +127,6 @@ on one arm, and name both in the hypothesis.
 Medium. Attaching the source is the common first step for answers that are
 not grounded, in field practice: a model cannot state a private fact that
 it does not have. One public case shows that what the source holds matters
-as much as whether it is attached. The condition on the builder's own
+as much as whether it is attached. The condition on your own
 knowledge is reasoning: a skill adds facts only when its writer knows what
 the agent's model does not.

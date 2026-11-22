@@ -51,7 +51,7 @@ case, and the agent reads it before it sees the document.
 - [Document into a skill](references/improving_agents/techniques/document-into-a-skill.md), first,
   when the document is stable and fits in a skill: a contents body with
   key terms, one reference file for each section, and the lookup tool
-  dropped on the same arm. When the document cannot move, the same
+  dropped on the same candidate. When the document cannot move, the same
   technique gives a smaller change: a keyword contents skill in front of
   the tool.
 - [Answers not grounded](references/improving_agents/playbooks/answers-not-grounded.md), when the

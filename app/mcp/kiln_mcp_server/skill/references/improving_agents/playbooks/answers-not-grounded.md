@@ -21,7 +21,7 @@ final answer:
   section, or did not look;
 - or the source was read, and the answer goes past what the source says.
 
-The knowledge exists somewhere the tuner can reach: a search tool or a
+The knowledge exists somewhere you can reach: a search tool or a
 RAG tool of the project, a document, a skill. When the source is a long
 document that the agent reaches only by page, by search or by section, the
 smell [document behind a lookup tool](references/improving_agents/smells/document-behind-a-lookup-tool.md)
@@ -40,7 +40,7 @@ says how to recognise it.
    long reference document sits behind a lookup tool (by page, by search
    or by section), and the agent picks the wrong part or never looks. A
    contents file that names what each section holds, one reference file
-   per section, and the lookup tool dropped on the same arm.
+   per section, and the lookup tool dropped on the same candidate.
 
 ## What not to do yet
 
@@ -55,5 +55,5 @@ says how to recognise it.
 ## Budget
 
 The order does not change with the budget. Step 1 and step 3 have a
-medium cost. On a small budget, step 2 alone is worth an arm when the
+medium cost. On a small budget, step 2 alone is worth a candidate when the
 source is already attached.

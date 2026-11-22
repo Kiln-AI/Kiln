@@ -13,8 +13,8 @@ cost: high
 
 ## When to use
 
-- `allowed_models` lists a model other than the baseline's, and the
-  guidance does not forbid a model change. Otherwise the model is not a
+- The user allows a model other than the baseline's, and does not forbid
+  a model change. Otherwise the model is not a
   lever.
 - **At the start**, the model shows no aptitude for the task: it passes
   almost nothing across the evals, and the outputs are wrong in
@@ -41,11 +41,10 @@ cost: high
   tuned on a very large model can transfer badly to a small one, because
   a small model can need a shorter prompt and more progressive
   disclosure. A change of class is a new start, with its own tuning.
-- **A model that the run's model policy does not allow.** The policy is a
-  hard limit, and create refuses it.
-- **The run's objective is `speed` or `cost`.** The run then opens with a
-  screening round of the lower thinking levels, and the planner screens
-  the allowed models next. That screening replaces this order (lock, tune, scan
+- **A model that the user does not allow.** That is a hard limit.
+- **The user's goal is speed or cost.** The work then opens with a
+  screening of the lower thinking levels, and a screening of the allowed
+  models next. That screening replaces this order (lock, tune, scan
   again).
 
 ## Alternatives
@@ -61,61 +60,63 @@ cost: high
 
 The change is the model and the provider on a run config (the lever
 [model](references/levers/model.md)). The lever gives the two ways: a screening
-round of candidates in code, and an arm.
+of candidates, and one experiment.
 
-1. **Choose the class** from what the task needs and what the run allows:
+1. **Choose the class** from what the task needs and what the user allows:
    the size, the price and the latency. The candidates are the models of
-   that class in the run's list of allowed models. `list_models` gives
-   each one's list price, context window, release date and tags, and
-   `get_model_details` gives Kiln's notes for agents.
+   that class that the user allows.
+   `references/knowledge/api_docs/get_api_model_info_models.md` gives each
+   one's list price, context window, release date and tags, and
+   `references/knowledge/api_docs/get_api_model_info_model_details.md` gives
+   Kiln's notes for agents.
 2. **At the start, lock one model** with some aptitude for the task:
    some items pass, and many fail, so that there is room to rise. On a
    large budget, screen several models of the class first and lock the one
    with the best aptitude. On a small budget, lock one and start.
 3. **Tune the harness with the model locked.** The prompt, the skills, the
    tools and the settings.
-4. **Scan the class again** with the tuned harness: screen the candidates
-   in code, on the same items, then commit the best survivor as an arm,
-   measured on every eval. This is an exception to the planner's
-   lean-target default: a model swap changes every item, so every eval is
-   its target. Set a thinking level from the new model's own list, and the
-   output mode to the new model's default (the lever gives the step).
-5. **After a swap, measure again what the harness gained.** Each promoted
+4. **Scan the class again** with the tuned harness: screen the candidates on
+   the same items, then take the best survivor on as one experiment,
+   measured on every eval. This is an exception to the usual few target
+   evals: a model swap changes every item, so every eval is its target. Set
+   a thinking level from the new model's own list, and the output mode to
+   the new model's default (the lever gives the step).
+5. **After a swap, measure again what the harness gained.** Each kept
    change was measured with the old model. With the new model, a change
    can help less, help more, or hurt. Check the evals that each change
    targeted. Fix only what got worse, and look for workarounds that the
    new model no longer needs.
 6. **Fine-tunes.** A fine-tune that exists is a candidate like any other
-   model, when the policy allows it. Read what it was trained for before
-   you plan it. The tuner does not start a fine-tune. A fine-tune is a late
+   model, when the user allows it. Read what it was trained for before
+   you plan it. An experiment does not start a fine-tune. A fine-tune is a late
    step, after the harness is tuned. It does not replace knowledge in the
    prompt or in a skill.
 
 ## Check that it took effect
 
-Code checks that the swap reached the call: a drive that another model or
-provider served gives the verdict `lever not applied`. A smoke on two or
-three train items shows that the new model calls the tools and returns the
-output form that the task needs. The capability flags of
-`get_model_details` are Kiln's data, and one drive shows what the model
-does on the task. Invalid output just after the swap points first to a
-wrong output mode, not to a weaker model: check that the mode is the new
-model's default before you record the model as refuted.
+Check yourself that the swap reached the call: a run that another model or
+provider served means that the change was not applied. A run on two or three
+train items shows that the new model calls the tools and returns the output
+form that the task needs. The capability flags of the model details are
+Kiln's data, and one run shows what the model does on the task. Invalid
+output just after the swap points first to a wrong output mode, not to a
+weaker model: check that the mode is the new model's default before you
+record the model as refuted.
 
 ## Budget
 
 High cost: each candidate is measured on every eval, and a swap can change
 every item. On a small budget, lock a reasonable model and leave out the
 scan at the start. A scan after the harness is tuned is worth a slot when
-the objective is cost or latency. On a large budget, a scan at the start
+the user's goal is cost or latency. On a large budget, a scan at the start
 and a scan at the end are both reasonable.
 
 ## If it does not move the evals
 
-It depends. When the objective is cost or latency, a cheaper or faster
-model that holds every eval is a gain: keep it. When the objective is
+It depends. When the user's goal is cost or latency, a cheaper or faster
+model that holds every eval is a gain: keep it. When the goal is
 quality, a swap must move an eval, because it changes every item and the
-promoted changes were measured on the old model.
+kept changes were measured on the old model.
 
 ## Priors
 
@@ -139,5 +140,5 @@ promoted changes were measured on the old model.
 Medium, that the model is a large lever inside a class: two public cases.
 The cases do not separate the model from the prompt changes made with it.
 Medium, for the order (lock, tune, scan again): it follows from how
-changes are measured, since each promoted change was measured on the
+changes are measured, since each kept change was measured on the
 locked model. Low, for a swap across classes: no case here measures it.

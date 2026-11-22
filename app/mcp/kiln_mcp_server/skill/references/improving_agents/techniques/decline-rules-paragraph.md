@@ -54,21 +54,22 @@ The change is one edit of the [prompt](references/levers/prompt.md).
 3. **Replace scattered rules** about scope with the paragraph, on the same
    edit.
 4. **Read the residual failures** after the measurement, on both sides.
-   When the agent now refuses valid requests, the next arm rebalances: it
-   adds to the fourth part, or makes the second part narrower. Change one
-   side for each arm.
+   When the agent now refuses valid requests, the next candidate
+   rebalances: it adds to the fourth part, or makes the second part
+   narrower. Change one side for each candidate.
 
 ## Check that it took effect
 
-Smoke on two train items that are out of scope and two that are valid but
-unusual. Count the declines on each side. Declines on the valid items show
-over-refusal before the measurement.
+Run the candidate on two train items that are out of scope and two that are
+valid but unusual. Count the declines on each side. Declines on the valid
+items show over-refusal before the measurement.
 
 ## Budget
 
 Low cost: one prompt edit. A good first step on any budget, when the
 failures are about scope. Measure it on its target evals. When it fixes
-its target, the val gate measures every eval before a promotion, the evals
+its target, the confirmation on val measures every eval before a candidate
+becomes the baseline, the evals
 that check a valid answer too: a stronger guard can break them.
 
 ## If it does not move the evals
@@ -84,4 +85,4 @@ None yet.
 Medium. A scope stated as a rule is common field practice: a rule covers
 the requests that a list leaves out. No measured case is recorded here
 yet. The balance between the two sides is specific to each task, so the
-residuals decide the second arm.
+residuals decide the second candidate.

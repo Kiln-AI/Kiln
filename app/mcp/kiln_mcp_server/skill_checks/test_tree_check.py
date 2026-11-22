@@ -597,6 +597,28 @@ def test_banned_terms_skip_the_api_docs(tmp_path):
     assert problems_of(tmp_path, changes) == []
 
 
+@pytest.mark.parametrize(
+    "text, banned",
+    [
+        ("Build it with `references/knowledge/create_spec.md`.", False),
+        ("Build it with `create_spec`.", True),
+    ],
+)
+def test_a_file_named_like_an_operation_is_not_banned(tmp_path, text, banned):
+    changes = {
+        "references/knowledge/create_spec.md": "---\nname: create_spec\ndescription: x.\n---\n",
+        "references/levers/index.md": f"# Levers\n\n{text}\n",
+        "SKILL.md": with_line(SKILL_MD, "`references/levers/index.md`"),
+    }
+    found = [
+        p
+        for p in problems_of(tmp_path, changes)
+        if p.path == "references/levers/index.md"
+    ]
+    assert bool(found) is banned
+    assert all(p.rule == "tree-banned-term" for p in found)
+
+
 def test_product_name_is_not_banned(tmp_path):
     changes = {
         "references/levers/index.md": "# Levers\n\nRun Kiln Harness Tuner, or the Kiln Harness Tuner CLI.\n",

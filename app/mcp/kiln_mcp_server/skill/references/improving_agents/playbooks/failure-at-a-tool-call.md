@@ -21,11 +21,9 @@ message in the trace, and where it is compared with the tool calls:
 - **after** a tool's result: the reply ignores or restates the result in a
   way that the task does not want.
 
-Naming the decision point is process. The planner's skill
-(`kiln-harness-tuner-batch-selection`, Step 1) and the analyzer's skill
-(`kiln-harness-tuner-experiment-analysis`, the `findings` field) give it:
-the analyzer writes before, with or after which tool, and the planner
-chooses the text to change. Before or with a call, that text is the
+Naming the decision point is process. When you read the results, write
+down before, with or after which tool the failure comes. Then choose the
+text to change. Before or with a call, that text is the
 tool's description. After a call, it is the tool's response, and a rule
 about the reply in general goes in the tool's description.
 
@@ -34,7 +32,7 @@ about the reply in general goes in the tool's description.
 1. [New tool description](references/improving_agents/techniques/new-tool-description.md), when the
    failing message is before or with the call. A code tool gets a new
    description on a clone. Any other tool gets one through a wrapper. The
-   rule moves from the prompt into the description, on the same arm.
+   rule moves from the prompt into the description, on the same candidate.
 2. [Directive in the tool response](references/improving_agents/techniques/directive-in-the-tool-response.md),
    when the failing message is after the call, or step 1 did not hold. A
    wrapper whose response states derived facts, a fixable error, or how

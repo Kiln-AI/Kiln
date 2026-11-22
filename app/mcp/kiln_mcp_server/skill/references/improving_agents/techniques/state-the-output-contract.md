@@ -69,12 +69,12 @@ The change is one edit of the [prompt](references/levers/prompt.md).
 4. **Replace, do not add.** When the prompt states the format less well in
    another place, remove that text on the same edit.
 5. **Read the residual failures** after the measurement. When one edge case
-   remains (an escaping case, the empty case), the next arm adds one line
+   remains (an escaping case, the empty case), the next candidate adds one line
    for that case.
 
 ## Check that it took effect
 
-Smoke the new run config on two or three train items that failed on the
+Run the new run config on two or three train items that failed on the
 form. Count the outputs that obey the contract, by eye or with a regular
 expression on the output. When none obey it, the line did not reach the
 model, or the failure is not one of format.

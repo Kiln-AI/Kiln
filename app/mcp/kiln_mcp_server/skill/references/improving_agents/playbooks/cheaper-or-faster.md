@@ -10,18 +10,19 @@ applies_to: all
 
 ## Situation
 
-The run's objective is `cost` or `speed`, or the guidance asks for a
-cheaper or a faster agent. Quality must not get worse. The two cases differ
-in when this playbook applies:
+The user's goal is cost or speed, or the user asks for a cheaper or a
+faster agent. Quality must not get worse. The two cases differ in when this
+playbook applies:
 
-- **The objective is `speed` or `cost`.** Quality is held, not tuned. The
-  planner's skill opens the run with a screening round in code, and it
-  screens many variants (the allowed models, the thinking levels) before it
-  commits any of them. That procedure comes first, and its rule decides a
-  win. The steps below are the ideas for the arms around it, from the
-  start of the run.
-- **The objective is quality, and the guidance also asks for a lower cost
-  or latency.** The cost goal comes after quality is stable: a change for
+- **The goal is speed or cost.** Quality is held, not tuned. The work opens
+  with a screening, and it screens many variants (the allowed models, the
+  thinking levels) before it takes any of them on. That screening comes
+  first, and its rule decides a win. Kiln Harness Tuner holds that
+  screening procedure and its rule, and they apply when running it. The
+  steps below are the ideas for the candidates around it, from the start
+  of the work.
+- **The goal is quality, and the user also asks for a lower cost or
+  latency.** The cost goal comes after quality is stable: a change for
   cost that is measured on a harness that still changes for quality needs
   a new measurement later.
 
@@ -30,14 +31,14 @@ very fast provider can cost more, and a cheap model that reasons a lot
 can be slow. So each step below says which goal it serves.
 
 This playbook gives the order of the ideas. It does not replace the
-screening rounds of the planner's skill.
+screening.
 
 ## What to try, in order
 
 1. **Faster, sometimes cheaper.** The same model on another provider,
-   when the run allows that provider:
+   when the user allows that provider:
    [faster provider for the same model](references/improving_agents/techniques/faster-provider-for-the-same-model.md).
-   Read the cost of the drives, not only the price per token: a provider
+   Read the cost of the runs, not only the price per token: a provider
    with no prompt cache can cost more on a long, repeated prefix.
 2. **Both.** Less thinking, one rung down, when the target evals hold:
    [thinking level ladder](references/improving_agents/techniques/thinking-level-ladder.md).
@@ -59,24 +60,23 @@ screening rounds of the planner's skill.
    the answer,
    [state the output contract](references/improving_agents/techniques/state-the-output-contract.md).
 6. **Cheaper, often faster.** A smaller model of the class, with the
-   harness adapted to it, when the model is a lever (`allowed_models`
-   lists another model):
+   harness adapted to it, when the model is a lever (the user allows
+   another model):
    [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md).
    For a task with a classifier shape:
    [decision model for a classifier](references/improving_agents/techniques/decision-model-for-a-classifier.md).
 
 ## What not to do yet
 
-- Do not trade quality for speed or cost unless the guidance says so. A
-  change that is faster and loses items is not a win under these
-  objectives.
-- On a quality run, do not cut the prompt while the harness still changes
-  for quality. The cut is measured on a harness that will not ship.
-- On a quality run, do not swap to a small model before the cheaper steps
-  that keep the model. A smaller model can need a different harness, so it
-  is the largest change of this list. Under a `speed` or `cost` objective,
-  the screening round of the planner's skill measures the allowed models
-  first, and its result replaces this order.
+- Do not trade quality for speed or cost unless the user says so. A
+  change that is faster and loses items is not a win under these goals.
+- When the goal is quality, do not cut the prompt while the harness still
+  changes for quality. The cut is measured on a harness that will not ship.
+- When the goal is quality, do not swap to a small model before the
+  cheaper steps that keep the model. A smaller model can need a different
+  harness, so it is the largest change of this list. When the goal is
+  speed or cost, the screening measures the allowed models first, and its
+  result replaces this order.
 - Do not read tokens per second as speed. A model that answers in fewer
   tokens can finish sooner at a lower rate.
 

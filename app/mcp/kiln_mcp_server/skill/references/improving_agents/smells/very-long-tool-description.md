@@ -1,6 +1,6 @@
 ---
 title: Very long tool description
-description: The description of an attached tool is longer than the reference length. A code detector measures each tool, and each detection names the tool.
+description: The description of an attached tool is longer than 4,096 characters. Measure each attached tool yourself, and name each tool that is over.
 reviewed: 2026-11-13
 applies_to:
   - tools
@@ -10,19 +10,21 @@ applies_to:
 
 ## What it is
 
-The description of an attached tool is longer than the reference length.
-Each tool description is in the context of every call. A long one costs
-tokens on every call, and the model reads it at the moment it chooses a
-tool, when it needs only what the tool does and when to call it. Some agent
-products cut a description at a fixed length, so the end of it is never
-read. This is a property of the design, whether an eval passes or fails.
+The description of an attached tool is longer than the reference length,
+4,096 characters. Claude Code cuts the description of a tool that loads up
+front at this length. Each tool description is in the context of every call.
+A long one costs tokens on every call, and the model reads it at the moment
+it chooses a tool, when it needs only what the tool does and when to call
+it. Some agent products cut a description at a fixed length, so the end of
+it is never read. This is a property of the design, whether an eval passes
+or fails.
 
 ## How to recognise it
 
 In the harness:
 
-- the code detection in your input names the tool, the length of its
-  description and the reference;
+- measure it yourself: the description of an attached tool has more than
+  4,096 characters. Name each such tool and its length;
 - the description holds a manual: many examples, the schema of the data,
   rules for other tools, or the policy of the product.
 

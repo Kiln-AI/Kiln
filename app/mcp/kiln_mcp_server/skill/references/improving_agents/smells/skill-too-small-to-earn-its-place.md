@@ -45,5 +45,5 @@ Nothing.
   the content is needed and short enough for the prompt: move it there and
   drop the skill.
 - [Prune one group at a time](references/improving_agents/techniques/prune-one-group-at-a-time.md),
-  when it is not known that the content helps: drop the skill on one arm
-  and measure it.
+  when it is not known that the content helps: drop the skill on one
+  candidate and measure it.

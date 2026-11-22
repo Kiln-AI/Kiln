@@ -32,7 +32,8 @@ cost: medium
   argument, a narration with the call). The rule for that call goes in
   the tool's own description, not in a skill: text in a tool moves with
   the tool.
-- **The model does not open skills.** Probe that first, on this model.
+- **The model does not open skills.** Check that quickly first, on this
+  model.
 - **The tools return very large results.** A guide does not make a result
   smaller. Fix the result first.
 
@@ -48,7 +49,10 @@ cost: medium
 ## How
 
 The change is a new skill bundle, attached on a new run config. See the
-lever [skill](references/levers/skill.md) for how a skill is built and installed.
+lever [skill](references/levers/skill.md) for how a skill is built and attached. The
+Kiln API creates a skill with a body only, so a bundle with leaf files is
+built when running Kiln Harness Tuner. A new version of an existing guide
+made over the API loses its leaf files.
 
 1. **The description** says which work the skill is for, and lists the path
    of each reference file with the key terms of that file.
@@ -77,9 +81,10 @@ lever [skill](references/levers/skill.md) for how a skill is built and installed
 
 ## Check that it took effect
 
-Smoke on two or three train items that need the tools. In each trace, find
-the read of the skill and of one leaf file before the tool call that needs
-it. When the skill is never read, the change did not reach the agent.
+Run the candidate on two or three train items that need the tools. In each
+trace, find the read of the skill and of one leaf file before the tool call
+that needs it. When the skill is never read, the change did not reach the
+agent.
 
 ## Budget
 
@@ -100,7 +105,8 @@ None yet.
 
 ## Confidence
 
-Low to medium. It is field practice and an idea of this project's owners.
+Low to medium. It is field practice and an idea of the authors of this
+knowledge.
 No public study known to this document compares a guide skill with tool
 search, or with the tool descriptions alone. The reason it can help is
 progressive disclosure: the

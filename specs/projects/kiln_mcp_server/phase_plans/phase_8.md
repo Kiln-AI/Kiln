@@ -50,3 +50,7 @@ After batch 9, `PENDING_RULES` holds only `tree-test-split` (batch 13a).
 - `test_the_split_rule_file_states_the_rule`: `train_val_test.md` names train, val and test, "metrics only", the leak rules, and every `TEST_SPLIT_READERS` entry.
 - `test_test_split_readers_read_the_test_split`: each `TEST_SPLIT_READERS` endpoint doc is a file of the tree (and each app link is an app link).
 - The existing shipped-tree tests (`test_the_shipped_tree_passes_every_check`, `test_the_shipped_knowledge_passes_every_check`, `test_the_full_check_passes`, `test_skill_md_has_the_required_parts`, `test_no_file_over_body_limit`, `test_no_skill_file_names_a_blocked_endpoint`, the bundling test) pass after every batch with its `PENDING_RULES`.
+
+## Notes for the reviews by people
+
+- Sandbox wording (functional spec 15), for the security owner: batch 8 changed `references/levers/new_tool.md`. Its text and description said that Kiln runs a code tool in a sandbox; they now say that it runs with no resource sandbox, to match `references/knowledge/code_tools.md` and `references/knowledge/judge_types.md` (phase 7). Review the three files together.

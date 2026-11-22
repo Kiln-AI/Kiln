@@ -28,10 +28,10 @@ The eval shows both errors when it has items on each side of the scope.
    when the prompt has no clear statement of scope. One paragraph: what
    the agent does, what it declines, how it declines, and what is not a
    reason to decline.
-2. Read the residual failures of that arm. When refusals of valid requests
-   remain, rebalance the same paragraph in the next arm: state what is in
-   scope more clearly, and the signs that are not a reason to decline,
-   with the same
+2. Read the residual failures of that candidate. When refusals of valid
+   requests remain, rebalance the same paragraph in the next candidate:
+   state what is in scope more clearly, and the signs that are not a reason
+   to decline, with the same
    [technique](references/improving_agents/techniques/decline-rules-paragraph.md).
 
 ## What not to do yet

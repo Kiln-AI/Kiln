@@ -1,6 +1,6 @@
 ---
 title: Model settings
-description: The model's settings on a run config - thinking level, temperature and top-p - changed on a clone of the parent, as a params arm or in a screening round.
+description: The model's settings on a run config - thinking level, temperature and top-p - changed on a copy of the parent, as one experiment or in a screening.
 reviewed: 2026-11-16
 api_docs:
   - references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md
@@ -29,49 +29,47 @@ as the parent has them.
 
 There are two ways.
 
-**A params arm.** The builder makes one run config with
-`create_run_config`. It is identical to the parent, except the named
-settings. No new prompt, skill or tool. The `change` block of the build
-lists each setting with its old and its new value, and everything else
-under `unchanged`.
+**One experiment.** Make one run config with
+`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md`.
+It is identical to the parent, except the named settings. No new prompt,
+skill or tool. Record each setting with its old and its new value, and that
+everything else is unchanged.
 
-**A screening round.** The planner writes a plan with `screen` set and no
-items. Each candidate has `overrides` (`thinking_level`, `temperature`,
-`top_p`). Code makes each candidate's run config, measures all of them on
-the same items, and gives each one a verdict. No agent builds them. A
-survivor becomes an arm with `work.existing_rc_id`, and its judged rows are
+**A screening.** Make one run config for each candidate. Each candidate
+changes only `thinking_level`, `temperature` or `top_p`. Measure all of them
+on the same items, and give each one a verdict. A candidate that survives
+becomes one experiment on the same run config, and its measured results are
 used again.
 
 Rules of the object:
 
-- **The thinking levels come from `get_model_details`**: the
+- **The thinking levels come from
+  `references/knowledge/api_docs/get_api_model_info_model_details.md`**: the
   `thinking_levels` of the model's provider entry, lowest first. For a pair
-  that the server offers, they are the server's list. A level that is not
-  in that list is refused.
+  that Kiln offers, they are Kiln's list. A level that is not in that list
+  is refused.
 - **The properties of a run config are fixed when it is created.** A
   mistake means another new run config.
 
 ## Limits
 
-- A provider can accept a setting and not apply it. Code reads the drives
-  for two things only: the thinking level, and the model and provider. A
-  thinking level with no reasoning in any drive, and output tokens that
-  did not move against the parent, gives the verdict `lever not applied`.
-  So does a drive that another model or provider served. When no signal
-  can show one of these two, the verdict is `lever unverified`. Code does
-  not check `temperature` or `top_p`: a change to them gets the verdict
-  `applied` with no check.
+- A provider can accept a setting and not apply it. Check the runs
+  yourself for two things: the thinking level, and the model and provider.
+  A thinking level with no reasoning in any run, and output tokens that did
+  not move against the parent, means that the change was not applied. So
+  does a run that another model or provider served. When no signal can show
+  one of these two, the change is unverified. `temperature` and `top_p`
+  cannot be checked in the runs: count a change to them as applied, with no
+  check.
 - A provider can refuse a setting. One failed call shows it.
-  `get_model_details` gives `supports_temperature` for each provider entry,
-  from models.dev: `false` says that the model does not take a temperature.
+  `references/knowledge/api_docs/get_api_model_info_model_details.md` gives
+  `supports_temperature` for each provider entry, from models.dev: `false`
+  says that the model does not take a temperature.
 - The output mode is not part of this lever. It has its own lever,
   [output_mode](references/levers/output_mode.md).
 - Kiln has no setting for `max_tokens`, a seed, `top_k` or penalties.
 
 ## See also
 
-- The `kiln-harness-tuner-batch-selection` skill: the params arm, the
-  screening rounds and how to read a screening line.
-- The `kiln-harness-tuner-experiment-build` skill: how a params arm is
-  built and smoked.
-- The `kiln-task-setup` skill: the fields of `run_config_properties`.
+- `references/knowledge/model_create_configs.md`: the fields of
+  `run_config_properties`, and the run config payload.

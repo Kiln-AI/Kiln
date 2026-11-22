@@ -44,8 +44,8 @@ In how the agent runs:
   the Kiln template `tool_call`, a `tool_call_check` eval config, or a
   judge whose criteria name a tool can expect each call of the chain. Read
   the spec of that eval before you name a remedy. A remedy keeps the tool
-  names that it expects, or lists that eval in the arm's
-  `evaluation_target` as a stated coupling.
+  names that it expects, or names that eval as a target eval of the
+  experiment, as a stated coupling.
 
 ## What it blocks
 

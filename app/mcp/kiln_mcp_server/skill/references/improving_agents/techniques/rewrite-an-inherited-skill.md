@@ -16,18 +16,19 @@ cost: medium
 - The failure comes from a skill that the baseline attaches. The skill is
   wrong, stale, one long file with many topics, contradicts the task, or
   holds data shaped like test cases.
-- Earlier arms added prompt rules around the skill, and the failure stayed.
+- Earlier candidates added prompt rules around the skill, and the failure
+  stayed.
 - The skill describes tools, routes or fields that the agent does not have
   any more.
 - The agent opens the skill and then guesses a path or reads the wrong file.
 
-Everything that the baseline attaches is part of what the tuner can change.
+Everything that the baseline attaches is part of what you can change.
 An inherited skill is not a fixed input.
 
 ## When not to use
 
-- **The model does not open skills at all** under this run config. Probe
-  it first. A new version of a skill that the agent never reads changes
+- **The model does not open skills at all** under this run config. Check
+  it quickly first. A new version of a skill that the agent never reads changes
   nothing: [skill into the prompt](references/improving_agents/techniques/skill-into-the-prompt.md).
 - **The skill may not help at all.** Measure the agent without it first:
   [prune one group at a time](references/improving_agents/techniques/prune-one-group-at-a-time.md).
@@ -37,7 +38,7 @@ An inherited skill is not a fixed input.
 ## Alternatives
 
 - [Skill into the prompt](references/improving_agents/techniques/skill-into-the-prompt.md), when the skill is a
-  few words, or a probe shows that the model does not open skills.
+  few words, or a quick check shows that the model does not open skills.
 - [Prune one group at a time](references/improving_agents/techniques/prune-one-group-at-a-time.md), when it is
   not known that the skill helps.
 
@@ -50,32 +51,36 @@ in place of the old one on a new run config.
    - **split** a long file into one reference file for each topic;
    - **merge** skills that overlap, so one topic has one place;
    - **restructure** it into progressive disclosure: the description and
-     the body map give each reference file's path and key terms
-     (the `kiln-harness-tuner-experiment-build` skill,
-     `references/skill-authoring.md`, section 3);
+     the body map give each reference file's path and key terms. The
+     Kiln API creates a skill with a body only (the lever
+     [skill](references/levers/skill.md)), so a new version with reference
+     files is built when running Kiln Harness Tuner;
    - **correct** what is wrong or stale;
    - **scrub** data shaped like test cases: examples with real-looking ids,
      inputs with their expected answers.
-2. **Build the new version.** The steps are "Rewriting an inherited skill"
-   in the `kiln-harness-tuner-experiment-build` skill,
-   `references/skill-authoring.md`, section 4.
+2. **Build the new version** under a new name, with the old skill's id in
+   `provenance.derived_from_ids` (the lever [skill](references/levers/skill.md)). How
+   to write a skill in Kiln is in `references/knowledge/adding_skills.md`.
+   The Kiln API reads and creates a body only: a new version made over the
+   API loses the inherited skill's reference files.
 3. **Change each mention of the old name** in the prompt and in other
    skills.
-4. **Never write a value from a train item** into the new version. Code
-   compares the new version with the old one, and searches it for train
-   content.
+4. **Never write a value from a train item** into the new version.
+   Compare the new version with the old one yourself, and search it for
+   train content.
 
 ## Check that it took effect
 
 Read the diff of the new version against the old one: only the parts that
-the hypothesis names changed. Smoke on two or three train items that need
-the skill, and find the read of the new version in each trace.
+the hypothesis names changed. Run the candidate on two or three train items
+that need the skill, and find the read of the new version in each trace.
 
 ## Budget
 
 Medium cost: a bundle to write, and a measurement on its target evals.
-When it fixes its target, the val gate measures every eval before a
-promotion, the evals that the skill touches too. On a small budget, take
+When it fixes its target, the confirmation on val measures every eval
+before a candidate becomes the baseline, the evals that the skill touches
+too. On a small budget, take
 it when the traces tie the failure to the skill's text.
 
 ## If it does not move the evals
@@ -92,5 +97,5 @@ None yet.
 ## Confidence
 
 Medium. It follows from the lever `skill`: an inherited skill is part of
-what the tuner can change, so a rule added around it leaves two texts that
+what you can change, so a rule added around it leaves two texts that
 can disagree. No measured case is recorded here yet.

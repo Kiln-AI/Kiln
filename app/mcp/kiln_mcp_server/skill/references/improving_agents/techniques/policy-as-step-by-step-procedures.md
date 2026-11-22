@@ -68,18 +68,19 @@ version of the [skill](references/levers/skill.md) that holds the policy.
 
 ## Check that it took effect
 
-Smoke on two or three train items that need a procedure. In each trace,
-find the steps of the procedure in the order it gives, and the check step
-after a fix. When the agent still skips the same step, the procedure did
-not reach it, or the step is not the cause.
+Run the candidate on two or three train items that need a procedure. In each
+trace, find the steps of the procedure in the order it gives, and the check
+step after a fix. When the agent still skips the same step, the procedure
+did not reach it, or the step is not the cause.
 
 ## Budget
 
-Low cost to build: one prompt edit, or one skill version. Measure it on
-its target evals. When it fixes its target, the val gate measures every
-eval before a promotion, the evals that the policy touches too. That
-matters here, because a rewrite changes many behaviours at once. On a
-small budget, take it when the traces show steps skipped or out of order.
+Low cost to build: one prompt edit, or one skill version. Measure it on its
+target evals. When it fixes its target, the confirmation on val measures
+every eval before a candidate becomes the baseline, the evals that the
+policy touches too. That matters here, because a rewrite changes many
+behaviours at once. On a small budget, take it when the traces show steps
+skipped or out of order.
 
 ## If it does not move the evals
 

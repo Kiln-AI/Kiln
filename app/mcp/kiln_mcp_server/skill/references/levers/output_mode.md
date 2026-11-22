@@ -37,43 +37,40 @@ schema as a tool are refused on a run config with tools (Limits).
 
 ## How to change it
 
-1. Read the parent's mode: `get_run_config` gives `structured_output_mode`
-   in `run_config_properties`.
-2. Read the default mode of each model: `get_model_details` gives the
-   `default_structured_output_mode` of each provider entry: the server's
-   value for a pair that the server offers. The planner's
-   `allowed_models` input does not carry it.
+1. Read the parent's mode:
+   `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md`
+   gives `structured_output_mode` in `run_config_properties`.
+2. Read the default mode of each model:
+   `references/knowledge/api_docs/get_api_model_info_model_details.md`
+   gives the `default_structured_output_mode` of each provider entry:
+   Kiln's value for a pair that Kiln offers.
 3. Change it in one of three ways:
-   - **A screening round**: a candidate with
-     `overrides: {"structured_output_mode": "<value>"}`. Code makes and
-     measures its run config.
-   - **A probe**: a `check` probe with the same override answers one
-     mechanism question, for example whether every output parses as JSON
-     (`count: json_valid`), or whether the model still calls an attached
-     tool (`attach: probe_tool`, `count: tool_calls`). A probe can set the
-     mode. It cannot set a model, a provider or a setting.
-   - **An arm**: the builder makes a new run config with
-     `create_run_config`. It copies every property of the parent and
-     changes only `structured_output_mode`. The `technique` of the arm is
-     `output_mode`.
+   - **A screening**: a candidate that changes only
+     `structured_output_mode`. Make and measure its run config.
+   - **A quick check**: the same change answers one mechanism question,
+     for example whether every output parses as JSON, or whether the
+     model still calls an attached tool.
+   - **One experiment**: make a new run config with
+     `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md`.
+     Copy every property of the parent and change only
+     `structured_output_mode`. Record it under the lever `output_mode`.
 4. A model swap changes the mode too. The lever [model](references/levers/model.md) gives
    the step.
 
 Rules of the object:
 
-- **A change of the mode is a model-level swap.** Code treats it as it
-  treats a change of the model or of a setting (`items.SWAP_KEYS`). The arm
-  gets judge-free timing drives, and the residual block of the parent's
-  failures does not gate it: a new mode changes how the model answers
-  every item, not only the parent's failures. In a screening round, an
-  output-mode candidate keeps the round's size. Under speed and cost, only a
-  model or provider change takes the larger count of baseline passes.
-- **The check is the output-validity count.** Code has no signal that the
-  mode reached the call, so no `lever not applied` verdict exists for it.
-  Code counts the outputs that do not parse as JSON or do not match the
-  task's schema (the stop rule `invalid_output_rate`). By default, one
-  invalid output stops a candidate or an arm. In a smoke, count the runs
-  that fail with Kiln's schema error too.
+- **A change of the mode is a model-level swap.** Treat it as a change of
+  the model or of a setting. A new mode changes how the model answers
+  every item, not only the parent's failures, so do not stop it because it
+  fixed few of the parent's failures. In a screening, an output-mode
+  candidate is measured on as many items as the other candidates. When the
+  user's goal is speed or cost, only a model or provider change is
+  measured on the larger count of baseline passes, not a mode change.
+- **The check is the count of invalid outputs.** No signal shows that the
+  mode reached the call, so a mode change is never found "not applied".
+  Count the outputs that do not parse as JSON or do not match the task's
+  schema, and the runs that fail with Kiln's schema error. By default, one
+  invalid output stops a candidate.
 - **The properties of a run config are fixed when it is created.**
 
 ## Limits
@@ -91,12 +88,10 @@ Rules of the object:
   Ollama and Docker Model Runner**. Each of them sends the schema as a tool,
   and Kiln does not mix that tool with the agent's tools. An attached skill
   counts: Kiln loads it through a tool. The run fails at its final call.
-  The model preflight does not show this: its test call
-  attaches no tools.
-- Under another mode, the model can still call its tools less. The setup
-  reconnaissance asks whether the baseline model calls an attached tool
-  under its mode, and under `json_instructions` when the mode is
-  `json_schema`. The answers are in `probe_results`.
+- Under another mode, the model can still call its tools less. Before you
+  plan a mode change on a task with tools, check quickly whether the
+  baseline model calls an attached tool under its mode, and under
+  `json_instructions` when the mode is `json_schema`.
 - A fine-tune can carry the mode it was trained with. Read it before you
   change it (the lever [model](references/levers/model.md)).
 
@@ -104,8 +99,5 @@ Rules of the object:
 
 - The playbook [the output contract is not met](references/improving_agents/playbooks/output-contract-not-met.md):
   the modes ranked by how reliably the output matches the schema.
-- The `kiln-harness-tuner-batch-selection` skill: the screening rounds and
-  the `check` probes.
-- The `kiln-harness-tuner-experiment-build` skill: how a run-config-only arm
-  is built and smoked.
-- The `kiln-task-setup` skill: the fields of `run_config_properties`.
+- `references/knowledge/model_create_configs.md`: the fields of
+  `run_config_properties`, and the run config payload.

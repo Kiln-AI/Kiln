@@ -13,28 +13,29 @@ applies_to: all
 Read this before each plan. Every measurement spends a part of a fixed
 budget, and the evals are the expensive part: each item drives the agent,
 and often a synthetic user and a judge. The largest saving is to be right
-often. An arm that cannot pass its own test spends money and teaches
+often. A candidate that cannot pass its own test spends money and teaches
 nothing.
 
-Your input already carries the facts. This playbook gives the strategy,
-not the numbers:
+Get the facts before you plan. This playbook gives the strategy, not the
+numbers:
 
-- `measurement_prices`: the budget that remains, the price of each eval,
-  of a full measurement and of the timing pairs, and the largest cap that
-  code allows on one candidate;
-- `eval_sizes`: the train items that each eval can pair;
-- `train_detectability`: what each score can show on train;
-- `train_noise`: how much a repeat moves a score, when the run sampled it;
-- `lever_costs`: what each lever took to build in this run;
-- `should_wrap_up`: the code's judgment that this is the last wave.
+- the budget that remains, the price of each eval, of a full measurement
+  and of a measurement of latency, and the most that you may spend on one
+  candidate: ask the user for the spend limit;
+- the train items that each eval can pair;
+- what each score can show on train, and how much a repeat moves a score:
+  Kiln Harness Tuner measures both, and the rules that use them apply when
+  running it;
+- what each lever took to build in your earlier experiments;
+- whether this is the last round of experiments: ask the user.
 
 Build cost and learning cost are different. A prompt line costs the least
 to build. A new description on a clone of a tool, a change of the attached
 tools, a flat skill, a wrapper, a skill with reference files, a new tool
 and a consolidation of tools each cost more to build, in about that order.
 A swap to another model needs no build. Its cost is the measurement. The
-`cost` of each technique gives its class. But a text arm that cannot win
-at validation costs the most of all, because its spend buys no lesson.
+`cost` of each technique gives its class. But a text candidate that cannot
+win at validation costs the most of all, because its spend buys no lesson.
 
 ## What to try, in order
 
@@ -44,9 +45,9 @@ at validation costs the most of all, because its spend buys no lesson.
    [dealing with a noisy eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md).
 2. Size each experiment so that it can pass its own test: enough items on
    the target eval for the predicted effect. Fewer experiments, each with
-   enough items, teach more than many small ones. When an arm targets the
-   items it is built to fix, they are measured first, and code stops the
-   arm early when they still fail. A rule written for one or two failing
+   enough items, teach more than many small ones. When a candidate targets
+   the items it is built to fix, measure them first, and stop the
+   candidate early when they still fail. A rule written for one or two failing
    items rarely transfers:
    [one general rule per edit](references/improving_agents/techniques/one-general-rule-per-edit.md).
 3. On a small budget, prefer the techniques of `low` cost for each issue,
@@ -70,15 +71,17 @@ at validation costs the most of all, because its spend buys no lesson.
 - Do not spend a small budget on the choice of the model to lock. Pick a
   model of the right class with some aptitude for the task, and begin the
   work.
-- Do not plan a full measurement of every eval for an arm that has not yet
-  fixed its target. The target eval decides first. This holds for every
-  arm: a skill bundle and the wildcard too. The val gate measures every
-  eval before a promotion.
-- Do not judge an arm by its build cost alone. A cheap arm that the
-  evidence says cannot win is the most expensive arm in the plan.
+- Do not plan a full measurement of every eval for a candidate that has
+  not yet fixed its target. The target eval decides first. This holds for
+  every candidate: a skill bundle and an idea of your own too. The
+  confirmation on val measures every eval before a candidate becomes the
+  baseline.
+- Do not judge a candidate by its build cost alone. A cheap candidate that
+  the evidence says cannot win is the most expensive candidate in the
+  plan.
 
 ## Budget
 
-The steps above change with the budget, as each one says. When
-`should_wrap_up` is true, the planner's skill gives the wrap-up wave, and
-that procedure replaces this order.
+The steps above change with the budget, as each one says. When running
+Kiln Harness Tuner and it is the last round, its wrap-up procedure
+replaces this order.

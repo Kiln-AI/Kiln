@@ -33,24 +33,26 @@ rule of this second kind, also under a schema.
 
 1. **A JSON shape failure, and the mode is not the model's default.** This
    can happen just after a model swap that kept the parent's mode. Set the
-   default mode on a new run config: `get_run_config` gives the mode, and
-   `get_model_details` gives the default. On a run config with a tool
-   or a skill, a tool-call default is refused: use the fallback that step
-   4 of the model lever gives. Read invalid output after a
-   swap as a wrong mode first, not as a weaker model.
+   default mode on a new run config:
+   `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md`
+   gives the mode, and
+   `references/knowledge/api_docs/get_api_model_info_model_details.md` gives
+   the default. On a run config with a tool or a skill, a tool-call default
+   is refused: use the fallback that step 4 of the model lever gives. Read
+   invalid output after a swap as a wrong mode first, not as a weaker model.
 2. **A JSON shape failure under the model's default mode, and a stronger
    mode is in the ranking below.** On a run config with a tool or a skill,
    leave out the tool-call modes of rank 2: Kiln refuses them there.
-   Screen the stronger mode in code: a screening candidate with an
-   override of `structured_output_mode`. A `check` probe with that override
-   and `count: json_valid` answers first, in a minute, whether the outputs
-   parse under it. It does not check the schema: a run that Kiln fails on
-   the schema shows as a drive error. Read the drive errors in the
-   evidence, not only the answer. When the agent calls tools, probe
-   `tool_calls` under the new mode too. A mode change can move other
-   items, and code treats it as a model-level swap. The screen
-   measures those items against the baseline: read its quality line, not
-   only the validity count.
+   Screen the stronger mode: a screening candidate that changes only
+   `structured_output_mode`. A quick check with that change answers
+   first, in a minute, whether the outputs parse under it. Counting the
+   outputs that parse does not check the schema: a run that Kiln fails on
+   the schema shows as a run error. Read the run errors in the
+   evidence, not only the answer. When the agent calls tools, count the
+   tool calls under the new mode too. A mode change can move other
+   items: treat it as a model-level swap. The screening measures those
+   items against the baseline: read its quality result, not only the count
+   of valid outputs.
 3. **A JSON shape failure, and the model supports no constrained mode**
    (a stronger mode fails on it, or Kiln's default for it is
    `json_instructions` or `json_mode`), when the model is a lever: a model
@@ -61,10 +63,10 @@ rule of this second kind, also under a schema.
    remains under the strongest mode the model accepts:**
    [state the output contract](references/improving_agents/techniques/state-the-output-contract.md).
    One prompt line that states the contract exactly.
-5. Read the residual failures of that arm. When an edge case remains (an
+5. Read the residual failures of that candidate. When an edge case remains (an
    escaping case, the empty case), add one line for that case, with the
    same [technique](references/improving_agents/techniques/state-the-output-contract.md), in the
-   next arm.
+   next candidate.
 
 ## What not to do yet
 
@@ -80,8 +82,9 @@ rule of this second kind, also under a schema.
 
 ## Budget
 
-Steps 1, 2, 4 and 5 are cheap: a fork of the run config, a probe, or one
-prompt line. Step 3 is a model swap: a scan of the class and a full arm.
+Steps 1, 2, 4 and 5 are cheap: a fork of the run config, a quick check, or
+one prompt line. Step 3 is a model swap: a scan of the class and a full
+experiment.
 On a small budget it comes last,
 or it waits for a run where this failure is the main goal.
 

@@ -165,8 +165,9 @@ BANNED_TERMS: dict[str, tuple[str, ...]] = {
     ),
 }
 # `/api/model_info/...` and `get_api_model_info_...` are the model info
-# endpoints, not the Assistant's tool.
-_TERM_EXTRA_LOOKBEHIND = {"model_info": "/"}
+# endpoints, not the Assistant's tool. `references/knowledge/create_spec.md`
+# is a knowledge file of the skill, not the gateway operation.
+_TERM_EXTRA_LOOKBEHIND = {"model_info": "/", "create_spec": "/"}
 
 # The calls and app pages that read an eval's test split when the caller asks
 # for no split: endpoint doc paths or app links.

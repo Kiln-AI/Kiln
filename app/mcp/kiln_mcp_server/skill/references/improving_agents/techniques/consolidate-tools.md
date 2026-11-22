@@ -47,7 +47,7 @@ cost: high
   `tool_call`, a `tool_call_check` eval config, or a judge whose criteria
   name a tool can expect the tools that a consolidation merges or renames.
   Read the spec of that eval first. Keep the tool names that it expects, or
-  list that eval in the arm's `evaluation_target` as a stated coupling.
+  name that eval as a target eval of the experiment, as a stated coupling.
 
 ## Alternatives
 
@@ -84,7 +84,7 @@ they are. The wrappers are a layer over them.
    config. With both, the agent chooses, and the result does not tell
    which path it took. Remove each mention of a dropped tool in the prompt
    and in the skills.
-5. **Plan it as an arm that makes this change alone.** A consolidation
+5. **Plan it as an experiment that makes this change alone.** A consolidation
    changes many tools at once. When it is measured together with a prompt
    or a skill change, the result does not tell which change moved it, and
    the next plan cannot build on it.
@@ -96,18 +96,18 @@ they are. The wrappers are a layer over them.
 
 Dry-run each wrapper with reads, and with a call that breaks a rule. Read
 the new run config: the new tools are attached and the replaced tools are
-gone. Then smoke two or three train items that chose the wrong tool, and
-count the calls to the right job.
+gone. Then run the candidate on two or three train items that chose the
+wrong tool, and count the calls to the right job.
 
 ## Budget
 
-High cost: several code tools, a dry run for each, and a measurement on
-its target evals. When it fixes its target, the val gate measures every
-eval before a promotion. That matters here, because the change touches
-every call. On a small budget, leave it out unless the traces show wrong
-tool choices on many items and cheaper changes did not fix them. On a
-large budget, it is a good step once the cheaper tool changes have been
-measured.
+High cost: several code tools, a dry run for each, and a measurement on its
+target evals. When it fixes its target, the confirmation on val measures
+every eval before a candidate becomes the baseline. That matters here,
+because the change touches every call. On a small budget, leave it out
+unless the traces show wrong tool choices on many items and cheaper changes
+did not fix them. On a large budget, it is a good step once the cheaper tool
+changes have been measured.
 
 ## If it does not move the evals
 

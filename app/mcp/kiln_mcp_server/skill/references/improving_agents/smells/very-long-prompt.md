@@ -1,6 +1,6 @@
 ---
 title: Very long prompt
-description: The system prompt is longer than the reference length, or it holds many unrelated topics and each request needs a few. Code measures the length.
+description: The system prompt is longer than 200,000 characters, or it holds many unrelated topics and each request needs a few. Measure the length yourself.
 reviewed: 2026-11-13
 applies_to: all
 ---
@@ -16,8 +16,9 @@ the request needs. How much it misses depends on the model and on how the
 text is structured. This is a property of the design, whether an eval
 passes or fails.
 
-The smell has two forms. Code finds the sure form: a prompt longer than
-the reference length. A reader finds the other form at any length: a
+The smell has two forms. The sure form is a prompt longer than the
+reference length, 200,000 characters (about 50,000 tokens). A measurement
+finds it. A reader finds the other form at any length: a
 prompt that holds many unrelated topics, of which each request needs one
 or a few.
 
@@ -25,9 +26,9 @@ or a few.
 
 In the harness:
 
-- the code detection in your input gives the length of the prompt and the
-  reference it was compared with;
-- with no detection: the prompt holds many unrelated topics, for example
+- measure it yourself: the prompt that the run config sends has more than
+  200,000 characters;
+- at any length: the prompt holds many unrelated topics, for example
   the rules of each thing that the agent can do, and each request needs
   only one or a few of them.
 
@@ -40,11 +41,12 @@ In how the agent runs:
 ## How to confirm it
 
 - Read the prompt. Count its topics, and estimate how many of them one
-  request needs. With no detection, report it only when the topics are
+  request needs. Under the reference length, report it only when the topics are
   unrelated and most requests need few of them. Name the topics in the
   evidence.
-- The reference is a default, not a measured optimum. Read the detection's
-  source before you state how sure you are.
+- The reference is a default of Kiln Harness Tuner, not a measured
+  optimum: no published limit for a system prompt is known. Say so when you
+  state how sure you are.
 - **Not this smell:** a prompt that is one topic, which every request
   needs in full, for example a rubric or a policy that applies to each
   item. That prompt can still be hard to follow: its structure is the

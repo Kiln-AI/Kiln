@@ -56,11 +56,11 @@ When the right tool is called with a malformed input, see
   moves with the tool. So a later experiment that adds, removes or changes
   a tool needs no prompt change, and its result stays clean. A prompt list
   ties the prompt to the tool set, and it grows with each tool.
-- Do not put a consolidation and other changes in one arm. A large change
+- Do not put a consolidation and other changes in one candidate. A large change
   together with others gives a result that no one can attribute.
 
 ## Budget
 
 Step 1 has a high cost when it consolidates tools. On a small budget, plan
-it only when the budget leaves room for an arm that makes that change
+it only when the budget leaves room for an experiment that makes that change
 alone. Otherwise start at step 2: steps 2 and 3 each have a low cost.

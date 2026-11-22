@@ -33,13 +33,21 @@ skill is the lever [skill](references/levers/skill.md), not this one.
 
 ## How to change it
 
-1. Read the parent's list: `get_run_config` gives `tools_config.tools`.
-2. Read what can be attached: `list_available_tools` gives each tool set
-   with its `type`, and each tool with its id, name and `function_name`.
-   `get_tool_definition` gives the description and the parameters that
-   the model sees. `list_code_tools` gives the project's code tools.
-3. Create a new run config with `create_run_config`. Copy every property
-   of the parent, and set the changed `tools_config.tools`.
+1. Read the parent's list:
+   `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md`
+   gives `tools_config.tools`.
+2. Read what can be attached:
+   `references/knowledge/api_docs/get_api_projects_project_id_available_tools.md`
+   gives each tool set with its `type`, and each tool with its id, name and
+   `function_name`.
+   `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_tools_tool_id_definition.md`
+   gives the description and the parameters that the model sees.
+   `references/knowledge/api_docs/get_api_projects_project_id_code_tools.md`
+   gives the project's code tools.
+3. Create a new run config with
+   `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md`.
+   Copy every property of the parent, and set the changed
+   `tools_config.tools`.
 
 Rules of the object:
 
@@ -55,12 +63,11 @@ Rules of the object:
 
 ## Limits
 
-- The tuner attaches only what exists. It cannot connect an MCP server,
-  and it cannot create a RAG config or a Kiln task tool.
+- This lever attaches only what exists. It does not connect an MCP
+  server, and it does not create a RAG config or a Kiln task tool.
 - When a dropped tool is still named in the prompt or in an attached
-  skill, the text points at nothing. Code looks for such names after the
-  build (the reference check). The build searches the text for the name
-  and changes each mention.
+  skill, the text points at nothing. After the build, search the text for
+  the name yourself and change each mention.
 - A code tool can call a tool that it lists in its `tool_allowlist` when
   that tool is not attached. To drop a tool from the model's view does not
   remove it from a wrapper.
@@ -70,13 +77,12 @@ Rules of the object:
   (`function_calling`, `function_calling_weak`, or `default` outside Ollama
   and Docker Model Runner), Kiln refuses every call once a tool or a skill
   is attached. Set the mode on the same run config by the fallback of
-  [model](references/levers/model.md), step 4, and list it in `change`. The lever
+  [model](references/levers/model.md), step 4, and record it as part of the change. The lever
   [output_mode](references/levers/output_mode.md) gives the modes.
 
 ## See also
 
-- The `kiln-task-setup` skill: the run-config payload and the tool id
-  forms.
-- The `kiln-harness-tuner-experiment-build` skill: the build discipline,
-  and the rebuild after a dangling reference.
-- The `kiln-harness-tuner-gateway` skill: the fields of each operation.
+- `references/knowledge/tools.md`: the tool types of Kiln, how to connect
+  and attach them, and the tool id forms.
+- `references/knowledge/subagents.md`: a Kiln task called as a tool.
+- `references/knowledge/rag.md`: the search tool of a RAG config.

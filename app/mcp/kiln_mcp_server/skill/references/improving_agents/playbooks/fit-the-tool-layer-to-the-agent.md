@@ -17,7 +17,8 @@ each token that a tool returns, and the model runs again between two
 calls. So a good API can be a poor tool for an agent.
 
 This playbook responds to the smells of the tool design. Each smell has
-its own document in the planner's entry file, and that document says how
+its own document in the table "Smells" of
+`references/improving_agents/index.md`, and that document says how
 to recognise it. The smells of the tools are:
 [tool results flood the context](references/improving_agents/smells/tool-results-flood-the-context.md),
 [fixed call chain](references/improving_agents/smells/fixed-call-chain.md),
@@ -28,7 +29,7 @@ to recognise it. The smells of the tools are:
 [document behind a lookup tool](references/improving_agents/smells/document-behind-a-lookup-tool.md)
 and [very long tool description](references/improving_agents/smells/very-long-tool-description.md).
 
-The tuner does not change the company's tools. It writes a layer of code
+You do not change the company's tools. You write a layer of code
 tools over them: a wrapper calls the original tool and changes what goes
 in or what comes back. The [code tools](references/levers/new_tool.md) lever says
 how. So many tool designs can be tried, and the original tools stay as
@@ -39,7 +40,7 @@ description, not in a prompt line, and a guide skill can describe the tool
 set. The exception is a "call X at the start" line, which goes in the
 prompt: see
 [missing context the agent could be given](references/improving_agents/playbooks/missing-context-the-agent-could-be-given.md).
-The same arm removes the prompt text that the new tool takes over.
+The same candidate removes the prompt text that the new tool takes over.
 
 ## What to try, in order
 
@@ -78,7 +79,7 @@ them only when it does not.
 
 ## What not to do yet
 
-- Do not ask for a change to the company's APIs. The tuner cannot make it,
+- Do not ask for a change to the company's APIs. An experiment cannot make it,
   and a layer of wrappers can try many designs in the same time.
 - Do not add prompt rules on how to use a tool in place of a change to the
   tool. The tool still returns what it returned. A rule that the model
@@ -86,9 +87,9 @@ them only when it does not.
   strong preference. Text in a tool moves with the tool. So a later experiment
   that adds, removes or changes a tool needs no prompt change, and its
   result stays clean.
-- Do not put several unrelated wrappers in one arm. When it wins, nothing
-  says which wrapper helped. A wrapper with its description and its guide
-  skill is one technique, and it is one arm.
+- Do not put several unrelated wrappers in one candidate. When it wins,
+  nothing says which wrapper helped. A wrapper with its description and
+  its guide skill is one technique, and it is one candidate.
 - Do not plan a small fix elsewhere while a tool result can flood the
   context. The flood hides the effect of the fix.
 
@@ -97,4 +98,4 @@ them only when it does not.
 On a small budget, the low-cost steps come first: remove or scope tools,
 and a new description where the description is the problem. A
 consolidation of tools has a high cost: plan it when the budget leaves
-room for an arm that makes that change alone.
+room for an experiment that makes that change alone.

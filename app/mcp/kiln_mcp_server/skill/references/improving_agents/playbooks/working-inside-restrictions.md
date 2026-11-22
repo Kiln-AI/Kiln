@@ -20,19 +20,20 @@ provider that the user does not trust.
 A restriction is a hard limit on the plan, not a preference. It comes
 from two places:
 
-- **The model policy** of the run: `model_policy`, `allowed_models` and
-  `flagged_models` in your input. Code refuses a run config whose model the
-  policy does not allow.
-- **The guidance**, in words. Code has no guard for a restriction that is
-  only in the guidance. The plan is the guard.
+- **The models that the user allows**, and the models that the user
+  flags. Ask the user. Nothing refuses a run config whose model the user
+  does not allow: check it yourself.
+- **What the user asked**, in words. Nothing guards a restriction that is
+  only in the user's words. The plan is the guard.
 
-An arm that breaks a restriction wastes its whole cost, because its result
-cannot ship. A plan that knows the limits at the start does not spend
-waves on a model that is not allowed.
+A candidate that breaks a restriction wastes its whole cost, because its
+result cannot ship. A plan that knows the limits at the start does not
+spend experiments on a model that is not allowed.
 
 ## What to try, in order
 
-1. Read the guidance and the model policy before the first plan, and list
+1. Read what the user asked and the models that the user allows before the
+   first plan, and list
    each restriction:
    [know the agent before you plan](references/improving_agents/playbooks/know-the-agent-before-you-plan.md).
 2. When the best lever for an issue is not allowed, take the next step of
@@ -43,29 +44,28 @@ waves on a model that is not allowed.
    - A model change is not allowed: a change to the harness that does the
      same work, for example a tool that removes a mechanical failure,
      [change the surface, not the words](references/improving_agents/playbooks/change-the-surface-not-the-words.md).
-   - A tool must not change: a wrapper is allowed only when the guidance
+   - A tool must not change: a wrapper is allowed only when the user
      says that the restriction is about the tool's code. A wrapper then
      adds a tool beside it and leaves its code as it is. Otherwise, change
      the text the agent reads about the tool, in the prompt or in a skill,
      [guide skill for a tool set](references/improving_agents/techniques/guide-skill-for-a-tool-set.md),
-     and put the question in `open_questions`.
-3. When no step inside the limits fits an issue, do not plan an arm for
-   it. Say in `rejected_summary` which restriction stops it, so that the
-   report can tell the owner.
+     and report the question to the user.
+3. When no step inside the limits fits an issue, do not plan a candidate
+   for it. Report to the user which restriction stops it.
 
 ## What not to do yet
 
-- Do not plan an arm that breaks a restriction, to see if it would help.
+- Do not plan a candidate that breaks a restriction, to see if it would help.
   Its result cannot ship, and the spend is lost.
 - Do not read a restriction narrowly. "Zero data retention only" covers
   every model and every provider that the plan uses, not only the main
   one.
-- Do not ask the user for an exception in the middle of the run. When a
-  restriction is unclear, follow its strictest reading, and put the
-  question in `open_questions`.
+- Do not ask the user for an exception in the middle of the work. When a
+  restriction is unclear, follow its strictest reading, and report the
+  question to the user.
 
 ## Budget
 
 The order does not change with the budget. On a small budget a
-restriction matters more, because a wasted arm is a larger part of the
+restriction matters more, because a wasted candidate is a larger part of the
 budget.

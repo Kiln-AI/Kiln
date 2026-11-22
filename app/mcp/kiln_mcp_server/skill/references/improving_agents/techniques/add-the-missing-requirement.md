@@ -57,20 +57,20 @@ The change is one edit of the [prompt](references/levers/prompt.md).
 1. **Name the requirement.** Read the spec of the eval and the failing
    outputs. Write the requirement in one sentence, in your own words.
 2. **Do not copy the eval.** Never paste text from a judge prompt, a spec
-   or an eval description, and never name an eval. Code searches each
-   build for a run of words copied from those texts. State the rule from the
+   or an eval description, and never name an eval. Search each build
+   yourself for a run of words copied from those texts. State the rule from the
    task's point of view: what a good answer does, and why.
 3. **State it as a general rule**, with its reason. Do not write a value
    from a train item. When an example helps, use invented values.
 4. **Put the rule beside the instruction it belongs to.** When the prompt
    states a weaker or a different version, replace that text on the same
    edit.
-5. **One requirement for each arm**, unless two requirements are one rule.
+5. **One requirement for each candidate**, unless two requirements are one rule.
    Then a result tells which rule moved which eval.
 
 ## Check that it took effect
 
-Smoke the new run config on two or three train items that failed for the
+Run the new run config on two or three train items that failed for the
 missing property. Count the outputs that now have it. When none have it,
 the rule did not reach the model, or the cause is not the prompt.
 
@@ -94,6 +94,7 @@ None yet.
 
 Medium to high, for an omission that the traces show on many items. An
 underspecified prompt is one of the most common causes that error analysis
-finds, in field practice and in the view of this project's owners.
+finds, in field practice and in the view of the authors of this
+knowledge.
 Low, when only a few items fail: a rule written for them often does not
 transfer.

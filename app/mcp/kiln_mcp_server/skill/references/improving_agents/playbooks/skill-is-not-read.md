@@ -20,7 +20,7 @@ Look at the tool calls that open a skill or read one of its files:
 - **read, not followed**: the agent loads the right file, and its answer
   does not do what the file says.
 
-Each case has its own fix, so name the case first. A probe settles at a
+Each case has its own fix, so name the case first. A quick check settles at a
 low cost whether this model opens skills at all under this run config.
 
 ## What to try, in order
@@ -32,7 +32,7 @@ low cost whether this model opens skills at all under this run config.
    when the agent does not open the skill: one prompt rule that says which
    requests need the skill.
 3. [Skill into the prompt](references/improving_agents/techniques/skill-into-the-prompt.md), when a
-   probe shows that the model does not open skills under this run config,
+   quick check shows that the model does not open skills under this run config,
    or the skill is small, or most runs need it. The content, or a compact
    index of it, is then always in the context.
 4. [Policy as step-by-step procedures](references/improving_agents/techniques/policy-as-step-by-step-procedures.md),
@@ -49,10 +49,11 @@ low cost whether this model opens skills at all under this run config.
   map are part of the fix. More content in the body is not: it gives the
   model more to read before it picks a file.
 - Do not assume that the agent reads a skill because it is attached. Count
-  the reads in a few traces, or ask a probe.
+  the reads in a few traces, or run a quick check.
 - When the agent loads the skill and does not follow it, do not add more
   text to the skill. More text gives the model more to miss. A shorter,
-  more procedural text, or the content in the prompt, is the next arm.
+  more procedural text, or the content in the prompt, is the next
+  candidate.
   When the model is a lever, a model that follows long guidance better
   is another option.
 
