@@ -36,6 +36,7 @@ Sources:
 - **System One models** (Jev, GPT 6 Luna Decision, Gemini Decision 1). Kiln already serves Jev through the TypeSafe provider.
 - **Image, video and realtime models.**
 - **New `KilnModel` entries** for OpenCode models that Kiln doesn't have yet. Those go through the normal model-sweep process later.
+- **Generic 402 (out of credits) handling** in Kiln's error messages and batch-abort rules. It applies to every provider, so it belongs in a cross-provider project.
 - **The `x-opencode-session` header.** Session affinity for multi-turn runs is a cross-provider problem, handled separately for all providers.
 - **Kiln-side awareness of the user's balance, budgets, auto-recharge or workspace settings.** Users manage these in OpenCode Console.
 
@@ -86,12 +87,12 @@ OpenCode reports the cost of each call in USD, in the response's `usage.cost` fi
 
 ## Errors
 
-OpenCode's own error messages are clear, and LiteLLM keeps them intact (see the probe in [architecture.md](./architecture.md#error-probe)). Kiln adds no OpenCode-specific error handling. It relies on its existing handling, plus one generic rule for HTTP 402 that applies to every provider.
+OpenCode's own error messages are clear, and LiteLLM keeps them intact (see the probe in [architecture.md](./architecture.md#error-probe)). Kiln adds no OpenCode-specific error handling, and no new generic rules. It relies on its existing handling.
 
 | Case | OpenCode returns | Kiln behavior |
 |---|---|---|
 | Invalid, revoked or expired key | 401 (confirmed by the user with a bad key) | The existing authentication error: "Check your API key." It's batch-fatal. |
-| Out of pay-as-you-go credits | 402 `Insufficient account funds` (per OpenCode's billing docs) | New generic 402 rule: "The model provider declined the request because the account is out of credits. Add credits with the provider and try again." It's batch-fatal and not retried. |
+| Out of pay-as-you-go credits | 402 `Insufficient account funds` (per OpenCode's billing docs) | The existing generic error. Kiln has no 402 handling for any provider today. Adding it is a cross-provider change, outside this project. |
 | Rate limit | 429 | The existing `RateLimitError`: retryable and not batch-fatal. |
 | Model disabled for the workspace, retired, or unknown | 403, 410 or 400 | The existing generic error. Kiln lists only default-enabled, current models, so these occur only with custom model IDs or after an admin change. |
 | Free model (custom model ID only) | 429 `FreeUsageLimitError` | Treated as a rate limit by the existing handling. Kiln never lists free models. |
@@ -102,7 +103,7 @@ OpenCode's own error messages are clear, and LiteLLM keeps them intact (see the 
 
 The status code must be kept too. Kiln doesn't show this text to the user in this project; showing it in the run page and elsewhere is a separate project. This project only guarantees that the text is there, and tests that it is.
 
-The pay-as-you-go versus OpenCode Go distinction is made on the connect screen (the warning and the key steps), in the connect error for a rejected key, and in the missing-key warning. A generic provider rule can't name OpenCode Go, so the 402 message doesn't.
+The pay-as-you-go versus OpenCode Go distinction is made on the connect screen (the warning and the key steps), in the connect error for a rejected key, and in the missing-key warning. 
 
 ## Model Catalog
 
@@ -133,7 +134,7 @@ Add an OpenCode section to `.agents/skills/claude-maintain-models/SKILL.md` and 
 
 Follow the model-maintenance skill's rule for new providers:
 
-- **PR 1, provider support:** the `ModelProviderName` member, the config field, the LiteLLM wiring, cost recording, the generic 402 rule, connect and disconnect, the `built_in_providers` item, and the web UI connect entry and icon. It can merge whenever it's ready.
+- **PR 1, provider support:** the `ModelProviderName` member, the config field, the LiteLLM wiring, cost recording, connect and disconnect, the `built_in_providers` item, and the web UI connect entry and icon. It can merge whenever it's ready.
 - **PR 2, model catalog and skill docs:** the `ml_model_list.py` provider entries and the skill updates. It merges only after a client release that includes PR 1.
 
 ## Connect Screen Copy
@@ -149,7 +150,7 @@ Approved strings. There's no separate UI design step for this project.
 
 ## Testing
 
-- **Unit tests:** the config field, connect validation (valid key, invalid key, network failure), the LiteLLM wiring (base URL, key, model ID passthrough), cost recording (with and without `usage.cost`, streaming and non-streaming), and the 402 rule.
+- **Unit tests:** the config field, connect validation (valid key, invalid key, network failure), the LiteLLM wiring (base URL, key, model ID passthrough), cost recording (with and without `usage.cost`, streaming and non-streaming), and that OpenCode's error text is kept.
 - **Per-model paid tests:** these run automatically for each OpenCode entry in `ml_model_list.py`, as for other providers. They set the final flags.
 - **Live tests:** use `OPENCODE_API_KEY`. In this cloud environment, the key is saved as a network secret for `opencode.ai`, so tests set the env var to a placeholder and the proxy injects the real key.
 

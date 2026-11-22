@@ -13,7 +13,7 @@ Implements [functional_spec.md](./functional_spec.md). This is a small project, 
 | Call path | Kiln's generic OpenAI-compatible path. The model ID becomes `openai/<id>` with a fixed `api_base`, like `siliconflow_cn`. | This was the user's choice. LiteLLM's `opencode_go/` provider covers only the Go plan, needs LiteLLM 1.110 or later (Kiln pins `>=1.105.7,<1.106`), and picks each model's native API, which is the opposite of Chat Completions-only. See [LiteLLM's OpenCode support](#litellms-opencode-support). |
 | Cost | Always read `usage.cost` from the response. Ignore LiteLLM's `response_cost`. | LiteLLM fills in `response_cost` from its own price list for model names it knows (`gpt-5.4-nano`, `gpt-5.4-mini`), so the current precedence (`response_cost` first) would use the wrong source. |
 | Session header | Not sent. Out of scope. | Session affinity is a cross-provider problem, handled separately for all providers. The caching data below is kept for that work. |
-| Errors | No OpenCode-specific mapping. Add one generic rule for HTTP 402 (any provider) to `format_error_message` and `is_batch_fatal_error`. | The [error probe](#error-probe) shows OpenCode's messages are clear and LiteLLM keeps them. The one real gap is out-of-credits, which Kiln shows as "An unexpected error occurred." and doesn't treat as fatal. |
+| Errors | No change to Kiln's error handling. | The [error probe](#error-probe) shows OpenCode's messages are clear, and that LiteLLM and Kiln keep them on the exception. The only gap is out-of-credits (402), which Kiln shows as "An unexpected error occurred." That's true for every provider, so it's left to a cross-provider project. |
 | Connect check | `GET https://opencode.ai/inference/v1/models` with the key. | It's free. The user confirmed that a bad key gets 401. |
 
 ## Live Findings (Nov 22, 2026)
@@ -68,7 +68,7 @@ These are real OpenCode errors run through LiteLLM 1.105.7 and Kiln's `format_er
 - Streaming: `AdapterStream` errors aren't wrapped in a `KilnRunError`, so the LiteLLM exception is raised as-is. The probe's streaming run gave the same text.
 - Nothing in this project changes that. The [Testing Strategy](#testing-strategy) adds tests that pin it.
 
-OpenCode's text is good. Kiln's generic fallback hides it, which is a deliberate cross-provider policy against leaking provider internals. This project doesn't change that. The 403, 410 and 400 cases can only happen with custom model IDs or admin changes, because Kiln lists only default-enabled, current models. That leaves out-of-credits as the one case worth handling, and it isn't specific to OpenCode.
+OpenCode's text is good. Kiln's generic fallback hides it, which is a deliberate cross-provider policy against leaking provider internals. This project doesn't change that. The 403, 410 and 400 cases can only happen with custom model IDs or admin changes, because Kiln lists only default-enabled, current models. That leaves out-of-credits (402). Kiln has no 402 handling for any provider, so the fix is a cross-provider change and is out of scope here.
 
 ### LiteLLM's OpenCode support
 
@@ -131,13 +131,6 @@ else:
 - This one function covers both paths. The non-streaming tool loop calls it per call, and `AdapterStream` calls it on the response `stream_chunk_builder` builds, which carries `usage.cost` (verified).
 - No `extra_body` opt-in is needed. OpenCode always sends `usage.cost`, unlike OpenRouter's `usage.include`.
 
-### Generic 402 rule (`adapters/errors.py`, `adapters/retry_classification.py`)
-
-- **`format_error_message`:** add a branch after the 5xx bucket and before `JSONSchemaValidationError`: `isinstance(exc, litellm.APIError) and getattr(exc, "status_code", None) == 402`. It returns "The model provider declined the request because the account is out of credits. Add credits with the provider and try again."
-- **`is_batch_fatal_error`:** also true for an `APIError` with `status_code == 402`, after `unwrap_kiln_run_error`. Every remaining row of a batch would fail the same way, so the run stops early.
-- **`is_retryable_error`:** no change. `APIError` isn't in its retryable set.
-- **Not OpenCode-specific.** Any provider that returns 402 benefits. It matches on the status code, so it holds if a later LiteLLM maps 402 to an `APIError` subclass.
-
 ### Connect and disconnect
 
 **`app/desktop/studio_server/provider_api.py`:**
@@ -198,12 +191,10 @@ The unit tests use pytest. The wire tests follow `test_cloudflare_litellm.py`: t
   - A run with a known OpenAI model name still uses `usage.cost` when LiteLLM's `response_cost` differs (patch the price map, or use a `gpt-*` ID whose LiteLLM price is different).
   - When `usage.cost` is missing, the run has no cost.
   - An `int` cost of 0 is recorded as 0.0.
-- **Provider text kept:** for each recorded OpenCode error body (402, 403, 410, 400, and the free-model 429), run a real `LiteLlmAdapter` invocation through respx, non-streaming and streaming. Assert that the exception Kiln keeps (`KilnRunError.original` non-streaming; the raised exception when streaming) has OpenCode's `error.message` in `str()` and the right `status_code`. This is the guarantee the separate UI project will build on.
-- **Errors:** a recorded 402 body gives an `APIError` with `status_code == 402`, the new message, and `is_batch_fatal_error` True. A 401 stays an `AuthenticationError`, and a plain 429 stays a retryable `RateLimitError`. These pin LiteLLM's mapping, so an upgrade that changes it shows up.
+- **Provider text kept:** for each recorded OpenCode error body (402, 403, 410, 400, and the free-model 429), run a real `LiteLlmAdapter` invocation through respx, non-streaming and streaming. Assert that the exception Kiln keeps (`KilnRunError.original` non-streaming; the raised exception when streaming) has OpenCode's `error.message` in `str()` and the right `status_code`. This is the guarantee the separate UI project will build on. Also assert that a 401 stays an `AuthenticationError` and a plain 429 stays a retryable `RateLimitError`, so a LiteLLM upgrade that changes the mapping shows up.
 
 **Other new or extended tests:**
 
-- `errors.py` and retry-classification tests: the 402 branch, including inside a `KilnRunError`. Other `APIError` statuses still get the generic message and aren't batch-fatal.
 - Existing parametrized tests extended with `opencode`: `test_provider_tools.py` (friendly name, core config), `utils/test_litellm.py`, `test_litellm_adapter.py` (model ID prefix `openai`), `test_adapter_registry.py`, `utils/test_config.py` and `test_ml_provider_list.py`.
 - `test_provider_api.py`: connect success, 401, 403, another status, a request exception, the dispatch through `connect_api_key`, and disconnect. Add `opencode` to the invalid-payload and all-providers fixtures.
 - `connect_providers.test.ts`: OpenCode shows as connected when `opencode_api_key` is set.

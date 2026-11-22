@@ -12,7 +12,6 @@ PR 1 is phases 1–2 and can merge whenever it's ready. PR 2 is phase 3 and merg
   - the enum member, the config key, the LiteLLM mapping, `provider_warnings`, and the core config, including `cost_from_response_usage`
   - the `built_in_providers` item
   - cost from `usage.cost`
-  - the generic 402 rule
   - the wire tests: request, cost, errors, and the provider-text-kept tests
 - [ ] Phase 2: Connect, disconnect and web UI, part of PR 1:
   - `connect_opencode` and the disconnect case, with tests
