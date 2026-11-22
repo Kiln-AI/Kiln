@@ -220,8 +220,13 @@ export function reset_arguments_for_form(
 }
 
 /** The Reset Arguments editor's text for a value read from the form. */
-export function reset_arguments_from_form(form_value: unknown): string {
-  return format_reset_arguments(form_value_to_kwargs(form_value) as ResetKwargs)
+export function reset_arguments_from_form(
+  form_value: unknown,
+  form_schema: JsonSchemaProperty,
+): string {
+  return format_reset_arguments(
+    form_value_to_kwargs(form_value, form_schema) as ResetKwargs,
+  )
 }
 
 export function presets_without(

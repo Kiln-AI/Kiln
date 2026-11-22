@@ -87,7 +87,29 @@ describe("reset_schema_to_form_schema", () => {
         },
         company: { type: "string", title: "Company" },
       },
-      required: ["company"],
+      required: ["seed", "company"],
+    })
+  })
+
+  it("keeps a required object whose fields are all optional", () => {
+    const schema = {
+      $defs: {
+        Config: object_schema({ level: { type: "integer" } }),
+      },
+      ...(object_schema({ cfg: { $ref: "#/$defs/Config" } }) as object),
+      required: ["cfg"],
+    }
+    expect(reset_schema_to_form_schema(schema)).toEqual({
+      type: "object",
+      properties: {
+        cfg: {
+          type: "object",
+          title: "Cfg",
+          properties: { level: { type: "integer", title: "Level" } },
+          required: [],
+        },
+      },
+      required: ["cfg"],
     })
   })
 
@@ -215,6 +237,31 @@ const FORM_SCHEMA = reset_schema_to_form_schema(
   SEAHAVEN_RESET_SCHEMA,
 ) as JsonSchemaProperty
 
+// A required object whose fields are all optional, inside an optional object.
+const REQUIRED_OBJECT_FORM_SCHEMA: JsonSchemaProperty = {
+  type: "object",
+  properties: {
+    cfg: {
+      type: "object",
+      properties: { level: { type: "integer" } },
+      required: [],
+    },
+    extra: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        inner: {
+          type: "object",
+          properties: { flag: { type: "boolean" } },
+          required: [],
+        },
+      },
+      required: ["inner"],
+    },
+  },
+  required: ["cfg"],
+}
+
 describe("kwargs_fit_form", () => {
   it.each([
     ["empty", {}],
@@ -223,6 +270,15 @@ describe("kwargs_fit_form", () => {
     ["a nested object", { startup: { acting_user: "sam" } }],
   ])("fits %s", (_, kwargs) => {
     expect(kwargs_fit_form(kwargs, FORM_SCHEMA)).toEqual({ fits: true })
+  })
+
+  it("fits an empty required object", () => {
+    expect(
+      kwargs_fit_form(
+        { cfg: {}, extra: { name: "x", inner: {} } },
+        REQUIRED_OBJECT_FORM_SCHEMA,
+      ),
+    ).toEqual({ fits: true })
   })
 
   it.each([
@@ -260,16 +316,19 @@ describe("kwargs_fit_form", () => {
 describe("form_value_to_kwargs", () => {
   it("leaves out empty values and objects left empty", () => {
     expect(
-      form_value_to_kwargs({
-        company: "acme",
-        fixture: "",
-        seed: 0,
-        flag: false,
-        missing: undefined,
-        gone: null,
-        startup: { acting_user: "" },
-        nested: { keep: { me: 1 }, drop: { x: "" } },
-      }),
+      form_value_to_kwargs(
+        {
+          company: "acme",
+          fixture: "",
+          seed: 0,
+          flag: false,
+          missing: undefined,
+          gone: null,
+          startup: { acting_user: "" },
+          nested: { keep: { me: 1 }, drop: { x: "" } },
+        },
+        FORM_SCHEMA,
+      ),
     ).toEqual({
       company: "acme",
       seed: 0,
@@ -279,7 +338,25 @@ describe("form_value_to_kwargs", () => {
   })
 
   it("is an empty object for an empty form", () => {
-    expect(form_value_to_kwargs({ company: "" })).toEqual({})
-    expect(form_value_to_kwargs(undefined)).toEqual({})
+    expect(form_value_to_kwargs({ company: "" }, FORM_SCHEMA)).toEqual({})
+    expect(form_value_to_kwargs(undefined, FORM_SCHEMA)).toEqual({})
+  })
+
+  it("sends a required object left empty as {}", () => {
+    expect(
+      form_value_to_kwargs(
+        { cfg: { level: undefined }, extra: { name: "", inner: {} } },
+        REQUIRED_OBJECT_FORM_SCHEMA,
+      ),
+    ).toEqual({ cfg: {} })
+  })
+
+  it("adds a required object inside an optional object that's kept", () => {
+    expect(
+      form_value_to_kwargs(
+        { cfg: { level: 2 }, extra: { name: "x", inner: { flag: undefined } } },
+        REQUIRED_OBJECT_FORM_SCHEMA,
+      ),
+    ).toEqual({ cfg: { level: 2 }, extra: { name: "x", inner: {} } })
   })
 })

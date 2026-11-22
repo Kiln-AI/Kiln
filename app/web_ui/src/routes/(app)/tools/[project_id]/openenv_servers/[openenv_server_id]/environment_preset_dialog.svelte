@@ -125,13 +125,16 @@
     if (form_value === null) {
       return
     }
-    draft = { ...draft, reset_arguments: reset_arguments_from_form(form_value) }
+    draft = {
+      ...draft,
+      reset_arguments: reset_arguments_from_form(form_value, form_schema),
+    }
     raw_json = true
   }
 
   async function submit() {
     error = null
-    if (!raw_json) {
+    if (!raw_json && form_schema) {
       const form_value = read_form()
       if (form_value === null) {
         submitting = false
@@ -139,7 +142,7 @@
       }
       draft = {
         ...draft,
-        reset_arguments: reset_arguments_from_form(form_value),
+        reset_arguments: reset_arguments_from_form(form_value, form_schema),
       }
     }
     const result = presets_with_draft(presets, editing_index, draft)

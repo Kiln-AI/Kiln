@@ -237,7 +237,10 @@ describe("reset_arguments_for_form", () => {
 describe("reset_arguments_from_form", () => {
   it("formats the form value without its empty fields", () => {
     expect(
-      reset_arguments_from_form({ company: "acme", user: { id: undefined } }),
+      reset_arguments_from_form(
+        { company: "acme", user: { id: undefined } },
+        FORM_SCHEMA,
+      ),
     ).toBe('{\n  "company": "acme"\n}')
   })
 
@@ -245,7 +248,8 @@ describe("reset_arguments_from_form", () => {
     const text = '{\n  "company": "beta",\n  "user": {\n    "id": 7\n  }\n}'
     const result = reset_arguments_for_form(text, FORM_SCHEMA)
     expect(
-      "form_value" in result && reset_arguments_from_form(result.form_value),
+      "form_value" in result &&
+        reset_arguments_from_form(result.form_value, FORM_SCHEMA),
     ).toBe(text)
   })
 })
