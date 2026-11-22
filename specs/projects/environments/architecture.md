@@ -46,7 +46,7 @@ World is on `origin/main` (commit `6a1820f37`) but in no release, so there's no 
 | `WorldSessionManager` protocol, `world_version()` | `OpenEnvSessionManager`, `openenv_version()` |
 | `_ServerInfo.world_id`, `.world_version`, `_compose_world_version` | `.openenv_server_id`, `.openenv_version`, `_compose_openenv_version` |
 | `EpisodeContext.world`, `.session_manager: WorldSessionManager` | `.openenv`, `OpenEnvSessionManager` |
-| `validate_world_tool_ids` (`adapter_registry.py`) | `validate_openenv_tool_ids` (rewritten in phase 3) |
+| `validate_world_tool_ids` (`adapter_registry.py`) | `validate_openenv_tool_ids`, unchanged from its released behaviour. Run config validation uses `validate_run_config_openenv_tools` instead. |
 | `world_trace_tag` (`trace_index.py`) | `openenv_trace_tag` |
 | Eval runner: `_WorldTarget`, `_world_*` helpers, `world_session_manager` kwarg, `_WorldToolMismatch` literals `"no_world_reset"`, `"other_world"` | `_OpenEnvTarget`, `_openenv_*`, `openenv_session_manager`, `"no_openenv_reset"`, `"other_openenv"` |
 | `studio/world_api.py`, `/api/projects/{project_id}/worlds...`, `World*Request/Response`, tag "Worlds" | `studio/openenv_server_api.py`, `/openenv_servers...`, `OpenEnv*Request/Response`, tag "Environments" |
@@ -131,7 +131,7 @@ def single_openenv_server_id(project: Project, tool_ids: list[ToolId]) -> str | 
 
 | Caller | Change |
 |---|---|
-| `validate_openenv_tool_ids` (`adapter_registry.py`), used by `validate_run_config_tool_names` when a run config is saved | Replace the direct-only check with `single_openenv_server_id` over all tools. Keep the existence and name-collision checks. |
+| `validate_run_config_openenv_tools` (`adapter_registry.py`), used by `validate_run_config_tool_names` when a run config is saved | Takes the whole tool list and runs `single_openenv_server_id` over it, with the existence and name-collision checks. The released `validate_openenv_tool_ids` keeps its signature and its direct-only check for library callers. |
 | Code tool create (`studio/code_tool_api.py`, around line 234, via `validate_unique_allowlist_tool_names`) | Call `single_openenv_server_id(project, allowlist)` |
 | Run start (section 5) | Called by the session setup |
 | Lookup endpoint (below) | Called directly |
