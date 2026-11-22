@@ -1,4 +1,4 @@
-.PHONY: dev dev_desktop ui schema annotations api_docs check package
+.PHONY: dev dev_desktop ui schema annotations api_docs skill_index check package
 
 SHELL := /bin/bash
 
@@ -34,6 +34,10 @@ annotations:
 # Regenerate the Kiln skill's API reference from the app's OpenAPI document (built in process; no server needed). Needs Python 3.13.
 api_docs:
 	uv run python -m app.desktop.skill_api_reference generate
+
+# Rewrite the generated indexes of the Kiln skill (the knowledge index blocks and the help-article index), then check the skill.
+skill_index:
+	uv run python -m kiln_mcp_server.skill_checks build
 
 # Run formatting, linting, typechecking, tests, and builds via the repo checks script.
 check:

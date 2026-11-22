@@ -22,7 +22,7 @@ from kiln_mcp_server.skill_checks.api_reference import (
     render,
     write_folder,
 )
-from kiln_mcp_server.skill_checks.tree_check import default_root
+from kiln_mcp_server.skill_checks.knowledge_schema import default_root
 
 from app.desktop.desktop_server import make_app
 

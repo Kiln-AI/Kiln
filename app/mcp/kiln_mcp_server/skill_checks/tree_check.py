@@ -9,12 +9,18 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
-import yaml
-
 from kiln_mcp_server.skill_checks.docs_index import (
     DOCS_FOLDER,
     DOCS_INDEX_PATH,
     online_url_for,
+)
+from kiln_mcp_server.skill_checks.front_matter import read_front_matter
+from kiln_mcp_server.skill_checks.knowledge_schema import (
+    API_CATALOGUE_SUFFIX,
+    API_DOCS_PREFIX,
+    COMPONENT_ROOTS,
+    INDEX_BLOCKS,
+    Problem,
 )
 from kiln_mcp_server.skill_files import ROOT_FILE, list_tree
 
@@ -32,28 +38,17 @@ TREE_RULES: tuple[str, ...] = (
     "tree-unreachable",
 )
 
-API_DOCS_FOLDER = "references/knowledge/api_docs/"
+API_DOCS_FOLDER = API_DOCS_PREFIX
 KNOWLEDGE_FOLDER = "references/knowledge/"
 MODES_FOLDER = "references/modes/"
 KNOWLEDGE_TREES = ("references/levers/", "references/improving_agents/")
 SPLIT_RULE_FILE = "references/knowledge/train_val_test.md"
-CATALOGUE_SUFFIX = "_api_list.md"
+CATALOGUE_SUFFIX = API_CATALOGUE_SUFFIX
 
 # The documents of the knowledge trees; the knowledge check owns their front
 # matter. Files deeper inside these folders are sub-files, with none.
-KNOWLEDGE_DOCUMENT_FOLDERS = (
-    "references/levers",
-    "references/improving_agents/techniques",
-    "references/improving_agents/playbooks",
-    "references/improving_agents/smells",
-)
-NO_FRONT_MATTER_FILES = frozenset(
-    {
-        DOCS_INDEX_PATH,
-        "references/levers/index.md",
-        "references/improving_agents/index.md",
-    }
-)
+KNOWLEDGE_DOCUMENT_FOLDERS = tuple(COMPONENT_ROOTS.values())
+NO_FRONT_MATTER_FILES = frozenset({DOCS_INDEX_PATH, *INDEX_BLOCKS})
 SKILL_DESCRIPTION_MAX = 1024
 
 CALL_SYNTAX = ("skill(name=", "kiln_skill")
@@ -211,15 +206,6 @@ _SPLIT_POINTER_FOLDERS = (MODES_FOLDER, *KNOWLEDGE_TREES)
 _NO_WORDING_RULE_FOLDERS = (DOCS_FOLDER, API_DOCS_FOLDER)
 
 
-@dataclass(frozen=True)
-class Problem:
-    """One broken rule; `path` is from the skill root."""
-
-    rule: str
-    path: str
-    message: str
-
-
 RefSource = Literal["link", "code", "bare", "catalogue"]
 
 
@@ -244,11 +230,6 @@ class _Scan:
     prose: list[tuple[int, str]]
     """Each line with link targets, code spans and the labels of links to
     skill paths blanked out."""
-
-
-def default_root() -> Path:
-    """The skill folder of this package on disk."""
-    return Path(__file__).resolve().parents[1] / "skill"
 
 
 def tree_paths(root: Path) -> frozenset[str]:
@@ -580,25 +561,6 @@ def _term_pattern(term: str) -> re.Pattern[str]:
     )
 
 
-def _front_matter(text: str) -> tuple[bool, dict[str, object], str | None]:
-    """(present, data, error) of the front matter block of `text`. `data` is
-    empty when there is an error."""
-    lines = text.split("\n")
-    if lines[0] != "---":
-        return False, {}, None
-    try:
-        end = lines.index("---", 1)
-    except ValueError:
-        return True, {}, "front matter is not closed"
-    try:
-        loaded = yaml.safe_load("\n".join(lines[1:end]))
-    except yaml.YAMLError as error:
-        return True, {}, f"front matter is not valid YAML: {error}"
-    if not isinstance(loaded, dict):
-        return True, {}, "front matter is not a map"
-    return True, {str(key): value for key, value in loaded.items()}, None
-
-
 def _expected_front_matter(
     key: str,
 ) -> Literal["skill", "name_and_description", "help_article", "none", "unchecked"]:
@@ -624,13 +586,14 @@ def _front_matter_problems(key: str, text: str) -> list[str]:
     expected = _expected_front_matter(key)
     if expected == "unchecked":
         return []
-    present, data, error = _front_matter(text)
+    front = read_front_matter(text)
+    data = front.data
     if expected == "none":
-        return ["must have no front matter"] if present else []
-    if not present:
+        return ["must have no front matter"] if front.present else []
+    if not front.present:
         return ["has no front matter"]
-    if error is not None:
-        return [error]
+    if front.error is not None:
+        return [front.error]
 
     description = data.get("description")
     description = description.strip() if isinstance(description, str) else ""

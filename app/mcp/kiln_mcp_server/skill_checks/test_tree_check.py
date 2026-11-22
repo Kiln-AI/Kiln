@@ -1,11 +1,11 @@
 import pytest
 
 from kiln_mcp_server.conftest import write_tree
+from kiln_mcp_server.skill_checks.knowledge_schema import Problem
 from kiln_mcp_server.skill_checks.tree_check import (
     SPLIT_RULE_FILE,
     TREE_RULES,
     PathRef,
-    Problem,
     check_tree,
     paths_in,
     tree_paths,

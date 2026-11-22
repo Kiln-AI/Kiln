@@ -42,10 +42,12 @@ Agents have access to a range of tools for running tests, linting, formatting an
 | `npm run build` | — | Web build (from `app/web_ui`) |
 | `app/web_ui/src/lib/check_schema.sh` | `app/web_ui/src/lib/generate_schema.sh` | OpenAPI client up to date |
 | `uv run python -m app.desktop.skill_api_reference check` | `make api_docs` | Kiln skill API reference up to date (Python 3.13) |
-| `uv run python -m kiln_mcp_server.skill_checks check` | — | Kiln skill tree: paths resolve, files reachable, wording rules |
+| `uv run python -m kiln_mcp_server.skill_checks check` | `make skill_index` | Kiln skill tree and its knowledge: paths resolve, files reachable, wording rules, generated indexes up to date |
 | `misspell` | — | Spelling check (optional if not installed) |
 
 Our end-to-end UI tests are separate and not part of `checks.sh`.
+
+To change the knowledge of the Kiln skill (`app/mcp/kiln_mcp_server/skill/references/levers/` and `references/improving_agents/`) or its backlog (`app/mcp/knowledge_backlog.md`), use the `knowledge-maintenance` skill (`.agents/skills/knowledge-maintenance/SKILL.md`). A person approves a case study or a prior before it is committed, unless it is clearly public, with its link.
 
 ### Agent Prompts
 
