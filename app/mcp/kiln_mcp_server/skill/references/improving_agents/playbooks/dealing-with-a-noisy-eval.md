@@ -36,10 +36,11 @@ difference smaller than the noise is not a result, in either direction.
    show the effect you predict (Kiln Harness Tuner measures this for each
    eval, and the rule applies when running it):
    [spending the budget](references/improving_agents/playbooks/spending-the-budget.md).
-3. Use the confirmation on val as the repeat. It measures a candidate
-   again, on val items that the candidate was not built on. A train win is
-   a candidate until the confirmation on val accepts it. When it rejects a
-   win with "a gain at val, not clear", read
+3. Use the confirmation on val (`references/knowledge/train_val_test.md`) as
+   the repeat. It measures a candidate again, on val items that the
+   candidate was not built on. A train win is a candidate until the
+   confirmation on val accepts it. When it rejects a win with "a gain at
+   val, not clear", read
    [train wins rejected at validation](references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md).
 4. When the judge is the source (it gives different verdicts on the same
    output, or verdicts that disagree with its reasoning), it is a judge

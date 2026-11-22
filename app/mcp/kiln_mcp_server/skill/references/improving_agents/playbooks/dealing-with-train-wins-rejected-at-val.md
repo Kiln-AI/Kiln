@@ -10,9 +10,10 @@ applies_to: all
 
 ## Situation
 
-A candidate wins on train, and the confirmation on val rejects it. The
-rejection alone does not say why. Record the reason with the experiment, in
-words, with no number, no item id and no trace, as one of these:
+A candidate wins on train, and the confirmation on val
+(`references/knowledge/train_val_test.md`) rejects it. The rejection alone
+does not say why. Record the reason with the experiment, in words, with no
+number, no item id and no trace, as one of these:
 
 - **C, blocked:** the change copies eval text. Name the copied passage and
   the eval.

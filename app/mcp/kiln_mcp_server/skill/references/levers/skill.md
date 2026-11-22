@@ -66,9 +66,10 @@ Rules of the object:
   1 to 1,024 characters.
 - A bundle that Kiln Harness Tuner installs has at most 512 KB for one file,
   and 2 MB for one bundle. Text files only in `references/`.
-- No value from a train item goes into a skill. Compare each new version
-  with the version that it replaces yourself, and search it for copies of
-  train content.
+- No value from a train item goes into a skill (the leak rules of
+  `references/knowledge/train_val_test.md`). Compare each new version with
+  the version that it replaces yourself, and search it for copies of train
+  content.
 - Whether a model opens a skill depends on the model. A quick check can
   answer it for this model before a skill experiment is measured.
 - When the parent's output mode sends the schema as a tool

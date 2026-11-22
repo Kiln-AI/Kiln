@@ -63,8 +63,9 @@ version of the [skill](references/levers/skill.md) that holds the policy.
    hypothesis.
 6. **Remove the prose version on the same edit.** Two versions of one
    policy can disagree.
-7. A strong model can draft the rewrite from the policy text. It writes
-   from the policy, never from the train items.
+7. A strong model can draft the rewrite from the policy text. It writes from
+   the policy, never from the train items (the leak rules of
+   `references/knowledge/train_val_test.md`).
 
 ## Check that it took effect
 

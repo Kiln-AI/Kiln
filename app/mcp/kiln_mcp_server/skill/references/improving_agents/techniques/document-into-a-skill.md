@@ -56,7 +56,8 @@ dropped on the same new run config
    drops the tool, a part of a document is not enough: the same candidate
    drops the tool, so a section that the bundle leaves out loses its facts
    with no sign.
-2. **Build the bundle from the document**, never from the train items: one
+2. **Build the bundle from the document**, never from the train items (the
+   leak rules of `references/knowledge/train_val_test.md`): one
    `references/` file for each section, and a body that maps each file. The
    Kiln API creates a skill with a body only (the lever
    [skill](references/levers/skill.md)), so a bundle with `references/`

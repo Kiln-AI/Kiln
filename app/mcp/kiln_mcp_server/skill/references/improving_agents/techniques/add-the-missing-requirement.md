@@ -56,10 +56,11 @@ The change is one edit of the [prompt](references/levers/prompt.md).
 
 1. **Name the requirement.** Read the spec of the eval and the failing
    outputs. Write the requirement in one sentence, in your own words.
-2. **Do not copy the eval.** Never paste text from a judge prompt, a spec
-   or an eval description, and never name an eval. Search each build
-   yourself for a run of words copied from those texts. State the rule from the
-   task's point of view: what a good answer does, and why.
+2. **Do not copy the eval.** Never paste text from a judge prompt, a spec or
+   an eval description, and never name an eval (the leak rules of
+   `references/knowledge/train_val_test.md`). Search each build yourself for
+   a run of words copied from those texts. State the rule from the task's
+   point of view: what a good answer does, and why.
 3. **State it as a general rule**, with its reason. Do not write a value
    from a train item. When an example helps, use invented values.
 4. **Put the rule beside the instruction it belongs to.** When the prompt

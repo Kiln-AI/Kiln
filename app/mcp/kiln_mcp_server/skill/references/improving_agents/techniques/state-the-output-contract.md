@@ -63,7 +63,8 @@ The change is one edit of the [prompt](references/levers/prompt.md).
    of an eval or of its judge, and do not copy a value from a train item.
 2. **Write one line that states the contract exactly**: the literal
    delimiters, the order of the parts, and the escaping. When an example
-   helps, use invented values.
+   helps, use invented values (the leak rules of
+   `references/knowledge/train_val_test.md`).
 3. **Put the line beside the instruction about the output**, when the
    prompt has one.
 4. **Replace, do not add.** When the prompt states the format less well in

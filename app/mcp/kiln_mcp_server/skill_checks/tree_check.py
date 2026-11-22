@@ -170,8 +170,24 @@ BANNED_TERMS: dict[str, tuple[str, ...]] = {
 _TERM_EXTRA_LOOKBEHIND = {"model_info": "/", "create_spec": "/"}
 
 # The calls and app pages that read an eval's test split when the caller asks
-# for no split: endpoint doc paths or app links.
-TEST_SPLIT_READERS: tuple[str, ...] = ()
+# for no split: endpoint doc paths or app links. Each endpoint resolves the
+# test split with no `split` argument in `app/desktop/studio_server/eval_api.py`,
+# and each page makes one of those requests. `train_val_test.md` lists each
+# one with the call to use for train or val.
+TEST_SPLIT_READERS: tuple[str, ...] = (
+    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_score_summary.md",
+    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_eval_results_summary.md",
+    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_run_configs_eval_scores.md",
+    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md",
+    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_run_comparison.md",
+    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_evals_eval_id_progress.md",
+    # The Compare page: the run config eval scores, and the run comparison.
+    "http://localhost:8757/specs/{project_id}/{task_id}/compare",
+    # A spec page and its eval pages: the score summary and the eval progress.
+    "http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}",
+    # The eval page of a legacy eval: the eval progress.
+    "http://localhost:8757/specs/{project_id}/{task_id}/legacy/{eval_id}",
+)
 
 # (file, path) pairs that look like skill paths and are not.
 IGNORED_REFS: frozenset[tuple[str, str]] = frozenset(

@@ -83,7 +83,8 @@ Rules of the object:
   go at most 10 deep.
 - A nested result can arrive parsed, or as a JSON string. The code parses
   both.
-- No value from a train item goes into the code or the description.
+- No value from a train item goes into the code or the description
+  (the leak rules of `references/knowledge/train_val_test.md`).
   Search each build yourself for copies of train content and of eval text.
 - The tool's description moves with the tool. A run config that drops the
   tool drops its description too.

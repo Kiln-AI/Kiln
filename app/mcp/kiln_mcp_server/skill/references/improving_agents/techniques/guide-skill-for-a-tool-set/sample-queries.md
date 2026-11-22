@@ -72,7 +72,9 @@ Result: one row, one number of orders.
 - **From the kinds of question in the traces**, not from the tables. Name
   the kinds of question that the traces show (what is asked, not the words
   or the values of one item), and write one sample for each common kind,
-  with invented values. A table that no question uses needs no sample.
+  with invented values (the leak rules of
+  `references/knowledge/train_val_test.md`). A table that no question uses
+  needs no sample.
 - **From the shape of queries that worked**, in the traces or in the
   product's own documentation. Keep the shape of a query that returned
   the right result, and replace each of its values with an invented one

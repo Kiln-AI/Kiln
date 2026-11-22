@@ -50,8 +50,9 @@ version of a [skill](references/levers/skill.md).
 2. **Write one rule** that states the cause and the action. Put its reason
    beside it, in a short clause. A rule with its reason is easier to keep
    correct.
-3. **The rule replaces text, and it names its source**, never a train
-   case. An example in the rule uses invented values.
+3. **The rule replaces text, and it names its source**, never a train case.
+   An example in the rule uses invented values (the leak rules of
+   `references/knowledge/train_val_test.md`).
 4. **Look for a contradiction.** Search the prompt and the attached skills
    for text that says the opposite. Two rules that disagree make the model
    choose.

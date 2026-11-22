@@ -75,7 +75,8 @@ rule of this second kind, also under a schema.
 - Do not change the mode on a task that returns free text. It has no
   effect there.
 - Do not copy the text of the eval or of its judge into the prompt. State
-  the rule in new words.
+  the rule in new words (the leak rules of
+  `references/knowledge/train_val_test.md`).
 - Do not repeat a rule that the prompt already states. When the model
   ignores a rule that is there, the problem is where the rule is, or the
   length of the prompt.

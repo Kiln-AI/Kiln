@@ -43,9 +43,9 @@ layout, an escaping rule), see
 ## What not to do yet
 
 - Do not copy the text of the eval, of its judge or of a spec into the
-  prompt. A check for copied judge text finds a copied passage and ends
-  the candidate.
-  State the rule in new words, from what the task needs.
+  prompt. A check for copied judge text finds a copied passage and ends the
+  candidate. State the rule in new words, from what the task needs (the leak
+  rules of `references/knowledge/train_val_test.md`).
 - Do not write a rule for each failing item. A rule that names an item's
   values is a leak, and the generality check refuses it.
 - No skill, no tool and no model swap. One prompt rule costs less, and it

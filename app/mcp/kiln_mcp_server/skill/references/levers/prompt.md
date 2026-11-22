@@ -53,8 +53,9 @@ Rules of the object:
 ## Limits
 
 - No value from a train item goes into the prompt: no item id, number,
-  sentence or expected value. Search each build for copies yourself before
-  you measure it.
+  sentence or expected value (the leak rules of
+  `references/knowledge/train_val_test.md`). Search each build for copies
+  yourself before you measure it.
 - No text copied from an eval or its judge. Check each build for it
   yourself.
 - The prompt is in the context of every call, so each line costs tokens on

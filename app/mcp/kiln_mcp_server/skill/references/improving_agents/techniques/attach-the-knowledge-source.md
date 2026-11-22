@@ -75,10 +75,11 @@ The change is one of two, on a new run config: attach a tool that exists
    general notes about the domain. Records that do not match the question
    can lower the result: see the prior below.
 5. **Never write a value from a train item** into the skill, and never an
-   expected answer. Facts that the skill holds only because the train
-   labels show them are a leak too, even when they copy no value. The
-   labels can show which rule the agent misses; they are not a source of
-   the skill's facts.
+   expected answer (the leak rules of
+   `references/knowledge/train_val_test.md`). Facts that the skill holds
+   only because the train labels show them are a leak too, even when they
+   copy no value. The labels can show which rule the agent misses; they are
+   not a source of the skill's facts.
 6. A prompt line that tells the agent to use the source is part of the
    hypothesis, or a second candidate. Scope discipline is the next step:
    [answer only from the source](references/improving_agents/techniques/answer-only-from-the-source.md).

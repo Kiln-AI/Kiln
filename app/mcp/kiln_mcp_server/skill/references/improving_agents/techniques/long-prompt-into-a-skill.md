@@ -61,13 +61,13 @@ The change is a new [skill](references/levers/skill.md) bundle and a shorter
 
 1. **Check quickly**, when no earlier check answered it: does this model
    open a skill under this run config?
-2. **Build the bundle from the prompt text**, never from the train items:
-   one topic file for each topic, and a body that maps them. The Kiln API
-   creates a skill with a body only (the lever
-   [skill](references/levers/skill.md)), so a bundle with topic files is
-   built when running Kiln Harness Tuner. A new version of an existing skill
-   made over the API loses that skill's reference files. How to write the
-   description and the body in Kiln is in
+2. **Build the bundle from the prompt text**, never from the train items
+   (the leak rules of `references/knowledge/train_val_test.md`): one topic
+   file for each topic, and a body that maps them. The Kiln API creates a
+   skill with a body only (the lever [skill](references/levers/skill.md)),
+   so a bundle with topic files is built when running Kiln Harness Tuner. A
+   new version of an existing skill made over the API loses that skill's
+   reference files. How to write the description and the body in Kiln is in
    `references/knowledge/adding_skills.md`.
 3. **Trim the prompt on the same candidate.** It keeps what every run needs (the
    role, the output contract) and one line that names the skill. The moved

@@ -7,17 +7,18 @@ projects. It holds nothing that was measured on the task that you tune.
 
 ## How to read these documents
 
-**These are ideas to try.** The techniques, the playbooks and the smells
-are ideas to try as part of experimentation. What actually works varies
-from agent to agent. A document says what to try, in what order, and under
-which conditions. You know more about this agent than the documents do.
-Read each document for the spirit of its guidance. Fit its suggestions to
-the agent's goal, its tools and its task, and change a suggestion where the
-agent needs it. The hard limits are the exception: the safety and integrity
-rules in the lever documents. For example: never attach a tool that can
-reach the Kiln server; the allowlist and the shared-tool rules of a code
-tool; no value from a train item in a change. No measurement overrides a
-hard limit, and you do not change one to fit the agent.
+**These are ideas to try.** The techniques, the playbooks and the smells are
+ideas to try as part of experimentation. What actually works varies from
+agent to agent. A document says what to try, in what order, and under which
+conditions. You know more about this agent than the documents do. Read each
+document for the spirit of its guidance. Fit its suggestions to the agent's
+goal, its tools and its task, and change a suggestion where the agent needs
+it. The hard limits are the exception: the safety and integrity rules in the
+lever documents. For example: never attach a tool that can reach the Kiln
+server; the allowlist and the shared-tool rules of a code tool; no value
+from a train item in a change (the leak rules of
+`references/knowledge/train_val_test.md`). No measurement overrides a hard
+limit, and you do not change one to fit the agent.
 
 **The documents are not complete.** They are a source of ideas, not a list
 of every option. You have context that their authors did not have: this

@@ -27,6 +27,8 @@ from kiln_mcp_server.skill_checks.knowledge_schema import (
 )
 from kiln_mcp_server.skill_checks.test_knowledge_check import API_DOC, build_tree
 from kiln_mcp_server.skill_checks.tree_check import (
+    SPLIT_RULE_FILE,
+    TEST_SPLIT_READERS,
     TREE_RULES,
     check_tree,
     tree_paths,
@@ -54,7 +56,6 @@ MAX_MAINTENANCE_LINES = 500
 # Rules whose problems do not fail the shipped-tree tests yet, each with the
 # content batch that makes it pass (skill_and_content section 9).
 PENDING_RULES: set[str] = {
-    "tree-split-pointer",  # batch 9
     "tree-test-split",  # batch 13a
 }
 
@@ -146,6 +147,37 @@ def test_example_paths_exist(text):
     examples = re.findall(r"references/[A-Za-z0-9_./-]+\.md", text)
     assert examples
     assert [path for path in examples if path not in get_index().files] == []
+
+
+# --- the split rule ------------------------------------------------------------
+
+# The three parts of harness-tuner's split rule, and the leak rules, as
+# `train_val_test.md` words them.
+SPLIT_RULE_PARTS = (
+    "**Tune on train.**",
+    "**Confirm on val, by metrics only.**",
+    "read summary numbers only",
+    "**Never read test.**",
+    "## An eval with only a test split",
+    "## The leak rules",
+)
+
+
+def test_the_split_rule_file_states_the_rule():
+    text = read_file(SPLIT_RULE_FILE, get_index())
+    for part in SPLIT_RULE_PARTS:
+        assert part in text, part
+    for reader in TEST_SPLIT_READERS:
+        assert reader in text, reader
+
+
+def test_test_split_readers_are_endpoint_docs_or_app_links():
+    tree = get_index().files
+    for reader in TEST_SPLIT_READERS:
+        if reader.startswith(DEFAULT_ORIGIN):
+            assert reader.startswith(f"{DEFAULT_ORIGIN}/specs/"), reader
+        else:
+            assert reader in tree, reader
 
 
 # --- SKILL.md ------------------------------------------------------------------

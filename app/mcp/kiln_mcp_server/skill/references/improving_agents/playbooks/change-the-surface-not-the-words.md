@@ -27,7 +27,8 @@ This playbook applies in two cases:
 Instruction text is the cheapest change to build. For a mechanical
 failure it can be the most expensive to learn from. The model that fails
 a mechanical step does not stop because the words ask it to, and a rule
-aimed at the failing items can fit the train items and not others. A
+aimed at the failing items can fit the train items and not others
+(`references/knowledge/train_val_test.md`). A
 change to the surface (a tool, a wrapper, the structure of a skill)
 removes the cause, instead of asking the model to avoid it.
 

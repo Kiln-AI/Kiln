@@ -76,8 +76,9 @@ made over the API loses its leaf files.
 5. **A prompt line is not part of this technique.** When the agent must be
    told to open the guide, that is a second change, measured on its own or
    stated as part of the hypothesis.
-6. **Write from the tools and the traces**, never from the train items:
-   no value of an item goes into the guide.
+6. **Write from the tools and the traces**, never from the train items: no
+   value of an item goes into the guide (the leak rules of
+   `references/knowledge/train_val_test.md`).
 
 ## Check that it took effect
 

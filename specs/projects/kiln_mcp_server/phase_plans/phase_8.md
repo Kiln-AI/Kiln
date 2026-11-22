@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Phase 8: Content, part 2: import the knowledge and reword it
