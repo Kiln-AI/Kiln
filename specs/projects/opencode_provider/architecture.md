@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Architecture: OpenCode Provider
@@ -165,7 +165,7 @@ Follow `claude-maintain-models`, adding only provider entries to existing `KilnM
 
 - **Source list:** `GET /inference/v1/models` with a key from a workspace whose model settings are untouched, filtered to `type: chat` with a non-zero price. This gives the models a new workspace enables by default.
   - Our workspace's list on Nov 22 had 34 such models (`claude-haiku-5-5`, `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-fable-5-2`, `gpt-5.4-mini`, `gemini-3.8-flash`, `kimi-k3`, `glm-5.3` and more).
-  - The user confirms our workspace is still on default model settings before this list is used.
+  - The user confirmed that our workspace's model settings are the defaults.
   - Remove anything on OpenCode's deprecated table.
   - Keep only models where Kiln already has a `KilnModel`, matching on `canonical_id` cross-checked with models.dev `opencode`.
   - Models outside the default set aren't listed. Users who turn them on add them as custom models.
@@ -211,4 +211,4 @@ The unit tests use pytest. The wire tests follow `test_cloudflare_litellm.py`: t
 
 ## Open Items
 
-1. **Default model settings:** the user confirms our OpenCode workspace's model settings are untouched, before PR 2 uses its models list as the source of default-enabled models.
+None. The user confirmed that our OpenCode workspace's model settings are the defaults, so PR 2 can use its models list as the source of default-enabled models.
