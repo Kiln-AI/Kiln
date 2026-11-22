@@ -16,6 +16,7 @@ from kiln_ai.datamodel.openenv import NamedResetKwargs, OpenEnvServer
 from kiln_ai.datamodel.tool_id import ToolId, build_openenv_tool_id
 from kiln_ai.openenv.session_manager import OpenEnvError, shared_session_manager
 from kiln_ai.tools.openenv_reach import OpenEnvReachError, single_openenv_server_id
+from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -495,6 +496,7 @@ def connect_openenv_server_api(app: FastAPI):
         tags=["OpenEnv Servers"],
         openapi_extra=ALLOW_AGENT,
     )
+    @no_write_lock  # writes nothing; the run page calls it on every tool change
     async def get_run_openenv_server(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
