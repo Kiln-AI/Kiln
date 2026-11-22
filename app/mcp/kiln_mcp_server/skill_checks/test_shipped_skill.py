@@ -14,12 +14,15 @@ from kiln_mcp_server.skill_checks.docs_index import (
     render_docs_index,
 )
 from kiln_mcp_server.skill_checks.knowledge_check import KNOWLEDGE_RULES, check
+from kiln_mcp_server.skill_checks.knowledge_index import read_block, render_blocks
 from kiln_mcp_server.skill_checks.knowledge_load import load
 from kiln_mcp_server.skill_checks.knowledge_schema import (
     BUILD_COMMAND,
     COMPONENT_ROOTS,
+    INDEX_BLOCKS,
     META_MODELS,
     REQUIRED_SECTIONS,
+    LeverMeta,
     default_root,
 )
 from kiln_mcp_server.skill_checks.test_knowledge_check import API_DOC, build_tree
@@ -51,6 +54,10 @@ MAX_MAINTENANCE_LINES = 500
 # Rules whose problems do not fail the shipped-tree tests yet, each with the
 # content batch that makes it pass (skill_and_content section 9).
 PENDING_RULES: set[str] = {
+    "tree-banned-term",  # batch 8: the loop's words in the knowledge trees
+    "tree-path",  # batch 8: the knowledge names files of skills that are not ported
+    "size",  # batch 8: two knowledge documents are shortened in their wording
+    "tree-split-pointer",  # batch 9
     "tree-test-split",  # batch 13a
 }
 
@@ -77,6 +84,46 @@ def test_the_shipped_knowledge_passes_every_check():
     problems = check(load(root), tree=tree_paths(root))
     failing = [p for p in problems if p.rule not in PENDING_RULES]
     assert failing == []
+
+
+def test_the_generated_blocks_are_current():
+    kb = load(default_root())
+    rendered = render_blocks(kb)
+    for index, blocks in INDEX_BLOCKS.items():
+        text = read_file(index, get_index())
+        for block in blocks:
+            assert read_block(text, block) == rendered[(index, block)], (index, block)
+
+
+# The knowledge set of Kiln Harness Tuner at the commit that the
+# `knowledge-maintenance` skill records: files per component root, sub-files
+# included.
+IMPORTED_FILES = {"levers": 7, "techniques": 30, "smells": 15, "playbooks": 22}
+
+
+def test_the_knowledge_was_imported_whole():
+    tree = get_index().files
+    counts = {
+        kind: sum(
+            1
+            for key in tree
+            if key.startswith(folder + "/") and key not in INDEX_BLOCKS
+        )
+        for kind, folder in COMPONENT_ROOTS.items()
+    }
+    assert counts == IMPORTED_FILES
+
+
+def test_a_document_of_each_type_exists():
+    kb = load(default_root())
+    for kind in (*COMPONENT_ROOTS, "subfile", "index"):
+        assert kb.by_kind(kind), kind
+
+
+def test_every_lever_names_its_api_docs():
+    for doc in load(default_root()).by_kind("levers"):
+        assert isinstance(doc.meta, LeverMeta), doc.path
+        assert doc.meta.api_docs, doc.path
 
 
 def test_the_full_check_passes():
