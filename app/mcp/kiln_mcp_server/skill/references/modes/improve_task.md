@@ -9,7 +9,7 @@ Make an existing AI agent better. This mode covers quality optimization, cost/sp
 
 ## Goal
 
-Help the user improve their agent's quality, cost, speed, or model coverage. Load the right knowledge based on their specific optimization goal, execute the approach, and return to Establish Intent when complete.
+Help the user improve their agent's quality, cost, speed, or model coverage. Load the right knowledge based on their specific optimization goal, and execute the approach.
 
 ## Response Contract
 
@@ -53,7 +53,7 @@ Only emit deep links matching one of these prefixes (each starts with the app ad
 
 ## Task Context Discovery
 
-Before any API call in this mode, resolve `(pid, tid)` using the cases below in order. Never guess project or task IDs.
+Before any API call in this mode, resolve `(project_id, task_id)` using the cases below in order. Never guess project or task IDs.
 
 1. **User named a task or project** → run the discovery step below.
 2. **User did not name one** → run the discovery step below and ask the user which project/task (present the list).
@@ -70,13 +70,11 @@ Before any API call in this mode, resolve `(pid, tid)` using the cases below in 
 4. **Partial or fuzzy match (no exact match but a close one exists)** → treat the same as multiple matches. List the candidate(s) with project context and deep links and ask the user to confirm. Never silently proceed with a near-match (e.g., "content classifier" → "Email Classifier") as if it were the intended task.
 5. **No match at all** → tell the user no task with that name was found and ask for clarification.
 
-**Discovery turn budget.** If two consecutive assistant turns have been spent on task disambiguation without a resolved `(pid, tid)`, on the next turn commit: list the final candidate set with deep-links **and** load the archetype's knowledge files so the user's pick lands you ready to execute. A third disambiguation-only turn spends the session on routing and leaves the real ask untouched.
+**Discovery turn budget.** If two consecutive assistant turns have been spent on task disambiguation without a resolved `(project_id, task_id)`, on the next turn commit: list the final candidate set with deep-links **and** load the archetype's knowledge files so the user's pick lands you ready to execute. A third disambiguation-only turn spends the session on routing and leaves the real ask untouched.
 
-## Per-Turn Intent Check
+## When the Request Changes
 
-**Before any reply, ask: would this user message have routed to this mode on turn 1?** If not, load `references/modes/establish_intent.md` and re-route before responding.
-
-**Intent drift also counts.** If the user pivots to creating/editing project resources, learning about features, or anything off-topic, load `references/modes/establish_intent.md` and re-route through it. The routing summary in `SKILL.md` is always in context; load the full mode file on a real intent change for the complete Quick-Jump table and routing heuristics.
+Before each reply, check that the user's message still fits this mode. If the user pivots to creating or editing project resources that are not about an improvement, or to learning about a feature, route again with the routing table of `SKILL.md`; read `references/modes/establish_intent.md` when the new goal is unclear.
 
 ## Suggested Questions
 
@@ -132,7 +130,7 @@ Load the bundle, then drill into sub-dependencies declared in each knowledge fil
 
 ### Kiln API
 
-`call_kiln_api(method, url_path, body?, jq_filter?)` calls the Kiln REST API. Returns JSON with `status_code` and `body`. See SKILL.md → API Rules for the full contract (load endpoint docs first, jq filter writing, diagnose-before-retry). Mode-specific reminders:
+`call_kiln_api(method, url_path, body?, jq_filter?)` calls the Kiln REST API. Returns JSON with `status_code` and `body`. See the section "Calling the Kiln API" of `SKILL.md` for the full contract (load endpoint docs first, jq filter writing, diagnose-before-retry). Mode-specific reminders:
 
 ```
 # read first: references/knowledge/api_docs/<endpoint>.md
@@ -143,21 +141,20 @@ call_kiln_api("METHOD", "/api/path", ...)
 
 ## Mode Transitions
 
-- User asks to create a new project or task (not motivated by quality improvement) → switch to Establish Intent, route to **Project Operations**
-- User asks "how does X work?" or has an error → switch to Establish Intent, route to **Learn About Kiln**
-- Optimization is complete → return to **Establish Intent** for next goal
+- User asks to create a new project or task (not motivated by quality improvement) → route to **Project Operations** (`references/modes/project_operations.md`)
+- User asks "how does X work?" or has an error → route to **Learn About Kiln** (`references/modes/learn_about_kiln.md`)
 
 ## Freeform Fallback
 
 If no knowledge file covers what the user needs, load `references/knowledge/freeform_help.md` as a last resort. Prefer specific knowledge files whenever possible.
 
-## Session Start
+## Starting Work in This Mode
 
-On entering this mode, **before loading knowledge or calling APIs**:
+When you start work in this mode, **before loading knowledge or calling APIs**:
 
 1. **Reflect on the user's intent.** Read what they've asked and identify the specific optimization goal. Match the goal to the most relevant file in the Knowledge table (or the archetype bundle) and load it first.
-2. **Establish task context first.** If the user's project and task are not yet identified, run **Task Context Discovery** below before loading knowledge or making API calls.
-3. **Bootstrap the task snapshot.** Once `(pid, tid)` is known, issue a single `agent_overview` call and treat its response as the canonical inventory for this mode — downstream knowledge trusts `specs`, `run_configs`, `prompts`, `tool_servers`, `skills`, `dataset`/`docs` counts, and `connected_providers` from this snapshot rather than re-fetching:
+2. **Establish task context first.** If the user's project and task are not yet identified, run **Task Context Discovery** above before loading knowledge or making API calls.
+3. **Bootstrap the task snapshot.** Once `(project_id, task_id)` is known, issue a single `agent_overview` call and treat its response as the canonical inventory for this mode — downstream knowledge trusts `specs`, `run_configs`, `prompts`, `tool_servers`, `skills`, `dataset`/`docs` counts, and `connected_providers` from this snapshot rather than re-fetching:
 
    ```
    # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_agent_overview.md
@@ -165,4 +162,4 @@ On entering this mode, **before loading knowledge or calling APIs**:
    ```
 
 4. **Scope Gate (required for "summarize / review / overview" intents).** If the user's request could naturally fan out across projects, tasks, or configs AND they have not named a specific scope, ask *which project/task* before issuing any enumeration calls beyond the initial `task_summaries` list. One clarification turn is cheaper than a 60-call scan that times out. This gate applies even when the user's intent seems clear — scope, not intent, is what's missing.
-5. **Never call `call_kiln_api` before loading the relevant knowledge file AND the endpoint's api_doc.** Correct paths and schemas live only in the `references/knowledge/api_docs/` files — do not guess and do not rely on memory. Even for trivially short "list my X" / "which is starred" prompts with UI-context IDs, load the knowledge bundle declared by the Archetype Bundles table first, then load the api_doc for the specific endpoint you'll call. The same entity (a run config, a prompt, an eval) can have different field paths on different endpoints — the api_doc for the endpoint you just hit is the authoritative reference.
+5. **Never call `call_kiln_api` before loading the relevant knowledge file AND the endpoint's api_doc.** Correct paths and schemas live only in the `references/knowledge/api_docs/` files — do not guess and do not rely on memory. Even for trivially short "list my X" / "which is starred" prompts, load the knowledge bundle declared by the Archetype Bundles table first, then load the api_doc for the specific endpoint you'll call. The same entity (a run config, a prompt, an eval) can have different field paths on different endpoints — the api_doc for the endpoint you just hit is the authoritative reference.

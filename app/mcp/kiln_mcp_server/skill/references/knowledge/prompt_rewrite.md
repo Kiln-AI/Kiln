@@ -17,7 +17,7 @@ Reference knowledge for editing or improving the agent's task instruction or sav
 
 Load the relevant endpoint doc **before** making each API call — they have request body schemas, response fields, and parameter details.
 
-If your endpoint isn't listed below, load the matching `*_api_list.md` catalog (see SKILL.md → API Rules).
+If your endpoint isn't listed below, load the matching `*_api_list.md` catalog (see the section "Calling the Kiln API" of `SKILL.md`).
 
 | Endpoint | Load |
 |----------|------|

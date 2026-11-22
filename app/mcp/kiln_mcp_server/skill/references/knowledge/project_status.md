@@ -14,7 +14,7 @@ Reference knowledge for assessing the current state of a user's project and task
 
 ## API Docs
 
-The bootstrap `agent_overview` snapshot (loaded by the mode's Session Start) supplies task metadata, run configs, specs, prompts, tool servers, skills, dataset/docs counts, and connected providers. Only the endpoints below are needed for further drill-down from this file.
+The bootstrap `agent_overview` snapshot (loaded by the mode's "Starting Work in This Mode" steps) supplies task metadata, run configs, specs, prompts, tool servers, skills, dataset/docs counts, and connected providers. Only the endpoints below are needed for further drill-down from this file.
 
 | Endpoint | Load |
 |----------|------|
@@ -25,13 +25,13 @@ The bootstrap `agent_overview` snapshot (loaded by the mode's Session Start) sup
 ## Suggested Questions
 
 If not already established in conversation:
-1. **Which project and task?** (follows Session Start protocol from SKILL.md)
+1. **Which project and task?** (the mode's Task Context Discovery resolves it)
 
 ## Status Assessment Approaches
 
 ### Present from the Bootstrap Snapshot
 
-The mode's Session Start bootstrap (`agent_overview`) is the data source for this scorecard — do not re-fetch. Map fields to the response:
+The mode's bootstrap snapshot (`agent_overview`) is the data source for this scorecard — do not re-fetch. Map fields to the response:
 
 - **Task** → `task.name`, `task.description`, `task.instruction`
 - **Run Configs** → `run_configs.items` (id, name, model_name, model_provider, starred)

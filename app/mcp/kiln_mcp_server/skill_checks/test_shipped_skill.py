@@ -28,10 +28,16 @@ from kiln_mcp_server.skill_files import (
     API_CATALOGUE_INDEX_PATH,
     DEFAULT_ORIGIN,
     HINT,
+    ROOT_FILE,
     get_index,
     read_file,
+    read_skill,
 )
-from kiln_mcp_server.texts import PATH_DESCRIPTION, SKILL_TOOL_DESCRIPTION
+from kiln_mcp_server.texts import (
+    PATH_DESCRIPTION,
+    SKILL_TOOL_DESCRIPTION,
+    WHAT_KILN_IS,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MAINTENANCE = REPO_ROOT / ".agents" / "skills" / "knowledge-maintenance"
@@ -42,7 +48,6 @@ MAX_MAINTENANCE_LINES = 500
 # content batch that makes it pass (skill_and_content section 9).
 PENDING_RULES: set[str] = {
     "tree-banned-term",  # batches 2, 4 and 5
-    "tree-unreachable",  # batch 4: SKILL.md names the catalogue index
     "tree-front-matter",  # batch 6: online_url on the help articles
     "docs-index",  # batch 6
     "tree-test-split",  # batch 13a
@@ -96,6 +101,114 @@ def test_example_paths_exist(text):
     examples = re.findall(r"references/[A-Za-z0-9_./-]+\.md", text)
     assert examples
     assert [path for path in examples if path not in get_index().files] == []
+
+
+# --- SKILL.md ------------------------------------------------------------------
+
+SKILL_MD_MAX_LINES = 300
+SKILL_MD_MAX_CHARS = 20_000
+
+# The `## ` sections of SKILL.md, in order. The text before the first one says
+# what Kiln is.
+SKILL_MD_PARTS = (
+    "Reading skill files",
+    "Routing",
+    "Calling the Kiln API",
+    "Working with the user",
+    "Links into the app",
+    "Other entry points",
+    "What you cannot do over this connection",
+)
+
+MODE_PATHS = (
+    "references/modes/project_operations.md",
+    "references/modes/improve_task.md",
+    "references/modes/learn_about_kiln.md",
+    "references/modes/establish_intent.md",
+)
+
+MAIN_PAGES = tuple(
+    f"{DEFAULT_ORIGIN}/{path}"
+    for path in (
+        "run",
+        "dataset/{project_id}/{task_id}",
+        "specs/{project_id}/{task_id}",
+        "optimize/{project_id}/{task_id}",
+        "prompts/{project_id}/{task_id}",
+        "models",
+        "tools/{project_id}",
+        "skills/{project_id}",
+        "docs/{project_id}",
+        "fine_tune/{project_id}/{task_id}",
+        "generate/{project_id}/{task_id}",
+        "jobs",
+        "settings",
+    )
+)
+
+# The app pages where the user does what this connection cannot.
+BLOCKED_CAPABILITY_PAGES = tuple(
+    f"{DEFAULT_ORIGIN}/{path}"
+    for path in (
+        "settings/providers",
+        "settings/providers/kiln_pro",
+        "settings/import_project",
+        "settings/edit_project/{project_id}",
+        "settings",
+        "settings/manage_projects",
+        "docs/library/{project_id}/{document_id}",
+        "skills/{project_id}/{skill_id}",
+    )
+)
+
+# The entry points SKILL.md names beside the modes. A path is required once
+# its file is in the tree.
+ENTRY_POINTS = (
+    "references/docs/docs_index.md",
+    "references/levers/index.md",
+    "references/improving_agents/index.md",
+    "references/knowledge/run_an_experiment.md",
+    "references/knowledge/train_val_test.md",
+    "references/knowledge/memory.md",
+    "references/knowledge/working_with_project_files.md",
+    "references/knowledge/model_work.md",
+)
+
+
+def _skill_md_sections() -> tuple[str, dict[str, str]]:
+    """The served SKILL.md: the text before the first `## ` heading, and each
+    section's text by heading."""
+    intro, *rest = re.split(r"^## ", read_skill(None, DEFAULT_ORIGIN), flags=re.M)
+    sections = {}
+    for part in rest:
+        heading, _, body = part.partition("\n")
+        sections[heading.strip()] = body
+    return intro, sections
+
+
+def test_skill_md_has_the_required_parts():
+    intro, sections = _skill_md_sections()
+    assert tuple(sections) == SKILL_MD_PARTS
+    assert WHAT_KILN_IS in intro
+    assert "while you do Kiln work" in intro
+
+    for path in MODE_PATHS:
+        assert path in sections["Routing"], path
+    assert API_CATALOGUE_INDEX_PATH in sections["Calling the Kiln API"]
+    for page in MAIN_PAGES:
+        assert f"`{page}`" in sections["Links into the app"], page
+    tree = get_index().files
+    for path in ENTRY_POINTS:
+        if path in tree:
+            assert path in sections["Other entry points"], path
+    for page in BLOCKED_CAPABILITY_PAGES:
+        assert f"`{page}`" in sections["What you cannot do over this connection"], page
+
+
+def test_skill_md_size():
+    text = read_file(ROOT_FILE, get_index())
+    assert len(text.splitlines()) <= SKILL_MD_MAX_LINES
+    assert len(text) <= SKILL_MD_MAX_CHARS
 
 
 # Forms of the app address that `apply_origin` would not replace.

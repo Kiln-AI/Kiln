@@ -51,7 +51,7 @@ The body loads in full when the skill fires; treat it like a focused operating m
 - **Keep core instructions short and concrete.** If the body grows past ~200 lines or sprouts deep tangents, the skill is probably two skills — split before submitting (a skill cannot be edited after creation, so over-stuffing locks bad structure in place).
 - **No all-caps `MUST` / `ALWAYS` / `NEVER` walls.** Reframe rigid rules as guidance with the *reason* attached (`"Skip the discovery step when the run already has a saved scorecard — it's redundant"` beats `"NEVER re-run discovery"`). Stripped-down imperatives make the agent follow the letter and miss edge cases.
 - **Use examples sparingly and broadly.** A body tuned on three near-identical examples works only on those examples. Show 1–2 representative cases and a counter-example, not five variants of the same shape.
-- **Lazy-reference, don't inline.** If the skill needs a long appendix (terminology, large rule set, archival examples), keep the body terse and have it tell the agent which Kiln resource (deep link, doc, knowledge file) to consult — same progressive-disclosure shape Kiln Assistant uses internally.
+- **Lazy-reference, don't inline.** If the skill needs a long appendix (terminology, large rule set, archival examples), keep the body terse and have it tell the agent which Kiln resource (deep link, doc, knowledge file) to consult — the same progressive-disclosure shape this skill uses.
 
 ## Pre-submission checklist (skills are immutable)
 

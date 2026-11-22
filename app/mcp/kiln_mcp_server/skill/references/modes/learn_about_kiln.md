@@ -9,7 +9,7 @@ Answer questions about Kiln features, troubleshoot errors, and explain concepts.
 
 ## Goal
 
-Help the user understand Kiln or resolve a problem with the platform. Answer from authoritative knowledge files and docs, link to UI pages, and return to Establish Intent when the question is answered.
+Help the user understand Kiln or resolve a problem with the platform. Answer from authoritative knowledge files and docs, and link to app pages.
 
 ## Response Contract
 
@@ -27,13 +27,11 @@ Every substantive reply in this mode follows this shape:
 
 **Always load a knowledge file before answering.** If no knowledge file exists for the topic, load `references/knowledge/freeform_help.md` and admit limited coverage — never answer feature questions from priors.
 
-## Per-Turn Intent Check
+## When the Request Changes
 
-**Before any reply, ask: would this user message have routed to this mode on turn 1?** If not, load `references/modes/establish_intent.md` and re-route before responding.
+Before each reply, check that the user's message still fits this mode. If the user pivots to building or editing project resources, or to optimizing an agent, route again with the routing table of `SKILL.md`; read `references/modes/establish_intent.md` when the new goal is unclear.
 
-**Intent drift also counts.** If the user pivots to building/editing project resources, optimizing an agent, or anything off-topic, load `references/modes/establish_intent.md` and re-route through it. The routing summary in `SKILL.md` is always in context; load the full mode file on a real intent change for the complete Quick-Jump table and routing heuristics.
-
-**Hard stop — model upgrade intents.** If the user's goal is **changing which model runs their task** (their run config model — not how the Eval Builder works internally), stop and route back through Establish Intent to **Improve Task** before reading `references/knowledge/app_help.md` or `references/knowledge/freeform_help.md`. When an upgrade verb ("upgrade", "swap", "change to", "move to") appears in the message, assume improve_task even if the user names a project/task that contains feature-sounding words.
+**Hard stop — model upgrade intents.** If the user's goal is **changing which model runs their task** (their run config model — not how the Eval Builder works internally), route to **Improve Task** (`references/modes/improve_task.md`) before reading `references/knowledge/app_help.md` or `references/knowledge/freeform_help.md`. When an upgrade verb ("upgrade", "swap", "change to", "move to") appears in the message, assume improve_task even if the user names a project/task that contains feature-sounding words.
 
 ## Suggested Questions
 
@@ -74,9 +72,8 @@ For model questions, use the model info endpoints instead of relying on training
 
 ## Mode Transitions
 
-- User wants to build or edit something → switch to Establish Intent, route to **Project Operations**
-- User wants to optimize quality/cost/speed → switch to Establish Intent, route to **Improve Task**
-- Question is answered → return to **Establish Intent** for next goal
+- User wants to build or edit something → route to **Project Operations** (`references/modes/project_operations.md`)
+- User wants to optimize quality/cost/speed → route to **Improve Task** (`references/modes/improve_task.md`)
 
 ## Freeform Fallback
 

@@ -241,7 +241,7 @@ The agent gets it from one tool call, and it can leave the context at compaction
 2. How to read files: paths are from the skill root; give a path to the tool that returned this text; only listed paths exist; when this text is no longer in the conversation, load it again before more Kiln work.
 3. Routing: one row per mode with its full path and when to read it. The routing table stays here; `references/modes/establish_intent.md` keeps only the steps for an unclear request.
 4. API rules for `call_kiln_api`: read the endpoint doc before the first call to an endpoint; start from `references/knowledge/api_docs/api_index.md`; a non-2xx answer is data; narrow large answers with `jq_filter`, paging, or `save_to_tmpfile`; the end of an event stream does not mean success, so check status.
-5. Confirm with the user before a destructive or irreversible operation.
+5. Working with the user: confirm with the user before a destructive or irreversible operation. Then the general reply rules, one line each: lead with the recommendation, be concise, match the user's scope (check completion before reporting scores), admit uncertainty.
 6. Links into the app: the C4 rule and the table of main pages below.
 7. Map of the other entry points, one line each: `references/docs/docs_index.md`, `references/levers/index.md`, `references/improving_agents/index.md`, `references/knowledge/run_an_experiment.md`, `references/knowledge/train_val_test.md`, `references/knowledge/memory.md`, `references/knowledge/working_with_project_files.md`, `references/knowledge/model_work.md`.
 8. What the agent cannot do over MCP: the rule of C10 and the table of 4.4, in short form (capability and page).

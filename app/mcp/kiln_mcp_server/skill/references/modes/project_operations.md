@@ -9,7 +9,7 @@ Create, edit, or inspect Kiln projects, tasks, evals, and prompts. This mode cov
 
 ## Goal
 
-Help the user make changes to their Kiln project or understand its current state. Get the job done efficiently — load the right knowledge, execute, and return to Establish Intent when complete.
+Help the user make changes to their Kiln project or understand its current state. Get the job done efficiently — load the right knowledge and execute.
 
 ## Response Contract
 
@@ -44,7 +44,7 @@ Only emit deep links matching one of these prefixes (each starts with the app ad
 
 ## Task Context Discovery
 
-Before any API call or POST in this mode, resolve `(pid, tid)` using the cases below in order. Never guess project or task IDs.
+Before any API call or POST in this mode, resolve `(project_id, task_id)` using the cases below in order. Never guess project or task IDs.
 
 1. **User named a task or project** → run the discovery step below.
 2. **User did not name one** → run the discovery step below and ask the user which project/task (present the list).
@@ -60,11 +60,9 @@ Before any API call or POST in this mode, resolve `(pid, tid)` using the cases b
 3. **Multiple matches** → list all with deep links and ask the user to confirm.
 4. **No match** → tell the user no task with that name was found and ask for clarification.
 
-## Per-Turn Intent Check
+## When the Request Changes
 
-**Before any reply, ask: would this user message have routed to this mode on turn 1?** If not, load `references/modes/establish_intent.md` and re-route before responding.
-
-**Intent drift also counts.** If the user pivots to improving an existing agent's quality/cost, learning about a Kiln feature, or anything off-topic, load `references/modes/establish_intent.md` and re-route through it. The routing summary in `SKILL.md` is always in context; load the full mode file on a real intent change for the complete Quick-Jump table and routing heuristics.
+Before each reply, check that the user's message still fits this mode. If the user pivots to improving an existing agent's quality or cost, or to learning about a Kiln feature, route again with the routing table of `SKILL.md`; read `references/modes/establish_intent.md` when the new goal is unclear.
 
 ## Suggested Questions
 
@@ -92,7 +90,7 @@ Before any API call or POST in this mode, resolve `(pid, tid)` using the cases b
 
 ### Kiln API
 
-`call_kiln_api(method, url_path, body?, jq_filter?)` calls the Kiln REST API. Returns JSON with `status_code` and `body`. See SKILL.md → API Rules for the full contract (load endpoint docs first, jq filter writing, diagnose-before-retry). Mode-specific reminders:
+`call_kiln_api(method, url_path, body?, jq_filter?)` calls the Kiln REST API. Returns JSON with `status_code` and `body`. See the section "Calling the Kiln API" of `SKILL.md` for the full contract (load endpoint docs first, jq filter writing, diagnose-before-retry). Mode-specific reminders:
 
 ```
 # read first: references/knowledge/api_docs/<endpoint>.md
@@ -108,21 +106,20 @@ For model selection when creating run configs, use the model info endpoints: `GE
 
 ## Mode Transitions
 
-- User asks about improving quality/cost/speed → switch to Establish Intent, route to **Improve Task**
-- User asks "how does X work?" or has an error → switch to Establish Intent, route to **Learn About Kiln**
-- Task/goal is complete → return to **Establish Intent** for next goal
+- User asks about improving quality/cost/speed → route to **Improve Task** (`references/modes/improve_task.md`)
+- User asks "how does X work?" or has an error → route to **Learn About Kiln** (`references/modes/learn_about_kiln.md`)
 
 ## Freeform Fallback
 
 If no knowledge file covers what the user needs, load `references/knowledge/freeform_help.md` as a last resort. Prefer specific knowledge files whenever possible.
 
-## Session Start
+## Starting Work in This Mode
 
-On entering this mode, **before loading knowledge or calling APIs**:
+When you start work in this mode, **before loading knowledge or calling APIs**:
 
 1. **Reflect on the user's intent.** Distinguish between creating new resources (no existing context needed) and editing or inspecting existing ones (project and task context required). Match to the Knowledge table and load that file first.
-2. **Establish task context first.** For operations on existing resources where project and task are not yet identified, run **Task Context Discovery** below before loading knowledge or making API calls.
-3. **Bootstrap the task snapshot.** Once `(pid, tid)` is known, issue a single `agent_overview` call and treat its response as the canonical inventory for this mode — downstream knowledge trusts `specs`, `run_configs`, `prompts`, `tool_servers`, `skills`, `dataset`/`docs` counts, and `connected_providers` from this snapshot rather than re-fetching:
+2. **Establish task context first.** For operations on existing resources where project and task are not yet identified, run **Task Context Discovery** above before loading knowledge or making API calls.
+3. **Bootstrap the task snapshot.** Once `(project_id, task_id)` is known, issue a single `agent_overview` call and treat its response as the canonical inventory for this mode — downstream knowledge trusts `specs`, `run_configs`, `prompts`, `tool_servers`, `skills`, `dataset`/`docs` counts, and `connected_providers` from this snapshot rather than re-fetching:
 
    ```
    # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_agent_overview.md
