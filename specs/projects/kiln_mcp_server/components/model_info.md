@@ -84,7 +84,7 @@ File `app/desktop/studio_server/api_models/model_info_models.py`. Plain `BaseMod
 |---|---|---|---|
 | `ModelInfoKilnSource` | `origin` | `"remote_config"` or `"built_in"` | `remote_config`: the remote list was loaded in this process. `built_in`: the list shipped with the installed app (offline at start, skipped, or failed). |
 | | `loaded_at`, `age_seconds` | datetime or null, int or null | UTC time of the last good remote load, and now minus that. Null for `built_in`. |
-| `ModelInfoModelsDevSource` | `state` | `"ok"`, `"stale"` or `"unavailable"` | `ok`: data younger than 6 h. `stale`: older data is served. `unavailable`: no data; every models.dev field is null. |
+| `ModelInfoModelsDevSource` | `state` | `"ok"`, `"stale"` or `"unavailable"` | `ok`: data younger than 6 h. `stale`: older data is served, because a refresh failed or did not finish in time. `unavailable`: no data; every models.dev field is null. |
 | | `loaded_at`, `age_seconds` | datetime or null, int or null | UTC time the data was fetched, or last confirmed unchanged by a 304, and now minus that. |
 | | `detail` | str or null | Null when `ok`. Else `turned off`, `loading`, `not loaded`, `refresh running`, or the last failure reason (section 5.3). |
 
@@ -232,7 +232,7 @@ class ModelsDevCache:                          # implements ModelsDevSource
                  max_age: timedelta = timedelta(hours=6),
                  retry_after: timedelta = timedelta(minutes=10),
                  retry_after_empty: timedelta = timedelta(minutes=1),
-                 wait_secs: float = 4.0, fetch_timeout_secs: float = 30.0,
+                 wait_secs: float = 15.0, fetch_timeout_secs: float = 30.0,
                  max_bytes: int = 50 * 1024 * 1024,
                  now: Callable[[], datetime] = utc_now,
                  client_factory: Callable[[], httpx.AsyncClient] = default_client) -> None
@@ -247,7 +247,7 @@ The constructor does no I/O and creates no asyncio object. Fields: `_data`, `_et
 
 ### 5.2 State machine
 
-The state is derived from the fields; it is not stored. `aclose()` from any state cancels the task, and no new task starts. The "Request waits" column is the rule of 5.3: only a first load, with no data at all, makes a request wait.
+The state is derived from the fields; it is not stored. `aclose()` from any state cancels the task, and no new task starts. The "Request waits" column is the rule of 5.3: a request waits for a load or a refresh that is running, up to `wait_secs`, whether or not older data is held.
 
 | State | Condition | Answer `state` / `detail` | Request waits | Leaves on |
 |---|---|---|---|---|
@@ -255,8 +255,8 @@ The state is derived from the fields; it is not stored. `aclose()` from any stat
 | empty | no data, no task | `unavailable` / the last failure reason, or `not loaded` | no; a call that starts the load waits as in "loading" | `current()` -> loading, unless a failure is younger than `retry_after_empty` |
 | loading | no data, a task runs | `unavailable` / `loading` | up to `wait_secs` for the task | 200 with a valid body -> fresh; any failure -> empty |
 | fresh | data, age < `max_age` | `ok` / null | no | 6 h pass -> stale |
-| stale | data, age >= `max_age`, no task | `stale` / the last failure reason, or null | no | `current()` -> refreshing, unless a failure is younger than `retry_after`. The call that starts the refresh is answered at once from the stale data |
-| refreshing | data, age >= `max_age`, a task runs | `stale` / `refresh running` | no: answered at once from the stale data | 200 -> fresh (new data, new ETag); 304 -> fresh (same data, `loaded_at` = now); any failure -> stale (last good data kept) |
+| stale | data, age >= `max_age`, no task | `stale` / the last failure reason, or null | no; a call that starts the refresh waits as in "refreshing" | `current()` -> refreshing, unless a failure is younger than `retry_after`. Inside that interval the call is answered at once from the stale data |
+| refreshing | data, age >= `max_age`, a task runs | after the wait: `ok` when the refresh succeeded; else `stale` / the failure reason, or `refresh running` on a timeout | up to `wait_secs` for the task | 200 -> fresh (new data, new ETag); 304 -> fresh (same data, `loaded_at` = now); any failure -> stale (last good data kept) |
 
 The retry intervals (`retry_after` 10 minutes with data, `retry_after_empty` 1 minute without) are decisions.
 
@@ -270,9 +270,8 @@ current():
       task = self._task, or None when it is done or belongs to another event loop
       if task is None and (no failure, or now - last_failure_at >= the retry interval of the state):
           task = self._task = asyncio.create_task(self._refresh())      # single flight: one task at a time
-      if task is not None and no data:                       # only a first load waits
+      if task is not None:                                   # a first load and a refresh of stale data both wait
           await asyncio.wait({task}, timeout=wait_secs)      # a timeout does not cancel the task
-      # with stale data: no await. The refresh runs in the background; this call answers from the stale data
   return the snapshot for the fields as they are now
 
 settle():     # tests only
@@ -295,8 +294,9 @@ _refresh():   # never raises, except CancelledError
 ```
 
 - **Lazy, no background loop.** The first model-info request starts the first load. A Kiln whose user never asks for model info sends nothing to models.dev. There is no timer and no start-up load: a start-up load would add a 0.7 MB download to every app start, and the conditional GET makes a load on demand cheap. The only task is the refresh that a request starts; it can outlive that request, and `lifespan` cancels it at shutdown.
-- **Stale data is served at once.** When data exists but is older than `max_age`, the request is answered at once from that data (`state: stale`), and a single background refresh is started. The request does not wait for it; a later request gets the new data.
-- **Bounded wait, first load only.** Only a first load, with no data at all, makes a request wait: at most `wait_secs` (4 s). Then it answers from Kiln's own list (`state: unavailable`, `detail: loading`); the task goes on, and the next request gets its result.
+- **A request waits for fresh data.** When there is no data, or the data is older than `max_age`, the request that finds this starts a load and waits for it, at most `wait_secs` (15 s). So data that is weeks old is not served to save a few seconds. Requests that arrive while the load runs wait for the same task.
+- **What a request gets after the wait.** The load succeeded: the new data (`state: ok`). The load failed, or the wait timed out: the last good data if there is any (`state: stale`, with its age and the reason), else Kiln's own list (`state: unavailable`). A timed-out load goes on, and the next request gets its result.
+- **After a failure, no wait.** Inside the retry interval (10 minutes with data, 1 minute without) no new load starts, and requests are answered at once from what is held. So an outage of models.dev costs one wait, not one per request.
 - **Single flight.** Between "is a task running" and `create_task` there is no `await`, so on one event loop no lock is needed. The other-loop guard matters only under Starlette's `TestClient` used without `with` (a new loop per request).
 - **No network.** With no data ever loaded, the endpoints answer from Kiln's list: `models_dev.state` is `unavailable` and every price, limit and date is null. Rows, status, notes, tags and ranks are complete.
 - **Privacy and CPU.** The GET has no header of ours and no query string. The parse and the two indexes take 0.2-0.3 s, so they run in `asyncio.to_thread`.
@@ -410,7 +410,7 @@ Tests sit beside the source. None patches a module: every dependency is passed i
 
 **`test_catalog_build.py`** (port of HT `tests/test_model_catalog.py:74-500`, models built as `KilnModel`): prices, limits and dates from the fixture; price on the exact pair; model facts follow the provider preference; loose date (no exact match, earliest date, a deprecated entry counts, a short key is not used, an exact match with no date falls back); median (across every models.dev provider, needs three paid prices, a provider counts once at its lowest price, 0 left out); `kiln_suggested_for` names; `models_dev_id` is used; a provider without it is not joined; a bad price and a bad limit are dropped; tags cleaned and capped; a long note is cut; no models.dev data gives null prices and Kiln's data; `parse_models_dev` on bad JSON and on a non-object. Not ported: the raw-parse cases (Kiln's deserializer owns them), the built-in map cases, the store cases.
 
-**`test_models_dev.py`** (new). A `FakeClock` passed as `now`, and a `client_factory` that returns `httpx.AsyncClient(transport=httpx.MockTransport(handler))`; `wait_secs` and `fetch_timeout_secs` are hundredths of a second where a stall is tested. Cases: (1) first load gives `ok` data; the request has no `If-None-Match` and no header of ours; (2) `enabled=False`: `unavailable` / `turned off`, and a `client_factory` that raises is never called; (3) data younger than `max_age`: no request; (4) stale data: the call that finds it is answered at once with `stale` and the old data object, and starts one request with `If-None-Match`; after `await cache.settle()`, a 304 has kept the data object and moved `loaded_at`, and a 200 has replaced data and ETag, and the next call is `ok`; (5) each failure (non-200, timeout, transport error, over `max_bytes`, bad JSON, not an object) gives its reason and never raises; with no data the state is `unavailable`; with data it is `stale` and the data object is the old one; (6) no new request before `retry_after_empty` (no data) or `retry_after` (data), and one after it; (7) single flight: 20 concurrent `current()` calls make one request; (8) a stalled server, first load: `current()` returns after `wait_secs` with `unavailable` / `loading`, and after the handler is released the next call has the data; (8b) a stalled server, stale data: `current()` returns at once, without waiting `wait_secs` (the test sets `wait_secs` to 60 and a short test timeout), with `stale` / `refresh running` and the old data object; a second call during the refresh starts no second request; after the handler is released and `settle()`, the next call is `ok` with the new data; (9) `aclose()` cancels a running refresh, and a later `current()` starts none; a task left from another event loop is ignored.
+**`test_models_dev.py`** (new). A `FakeClock` passed as `now`, and a `client_factory` that returns `httpx.AsyncClient(transport=httpx.MockTransport(handler))`; `wait_secs` and `fetch_timeout_secs` are hundredths of a second where a stall is tested. Cases: (1) first load gives `ok` data; the request has no `If-None-Match` and no header of ours; (2) `enabled=False`: `unavailable` / `turned off`, and a `client_factory` that raises is never called; (3) data younger than `max_age`: no request; (4) stale data: the call that finds it starts one request with `If-None-Match` and waits for it; a 304 keeps the data object and moves `loaded_at`, a 200 replaces data and ETag, and in both cases that same call returns `ok`; (5) each failure (non-200, timeout, transport error, over `max_bytes`, bad JSON, not an object) gives its reason and never raises; with no data the state is `unavailable`; with data it is `stale` and the data object is the old one; (6) no new request before `retry_after_empty` (no data) or `retry_after` (data), and one after it; (7) single flight: 20 concurrent `current()` calls make one request; (8) a stalled server, first load: `current()` returns after `wait_secs` with `unavailable` / `loading`, and after the handler is released the next call has the data; (8b) a stalled server, stale data: `current()` returns after `wait_secs` with `stale` / `refresh running` and the old data object; a second call during the refresh starts no second request; after the handler is released and `settle()`, the next call is `ok` with the new data; (8c) stale data and a failure inside `retry_after`: `current()` returns at once with `stale`, the failure reason and the old data object, and makes no request; (9) `aclose()` cancels a running refresh, and a later `current()` starts none; a task left from another event loop is ignored.
 
 **`test_view.py`** (port of HT `tests/test_gateway_model_info.py`, without the policy cases): the three statuses; `Offered` from a bad payload; ready entries only by default; `include_not_available`; deprecated left out by default; entry filters remove entries and then empty rows; a null value fails a filter; `reasoning_model` apart from thinking levels; the tag filter is ANY and a tag on an entry counts; price sort uses the median before the entries and a zero price never sorts; featured, price and newest with ties; paging and `total`; a pair the catalogue lacks; a model the catalogue lacks; server values win for an offered pair; details list every entry; provider counts and order; unconnected providers are listed and marked `not_connected`. New: search ranks 0 to 3, the typo pass sets `fuzzy_match`, an empty result, search order against an explicit `sort`, a search with no letter or digit; `featured` true and false; `include_notes`; unknown provider; case-insensitive details lookup; closest ids in the not-found text; no models.dev data gives Kiln's rows with null prices.
 
