@@ -73,13 +73,14 @@ first. The tool and the line are one set of changes.
 2. **Choose the form.**
    - **A chain**: one tool that takes the input of the first call, makes
      the calls in order, and returns the facts that the agent used from
-     any call in the chain. The template `composite_resolve_fetch.py` of
-     the code-tool authoring skill has this shape for search, disambiguate
-     and fetch.
+     any call in the chain. The template
+     `references/knowledge/code_tool_wrappers/composite_resolve_fetch.md`
+     has this shape for search, disambiguate and fetch.
    - **A loop**: one tool that takes a list, runs the operation on each
      item, and returns what was done and the errors for each item. A
-     partial success is then usable. The template `batch_with_errors.py`
-     has this shape.
+     partial success is then usable. The template
+     `references/knowledge/code_tool_wrappers/batch_with_errors.md` has
+     this shape.
    - **A context loader**: one tool, for example `get_account_context`,
      that calls the tools that hold the facts and returns a short summary
      of them. Add one prompt line that tells the agent to call it before

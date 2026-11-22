@@ -1,7 +1,7 @@
 ---
 name: subagents
 description: |
-  Kiln Task as Tool — sub-agents (Subagents, multi-actor, subtasks). Load when: user says "sub agent", "subagent", "Subagents", "delegate to another task", "orchestrator", "multi-actor", or describes one task calling another. Owns the vocabulary mapping, 4-step setup workflow, and tool name/description guidance.
+  Kiln Task as Tool — sub-agents (Subagents, multi-actor, subtasks). Load when: user says "sub agent", "subagent", "Subagents", "delegate to another task", "orchestrator", "multi-actor", or describes one task calling another. Owns the vocabulary mapping, 5-step setup workflow, and tool name/description guidance.
 ---
 # Knowledge: Sub-Agents (Kiln Task as Tool)
 
@@ -22,12 +22,13 @@ Recognize any of these and load this file. Don't ask the user to clarify which K
 - **Multi-actor pattern:** an orchestrator task delegates specialized work (e.g. a *TV Show Expert* delegates Futurama questions to a *Futurama Transcript QA* sub-agent).
 - **Context management:** the sub-agent runs in its own context window; only its summarized result returns to the parent. Single biggest reason to reach for this pattern when the parent's context is bloating.
 
-## Setup Workflow (4 steps)
+## Setup Workflow (5 steps)
 
 1. **Sub-agent task** must already exist (the task that will be *called*). If not, create it first via Project Operations.
 2. **Saved run config on the sub-agent task.** Sub-agents need a *saved* run config (not a transient one) so the parent gets deterministic behavior. Create via `POST /api/projects/{project_id}/tasks/{task_id}/run_configs`.
 3. **Parent task + its own run config.** The task that will *do the calling*. Standard task creation flow.
-4. **Wire the sub-agent in (ask the user first, then POST/PATCH).** Draft `{name, description, task_id, run_config_id, is_archived: false}` and **show it to the user first** — sub-agent wiring adds a tool server to the project, so the user must agree. On "yes / go", load `references/knowledge/api_docs/post_api_projects_project_id_kiln_task_tool.md` and `POST /api/projects/{project_id}/kiln_task_tool` with the approved body. Report the new tool server ID and link to `http://localhost:8757/tools/{project_id}/tool_servers/{ts_id}`. **Editing an existing wiring is the same gate:** changing a tool server's name/description/run_config via `PATCH /api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}` is also a project-structure mutation — draft the edit and ask the user first, never silently. The name + description are what the parent model reads to decide when to invoke the sub-agent (see "Tool name & description guidance" below) — get those right with the user before you ask.
+4. **Wire the sub-agent in.** First list the existing wirings (`GET /api/projects/{project_id}/kiln_task_tools`) so you do not add a second copy. Draft `{name, description, task_id, run_config_id, is_archived: false}` and **show it to the user first** — sub-agent wiring adds a tool server to the project, so the user must agree. The name + description are what the parent model reads to decide when to invoke the sub-agent (see "Tool name & description guidance" below) — get those right with the user before you ask. On "yes / go", load `references/knowledge/api_docs/post_api_projects_project_id_kiln_task_tool.md` and `POST /api/projects/{project_id}/kiln_task_tool` with the approved body. Report the new tool server ID and link to `http://localhost:8757/tools/{project_id}/tool_servers/{ts_id}`.
+5. **Attach and iterate.** List the new tool on a new run config of the parent task (`references/knowledge/model_create_configs.md`). **Editing an existing wiring is the same gate:** changing a tool server's name/description/run_config via `PATCH /api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}` is also a project-structure mutation — draft the edit and ask the user first, never silently.
 
 **MCP servers** are wired through `POST /api/projects/{project_id}/connect_local_mcp` and `POST /api/projects/{project_id}/connect_remote_mcp`; the flow is in `references/knowledge/tools.md`.
 

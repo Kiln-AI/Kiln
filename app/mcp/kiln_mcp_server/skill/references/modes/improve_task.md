@@ -119,6 +119,7 @@ Load the bundle, then drill into sub-dependencies declared in each knowledge fil
 | **RAG** | Document retrieval setup | `references/knowledge/rag.md` |
 | **Tools** | MCP tool servers | `references/knowledge/tools.md` |
 | **Code Tools** | Native Python functions as tools (Beta, trust-gated) — draft, test, create, attach | `references/knowledge/code_tools.md` |
+| **Code Tool Authoring** | A code tool for an agent as an experiment — when a tool is the right change, the eight wrapper templates, the allowlist rule, the contract, the build rules | `references/knowledge/code_tool_authoring.md` |
 | **Sub-Agents** | Wiring a sub-agent (Kiln Task as Tool) — end-to-end setup workflow, when to ask the user first, tool name/description guidance | `references/knowledge/subagents.md` |
 | **Skills** | Creating project-level skills (lazy-loaded instructions), name constraints, editing limitations, attaching to run configs, and correct deep links | `references/knowledge/adding_skills.md` |
 | **Benchmark Eval Inputs** | EvalInput-backed benchmark evals — generate-then-score eval runs, synthetic-user drives, reference data, and the candidate-run-config benchmark recipe | `references/knowledge/benchmark_eval_inputs.md` |

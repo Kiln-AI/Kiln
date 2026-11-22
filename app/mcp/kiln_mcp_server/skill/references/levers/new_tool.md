@@ -65,11 +65,12 @@ Rules of the object:
 - **The functional fields are fixed when the tool is created.** A change
   is a new tool. Never change or archive a tool that another run config
   uses.
-- **Each tool has a fresh `tool_function_name`.** A name that a tool that
-  is not archived already uses is refused.
+- **Each tool has a fresh `tool_function_name`.** Kiln refuses a run
+  config, or an allowlist, in which two tools share one.
 - **A subject tool allowlists only subject tools.** Never a tool that can
   reach the Kiln server, never a memory tool, never a skill id, never the
-  tool's own id.
+  tool's own id. `references/knowledge/code_tool_authoring.md` gives the
+  rule in full.
 - Archive with
   `references/knowledge/api_docs/post_api_projects_project_id_code_tools_code_tool_id_archive.md`
   only a tool that you created for this experiment and that no run config
@@ -99,3 +100,6 @@ Rules of the object:
 
 - `references/knowledge/code_tools.md`: code tools in Kiln, code trust,
   and the create, test and attach calls.
+- `references/knowledge/code_tool_authoring.md`: the contract, the
+  allowlist rule, the build rules, a worked example, and eight wrapper
+  templates, one for each mechanical failure.

@@ -75,10 +75,11 @@ result in the traces.
 2. **Preview and cap.** The wrapper returns the total count, the first N
    rows in the trimmed form, and how to get more: a cursor, or a filter.
    A follow-up query (a second wrapper, or a parameter of the same one)
-   gets one item in full. The wrapper template `preview_and_cap.py` of the
-   code-tool authoring skill has this shape. When a list has many pages,
-   the template `paginate_all.py` fetches every page up to a cap and says
-   that the list was cut.
+   gets one item in full. The wrapper template
+   `references/knowledge/code_tool_wrappers/preview_and_cap.md` has this
+   shape. When a list has many pages, the template
+   `references/knowledge/code_tool_wrappers/paginate_all.md` fetches every
+   page up to a cap and says that the list was cut.
 3. **Refuse a result that is too large.** For a general query tool, the
    wrapper counts or limits the rows before it returns them. Over the
    limit, it returns an error that says how many rows the query would

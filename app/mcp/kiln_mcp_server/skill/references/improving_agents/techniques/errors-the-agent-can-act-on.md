@@ -47,9 +47,10 @@ cost: medium
 
 The change is a wrapper of the tool on a new run config, with the wrapped
 tool dropped. See the lever [new_tool](references/levers/new_tool.md) for the
-build. The template `actionable_errors.py` of the code-tool authoring
-skill has this shape, and its rules say that errors are data, not
-exceptions.
+build. The template
+`references/knowledge/code_tool_wrappers/actionable_errors.md` has this
+shape, and the rules of `references/knowledge/code_tool_authoring.md` say
+that errors are data, not exceptions.
 
 1. **List the errors** from a few traces: the call, the raw error, and
    what the agent did next.

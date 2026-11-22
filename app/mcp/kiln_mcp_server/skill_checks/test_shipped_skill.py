@@ -1,6 +1,7 @@
 """Checks of the skill tree as shipped in this package, and of the
 `knowledge-maintenance` skill that changes its knowledge."""
 
+import ast
 import re
 from pathlib import Path
 
@@ -178,6 +179,47 @@ def test_test_split_readers_are_endpoint_docs_or_app_links():
             assert reader.startswith(f"{DEFAULT_ORIGIN}/specs/"), reader
         else:
             assert reader in tree, reader
+
+
+# --- the code tool wrapper templates -------------------------------------------
+
+WRAPPER_FOLDER = "references/knowledge/code_tool_wrappers/"
+WRAPPER_TEMPLATE_COUNT = 8
+PYTHON_FENCE_RE = re.compile(r"^```python\n(.*?)^```$", re.DOTALL | re.MULTILINE)
+
+
+def _wrapper_templates() -> dict[str, str]:
+    index = get_index()
+    return {
+        key: read_file(key, index)
+        for key in index.files
+        if key.startswith(WRAPPER_FOLDER)
+    }
+
+
+def test_wrapper_templates_compile():
+    """Each template holds one Python module that parses and defines a
+    top-level `run`, the function that Kiln calls."""
+    templates = _wrapper_templates()
+    assert len(templates) == WRAPPER_TEMPLATE_COUNT
+    for key, text in templates.items():
+        blocks = PYTHON_FENCE_RE.findall(text)
+        assert len(blocks) == 1, key
+        module = ast.parse(blocks[0], filename=key)
+        compile(module, key, "exec")
+        run_functions = [
+            node
+            for node in module.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "run"
+        ]
+        assert len(run_functions) == 1, key
+
+
+def test_wrapper_templates_are_listed_by_the_authoring_guide():
+    guide = read_file("references/knowledge/code_tool_authoring.md", get_index())
+    for key in _wrapper_templates():
+        assert f"`{key}`" in guide, key
 
 
 # --- SKILL.md ------------------------------------------------------------------

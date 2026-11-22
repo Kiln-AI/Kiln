@@ -61,7 +61,7 @@ cost: medium
 The change is a wrapper of the tool that comes before the reply, on a new
 run config, with the wrapped tool dropped. See the lever
 [new_tool](references/levers/new_tool.md) for the build. The template
-`context_on_tool_surface.py` of the code-tool authoring skill has this
+`references/knowledge/code_tool_wrappers/context_on_tool_surface.md` has this
 shape: a description read before the call, and a field in the response
 read before the reply.
 

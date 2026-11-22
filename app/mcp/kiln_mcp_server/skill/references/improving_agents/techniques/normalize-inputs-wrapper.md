@@ -50,8 +50,8 @@ cost: medium
 
 The change is a wrapper of the tool on a new run config, with the wrapped
 tool dropped. See the lever [new_tool](references/levers/new_tool.md) for the
-build. The template `normalize_inputs.py` of the code-tool authoring skill
-has this shape.
+build. The template
+`references/knowledge/code_tool_wrappers/normalize_inputs.md` has this shape.
 
 1. **List the malformed calls** from a few traces: the parameter, the form
    that the agent sent, and the form that the tool needs.
