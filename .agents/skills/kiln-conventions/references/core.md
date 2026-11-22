@@ -58,7 +58,7 @@
 2. the key and env-var properties in `Config.__init__` (`utils/config.py`)
 3. `provider_warnings` in `adapters/provider_tools.py`
 4. the provider's item in `built_in_providers` (`adapters/ml_provider_list.py`), in enum order. `provider_name_from_id` reads its friendly name, and `test_ml_provider_list.py` fails until it exists.
-5. `lite_llm_core_config_for_provider` in `adapters/provider_tools.py`. Every case there reads `Config.shared().<key>`, so a new case FAILs `core-config-shared` (and `env-access` if it reads a base-URL env var). That is an H24 case: don't allowlist it; report it in your summary and the PR with the rule id, `path:line`, and "waits on provider config injection".
+5. `lite_llm_core_config_for_provider` in `adapters/provider_tools.py`. Every case there reads `Config.shared().<key>`, so a new case FAILs `core-config-shared` (and `env-access` if it reads a base-URL env var). That is an H24 case: don't allowlist it; report it in your summary and the PR with the rule id, `path:line`, and "waits on provider config injection". Set `cost_from_response_usage=True` when the provider returns its billed cost in `usage.cost` and LiteLLM's price list knows its model names (OpenCode): the run cost then comes only from `usage.cost`.
 6. `get_litellm_provider_info` in `utils/litellm.py`
 7. any provider branches in `LiteLlmAdapter.build_extra_body`
 8. the model entries in `ml_model_list.py`
