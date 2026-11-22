@@ -96,7 +96,7 @@ An OpenEnv server can publish a JSON schema for its reset arguments. When it doe
 - **No schema:** the dialog is the JSON editor, as before, with no error or notice.
 - **The form:** one field per schema property, using Kiln's own form controls: a dropdown for an enum, number inputs for numbers and integers, a text input for strings, and a nested group for an object. Each field shows the schema's title and description, and is marked optional unless the schema requires it.
 - **Raw JSON:** a toggle switches between the form and the JSON editor. Values carry across in both directions.
-- **What gets saved:** an empty form field is left out of `reset_kwargs`, so the server's `reset()` never receives it. What the server does with a missing argument is up to the server. A nested object whose fields are all empty is left out too. Saving an explicit `null` needs Raw JSON.
+- **What gets saved:** an empty form field is left out of `reset_kwargs`, so the server's `reset()` never receives it. What the server does with a missing argument is up to the server. An optional nested object whose fields are all empty is left out too; a required one is saved as `{}`. A field the schema requires stays required in the form, even when it also allows `null`. Saving an explicit `null` needs Raw JSON.
 - **Optional enums:** an optional enum's dropdown starts on "Not Set", listed first. A required enum asks for a pick. This is the shared run input form, so the run page's structured inputs behave the same way.
 - **Checks:** the form checks what the schema states: types, enum values and required fields. It doesn't enforce rules the schema can't express, such as two fields that can't be combined. The schema is a description, not a contract: the server still checks the arguments when a run starts, with the existing reset error.
 - **When the form can't be used:** if the schema uses a construct the form can't show, the dialog stays on the JSON editor. An optional field that is an object with no fields of its own, such as Seahaven's `startup` for a world with no startup keywords, is left out of the form instead, since there's nothing in it to fill in. If an existing preset's arguments include keys or values the form can't show, the dialog opens on Raw JSON, and switching to the form is refused with the reason. Nothing is dropped silently.
@@ -144,6 +144,8 @@ The check runs:
 - When a run starts, before any model call.
 - In code tool allowlist editing, where a code tool's allowlist can't reach more than one environment itself.
 
+Evals use the same collection to decide whether a job runs in its input's environment. A run config that reaches the environment only through a code tool or a Kiln task tool starts the input's episode, the same as one that lists the environment's tools.
+
 ## Run page
 
 ### The Environment Preset dropdown
@@ -171,6 +173,7 @@ Multi-turn tasks:
 - The session closes after 30 minutes without a turn, when the app exits, or when the conversation is deleted. Leaving the page doesn't close it, because browsers don't reliably report that and the conversation page can be reopened.
 - Each turn's run saves the environment's state at the end of that turn.
 - If the session is gone for any reason, sending a message shows an error: "The OpenEnv session for this conversation ended. Start a new conversation to keep using this OpenEnv server." The history stays readable. Kiln never silently starts a new session, because the agent would be in a different state from the one in its history.
+- If a message fails before any of the environment's tools ran, the user can send it again in the same session. If one of the environment's tools already ran, the session ends, because the environment may have changed in a way the history doesn't show. Tools reached through code tools and Kiln task tools count too.
 - Continuing from anything but the latest turn is refused in a conversation with an environment, because its state has moved past it.
 
 ### Run records
@@ -206,7 +209,7 @@ A session lost during or between turns fails that run with the error above.
 
 - No client names in specs, code, tests or commits.
 - Nothing changes for projects with no environments, or for run configs that reach none.
-- Evals behave as they do today, apart from the rename.
+- Evals behave as they do today, apart from the rename and from counting environments reached through code tools and Kiln task tools (see One environment per run).
 
 ## V2: swapping real and synthetic tools
 
