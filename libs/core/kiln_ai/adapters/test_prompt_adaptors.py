@@ -48,6 +48,14 @@ async def test_cloudflare(tmp_path):
     await run_simple_test(tmp_path, "glm_4_7_flash", "cloudflare")
 
 
+@pytest.mark.paid
+@pytest.mark.prerelease
+async def test_opencode(tmp_path):
+    if os.getenv("OPENCODE_API_KEY") is None:
+        pytest.skip("OPENCODE_API_KEY not set")
+    await run_simple_test(tmp_path, "claude_haiku_5_5", "opencode")
+
+
 @pytest.mark.parametrize(
     "model_name",
     [

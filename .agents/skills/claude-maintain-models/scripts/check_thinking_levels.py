@@ -5,7 +5,9 @@ Cloudflare and OpenRouter publish, per model, the `reasoning_effort` values
 the model accepts (`supported_efforts`). Both silently map an unlisted value
 to a different effort and still return HTTP 200, so a live call cannot catch
 a wrong level; only the catalog shows it. Cloudflare also lists the exact
-mapping (`normalizes_to`).
+mapping (`normalizes_to`). OpenCode lists the values in its models list
+(`capabilities.reasoning.effort`) and also accepts some unlisted values with
+HTTP 200.
 
 Reads the model list from this checkout (not the published remote config), so
 it checks the branch being edited. Run from the repo root:
@@ -15,7 +17,8 @@ it checks the branch being edited. Run from the repo root:
 
 Cloudflare uses the authenticated models-search API when CLOUDFLARE_API_KEY and
 CLOUDFLARE_ACCOUNT_ID are both set, and otherwise the public catalog JSON.
-OpenRouter needs no key.
+OpenRouter needs no key. OpenCode needs OPENCODE_API_KEY from a workspace with
+default model settings, and is skipped without it.
 
 Exit code 1 when any entry has an error-level finding, else 0.
 """
@@ -41,11 +44,12 @@ from provider_utils import (  # type: ignore[import-not-found]
     OPENROUTER_VIRTUAL_SUFFIXES,
     cloudflare_property,
     fetch_cloudflare_models,
+    fetch_opencode_models,
     fetch_openrouter_models,
     log,
 )
 
-PROVIDERS = ("cloudflare", "openrouter")
+PROVIDERS = ("cloudflare", "openrouter", "opencode")
 
 # Kinds that are always errors. `missing_levels`, `levels_without_catalog_efforts`
 # and `not_in_catalog` are errors only for providers in STRICT_PROVIDERS.
@@ -53,8 +57,8 @@ ERROR_KINDS = {"unsupported_level", "unsupported_default"}
 STRICT_KINDS = {"missing_levels", "levels_without_catalog_efforts", "not_in_catalog"}
 # Kiln leaves OpenRouter levels off some models on purpose (an effort value
 # with no visible effect), and other Kiln checks cover OpenRouter ids, so only
-# Cloudflare treats those kinds as errors.
-STRICT_PROVIDERS = {"cloudflare"}
+# Cloudflare and OpenCode treat those kinds as errors.
+STRICT_PROVIDERS = {"cloudflare", "opencode"}
 
 
 @dataclass(frozen=True)
@@ -200,6 +204,14 @@ def openrouter_efforts(catalog: list[dict]) -> dict[str, CatalogEffort]:
     return efforts
 
 
+def opencode_efforts(catalog: list[dict]) -> dict[str, CatalogEffort]:
+    efforts: dict[str, CatalogEffort] = {}
+    for model in catalog:
+        reasoning = (model.get("capabilities") or {}).get("reasoning") or {}
+        efforts[model["id"]] = CatalogEffort(supported=reasoning.get("effort") or None)
+    return efforts
+
+
 def catalog_id(provider: str, model_id: str) -> str:
     if provider == "openrouter":
         for suffix in OPENROUTER_VIRTUAL_SUFFIXES:
@@ -238,7 +250,13 @@ def load_kiln_entries(providers: list[str]) -> list[KilnEntry]:
     ]
 
 
-def fetch_efforts(provider: str) -> dict[str, CatalogEffort]:
+def fetch_efforts(provider: str) -> dict[str, CatalogEffort] | None:
+    """Returns the provider's efforts by model id, or None when its key is missing."""
+    if provider == "opencode":
+        api_key = os.environ.get("OPENCODE_API_KEY")
+        if not api_key:
+            return None
+        return opencode_efforts(fetch_opencode_models(api_key))
     if provider == "cloudflare":
         return cloudflare_efforts(
             fetch_cloudflare_models(
@@ -260,10 +278,19 @@ def main() -> int:
         help="Provider to check (default: all)",
     )
     args = parser.parse_args()
-    providers = list(PROVIDERS) if args.provider == "all" else [args.provider]
+    requested = list(PROVIDERS) if args.provider == "all" else [args.provider]
+
+    efforts_by_provider: dict[str, dict[str, CatalogEffort]] = {}
+    for provider in requested:
+        efforts = fetch_efforts(provider)
+        if efforts is None:
+            log(f"Skipped {provider}: no API key set")
+            continue
+        efforts_by_provider[provider] = efforts
+    providers = list(efforts_by_provider)
 
     entries = load_kiln_entries(providers)
-    findings = check_all(entries, {p: fetch_efforts(p) for p in providers})
+    findings = check_all(entries, efforts_by_provider)
 
     for provider in providers:
         count = sum(1 for entry in entries if entry.provider == provider)

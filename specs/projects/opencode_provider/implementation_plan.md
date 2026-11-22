@@ -18,7 +18,7 @@ PR 1 is phases 1–2 and can merge whenever it's ready. PR 2 is phase 3 and merg
   - the regenerated API schema
   - `provider_name_map`, the icon from `assets/opencode.svg`, and the connect card with the approved copy
   - the web tests
-- [ ] Phase 3: Model catalog and skills, all of PR 2:
+- [x] Phase 3: Model catalog and skills, all of PR 2:
   - OpenCode entries on existing `KilnModel`s for the default-enabled paid chat models, with flags set by the paid tests
   - the test and tooling lists
   - the `claude-maintain-models` and `kiln-check-deprecation` skill updates

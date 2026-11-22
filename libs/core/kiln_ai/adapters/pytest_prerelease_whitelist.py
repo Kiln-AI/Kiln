@@ -28,6 +28,7 @@ PRERELEASE_CHAT_MODELS: list[tuple[str, str]] = [
     ("qwen_3p7_plus", ModelProviderName.fireworks_ai.value),
     ("deepseek_4_flash", ModelProviderName.together_ai.value),
     ("glm_4_7_flash", ModelProviderName.cloudflare.value),
+    ("claude_haiku_5_5", ModelProviderName.opencode.value),
 ]
 
 # (model_name, provider_name) — used by the Jev paid smoke tests in

@@ -13,7 +13,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -94,11 +94,20 @@ PROVIDER_CONFIG = {
         "env": "CLOUDFLARE_API_KEY",
         "account_env": "CLOUDFLARE_ACCOUNT_ID",
     },
+    "opencode": {
+        "type": "opencode",
+        "env": "OPENCODE_API_KEY",
+    },
 }
 
 # Providers whose model listing works without credentials, so a missing key
 # must not skip the check.
 KEY_OPTIONAL_PROVIDERS = {"cloudflare"}
+
+# The listing holds only the models the key's workspace allows, so the key must
+# come from a workspace with default model settings.
+OPENCODE_MODELS_URL = "https://opencode.ai/inference/v1/models"
+OPENCODE_MODELS_DOCS_URL = "https://opencode.ai/docs/console/models"
 
 CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4"
 CLOUDFLARE_PUBLIC_MODELS_URL = "https://ai-cloudflare-com.pages.dev/api/models"
@@ -140,6 +149,13 @@ def fetch_json(url: str, headers: dict | None = None, timeout: int = 30) -> Any:
             req.add_header(k, v)
     with urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read())
+
+
+def fetch_text(url: str, timeout: int = 30) -> str:
+    req = Request(url)
+    req.add_header("User-Agent", "kiln-model-check/1.0")
+    with urlopen(req, timeout=timeout) as resp:
+        return resp.read().decode("utf-8")
 
 
 def get_api_key(env_var: str) -> str | None:
@@ -365,6 +381,71 @@ def fetch_cloudflare(
     """Returns (model_ids, deprecation_dates) for Cloudflare Workers AI."""
     models = fetch_cloudflare_models(api_key, account_id)
     return cloudflare_availability(models, date.today())
+
+
+def fetch_opencode_models(api_key: str) -> list[dict]:
+    """Returns OpenCode's raw model records for the key's workspace."""
+    headers = {"Authorization": f"Bearer {api_key}"}
+    return fetch_json(OPENCODE_MODELS_URL, headers)["data"]
+
+
+def opencode_name_key(name: str) -> str:
+    """Normalise an OpenCode model name or id for matching ("GPT 5.2 Codex",
+    "GPT-5.2 Codex" and "gpt-5.2-codex" all give "gpt5.2codex")."""
+    return re.sub(r"[\s_-]", "", name.lower())
+
+
+def parse_opencode_deprecations(docs_html: str) -> dict[str, str]:
+    """Parse the Deprecated models table of OpenCode's console models docs page.
+
+    The table names models by display name, not id. Returns
+    {opencode_name_key(name): ISO deprecation date}.
+    """
+    start = docs_html.find('id="deprecated-models"')
+    end = docs_html.find("</table>", start)
+    if start < 0 or end < 0:
+        raise RuntimeError("Could not find the Deprecated models table")
+    rows = re.findall(
+        r"<tr><td>([^<]+)</td><td>([^<]+)</td></tr>", docs_html[start:end]
+    )
+    if not rows:
+        raise RuntimeError("Parsed zero rows from the Deprecated models table")
+    return {
+        opencode_name_key(name): datetime.strptime(when.strip(), "%B %d, %Y")
+        .date()
+        .isoformat()
+        for name, when in rows
+    }
+
+
+def opencode_availability(
+    models: list[dict], deprecations: dict[str, str]
+) -> tuple[set[str], dict[str, str]]:
+    """Split OpenCode model records into (model_ids, deprecation_dates).
+
+    A model is matched to the deprecated table by its display name, or by its
+    id when the name differs from the table's spelling.
+    """
+    ids: set[str] = set()
+    deprecation_dates: dict[str, str] = {}
+    for model in models:
+        model_id = model["id"]
+        ids.add(model_id)
+        for key in (
+            opencode_name_key(model.get("name") or ""),
+            opencode_name_key(model_id),
+        ):
+            if key in deprecations:
+                deprecation_dates[model_id] = deprecations[key]
+                break
+    return ids, deprecation_dates
+
+
+def fetch_opencode(api_key: str) -> tuple[set[str], dict[str, str]]:
+    """Returns (model_ids, deprecation_dates) for OpenCode pay-as-you-go."""
+    models = fetch_opencode_models(api_key)
+    deprecations = parse_opencode_deprecations(fetch_text(OPENCODE_MODELS_DOCS_URL))
+    return opencode_availability(models, deprecations)
 
 
 def fetch_fireworks_individual(api_key: str, model_ids: list[str]) -> set[str]:

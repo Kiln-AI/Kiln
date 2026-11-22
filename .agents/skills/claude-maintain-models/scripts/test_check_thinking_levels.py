@@ -7,6 +7,7 @@ from check_thinking_levels import (
     check_all,
     check_entry,
     cloudflare_efforts,
+    opencode_efforts,
     openrouter_efforts,
 )
 
@@ -156,3 +157,45 @@ def test_unsupported_default_is_reported_when_levels_are_missing():
     assert kinds(findings) == ["unsupported_default", "missing_levels"]
     assert findings[0].is_error
     assert not findings[1].is_error
+
+
+def test_opencode_efforts_reads_the_capabilities_effort_list():
+    catalog = [
+        {
+            "id": "kimi-k3",
+            "capabilities": {
+                "reasoning": {
+                    "supported": True,
+                    "toggle": True,
+                    "effort": ["low", "high", "max"],
+                }
+            },
+        },
+        {"id": "minimax-m3", "capabilities": {"reasoning": {"supported": True}}},
+        {"id": "text-embedding-3-small", "capabilities": {}},
+        {"id": "gpt-live-1"},
+    ]
+    efforts = opencode_efforts(catalog)
+    assert efforts["kimi-k3"].supported == ["low", "high", "max"]
+    assert efforts["minimax-m3"].supported is None
+    assert efforts["text-embedding-3-small"].supported is None
+    assert efforts["gpt-live-1"].supported is None
+
+
+def test_opencode_is_strict_like_cloudflare():
+    effort = CatalogEffort(supported=["low", "high", "max"])
+    missing = check_entry(entry(None, provider="opencode", model_id="kimi-k3"), effort)
+    assert kinds(missing) == ["missing_levels"]
+    assert missing[0].is_error
+
+    unlisted = check_entry(
+        entry(
+            {"Low": "low", "Medium": "medium"},
+            "low",
+            provider="opencode",
+            model_id="kimi-k3",
+        ),
+        effort,
+    )
+    assert kinds(unlisted) == ["unsupported_level", "not_offered"]
+    assert unlisted[0].is_error

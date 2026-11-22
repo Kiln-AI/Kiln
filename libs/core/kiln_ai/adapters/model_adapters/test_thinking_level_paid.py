@@ -45,10 +45,34 @@ CLAUDE_SKIPS_THINKING_ON_OPENROUTER_MODELS = {
     ModelName.claude_sonnet_5_5.value,
 }
 
+# (model, level) pairs where Claude skips thinking on this prompt through OpenCode:
+# Sonnet 5.5 at low, medium and high, and Fable 5.2 at low. The response then has no
+# reasoning text and no reasoning tokens.
+CLAUDE_SKIPS_THINKING_ON_OPENCODE = {
+    (ModelName.claude_sonnet_5_5.value, "low"),
+    (ModelName.claude_sonnet_5_5.value, "medium"),
+    (ModelName.claude_sonnet_5_5.value, "high"),
+    (ModelName.claude_fable_5_2.value, "low"),
+}
+
+# OpenCode runs OpenAI and Meta Muse models on their Responses API and returns their
+# reasoning only in encrypted form (`reasoning_details`), with a reasoning token count
+# but no text, so Kiln has no reasoning content to save.
+OPENCODE_ENCRYPTED_REASONING_MODELS = {
+    ModelName.gpt_6_luna.value,
+    ModelName.gpt_5_6_terra.value,
+    ModelName.gpt_5_5.value,
+    ModelName.gpt_5_4_mini.value,
+    ModelName.gpt_5_4_nano.value,
+    ModelName.muse_wonder_1_0.value,
+    ModelName.muse_ember.value,
+}
+
 # Gemini 3.x Flash models use adaptive reasoning: they decide per request whether to
 # emit a thinking channel, so a non-"none" thinking level is not guaranteed to surface
 # reasoning content. This is worse at low thinking budgets and on the native gemini_api
-# provider, so for these models on any Gemini provider we only assert the run succeeded.
+# provider, so for these models on Gemini's own providers and on the OpenRouter and
+# OpenCode gateways we only assert the run succeeded.
 GEMINI_ADAPTIVE_THINKING_MODELS = {
     ModelName.gemini_3_flash.value,
     ModelName.gemini_3_5_flash.value,
@@ -134,6 +158,7 @@ def get_all_model_providers_with_thinking_levels(
             ModelProviderName.anthropic,
             ModelProviderName.gemini_api,
             ModelProviderName.cloudflare,
+            ModelProviderName.opencode,
         ]
     ),
 )
@@ -185,12 +210,19 @@ async def test_thinking_level_reasoning_content(
         # See note above: the model skips thinking at lower effort levels regardless of
         # gateway; reaching here means the run succeeded, which is what we verify.
         pass
+    elif provider_name == ModelProviderName.opencode and (
+        (model_name, thinking_level) in CLAUDE_SKIPS_THINKING_ON_OPENCODE
+        or model_name in OPENCODE_ENCRYPTED_REASONING_MODELS
+    ):
+        # See the notes above; reaching here means the run succeeded.
+        pass
     elif (
         provider_name
         in (
             ModelProviderName.gemini_api,
             ModelProviderName.openrouter,
             ModelProviderName.vertex,
+            ModelProviderName.opencode,
         )
         and model_name in GEMINI_ADAPTIVE_THINKING_MODELS
     ):

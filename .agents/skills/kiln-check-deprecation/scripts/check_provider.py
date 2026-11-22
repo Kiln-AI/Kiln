@@ -3,7 +3,7 @@
 
 Fetches each provider's model list via its API and cross-references against
 the extracted JSON from extract_models.py. Reports missing models and
-(for OpenRouter and Cloudflare) upcoming expirations.
+(for OpenRouter, Cloudflare and OpenCode) upcoming expirations.
 
 Usage:
     # Check a single provider
@@ -40,6 +40,11 @@ API format quirks handled by the shared provider_api module:
       reported under "expiring"; once that date has passed the model also counts as
       missing, even if the listing still shows it, because Cloudflare may alias a
       retired ID to a different model.
+    - OpenCode lists only the models the key's workspace allows, so the key must
+      come from a workspace with default model settings. Dates from the
+      "Deprecated models" table on OpenCode's console models docs page are
+      reported under "expiring"; that table names models by display name, which
+      is matched to the listing's name field.
 """
 
 import argparse
@@ -67,6 +72,7 @@ from provider_utils import (  # type: ignore[import-not-found]
     fetch_fireworks_individual,
     fetch_gemini,
     fetch_openai_compat,
+    fetch_opencode,
     fetch_openrouter,
     fetch_vertex_with_aliases,
     log,
@@ -109,6 +115,8 @@ def check_provider(provider_name: str, extracted: dict) -> dict:
     elif ptype == "cloudflare":
         account_id = os.environ.get(config["account_env"], "")
         available, expiring = fetch_cloudflare(api_key, account_id)
+    elif ptype == "opencode":
+        available, expiring = fetch_opencode(api_key)
     elif ptype == "openai_compat":
         available = fetch_openai_compat(config["url"], api_key)
     else:
