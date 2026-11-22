@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Architecture: Kiln MCP Server
@@ -41,6 +41,8 @@ New:
 ```
 app/mcp/                              new workspace member (no __init__.py here, ever)
   pyproject.toml
+  knowledge_backlog.md                the knowledge backlog: known gaps and pending ideas of the knowledge.
+                                      Beside the package, so it is not bundled
   kiln_mcp_server/
     server.py, addresses.py           server construction, address rules
     texts.py                          the server instructions and the tool texts
@@ -145,11 +147,11 @@ The components depend on each other in this order; the implementation plan follo
 2. The `KilnApiCallTool` refactor, the MCP `call_kiln_api` tool with the policy seam, the `x-mcp-policy` tag and the route index, the block list annotations, and the `PUT` to `POST` change. The "exactly two tools" test and the end-to-end test land here.
 3. Model info endpoints. The API reference is not regenerated here: its pipeline does not exist yet.
 4. The API reference pipeline and its freshness check (the reference is generated for the first time, with the model info endpoints in it); the skill-tree check.
-5. The knowledge tooling port.
+5. The knowledge tooling port, with the maintenance skill and the knowledge backlog.
 6. The content port and edit (it needs 2 to 5: the text must match the block list, the model info endpoints, the generated API docs and the checks). Its last batch tunes the server and tool texts.
 7. The Connect page, the install guide, README, and the rename of the `kiln_mcp` help text.
 8. Probe the real API for unclear errors and missing route descriptions; fix them (section 10).
-9. Reviews by people, on the content as it stands after step 8: a security owner reads the sandbox wording in `code_tools.md` and `judge_types.md`; a person confirms the knowledge's public-source claims and approves case studies; the owner reads `SKILL.md` and `train_val_test.md`. Their changes are made before step 10.
+9. Reviews by people, on the content as it stands after step 8: a security owner reads the sandbox wording in `code_tools.md` and `judge_types.md`; a person confirms the knowledge's public-source claims and approves case studies; the owner reads `SKILL.md`, `train_val_test.md` and the two glue files of the merge (`run_an_experiment.md`, `diagnose_an_agent.md`). Their changes are made before step 10.
 10. Manual sanity check.
 11. Optional later, only if step 10 shows a need: a "load the endpoint doc first" check that keeps the server stateless.
 
@@ -157,7 +159,7 @@ The components depend on each other in this order; the implementation plan follo
 
 - **Agent tool timeouts.** The SDK sends progress only when the client asks for it. An agent with a short default timeout and no progress support can give up on a long call. The install guide sets longer timeouts for the agents known to need it; the sanity check confirms it.
 - **The progress interval is a design value.** It is 2 seconds. The real agents cannot be run in this environment, so the value is confirmed in the manual sanity phase (step 10), which also checks that each agent sends a progress token.
-- **The content edit is large.** Two sources written for other readers (a dedicated assistant, and fenced loop agents) become one skill for a general coding agent. It is its own phase, done in batches, each verified by a check.
+- **The content edit is large.** Two sources written for other readers (a dedicated assistant, and fenced loop agents) become one skill for a general coding agent. It is its own phase, done in batches, each verified by a check. The merge of the two sources follows one rule, so that the edit does not drift into a redesign: the knowledge's method is ported unchanged (section 11, item 1).
 - **Drift while two knowledge copies exist.** Harness-tuner keeps its copy until spec two is adopted. The port records the harness-tuner commit it was made from, and later fixes are ported by hand from the diff since that commit (skill component doc, section 9).
 - **Packaging.** The skill tree must be bundled explicitly, and `app/mcp/` must stay a plain folder. Both are covered by tests, but a full packaged build is only verified on a real build.
 
@@ -170,6 +172,8 @@ The components depend on each other in this order; the implementation plan follo
 - A refresh of the copied help articles (8 public pages have no copy yet). It needs the docs repo.
 - Harness-tuner adopts the model info endpoints and drops its copies of the model info code and of the knowledge.
 - The harness-tuner skills with general knowledge that this port leaves out (`kiln-task-setup`, `experiment-costing`, the skill-authoring guide). Each is a separate decision.
+- The knowledge file `using_harness_tuner`: how a coding agent runs the Kiln Harness Tuner CLI in place of running experiments itself. It is the first new entry of the knowledge backlog. Until it exists, the skill recommends Harness Tuner and gives no CLI steps.
+- Tooling to read the noise of an eval. This project adds none, and no guidance of its own on noise.
 - Model info: a short cache for the availability check; a hint field for a search that finds nothing under the default filters; a person reads the models.dev terms of use for a desktop app that fetches the file.
 - Web UI: a shared `copy_button` in `lib/ui/`, and an icon of its own for the Connect callout.
 - Spec two: fencing, and everything harness-tuner needs.
@@ -253,8 +257,8 @@ Build step 8 (functional spec 11). It runs after the content is in place, so the
 
 These were open; the owner has ruled on each.
 
-1. **Where the two content sources disagree, the knowledge's playbooks win.** The wider overlap between the Assistant's experiment guidance and the knowledge (what to keep, fold or remove) follows a merge proposal that the owner reviews before the content phase; its rulings go into the skill component doc, section 9.
-2. **Harness-tuner's knowledge backlog is not ported.** The maintenance skill drops that procedure.
+1. **The merge of the two content sources is approved. It is a port, not a redesign of the method.** The knowledge's method is ported unchanged, with vocabulary rewording only; the Assistant's content stays as "how to do it in Kiln". Three Assistant experiment files are not imported (`experiment_batch.md`, `optimize_quality.md`, `optimize_performance.md`), and each piece of their unique content gets a destination. Two new glue files are written: `run_an_experiment.md`, which opens with the choice between Kiln Harness Tuner (experimentation at scale: the agent dispatches it and never manages it itself) and a by-hand procedure for one or two clear ideas, and `diagnose_an_agent.md` (Kiln API steps only). The improve-task mode becomes the router into the knowledge. The five-owner rule decides every overlap, and no skill file selects, compares or keeps a candidate on the test split. The detail is in the skill component doc, sections 4.5 and 9.1 to 9.4.
+2. **Harness-tuner's knowledge backlog is ported**, to `app/mcp/knowledge_backlog.md`: beside the package, so it is not bundled. Entries that concern only harness-tuner's loop code stay behind. The maintenance skill keeps its backlog procedure, with the new path. The first new entry is `using_harness_tuner` (section 8). The detail is in the skill component doc, section 7.
 3. **No docs link until the docs page is live.** The Connect page has no "Read the Docs" link in this project. It is added when the docs page exists (section 8).
 4. **No licence field** is set in `app/mcp/pyproject.toml`: the package is covered by the repository's licence files and is not published. The package carries the same version as the other workspace members and is bumped with them at release.
 5. **Reviews by people are a phase of their own** (build step 9).

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Component: MCP server and `call_kiln_api`
