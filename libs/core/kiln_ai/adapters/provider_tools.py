@@ -601,6 +601,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
         required_config_keys=["typesafe_api_key"],
         message="Attempted to use TypeSafe AI without an API key set. \nGet your API key from https://console.typesafe.ai/keys",
     ),
+    ModelProviderName.opencode: ModelProviderWarning(
+        required_config_keys=["opencode_api_key"],
+        message="Attempted to use OpenCode without an API key set. \nGet a pay-as-you-go API key from https://opencode.ai/console (OpenCode Go subscriptions aren't supported).",
+    ),
 }
 
 
@@ -609,7 +613,11 @@ class LiteLlmCoreConfig(BaseModel):
     default_headers: Dict[str, str] | None = None
     additional_body_options: Dict[str, Any] | None = None
     openai_reasoning_summaries: bool = False
+    # Record the provider-reported usage.cost as the run cost, never LiteLLM's price-list estimate
+    cost_from_response_usage: bool = False
 
+
+OPENCODE_API_BASE = "https://opencode.ai/inference/openai/v1"
 
 CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4"
 CLOUDFLARE_GATEWAY_HEADER = "cf-aig-gateway-id"
@@ -787,6 +795,16 @@ def lite_llm_core_config_for_provider(
             )
         case ModelProviderName.cloudflare:
             return _cloudflare_core_config()
+        case ModelProviderName.opencode:
+            return LiteLlmCoreConfig(
+                base_url=OPENCODE_API_BASE,
+                additional_body_options={
+                    "api_key": Config.shared().opencode_api_key,
+                },
+                # OpenCode's usage.cost includes discounts and context-length price tiers
+                # that LiteLLM's price list doesn't know.
+                cost_from_response_usage=True,
+            )
         case ModelProviderName.openai_compatible:
             # openai compatible requires a model name in the format "provider::model_name"
             if openai_compatible_provider_name is None:

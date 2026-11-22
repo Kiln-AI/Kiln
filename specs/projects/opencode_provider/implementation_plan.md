@@ -8,7 +8,7 @@ PR 1 is phases 1–2 and can merge whenever it's ready. PR 2 is phase 3 and merg
 
 ## Phases
 
-- [ ] Phase 1: Core provider support in `libs/core`, part of PR 1:
+- [x] Phase 1: Core provider support in `libs/core`, part of PR 1:
   - the enum member, the config key, the LiteLLM mapping, `provider_warnings`, and the core config, including `cost_from_response_usage`
   - the `built_in_providers` item
   - cost from `usage.cost`

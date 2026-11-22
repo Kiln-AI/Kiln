@@ -28,6 +28,10 @@ class StreamingCompletion:
     streams, the assembled message carries the reasoning items, and its reasoning
     is every summary part of every item, separated by blank lines.
 
+    The assembled response's ``usage.cost`` is the cost the provider reported
+    in the stream, or None if it reported none. LiteLLM's price-list estimate
+    stays in ``_hidden_params["response_cost"]``.
+
     Usage::
 
         stream = StreamingCompletion(model=..., messages=...)
@@ -86,10 +90,34 @@ class StreamingCompletion:
             yield chunk
 
         response = litellm.stream_chunk_builder(chunks)
-        if reasoning_items and isinstance(response, ModelResponse):
-            _apply_reasoning_items(response, reasoning_items)
+        if isinstance(response, ModelResponse):
+            _keep_provider_usage_cost(response, stream)
+            if reasoning_items:
+                _apply_reasoning_items(response, reasoning_items)
         self._response = response
         self._iterated = True
+
+
+def _keep_provider_usage_cost(response: ModelResponse, stream: Any) -> None:
+    """Set the assembled ``usage.cost`` to the cost the provider reported, or None if it
+    reported none, matching a non-streamed response.
+
+    When the provider sends no cost, LiteLLM's stream wrapper writes its own price-list
+    estimate into the usage chunk it yields. The provider's chunks stay on the wrapper's
+    ``chunks``, and the estimate stays in ``_hidden_params["response_cost"]``.
+    Pinned by the streaming cost tests in ``test_opencode_litellm.py``.
+    """
+    usage = getattr(response, "usage", None)
+    provider_chunks = getattr(stream, "chunks", None)
+    if usage is None or not isinstance(provider_chunks, list):
+        return
+    reported_cost = None
+    for chunk in provider_chunks:
+        chunk_usage = getattr(chunk, "usage", None)
+        chunk_cost = getattr(chunk_usage, "cost", None)
+        if chunk_cost is not None:
+            reported_cost = chunk_cost
+    usage.cost = reported_cost
 
 
 def _reasoning_items_from_chunk(

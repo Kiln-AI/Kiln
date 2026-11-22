@@ -15,3 +15,5 @@ class LiteLlmConfig:
     additional_body_options: dict[str, Any] = field(default_factory=dict)
     # Request reasoning summaries from providers that set openai_reasoning_summary
     openai_reasoning_summaries: bool = False
+    # Record the provider-reported usage.cost as the run cost, never LiteLLM's price-list estimate
+    cost_from_response_usage: bool = False

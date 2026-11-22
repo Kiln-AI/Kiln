@@ -66,6 +66,7 @@ def test_models_dev_ids():
         ModelProviderName.cloudflare: "cloudflare-workers-ai",
         ModelProviderName.featherless_ai: None,
         ModelProviderName.typesafe: None,
+        ModelProviderName.opencode: "opencode",
         ModelProviderName.ollama: None,
         ModelProviderName.docker_model_runner: None,
         ModelProviderName.kiln_fine_tune: None,

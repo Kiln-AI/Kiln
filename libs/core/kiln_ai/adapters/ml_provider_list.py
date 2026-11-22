@@ -186,6 +186,17 @@ built_in_providers: tuple[KilnProviderInfo, ...] = (
         friendly_name="TypeSafe AI",
         notes="Gotchas: Uses a custom adapter (Jev); not OpenAI-compatible.",
     ),
+    KilnProviderInfo(
+        id=ModelProviderName.opencode,
+        friendly_name="OpenCode",
+        notes=(
+            "Data retention: OpenCode's hosts don't retain data by default, but the OpenAI, Anthropic and xAI APIs keep requests 30 days and Google up to 55 days.\n"
+            "Routing: An AI gateway; each model runs on its lab's own API (OpenAI, Anthropic, Google, xAI) or a vetted host, and Kiln calls all of them through OpenCode's Chat Completions translation.\n"
+            "Gotchas: Pay-as-you-go credits only; OpenCode Go subscriptions and OpenCode's free models aren't supported."
+        ),
+        tags=[],
+        models_dev_id="opencode",
+    ),
 )
 
 

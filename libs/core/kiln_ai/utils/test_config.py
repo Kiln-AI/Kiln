@@ -778,6 +778,13 @@ def test_typesafe_api_key_property():
     assert prop.sensitive is True
 
 
+def test_opencode_api_key_property():
+    prop = Config()._properties["opencode_api_key"]
+    assert prop.type is str
+    assert prop.env_var == "OPENCODE_API_KEY"
+    assert prop.sensitive is True
+
+
 ENV_BACKED_BOOL_PROPERTIES = [
     ("autosave_runs", "KILN_AUTOSAVE_RUNS"),
     ("enable_demo_tools", "ENABLE_DEMO_TOOLS"),

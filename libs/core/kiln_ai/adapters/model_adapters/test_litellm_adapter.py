@@ -369,6 +369,7 @@ async def test_json_schema_response_format_adds_required_to_nested(config, tmp_p
         # for openai-compatible providers, we expect openai as the provider name
         (ModelProviderName.siliconflow_cn, "openai"),
         (ModelProviderName.cloudflare, "openai"),
+        (ModelProviderName.opencode, "openai"),
     ],
 )
 def test_litellm_model_id_standard_providers(
@@ -1155,6 +1156,52 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
+
+
+@pytest.mark.parametrize(
+    "reported_cost,expected_cost",
+    [
+        (0.25, 0.25),
+        (0, 0.0),
+        (2, 2.0),
+        (None, None),
+        (-0.1, None),
+        (float("nan"), None),
+        (float("inf"), None),
+        (True, None),
+        ("0.25", None),
+    ],
+)
+def test_usage_from_response_cost_from_response_usage(
+    config, mock_task, reported_cost, expected_cost
+):
+    config.cost_from_response_usage = True
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    usage = litellm.types.utils.Usage(
+        prompt_tokens=10, completion_tokens=20, total_tokens=30
+    )
+    usage.cost = reported_cost
+    response = Mock(spec=ModelResponse)
+    response.get.return_value = usage
+    response._hidden_params = {"response_cost": 9.99}
+
+    result = adapter.usage_from_response(response)
+
+    assert result.cost == expected_cost
+    assert result.cost is None or isinstance(result.cost, float)
+    assert result.input_tokens == 10
+
+
+def test_usage_from_response_cost_from_response_usage_without_usage(config, mock_task):
+    config.cost_from_response_usage = True
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    response = Mock(spec=ModelResponse)
+    response.get.return_value = None
+    response._hidden_params = {"response_cost": 9.99}
+
+    result = adapter.usage_from_response(response)
+
+    assert result.cost is None
 
 
 def test_usage_from_response_prompt_details_without_cached_tokens(config, mock_task):

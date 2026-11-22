@@ -3,6 +3,7 @@ import copy
 import inspect
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Tuple
@@ -240,6 +241,16 @@ def _validate_unmanaged_tools(tools: list[KilnToolInterface]) -> None:
             raise TypeError(
                 f"unmanaged_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
             )
+
+
+def _reported_usage_cost(litellm_usage: Any) -> float | None:
+    """The provider-reported `usage.cost` in USD, or None if it's missing or not a valid amount."""
+    reported = litellm_usage.get("cost", None) if litellm_usage else None
+    if isinstance(reported, bool) or not isinstance(reported, (int, float)):
+        return None
+    if not math.isfinite(reported) or reported < 0:
+        return None
+    return float(reported)
 
 
 @dataclass
@@ -975,10 +986,15 @@ class LiteLlmAdapter(BaseAdapter):
     def usage_from_response(self, response: ModelResponse) -> MessageUsage:
         litellm_usage = response.get("usage", None)
 
-        # LiteLLM isn't consistent in how it returns the cost.
-        cost = response._hidden_params.get("response_cost", None)
-        if cost is None and litellm_usage:
-            cost = litellm_usage.get("cost", None)
+        if self.config.cost_from_response_usage:
+            # LiteLLM fills response_cost from its own price list for model names it
+            # recognises, which isn't what this provider billed.
+            cost = _reported_usage_cost(litellm_usage)
+        else:
+            # LiteLLM isn't consistent in how it returns the cost.
+            cost = response._hidden_params.get("response_cost", None)
+            if cost is None and litellm_usage:
+                cost = litellm_usage.get("cost", None)
 
         usage = MessageUsage()
 
