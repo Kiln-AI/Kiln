@@ -69,7 +69,7 @@ The judge doesn't have to be an LLM. When the concern is **mechanical**, a deter
 
 ## What is Kiln Pro?
 
-**Kiln Pro** is Kiln's paid cloud account that powers server-side features the desktop app can't run locally — the **Eval Builder** (guided eval creation) and the **Kiln Assistant** chat backend. Registration is free inside the app; paid tiers unlock higher usage limits. Connect or check status at [Provider Settings](/settings/providers).
+**Kiln Pro** is Kiln's paid cloud account that powers server-side features the desktop app can't run locally — the **Eval Builder** (guided eval creation) and the **Kiln Assistant** chat backend. Registration is free inside the app; paid tiers unlock higher usage limits. Connect or check status at [Provider Settings](http://localhost:8757/settings/providers).
 
 ## The Agent's Role with Evals
 
@@ -80,7 +80,7 @@ The judge doesn't have to be an LLM. When the concern is **mechanical**, a deter
 2. Help them think through what to evaluate — propose ideas, discuss what "good" looks like
 3. Identify the right eval type
 4. Deep-link them to the Eval Builder with context, `?type=` preselected (see the UI Deep Links table)
-5. Remind them about the default run config — evals run against it. If the task's `default_run_config_id` is set, name and link it ([Run Config](/optimize/{pid}/{tid}/run_config/{rcid})); if null, tell them to set one first ([Run Configs](/optimize/{pid}/{tid}))
+5. Remind them about the default run config — evals run against it. If the task's `default_run_config_id` is set, name and link it ([Run Config](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid})); if null, tell them to set one first ([Run Configs](http://localhost:8757/optimize/{project_id}/{task_id}))
 6. After they create evals, read scores and build comparison tables
 
 **What you do NOT do:**
@@ -93,9 +93,9 @@ The judge doesn't have to be an LLM. When the concern is **mechanical**, a deter
 **There is no agent API to run an eval — running one is a UI action.** When the user wants to run or kick off evals, deep-link them to the **Run** button and read the scores after they've run it. (The `run_comparison` / `run_calibration` endpoints behind that button are UI SSE streams — you don't call them.)
 
 1. **Verify readiness** — an eval config (judge) exists and its dataset is non-empty (`eval_results_summary`; `/evals/{eid}/progress` is fine for a readiness check). If a prerequisite is missing (no eval config, empty dataset), name it exactly with a deep link to fix it.
-2. **Deep-link the run.** Send the user to the **Compare page** — `/specs/{pid}/{tid}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` — where the **Run Eval** button runs the eval on the eval dataset for the pinned/named run config(s) and shows the numbers. For a single eval, the spec page's Run button works too: `/specs/{pid}/{tid}/{spec_id}`.
+2. **Deep-link the run.** Send the user to the **Compare page** — `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` — where the **Run Eval** button runs the eval on the eval dataset for the pinned/named run config(s) and shows the numbers. For a single eval, the spec page's Run button works too: `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}`.
 3. **Cost is shown in the UI at run time.** Runs execute real model inferences (≈ dataset size × run configs × evals) and can be sizeable. If the user asks, give a rough estimate before they click — but the run and its confirmation happen in the UI, so you don't gate it yourself.
-4. **Read the scores** once they've run — present them per `references/knowledge/eval_scores.md` (`score_summary` / `eval_results_summary`) with the prepopulated Compare link (a bare `/compare` renders empty).
+4. **Read the scores** once they've run — present them per `references/knowledge/eval_scores.md` (`score_summary` / `eval_results_summary`) with the prepopulated Compare link (a Compare link with no `models=` renders empty).
 
 ## Underlying Data Hierarchy
 
@@ -156,18 +156,18 @@ Tags and splits are managed automatically by the Eval Builder — you do not cre
 
 ## UI Deep Links
 
-| Action | Path |
+| Action | Link |
 |--------|------|
-| View all evals | `/specs/{pid}/{tid}` |
-| Eval Builder (guided) | `/specs/{pid}/{tid}/spec_builder` |
-| Eval Builder — new "should do X" eval | `/specs/{pid}/{tid}/spec_builder?type=desired_behaviour` |
-| Eval Builder — new bug/regression eval | `/specs/{pid}/{tid}/spec_builder?type=issue` |
-| Select eval template | `/specs/{pid}/{tid}/select_template` |
-| View an eval definition (spec) | `/specs/{pid}/{tid}/{spec_id}` |
-| View a spec-based eval (detail / results) | `/specs/{pid}/{tid}/{spec_id}/{eval_id}` |
-| View a legacy eval — no spec (e.g. from `create_evaluator`) | `/specs/{pid}/{tid}/legacy/{eval_id}` |
-| Compare eval scores | `/specs/{pid}/{tid}/compare` |
-| Compare (prepopulated) | `/specs/{pid}/{tid}/compare?columns=N&models=rcid1%2Crcid2` |
-| Eval configs (judge setup) | `/specs/{pid}/{tid}/{spec_id_or_legacy}/{eval_id}/eval_configs` |
+| View all evals | `http://localhost:8757/specs/{project_id}/{task_id}` |
+| Eval Builder (guided) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder` |
+| Eval Builder — new "should do X" eval | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type=desired_behaviour` |
+| Eval Builder — new bug/regression eval | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type=issue` |
+| Select eval template | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` |
+| View an eval definition (spec) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}` |
+| View a spec-based eval (detail / results) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}/{eval_id}` |
+| View a legacy eval — no spec (e.g. from `create_evaluator`) | `http://localhost:8757/specs/{project_id}/{task_id}/legacy/{eval_id}` |
+| Compare eval scores | `http://localhost:8757/specs/{project_id}/{task_id}/compare` |
+| Compare (prepopulated) | `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models=rcid1%2Crcid2` |
+| Eval configs (judge setup) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/eval_configs` |
 
-**Spec-based vs legacy eval links.** Evals live under the `/specs/` tree (the old `/evals/...` routes were retired). An eval is **legacy** when no Spec references it — which includes *every* eval created via the `create_evaluator` REST shortcut (it makes a spec-less `Eval`). Legacy evals put the literal token **`legacy`** in the `{spec_id}` slot of *all* their routes (`/specs/{pid}/{tid}/legacy/{eval_id}`, `.../legacy/{eval_id}/eval_configs`, …). Only evals built through the Eval Builder have a real `{spec_id}`. So: if you created the eval yourself via the API, link it with `legacy`; if it came from a Spec, use the `{spec_id}`.
+**Spec-based vs legacy eval links.** Evals live under the `http://localhost:8757/specs/` tree (the old `/evals/...` routes were retired). An eval is **legacy** when no Spec references it — which includes *every* eval created via the `create_evaluator` REST shortcut (it makes a spec-less `Eval`). Legacy evals put the literal token **`legacy`** in the `{spec_id}` slot of *all* their routes (`http://localhost:8757/specs/{project_id}/{task_id}/legacy/{eval_id}`, `.../legacy/{eval_id}/eval_configs`, …). Only evals built through the Eval Builder have a real `{spec_id}`. So: if you created the eval yourself via the API, link it with `legacy`; if it came from a Spec, use the `{spec_id}`.

@@ -14,8 +14,8 @@ Read eval scores, build comparison tables, and understand the eval pipeline.
 Every scorecard or score comparison response MUST:
 
 1. **Never emit placeholder link targets.** Links of the form `[Name](...)`, `[Name](run)`, `[Name]()`, or any empty/sentinel URL are forbidden. If the `rcid` isn't in hand, fetch it via `GET /run_configs` before writing the table — do not ship the table without real targets.
-2. **Every ranked config row includes a `/optimize/{pid}/{tid}/run_config/{rcid}` deep-link** built from the `id` field returned by the run_configs GET.
-3. **One Compare link after the table** using `/specs/{pid}/{tid}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` where `N` is the number of run configs in the table — the `models=` query parameter MUST include **every** `rcid` in the table, URL-encoded and comma-joined. A bare `/specs/{pid}/{tid}/compare` without `models=` is incomplete. The Compare view renders **at most 6 run configs**; if the table has more, cap `models=` at the top 6 and mention the cap in the reply.
+2. **Every ranked config row includes a `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` deep-link** built from the `id` field returned by the run_configs GET.
+3. **One Compare link after the table** using `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` where `N` is the number of run configs in the table — the `models=` query parameter MUST include **every** `rcid` in the table, URL-encoded and comma-joined. A bare `http://localhost:8757/specs/{project_id}/{task_id}/compare` without `models=` is incomplete. The Compare view renders **at most 6 run configs**; if the table has more, cap `models=` at the top 6 and mention the cap in the reply.
 4. **Latency and cost columns** when the user's ask implies optimization — cost comes from `mean_usage` on `GET /run_configs/{rcid}/eval_scores`, latency from per-run metadata when available.
 5. **Coverage and significance before verdict-language.** Every comparison row carries a **coverage column (n scored / n expected)** and a **significance column (paired CI or p-value from `POST /api/statistics`)** — the table cannot be rendered until the stats call has run, so run it *before* composing the reply, not after the user pushes back. Sides covering different or partial item sets get fixed (re-trigger the idempotent job) or flagged — never silently compared. "Better" / "regressed" / "clear" requires the paired result behind it — `compare_paired` (continuous) or `mcnemar_paired` (binary), **never the unpaired `compare_proportions`** when both configs scored the same items, and never mental CI arithmetic in place of the call; a within-noise delta is reported as *no significant difference*.
 6. **A side with zero scored items has no row.** An all-items-errored config is an execution failure to name and diagnose (one cheap probe — same model on a different provider, or vice versa), never a comparison datapoint — no savings-at-matched-accuracy claim may rest on it, and any cost figure is labeled conditional on quality that hasn't been demonstrated.
@@ -65,7 +65,7 @@ One call returns scores across **all evals and all run configs** for the task. R
 
    ```
    # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_eval_results_summary.md
-   call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/eval_results_summary")
+   call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary")
    ```
 
 2. **Read the response.** Use `evals_by_id` for eval metadata (name, output scores), `run_configs_by_id` for model/provider/name per rcid, and `scores_by_run_config_by_eval[rcid][eid]` for each cell in the scorecard.
@@ -81,17 +81,17 @@ One call returns scores across **all evals and all run configs** for the task. R
 >
 > **To get scores, complete each step in order:**
 >
-> 1. [Open the spec](/specs/{pid}/{tid}/{spec_id}) or [Eval Builder](/specs/{pid}/{tid}/spec_builder) if no spec exists yet
-> 2. [Add a judge (eval config)](/specs/{pid}/{tid}/{spec_id}/{eval_id}/eval_configs)
-> 3. Run the eval — click the run button on the [spec page](/specs/{pid}/{tid}/{spec_id})
+> 1. [Open the spec](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}) or [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder) if no spec exists yet
+> 2. [Add a judge (eval config)](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}/{eval_id}/eval_configs)
+> 3. Run the eval — click the run button on the [spec page](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id})
 > 4. Re-check scores here — I'll pull a fresh scorecard
 
 ### Specs configured, scores empty — the Compare-link fallback
 
 When `eval_results_summary` and the per-eval `eval_configs_score_summary` fallback both return `dataset_size: 0` (or empty score blocks) for every spec the user wants to rank across, the user is mid-setup — eval configs exist but no eval runs have completed. **Do not stop at "no scores yet."** Produce three outputs in this order:
 
-1. A **model + cost table** of the candidate run configs (model, provider, input/output $/M, est. $/call from `GET /api/model_info/model_details`), with a `/optimize/{pid}/{tid}/run_config/{rcid}` deep-link per row. State explicitly that ranking is by cost only because no eval data exists yet.
-2. A **Compare link** of the form `/specs/{pid}/{tid}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` populated with all candidate rcids URL-encoded and comma-joined — the UI compare view renders run outputs side-by-side and lets the user inspect quality manually while eval runs accumulate.
+1. A **model + cost table** of the candidate run configs (model, provider, input/output $/M, est. $/call from `GET /api/model_info/model_details`), with a `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` deep-link per row. State explicitly that ranking is by cost only because no eval data exists yet.
+2. A **Compare link** of the form `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` populated with all candidate rcids URL-encoded and comma-joined — the UI compare view renders run outputs side-by-side and lets the user inspect quality manually while eval runs accumulate.
 3. The standard remediation block ("To get scores, run each eval from the spec page") — but as a *follow-up*, not as the entire answer.
 
 This applies to "rank my configs", "which should I ship?", and "what's the cheapest passing model?" asks when scores are empty. The cost ladder + manual-Compare path is a real partial answer; "no eval data exists, run your evals first" alone is not.
@@ -100,9 +100,9 @@ This applies to "rank my configs", "which should I ship?", and "what's the cheap
 
 If the user asks for a model ranking on a task but the task has no specs or no eval configs, you can't rank yet. Don't stop at "I can't help" — produce this numbered path:
 
-1. [Eval Builder](/specs/{pid}/{tid}/spec_builder) — define 1–3 quality dimensions (what "good" looks like)
-2. [Add a judge (eval config)](/specs/{pid}/{tid}/{spec_id}/{eval_id}/eval_configs) — pick the judge model and prompt
-3. [Run configs page](/optimize/{pid}/{tid}) — ensure at least 2 configs exist to rank against each other; create candidates with `references/knowledge/model_create_configs.md` if needed
+1. [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder) — define 1–3 quality dimensions (what "good" looks like)
+2. [Add a judge (eval config)](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}/{eval_id}/eval_configs) — pick the judge model and prompt
+3. [Run configs page](http://localhost:8757/optimize/{project_id}/{task_id}) — ensure at least 2 configs exist to rank against each other; create candidates with `references/knowledge/model_create_configs.md` if needed
 4. Run the eval from the spec page
 5. Come back and ask for the scorecard — I'll pull `eval_results_summary` once scores exist
 
@@ -114,7 +114,7 @@ When you need per-eval-config detail beyond the batch summary — e.g., drilling
 
 ```
 # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_score_summary.md
-call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/evals/{eid}/eval_config/{ecid}/score_summary", jq_filter="{scores: [.results | to_entries[] | {run_config: .key, fields: [.value | to_entries[] | {field: .key, score: .value.mean_score}]}], completion: .run_config_percent_complete, dataset_size}")
+call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/evals/{eid}/eval_config/{ecid}/score_summary", jq_filter="{scores: [.results | to_entries[] | {run_config: .key, fields: [.value | to_entries[] | {field: .key, score: .value.mean_score}]}], completion: .run_config_percent_complete, dataset_size}")
 ```
 
 If it returns `400 "No dataset ids in eval set filter"`, the eval config has no dataset — do NOT retry.
@@ -125,7 +125,7 @@ Returns all eval scores for a **single** run config. Use only when checking one 
 
 ```
 # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md
-call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/run_configs/{rcid}/eval_scores", jq_filter="{evals: [.eval_results[] | {name: .eval_name, score: .eval_config_result.results | to_entries | map({field: .key, score: .value.mean_score}), pct: .eval_config_result.percent_complete}], cost: .mean_usage}")
+call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/run_configs/{rcid}/eval_scores", jq_filter="{evals: [.eval_results[] | {name: .eval_name, score: .eval_config_result.results | to_entries | map({field: .key, score: .value.mean_score}), pct: .eval_config_result.percent_complete}], cost: .mean_usage}")
 ```
 
 **Do NOT loop this endpoint over all configs to build a scorecard.** Use Approach 1 instead.
@@ -136,7 +136,7 @@ Two uses: (1) **scorecard fallback** — when `eval_results_summary` returns emp
 
 ```
 # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs_score_summary.md
-call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/evals/{eid}/eval_configs_score_summary", jq_filter="{completion: .eval_config_percent_complete, dataset_size, rated: .fully_rated_count}")
+call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/evals/{eid}/eval_configs_score_summary", jq_filter="{completion: .eval_config_percent_complete, dataset_size, rated: .fully_rated_count}")
 ```
 
 ### Filtering: Be Smart About What You Query
@@ -153,14 +153,14 @@ Many workflows end with comparing run configs. Follow this pattern:
 
 2. **Pull batch scores** using Approach 1 above.
 
-3. **Build a comparison table** — every row uses the `id` from `run_configs_by_id` (or the bootstrap) as the rcid for the `/optimize/{pid}/{tid}/run_config/{rcid}` deep link.
+3. **Build a comparison table** — every row uses the `id` from `run_configs_by_id` (or the bootstrap) as the rcid for the `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` deep link.
 
 | Config | Model | Spec 1 | Spec 2 | Avg Cost | Link |
 |--------|-------|--------|--------|----------|------|
-| Baseline | GPT-5 Mini | 92% | 88% | $0.002 | [View](/optimize/{pid}/{tid}/run_config/{rcid_baseline}) |
-| Challenger | GPT 4.1 Mini | 89% | 85% | $0.0004 | [View](/optimize/{pid}/{tid}/run_config/{rcid_challenger}) |
+| Baseline | GPT-5 Mini | 92% | 88% | $0.002 | [View](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid_baseline}) |
+| Challenger | GPT 4.1 Mini | 89% | 85% | $0.0004 | [View](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid_challenger}) |
 
-4. **Always include a prepopulated Compare link** after the table using `/specs/{pid}/{tid}/compare?columns=N&models=rcid1%2Crcid2%2C...` — the `models=` value must include **every** rcid in the table, URL-encoded comma-joined. A bare `/specs/{pid}/{tid}/compare` (no `models=`) is incomplete.
+4. **Always include a prepopulated Compare link** after the table using `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models=rcid1%2Crcid2%2C...` — the `models=` value must include **every** rcid in the table, URL-encoded comma-joined. A bare `http://localhost:8757/specs/{project_id}/{task_id}/compare` (no `models=`) is incomplete.
 
 ## Significance & confidence (call the statistics endpoint, don't hand-compute)
 
@@ -173,13 +173,13 @@ The judge prompt lives inside the **EvalConfig** — specifically in `properties
 ### Via API
 
 Read `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs.md`, then:
-- `call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/evals/{eid}/eval_configs", jq_filter="[.[] | {id, name, task_desc: .properties.task_description, steps: .properties.eval_steps}]")`
+- `call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/evals/{eid}/eval_configs", jq_filter="[.[] | {id, name, task_desc: .properties.task_description, steps: .properties.eval_steps}]")`
 Read `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id.md`, then:
-- `call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/evals/{eid}/eval_config/{ecid}", jq_filter="{name, task_desc: .properties.task_description, steps: .properties.eval_steps}")`
+- `call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/evals/{eid}/eval_config/{ecid}", jq_filter="{name, task_desc: .properties.task_description, steps: .properties.eval_steps}")`
 
 ### Via UI
 
-Navigate to the [Eval configs page](/specs/{pid}/{tid}/{spec_id}/{eval_id}/eval_configs).
+Navigate to the [Eval configs page](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}/{eval_id}/eval_configs).
 
 ## Benchmark (EvalInput-backed) evals
 

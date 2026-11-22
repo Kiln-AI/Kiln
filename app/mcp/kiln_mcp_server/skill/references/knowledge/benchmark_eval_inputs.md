@@ -22,7 +22,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## Recognizing a benchmark eval
 
-`GET /api/projects/{pid}/tasks/{tid}/evals` — an eval carries a **`splits`** map (`test` / `train` / `val`), and a **benchmark eval** is one whose `test` split is EvalInput-backed: **`splits["test"].source == "eval_input"`** (a stored-dataset eval has `source == "task_run"` instead). (On older servers the signal was the now-deprecated `eval_input_filter_id` / `eval_set_filter_id` fields — always null on current builds; read `splits` instead.) `GET /evals/{eid}/progress` → `dataset_size` counts the matching EvalInputs.
+`GET /api/projects/{project_id}/tasks/{task_id}/evals` — an eval carries a **`splits`** map (`test` / `train` / `val`), and a **benchmark eval** is one whose `test` split is EvalInput-backed: **`splits["test"].source == "eval_input"`** (a stored-dataset eval has `source == "task_run"` instead). (On older servers the signal was the now-deprecated `eval_input_filter_id` / `eval_set_filter_id` fields — always null on current builds; read `splits` instead.) `GET /evals/{eid}/progress` → `dataset_size` counts the matching EvalInputs.
 
 ## EvalInputs: the dataset rows
 
@@ -61,7 +61,7 @@ To answer "how does model/prompt X do on this benchmark?":
 
 1. **Create the candidate run config** (or find its `rcid`) — `references/knowledge/model_create_configs.md`.
 2. **Enumerate the benchmark evals** — `GET /evals`, keep those whose `test` split is EvalInput-backed (`splits["test"].source == "eval_input"`); note each eval's default judge `current_config_id` (a benchmark task often has several, e.g. one code eval + one judge per bucket).
-3. **Deep-link the run** — running the benchmark is a UI action. Send the user to the Compare page for this task (`/specs/{pid}/{tid}/compare?columns=N&models={candidate_rcid}...`) to run the benchmark evals for the candidate config(s), then read the scores once they've run. Benchmark runs can be sizeable — each `multi_turn_synthetic` item drives up to `turns` conversation turns (SU model call + full agent invocation per turn, tools included) **per run config**, plus a scoring call per eval × item — the UI shows the cost at run time.
+3. **Deep-link the run** — running the benchmark is a UI action. Send the user to the Compare page for this task (`http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={candidate_rcid}...`) to run the benchmark evals for the candidate config(s), then read the scores once they've run. Benchmark runs can be sizeable — each `multi_turn_synthetic` item drives up to `turns` conversation turns (SU model call + full agent invocation per turn, tools included) **per run config**, plus a scoring call per eval × item — the UI shows the cost at run time.
 4. **Read scores per eval** — `GET /evals/{eid}/eval_config/{ecid}/score_summary` → `results[rcid][score_key].mean_score` plus `run_config_percent_complete[rcid]` and `dataset_size`. Compare the candidate's means against the incumbent rcid's means in the same response.
 5. **Report** per the response-assembly rules in `references/knowledge/eval_scores.md` (deep links, coverage, significance).
 
@@ -75,8 +75,8 @@ The `run_comparison` / `run_calibration` endpoints behind the UI Run button are 
 
 ## UI Deep Links
 
-| Action | Path |
+| Action | Link |
 |--------|------|
-| Benchmark eval detail / results (usually spec-less → legacy) | `/specs/{pid}/{tid}/legacy/{eval_id}` |
-| Candidate run config | `/optimize/{pid}/{tid}/run_config/{rcid}` |
-| A driven conversation leaf (tagged `sei_<eval_input_id>`) | `/dataset/{pid}/{tid}/{run_id}/run` |
+| Benchmark eval detail / results (usually spec-less → legacy) | `http://localhost:8757/specs/{project_id}/{task_id}/legacy/{eval_id}` |
+| Candidate run config | `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` |
+| A driven conversation leaf (tagged `sei_<eval_input_id>`) | `http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run` |

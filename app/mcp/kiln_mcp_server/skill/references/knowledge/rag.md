@@ -37,29 +37,29 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ### Kiln RAG constraints (do not contradict)
 
-- **RAG config creation lives inside the Create Search Tool flow** — there is no standalone "Create RAG Config" UI; deep-link [Create Search Tool](`/docs/rag_configs/{pid}/add_search_tool`) and let it orchestrate end-to-end.
+- **RAG config creation lives inside the Create Search Tool flow** — there is no standalone "Create RAG Config" UI; deep-link [Create Search Tool](`http://localhost:8757/docs/rag_configs/{project_id}/add_search_tool`) and let it orchestrate end-to-end.
 - **The UI has recommended templates.** Don't enumerate embedding, chunker, or reranker choices — hand off; only one vector store is supported, so never present it as a choice.
 - **Extraction applies to PDFs / Office / images — skipped for `.txt` / `.md` inputs.** Don't narrate an extractor step for plain-text uploads.
 - **Tags scope indexing, not search.** A doc can be tagged at upload and a RAG config can be scoped to that tag; there is no query-time tag filter.
-- **Run configs are immutable.** Workflow: edit the prompt → test in [/run](`/run`) → save a new run config (including the search tool) once it's working. Never say "edit your run config".
+- **Run configs are immutable.** Workflow: edit the prompt → test in [/run](`http://localhost:8757/run`) → save a new run config (including the search tool) once it's working. Never say "edit your run config".
 
 ### Running / re-indexing a RAG config
 
-If you do trigger indexing via the API, `GET /api/projects/{pid}/rag_configs/{rcid}/run` runs the ingestion (extract → chunk → embed → index) and **streams progress via SSE**. It requires user approval. This is **not** a background job — there is no `rag` job type, no job id, and `POST /api/jobs/rag` would 404. For a one-off readiness/progress read without streaming, use `POST /api/projects/{pid}/rag_configs/progress` (see `references/knowledge/api_docs/documents_api_list.md`). The runner skips already-processed docs, so re-running is safe.
+If you do trigger indexing via the API, `GET /api/projects/{project_id}/rag_configs/{rcid}/run` runs the ingestion (extract → chunk → embed → index) and **streams progress via SSE**. It requires user approval. This is **not** a background job — there is no `rag` job type, no job id, and `POST /api/jobs/rag` would 404. For a one-off readiness/progress read without streaming, use `POST /api/projects/{project_id}/rag_configs/progress` (see `references/knowledge/api_docs/documents_api_list.md`). The runner skips already-processed docs, so re-running is safe.
 
 ## UI Deep Links
 
-| Action | Path |
+| Action | Link |
 |--------|------|
-| Document library | `/docs/{pid}` |
-| Create RAG search tool | `/docs/rag_configs/{pid}/add_search_tool` |
-| Manage RAG configs | `/docs/rag_configs/{pid}` |
+| Document library | `http://localhost:8757/docs/{project_id}` |
+| Create RAG search tool | `http://localhost:8757/docs/rag_configs/{project_id}/add_search_tool` |
+| Manage RAG configs | `http://localhost:8757/docs/rag_configs/{project_id}` |
 
 ## Checking RAG State
 
 - Read `references/knowledge/api_docs/get_api_projects_project_id_check_library_state.md`, then:
-- `call_kiln_api("GET", "/api/projects/{pid}/check_library_state")` — Is the library set up?
+- `call_kiln_api("GET", "/api/projects/{project_id}/check_library_state")` — Is the library set up?
 - Read `references/knowledge/api_docs/get_api_projects_project_id_documents.md`, then:
-- `call_kiln_api("GET", "/api/projects/{pid}/documents")` — List uploaded documents
+- `call_kiln_api("GET", "/api/projects/{project_id}/documents")` — List uploaded documents
 - Read `references/knowledge/api_docs/get_api_projects_project_id_rag_configs.md`, then:
-- `call_kiln_api("GET", "/api/projects/{pid}/rag_configs")` — List RAG configs
+- `call_kiln_api("GET", "/api/projects/{project_id}/rag_configs")` — List RAG configs

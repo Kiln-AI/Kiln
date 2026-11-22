@@ -63,16 +63,16 @@ Both converge on the same review loop: generate ~5 preview inputs → the user r
 1. **Recommend a guide before SDG on a task without one** — check with a `GET`; without a guide, generation guesses at input realism.
 2. **Default to the UI flows via deep links** — the chooser and review loop are built for rating and iteration. When the user asks you to *just do it*, the API path is sanctioned: draft (or job-draft) → `data_gen_guide_preview` → show samples → refine with their feedback → `POST` (preview/refine/job-start require approval).
 3. When generating synthetic data (`generate_categories` / `generate_inputs`), leave `data_guide` unset to inherit the saved guide; pass `""` only when the user explicitly wants generation without it.
-4. **Bulk generation belongs in the UI.** For "make me N examples" asks, set up the surface and deep-link the [Synthetic Data page](/generate/{pid}/{tid}/synth) rather than driving dozens of generate/save calls in chat. If you do save samples via API, load `save_sample`'s api_doc first — its body carries strict source/model metadata that 422s when hand-rolled.
+4. **Bulk generation belongs in the UI.** For "make me N examples" asks, set up the surface and deep-link the [Synthetic Data page](http://localhost:8757/generate/{project_id}/{task_id}/synth) rather than driving dozens of generate/save calls in chat. If you do save samples via API, load `save_sample`'s api_doc first — its body carries strict source/model metadata that 422s when hand-rolled.
 
 ## UI Deep Links
 
-| Action | Path |
+| Action | Link |
 |--------|------|
-| Synthetic data page (guide intro card appears here) | `/generate/{pid}/{tid}/synth` |
-| Choose authoring flow (Manual vs Kiln Pro) | `/generate/{pid}/{tid}/data_guide_chooser` |
-| View the saved guide (+ edit / delete) | `/generate/{pid}/{tid}/data_guide` |
-| Manual setup (examples + review loop) | `/generate/{pid}/{tid}/data_guide_setup` |
-| Kiln Pro setup (pick example sources) | `/generate/{pid}/{tid}/data_guide_setup_copilot` |
+| Synthetic data page (guide intro card appears here) | `http://localhost:8757/generate/{project_id}/{task_id}/synth` |
+| Choose authoring flow (Manual vs Kiln Pro) | `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_chooser` |
+| View the saved guide (+ edit / delete) | `http://localhost:8757/generate/{project_id}/{task_id}/data_guide` |
+| Manual setup (examples + review loop) | `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup` |
+| Kiln Pro setup (pick example sources) | `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup_copilot` |
 
-Do **not** deep-link `/data_guide/refine` — it requires an in-app handoff and bounces on direct navigation.
+Do **not** deep-link `http://localhost:8757/generate/{project_id}/{task_id}/data_guide/refine` — it requires an in-app handoff and bounces on direct navigation.

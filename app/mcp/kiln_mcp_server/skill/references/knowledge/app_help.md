@@ -66,9 +66,9 @@ Read `references/knowledge/api_docs/get_api_available_models.md`, then:
 Read `references/knowledge/api_docs/get_ping.md`, then:
 `call_kiln_api("GET", "/api/ping")`
 4. **Deep-link to relevant settings:**
-   - [Provider Settings](/settings/providers) — for connectivity issues
-   - [Add/manage tools](/settings/manage_tools/{pid}/add_tools) — for tool configuration issues
-   - [Task settings](/settings/edit_task/{pid}/{tid}) — for task configuration issues
+   - [Provider Settings](http://localhost:8757/settings/providers) — for connectivity issues
+   - [Add/manage tools](http://localhost:8757/tools/{project_id}/add_tools) — for tool configuration issues
+   - [Task settings](http://localhost:8757/settings/edit_task/{project_id}/{task_id}) — for task configuration issues
 5. **If you can't diagnose it:** Suggest checking server logs or searching [Kiln docs](https://docs.kiln.tech/)
 
 ### Handle "How Do I..." Questions

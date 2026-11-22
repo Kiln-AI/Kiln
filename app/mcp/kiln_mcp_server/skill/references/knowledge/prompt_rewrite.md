@@ -61,13 +61,13 @@ After user approval:
 
 - **Update task instruction**:
   Read `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id.md`, then:
-  `call_kiln_api("PATCH", "/api/projects/{pid}/tasks/{tid}", body={"instruction": "..."})`
+  `call_kiln_api("PATCH", "/api/projects/{project_id}/tasks/{task_id}", body={"instruction": "..."})`
 - **Create a saved prompt**:
   Read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_prompts.md`, then:
-  `call_kiln_api("POST", "/api/projects/{pid}/tasks/{tid}/prompts", body={"name": "...", "prompt": "...", "description": "..."})`
+  `call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/prompts", body={"name": "...", "prompt": "...", "description": "..."})`
 - **Build prompt with examples**:
   Read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_build_prompt_with_examples.md`, then:
-  `call_kiln_api("POST", "/api/projects/{pid}/tasks/{tid}/build_prompt_with_examples", body={"examples": [{"input": "...", "output": "..."}]})`
+  `call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples", body={"examples": [{"input": "...", "output": "..."}]})`
 
 See `references/knowledge/model_create_configs.md` → Kiln Name Validation for naming rules (forbidden characters: `. , ; : = / \ ? % * | < >`).
 
@@ -90,7 +90,7 @@ Load `references/knowledge/model_create_configs.md` if a model needs to be chose
 
 ### Suggest Next Steps
 
-- **Run evals** to compare the new prompt against the baseline → deep-link to [Compare Eval Scores](/specs/{pid}/{tid}/compare)
+- **Run evals** to compare the new prompt against the baseline → deep-link to [Compare Eval Scores](http://localhost:8757/specs/{project_id}/{task_id}/compare)
 - **Create specs** if none exist yet to measure the improvement → `references/knowledge/create_spec.md`
 
 ## Prompt Types in Kiln
@@ -103,7 +103,7 @@ Load `references/knowledge/model_create_configs.md` if a model needs to be chose
 
 | Action | How to access |
 |--------|--------------|
-| View/manage prompts | Navigate to the [**View all run configs** page](/optimize/{pid}/{tid}) → click **Prompts** in sidebar |
+| View/manage prompts | Navigate to the [**View all run configs** page](http://localhost:8757/optimize/{project_id}/{task_id}) → click **Prompts** in sidebar |
 | Edit base task prompt | Task overview → Prompts → Edit base prompt |
 | Create a new saved prompt | Task overview → Prompts → Create |
 

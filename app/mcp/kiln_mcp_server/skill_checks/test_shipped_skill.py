@@ -26,6 +26,7 @@ from kiln_mcp_server.skill_checks.tree_check import (
 )
 from kiln_mcp_server.skill_files import (
     API_CATALOGUE_INDEX_PATH,
+    DEFAULT_ORIGIN,
     HINT,
     get_index,
     read_file,
@@ -41,7 +42,6 @@ MAX_MAINTENANCE_LINES = 500
 # content batch that makes it pass (skill_and_content section 9).
 PENDING_RULES: set[str] = {
     "tree-banned-term",  # batches 2, 4 and 5
-    "tree-app-link",  # batch 3
     "tree-unreachable",  # batch 4: SKILL.md names the catalogue index
     "tree-front-matter",  # batch 6: online_url on the help articles
     "docs-index",  # batch 6
@@ -96,6 +96,19 @@ def test_example_paths_exist(text):
     examples = re.findall(r"references/[A-Za-z0-9_./-]+\.md", text)
     assert examples
     assert [path for path in examples if path not in get_index().files] == []
+
+
+# Forms of the app address that `apply_origin` would not replace.
+UNREPLACED_ADDRESS = re.compile(
+    r"127\.0\.0\.1:8757|https://localhost:8757|(?<!http://)localhost:8757"
+)
+
+
+def test_address_replacement_covers_every_app_link():
+    index = get_index()
+    texts = {key: read_file(key, index) for key in index.files}
+    assert any(DEFAULT_ORIGIN in text for text in texts.values())
+    assert [key for key, text in texts.items() if UNREPLACED_ADDRESS.search(text)] == []
 
 
 def test_no_file_over_body_limit():

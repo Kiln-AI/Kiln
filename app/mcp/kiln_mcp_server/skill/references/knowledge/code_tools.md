@@ -25,9 +25,9 @@ The complete handoff: your drafted function + a reminder that it's created, test
 
 ## Deep links
 
-| Action | Path |
+| Action | Link |
 |--------|------|
-| Add / manage tools (create a code tool here) | `/settings/manage_tools/{pid}/add_tools` |
-| Manage existing tools | `/settings/manage_tools/{pid}` |
+| Add / manage tools (create a code tool here) | `http://localhost:8757/tools/{project_id}/add_tools` |
+| Manage existing tools | `http://localhost:8757/tools/{project_id}` |
 
 (For wiring an external tool server instead of a code tool, see `references/knowledge/tools.md`; for a sub-agent as a tool, `references/knowledge/subagents.md`.)

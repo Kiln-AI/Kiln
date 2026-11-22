@@ -25,22 +25,22 @@ Every substantive reply in this mode follows this shape:
 
 ## Endpoint Conventions
 
-All Kiln resources are project-scoped. There is **no** `/api/tasks/{tid}`, `/api/run_configs`, `/api/specs`, `/api/evals`, or `/api/v1/...`. Every URL begins with `/api/projects/{pid}/...` (the exceptions are `/api/projects` itself and global settings endpoints, each documented in their own api_docs). If you can't construct a path under that prefix, load an api_doc instead of guessing.
+All Kiln resources are project-scoped. There is **no** `/api/tasks/{task_id}`, `/api/run_configs`, `/api/specs`, `/api/evals`, or `/api/v1/...`. Every URL begins with `/api/projects/{project_id}/...` (the exceptions are `/api/projects` itself and global settings endpoints, each documented in their own api_docs). If you can't construct a path under that prefix, load an api_doc instead of guessing.
 
 **Index-first for unfamiliar paths.** Before calling a path that isn't already documented in a loaded api_docs file, load its catalog (your knowledge file's API Docs table names one, or pick the matching `*_api_list.md` — e.g. `references/knowledge/api_docs/tasks_api_list.md`, `references/knowledge/api_docs/evals_api_list.md`, `references/knowledge/api_docs/documents_api_list.md`, `references/knowledge/api_docs/run_configs_api_list.md`). If the catalog doesn't list the path, the endpoint doesn't exist.
 
 ## Verified Deep-Link Prefixes
 
-Only emit deep links matching one of these prefixes (with the leading slash). Anything else is a guess — don't link it:
+Only emit deep links matching one of these prefixes (each starts with the app address `http://localhost:8757`). Anything else is a guess — don't link it:
 
-- `/optimize/{pid}/{tid}` — run configs page
-- `/optimize/{pid}/{tid}/run_config/{rcid}` — single run config
-- `/specs/{pid}/{tid}/spec_builder` — Eval Builder (optional `?type={spec_type}` preselects the eval type — verified values: `desired_behaviour`, `issue`)
-- `/generate/{pid}/{tid}/synth` — Synthetic Data page; also `/generate/{pid}/{tid}/data_guide`, `/data_guide_chooser`, `/data_guide_setup`, `/data_guide_setup_copilot` (Data Guide surfaces — see `references/knowledge/data_guides.md`)
-- `/specs/{pid}/{tid}/{spec_id}` — single spec
-- `/dataset/{pid}/{tid}/{run_id}/run` — single run detail
-- `/settings/edit_task/{pid}/{tid}` — task settings
-- `/settings/providers` — provider settings
+- `http://localhost:8757/optimize/{project_id}/{task_id}` — run configs page
+- `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` — single run config
+- `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder` — Eval Builder (optional `?type={spec_type}` preselects the eval type — verified values: `desired_behaviour`, `issue`)
+- `http://localhost:8757/generate/{project_id}/{task_id}/synth` — Synthetic Data page; also `http://localhost:8757/generate/{project_id}/{task_id}/data_guide`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_chooser`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup_copilot` (Data Guide surfaces — see `references/knowledge/data_guides.md`)
+- `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}` — single spec
+- `http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run` — single run detail
+- `http://localhost:8757/settings/edit_task/{project_id}/{task_id}` — task settings
+- `http://localhost:8757/settings/providers` — provider settings
 
 ## Task Context Discovery
 
@@ -100,7 +100,7 @@ call_kiln_api("METHOD", "/api/path", ...)
 ```
 
 - **Anticipate fields and pull them in one call.** Reuse prior responses already in context before re-fetching; widen the filter on your next call instead of calling the same endpoint twice.
-- **Before any `POST /api/projects/{pid}/tasks/{tid}/run_configs`**, load `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md` **immediately before** the POST — not after a 422. Also resolve a real `prompt_id` via `GET /prompts` first — the list returns IDs in their prefixed form (`id::<raw>`), which is what run_configs demands. If you just POSTed the prompt yourself, the POST response `id` is the **bare** form; wrap it as `id::<raw>` for the run_config `prompt_id`, or re-fetch from `GET /prompts` to get the prefixed form. Never send the literal string `simple_prompt_builder` as `prompt_id`.
+- **Before any `POST /api/projects/{project_id}/tasks/{task_id}/run_configs`**, load `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md` **immediately before** the POST — not after a 422. Also resolve a real `prompt_id` via `GET /prompts` first — the list returns IDs in their prefixed form (`id::<raw>`), which is what run_configs demands. If you just POSTed the prompt yourself, the POST response `id` is the **bare** form; wrap it as `id::<raw>` for the run_config `prompt_id`, or re-fetch from `GET /prompts` to get the prefixed form. Never send the literal string `simple_prompt_builder` as `prompt_id`.
 
 ### Model Info
 
@@ -126,7 +126,7 @@ On entering this mode, **before loading knowledge or calling APIs**:
 
    ```
    # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_agent_overview.md
-   call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/agent_overview")
+   call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/agent_overview")
    ```
 
 4. **Never call `call_kiln_api` before loading the relevant knowledge file.** Correct paths and schemas live only inside knowledge files — do not guess.

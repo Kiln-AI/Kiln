@@ -41,10 +41,10 @@ Load the relevant endpoint doc **before** making each API call. Use the domain c
 Saved prompts are already available in `agent_overview.prompts.items`. For the full (untruncated) instruction and schemas, and the generated prompt text:
 
 Read `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id.md`, then:
-`call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}", jq_filter="{instruction, input_json_schema, output_json_schema}")` — Read the full `instruction` field and I/O schemas.
+`call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}", jq_filter="{instruction, input_json_schema, output_json_schema}")` — Read the full `instruction` field and I/O schemas.
 
 Read `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_gen_prompt_prompt_id.md`, then:
-`call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/gen_prompt/simple_prompt_builder")` — See the full prompt as it would be sent to the model.
+`call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/simple_prompt_builder")` — See the full prompt as it would be sent to the model.
 
 ### Audit Checklist
 

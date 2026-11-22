@@ -70,7 +70,7 @@ Send the user a message asking for more information. Use context from earlier ch
 It's possible the user is already set up for open weight models. List run configs and check if the default (starred) config already uses open-weight models.
 
 Read `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md`, then:
-call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/run_configs", jq_filter="[.[] | {name, model: .run_config_properties.model_name, provider: .run_config_properties.model_provider_name, starred}]")
+call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/run_configs", jq_filter="[.[] | {name, model: .run_config_properties.model_name, provider: .run_config_properties.model_provider_name, starred}]")
 
 If already using open-weight models, skip to explaining next steps.
 
@@ -81,7 +81,7 @@ If the user really means VPC, the approach is different — they'll use the same
 ### Connect Provider
 
 - Skip if they already have OpenRouter connected or said they wouldn't connect another provider
-- If they need it: Ask them to connect to OpenRouter, deep-linking to the Add Provider page [Add Provider](/settings/providers). Load `references/knowledge/provider_setup.md` for detailed guidance.
+- If they need it: Ask them to connect to OpenRouter, deep-linking to the Add Provider page [Add Provider](http://localhost:8757/settings/providers). Load `references/knowledge/provider_setup.md` for detailed guidance.
 - If they only have providers with closed weight models (OpenAI, Anthropic, Gemini API): inform them we'll need either Ollama or a provider with open-weight models.
 
 ### Run Experiments

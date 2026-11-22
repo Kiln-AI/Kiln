@@ -48,7 +48,7 @@ If `agent_overview.specs.items` is non-empty, load `references/knowledge/eval_sc
 
 ```
 # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_runs_summaries.md
-call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/runs_summaries", jq_filter="length")
+call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/runs_summaries", jq_filter="length")
 ```
 
 ### Present the Assessment
@@ -56,7 +56,7 @@ call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/runs_summaries", jq_filter
 Build a status overview:
 
 **Task:** {name} — {description}
-**Prompt:** {first 200 chars} — [Task settings](/settings/edit_task/{pid}/{tid})
+**Prompt:** {first 200 chars} — [Task settings](http://localhost:8757/settings/edit_task/{project_id}/{task_id})
 
 **Run Configs ({count}):**
 | Config | Model | Provider | Starred | Link |
@@ -70,7 +70,7 @@ Build a status overview:
 
 **Eval Scores:** (scorecard table if data exists, or "No evals run yet")
 
-**Connected Providers:** {list} — [Provider Settings](/settings/providers)
+**Connected Providers:** {list} — [Provider Settings](http://localhost:8757/settings/providers)
 
 **Runs:** {count} total
 
@@ -80,10 +80,10 @@ When the user asks about a specific run (e.g. "what's the data on this run", "sh
 
 ```
 # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_runs_run_id.md
-call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/runs/{rid}", jq_filter="{input, output: .output.output, rating: .output.rating, usage, created_at, tags, source: .output.source}")
+call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/runs/{rid}", jq_filter="{input, output: .output.output, rating: .output.rating, usage, created_at, tags, source: .output.source}")
 ```
 
-Present the result as a small table (Output, Input, Source/model, Rating, Usage, Tags, Created) with a [deep link to the run detail page](/dataset/{pid}/{tid}/{run_id}/run).
+Present the result as a small table (Output, Input, Source/model, Rating, Usage, Tags, Created) with a [deep link to the run detail page](http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run).
 
 ### Identify Gaps and Recommend
 

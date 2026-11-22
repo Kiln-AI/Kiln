@@ -91,7 +91,7 @@ Before diving in, determine context:
 **Existing Project:** The user already has a project and task. Check existing run configs for connected providers:
 
 Read `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md`, then:
-`call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/run_configs", jq_filter="[.[] | {name, provider: .run_config_properties.model_provider_name, model: .run_config_properties.model_name}]")`
+`call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/run_configs", jq_filter="[.[] | {name, provider: .run_config_properties.model_provider_name, model: .run_config_properties.model_name}]")`
 
 If configs exist with providers → they already have at least one provider connected. The issue is likely a missing *additional* provider, an expired key, or a billing problem.
 
@@ -113,11 +113,11 @@ Deep-link the user to the provider setup page:
 
 > "Let's get you connected. Head to the provider setup page — you'll enter your API key there:
 >
-> [Add Provider](/settings/providers)
+> [Add Provider](http://localhost:8757/settings/providers)
 >
 > If you already have a key, paste it in and you're good to go. If you're not sure where to get one, I can help with that too."
 
-Deep-link to [Add Provider](/settings/providers) when the user needs to connect a provider. Use [Add Custom Model](/settings/providers/add_models) only when the user is adding an OpenAI-compatible custom model.
+Deep-link to [Add Provider](http://localhost:8757/settings/providers) when the user needs to connect a provider. Use [Add Custom Model](http://localhost:8757/settings/providers/add_models) only when the user is adding an OpenAI-compatible custom model.
 
 ### Verify
 
@@ -133,7 +133,7 @@ If their provider shows up → success, continue to model/config selection. If n
 When the user wants to add a custom or OpenAI-compatible model, offer **both** paths and let them pick:
 
 - **API (fast):** `POST /api/provider/openai_compatible` — agent fills in the model_id, base_url, and api_key.
-- **UI (more control):** [Add Custom Model](/settings/providers/add_models) — form with advanced settings, visual defaults, and a test-connection button.
+- **UI (more control):** [Add Custom Model](http://localhost:8757/settings/providers/add_models) — form with advanced settings, visual defaults, and a test-connection button.
 
 Default to offering both. Only pick the API path unilaterally if the user has explicitly said "just do it" or the context makes manual UI entry impractical.
 
@@ -160,12 +160,12 @@ Adapt the checklist to the specific provider they need.
 
 | Provider | Where to get a key | Kiln UI entry |
 |----------|--------------------|---------------|
-| OpenAI | https://platform.openai.com/api-keys | [Add Provider](/settings/providers) |
-| Google Gemini | https://aistudio.google.com/apikey | [Add Provider](/settings/providers) |
-| Anthropic | https://console.anthropic.com/settings/keys | [Add Provider](/settings/providers) |
-| OpenRouter | https://openrouter.ai/keys | [Add Provider](/settings/providers) |
-| OpenAI-compatible (custom) | provider-specific | [Add Custom Model](/settings/providers/add_models) |
-| Ollama (local) | no key — just a local URL | [Add Provider](/settings/providers) |
+| OpenAI | https://platform.openai.com/api-keys | [Add Provider](http://localhost:8757/settings/providers) |
+| Google Gemini | https://aistudio.google.com/apikey | [Add Provider](http://localhost:8757/settings/providers) |
+| Anthropic | https://console.anthropic.com/settings/keys | [Add Provider](http://localhost:8757/settings/providers) |
+| OpenRouter | https://openrouter.ai/keys | [Add Provider](http://localhost:8757/settings/providers) |
+| OpenAI-compatible (custom) | provider-specific | [Add Custom Model](http://localhost:8757/settings/providers/add_models) |
+| Ollama (local) | no key — just a local URL | [Add Provider](http://localhost:8757/settings/providers) |
 
 Point the user to their provider's row. Do not guess which provider a mystery key belongs to — ask.
 

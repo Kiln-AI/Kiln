@@ -25,11 +25,11 @@ Recognize any of these and load this file. Don't ask the user to clarify which K
 ## Setup Workflow (4 steps)
 
 1. **Sub-agent task** must already exist (the task that will be *called*). If not, create it first via Project Operations.
-2. **Saved run config on the sub-agent task.** Sub-agents need a *saved* run config (not a transient one) so the parent gets deterministic behavior. Create via `POST /api/projects/{pid}/tasks/{tid}/run_configs`.
+2. **Saved run config on the sub-agent task.** Sub-agents need a *saved* run config (not a transient one) so the parent gets deterministic behavior. Create via `POST /api/projects/{project_id}/tasks/{task_id}/run_configs`.
 3. **Parent task + its own run config.** The task that will *do the calling*. Standard task creation flow.
-4. **Wire the sub-agent in (ask the user first, then POST/PATCH).** Draft `{name, description, task_id, run_config_id, is_archived: false}` and **show it to the user for approval** before posting — sub-agent wiring adds a tool server to the project, so the user must consent. On "yes / go / approved", load `references/knowledge/api_docs/post_api_projects_project_id_kiln_task_tool.md` and `POST /api/projects/{pid}/kiln_task_tool` with the approved body. Report the new tool server ID and link to `/settings/manage_tools/{pid}/tool_servers/{ts_id}`. **Editing an existing wiring is the same gate:** changing a tool server's name/description/run_config via `PATCH /api/projects/{pid}/edit_kiln_task_tool/{tool_server_id}` is also a project-structure mutation — draft the edit and get approval before the PATCH, never silently. The name + description are what the parent model reads to decide when to invoke the sub-agent (see "Tool name & description guidance" below) — get those right with the user before asking for approval.
+4. **Wire the sub-agent in (ask the user first, then POST/PATCH).** Draft `{name, description, task_id, run_config_id, is_archived: false}` and **show it to the user for approval** before posting — sub-agent wiring adds a tool server to the project, so the user must consent. On "yes / go / approved", load `references/knowledge/api_docs/post_api_projects_project_id_kiln_task_tool.md` and `POST /api/projects/{project_id}/kiln_task_tool` with the approved body. Report the new tool server ID and link to `http://localhost:8757/tools/{project_id}/tool_servers/{ts_id}`. **Editing an existing wiring is the same gate:** changing a tool server's name/description/run_config via `PATCH /api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}` is also a project-structure mutation — draft the edit and get approval before the PATCH, never silently. The name + description are what the parent model reads to decide when to invoke the sub-agent (see "Tool name & description guidance" below) — get those right with the user before asking for approval.
 
-**MCP wiring is still UI-only.** `POST /api/projects/{pid}/connect_local_mcp` and `POST /api/projects/{pid}/connect_remote_mcp` remain denied to the agent — for those, deep-link to `/settings/manage_tools/{pid}/add_tools` instead.
+**MCP wiring is still UI-only.** `POST /api/projects/{project_id}/connect_local_mcp` and `POST /api/projects/{project_id}/connect_remote_mcp` remain denied to the agent — for those, deep-link to `http://localhost:8757/tools/{project_id}/add_tools` instead.
 
 ## Tool name & description guidance
 
@@ -52,10 +52,10 @@ Aim for the third style: name a role, describe behavior, hint at input/output sh
 
 ## UI Deep Links
 
-| Action | Path |
+| Action | Link |
 |---|---|
-| Add a Kiln Task as Tool | `/settings/manage_tools/{pid}/add_tools` *(then click "Kiln Task as Tool")* |
-| View existing tool servers | `/settings/manage_tools/{pid}/tool_servers/{ts_id}` |
+| Add a Kiln Task as Tool | `http://localhost:8757/tools/{project_id}/add_tools` *(then click "Kiln Task as Tool")* |
+| View existing tool servers | `http://localhost:8757/tools/{project_id}/tool_servers/{ts_id}` |
 
 ## Further reading
 

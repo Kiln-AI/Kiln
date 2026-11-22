@@ -44,7 +44,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## URL Shape Note
 
-`GET /api/projects/{pid}/tasks/{tid}/run_configs` — **no trailing slash**. A trailing `/` returns HTML 404 in some code paths. Also applies to `POST` on the same collection. If you get a 404 on a plural-list endpoint, retry the exact path from the endpoint doc (no trailing `/`).
+`GET /api/projects/{project_id}/tasks/{task_id}/run_configs` — **no trailing slash**. A trailing `/` returns HTML 404 in some code paths. Also applies to `POST` on the same collection. If you get a 404 on a plural-list endpoint, retry the exact path from the endpoint doc (no trailing `/`).
 
 ## Before Creating a Config
 
@@ -137,7 +137,7 @@ call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/run_configs", 
 })
 ```
 
-After creation, deep-link to the config: [View Config](/optimize/{pid}/{tid}/run_config/{rcid}).
+After creation, deep-link to the config: [View Config](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}).
 
 ## Provider Reference
 

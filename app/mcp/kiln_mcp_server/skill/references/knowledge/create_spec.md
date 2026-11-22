@@ -43,7 +43,7 @@ Eval content is **domain-expert territory**. The agent does not know the regress
 1. Propose eval ideas conversationally — "For this task, you might care about: X, Y, Z. Which of these matter? What else?"
 2. Help the user articulate each eval — ask what "good" looks like, what failure modes they've seen
 3. Recommend an eval type from the reference below and explain why
-4. **Always include an Eval Builder deep-link** ([Eval Builder](/specs/{pid}/{tid}/spec_builder?type={spec_type}) — `?type=desired_behaviour` for "should do X" asks, `?type=issue` for bugs/regressions) — even for conceptual questions about evals, give the user a link so they can act immediately
+4. **Always include an Eval Builder deep-link** ([Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}) — `?type=desired_behaviour` for "should do X" asks, `?type=issue` for bugs/regressions) — even for conceptual questions about evals, give the user a link so they can act immediately
 5. Link to relevant blog posts when they add value (see Reference section at end of file)
 
 **Exception — cold start help:** When the user explicitly asks the agent to write eval content ("help me with the cold start", "write the description and examples"), write it out immediately. Produce the full description, correct and incorrect behavior examples in one message.
@@ -54,7 +54,7 @@ Always present both options and help the user choose:
 
 **Option 1: Eval Builder (Recommended)** — A guided conversation flow in the UI that handles eval creation automatically: turns rough ideas into refined evals, generates synthetic test data, calibrates the judge prompt, and creates the full Spec → Eval → EvalConfig pipeline.
 
-**Prerequisite:** Requires a **Kiln Pro** account. Deep-link to [Provider Settings](/settings/providers) to check. A complete eval with the Eval Builder takes ~5 minutes vs 30+ minutes for manual setup.
+**Prerequisite:** Requires a **Kiln Pro** account. Deep-link to [Provider Settings](http://localhost:8757/settings/providers) to check. A complete eval with the Eval Builder takes ~5 minutes vs 30+ minutes for manual setup.
 
 **Option 2: Manual Setup** — If Kiln Pro is not configured, evals can be created through the Eval Builder UI or Select Template pages without the guided flow. The user defines the eval definition, examples, and judge config themselves.
 
@@ -65,15 +65,15 @@ Always present both options and help the user choose:
 When the user is ready, send them to the Eval Builder with context. Put the eval type in the URL — `?type=desired_behaviour` for "should do X" asks, `?type=issue` for bugs/regressions (values from the `spec_type` reference below):
 
 > "That sounds like a regression test for [issue]. Let me link you to the Eval Builder where you can define it with examples:
-> [Create Eval](/specs/{pid}/{tid}/spec_builder?type=issue)
+> [Create Eval](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type=issue)
 >
 > A few things to include:
 > - Definition: describe the failure mode clearly
 > - Examples: 1-2 inputs where the bug occurred, with the correct expected output"
 
-Deep-link to the [Eval Builder](/specs/{pid}/{tid}/spec_builder?type={spec_type}).
+Deep-link to the [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}).
 
-**Default run config reminder.** Evals run against the task's default run config. Alongside the Eval Builder handoff, check the task's `default_run_config_id` (GET task): if set, remind the user which config is linked ([Run Config](/optimize/{pid}/{tid}/run_config/{rcid})); if null, remind them to set a default run config first ([Run Configs](/optimize/{pid}/{tid})).
+**Default run config reminder.** Evals run against the task's default run config. Alongside the Eval Builder handoff, check the task's `default_run_config_id` (GET task): if set, remind the user which config is linked ([Run Config](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid})); if null, remind them to set a default run config first ([Run Configs](http://localhost:8757/optimize/{project_id}/{task_id})).
 
 ### Verify Creation
 
@@ -81,14 +81,14 @@ After the user creates evals in the UI, verify via API:
 
 ```
 # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_specs.md
-call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/specs", jq_filter="[.[] | {id, name, spec_type, priority}]")
+call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/specs", jq_filter="[.[] | {id, name, spec_type, priority}]")
 ```
 
 Confirm the evals look right and suggest running them to get baseline scores. (The underlying API still uses `specs` and `spec_type` field names — that's the data-model name; surface them to the user as "evals".)
 
 ## Eval Type Reference
 
-These `spec_type` values create **LLM-judge** evals. When the concern is mechanical (an exact value, a regex, a required tool call, a step budget), a deterministic check or a code eval fits better and skips the spec step — deep-link `/specs/{pid}/{tid}/spec_builder?judge={type}&workflow=manual` and see `references/knowledge/judge_types.md` for the menu and type values.
+These `spec_type` values create **LLM-judge** evals. When the concern is mechanical (an exact value, a regex, a required tool call, a step budget), a deterministic check or a code eval fits better and skips the spec step — deep-link `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?judge={type}&workflow=manual` and see `references/knowledge/judge_types.md` for the menu and type values.
 
 The underlying `spec_type` enum (kept for API compatibility) defines the kind of eval:
 

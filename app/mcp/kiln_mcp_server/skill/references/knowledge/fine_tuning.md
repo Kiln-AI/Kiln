@@ -111,17 +111,17 @@ When the agent is helping a user prep for a fine-tune and `finetune_dataset_info
 
 ## Pre-Submission Confirmation Rule
 
-**Submitting `POST /finetunes` starts a billable training run that costs real money the moment it lands** — the training charge is not refundable, and cancelling mid-run typically still bills partial cost. The output model + Kiln `Finetune` record can be deleted later, but the spent training cost cannot be recovered. Before calling `POST /api/projects/{pid}/tasks/{tid}/finetunes`, always:
+**Submitting `POST /finetunes` starts a billable training run that costs real money the moment it lands** — the training charge is not refundable, and cancelling mid-run typically still bills partial cost. The output model + Kiln `Finetune` record can be deleted later, but the spent training cost cannot be recovered. Before calling `POST /api/projects/{project_id}/tasks/{task_id}/finetunes`, always:
 
 1. Fetch the available providers and base models (`GET /api/finetune_providers`).
 2. Fetch the applicable hyperparameters (`GET /api/finetune/hyperparameters/{provider_id}`).
-3. Fetch the available dataset splits (`GET /api/projects/{pid}/tasks/{tid}/dataset_splits`) and surface `split_contents` counts so the user can verify the right split.
+3. Fetch the available dataset splits (`GET /api/projects/{project_id}/tasks/{task_id}/dataset_splits`) and surface `split_contents` counts so the user can verify the right split.
 4. **Show the user the full POST body** — all required fields resolved: `provider`, `base_model_id`, `dataset_id`, `train_split_name`, `data_strategy`, and every hyperparameter value (including any non-default values). Flag unusual choices (e.g., `batch_size: 2` is lower than typical defaults).
 5. **Wait for explicit user confirmation** before submitting. This is one of the narrow cases where the "Default to executing" rule does NOT apply — a fine-tune job submission is not cheap or reversible.
 
 ## Prepare the Config, Let the User Submit (preferred pattern)
 
-`POST /api/projects/{pid}/tasks/{tid}/finetunes` is a single call that **creates and submits** the fine-tune job — there is no draft/dry-run mode. The safest pattern is for the agent to do everything UP TO the final POST, then hand off to the user:
+`POST /api/projects/{project_id}/tasks/{task_id}/finetunes` is a single call that **creates and submits** the fine-tune job — there is no draft/dry-run mode. The safest pattern is for the agent to do everything UP TO the final POST, then hand off to the user:
 
 1. Prepare the dataset split (`POST /dataset_splits` is cheap and reversible — fine to do directly).
 2. Resolve provider, base model, hyperparameters, data strategy, and a sanitized name.
@@ -145,7 +145,7 @@ A grid of more than ~4 jobs is rarely the right answer — costs multiply linear
 
 ### Step 1 — Assess readiness
 
-`GET /api/projects/{pid}/tasks/{tid}/finetune_dataset_info` returns:
+`GET /api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info` returns:
 - `finetune_tags` — counts by tag, including high-quality count and reasoning-data count.
 - `existing_datasets` — already-frozen splits.
 - `existing_finetunes` — prior jobs (for reference / status checks).
@@ -154,7 +154,7 @@ Surface counts before any further step. If `eligible_datasets` / `finetune_tags`
 
 ### Step 2 — Create a dataset split (if needed)
 
-`POST /api/projects/{pid}/tasks/{tid}/dataset_splits`. Typical 80/20 or 90/10 train/validation. Validation split is optional but recommended.
+`POST /api/projects/{project_id}/tasks/{task_id}/dataset_splits`. Typical 80/20 or 90/10 train/validation. Validation split is optional but recommended.
 
 ### Step 3 — Choose provider and base model
 
@@ -168,13 +168,13 @@ Surface counts before any further step. If `eligible_datasets` / `finetune_tags`
 
 ### Step 6 — Submit (or hand off to UI per Prepare-Config pattern)
 
-`POST /api/projects/{pid}/tasks/{tid}/finetunes`.
+`POST /api/projects/{project_id}/tasks/{task_id}/finetunes`.
 
 ### Step 7 — Monitor status
 
 Fine-tuning is **not** a background job — there is no `/api/jobs` watcher and no `finetune` job type. Monitor via the fine-tune status endpoint:
 
-- **Status read:** `GET /api/projects/{pid}/tasks/{tid}/finetunes/{finetune_id}` — `status.status` is one of `unknown` / `pending` / `running` / `completed` / `failed`. On failure, surface `status.message` and `status.error_details`. There's nothing to wait/block on locally (training runs remotely on the provider); check status when the user asks rather than busy-looping. See `references/knowledge/api_docs/finetuning_api_list.md`.
+- **Status read:** `GET /api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}` — `status.status` is one of `unknown` / `pending` / `running` / `completed` / `failed`. On failure, surface `status.message` and `status.error_details`. There's nothing to wait/block on locally (training runs remotely on the provider); check status when the user asks rather than busy-looping. See `references/knowledge/api_docs/finetuning_api_list.md`.
 
 ## After Fine-Tuning Completes
 

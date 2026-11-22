@@ -89,12 +89,12 @@ call_kiln_api("POST", "/api/projects", body={"name": "...", "description": "..."
 Then create the task:
 ```
 # read first: references/knowledge/api_docs/post_api_projects_project_id_tasks.md
-call_kiln_api("POST", "/api/projects/{pid}/tasks", body={"name": "...", "instruction": "...", "description": "..."})
+call_kiln_api("POST", "/api/projects/{project_id}/tasks", body={"name": "...", "instruction": "...", "description": "..."})
 ```
 
-Deep-link to [Task Settings](/settings/edit_task/{pid}/{tid}).
+Deep-link to [Task Settings](http://localhost:8757/settings/edit_task/{project_id}/{task_id}).
 
-**Do NOT stop at "task created".** A task without a run config cannot be run — proceed to *Create Initial Run Config* in the same turn, even if earlier steps were interrupted by a project-name conflict or other recovery. The session is incomplete until the user has a clickable `/optimize/{pid}/{tid}/run_config/{rcid}` link.
+**Do NOT stop at "task created".** A task without a run config cannot be run — proceed to *Create Initial Run Config* in the same turn, even if earlier steps were interrupted by a project-name conflict or other recovery. The session is incomplete until the user has a clickable `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` link.
 
 ### Create Initial Run Config
 
@@ -109,7 +109,7 @@ Load `references/knowledge/model_create_configs.md` to choose an appropriate mod
 5. Then POST:
 
 ```
-call_kiln_api("POST", "/api/projects/{pid}/tasks/{tid}/run_configs", body={"name": "<sanitized>", "run_config_properties": {"type": "kiln_agent", "model_name": "...", "model_provider_name": "...", "prompt_id": "<real-uuid-from-step-2>"}})
+call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/run_configs", body={"name": "<sanitized>", "run_config_properties": {"type": "kiln_agent", "model_name": "...", "model_provider_name": "...", "prompt_id": "<real-uuid-from-step-2>"}})
 ```
 
 ### Create Initial Evals
@@ -119,7 +119,7 @@ Deep-link to the Eval Builder to define 2-3 quality dimensions. Load `references
 > "Now let's define what 'good' looks like for your agent. I'd suggest starting with 2-3 evals:
 > [Create Eval]({Eval Builder deep-link})"
 
-Deep-link to the [Eval Builder](/specs/{pid}/{tid}/spec_builder).
+Deep-link to the [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder).
 
 ### When an Existing Task Is Discovered
 
@@ -133,7 +133,7 @@ If the user's named task already exists **and they were asking to inspect/use it
 ### Suggest Next Steps
 
 After the basics are set up:
-- **Run a test** — deep-link to the [Run page](/run)
+- **Run a test** — deep-link to the [Run page](http://localhost:8757/run)
 - **Run evals** once specs are created to get a baseline score
 - **Try alternate models** if quality or cost isn't right → `references/modes/improve_task.md`
 - **Add tools or RAG** if the agent needs external capabilities or knowledge

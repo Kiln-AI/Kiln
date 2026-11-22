@@ -70,13 +70,13 @@ Skills **cannot be edited** after creation (body or description). Clone via UI i
 
 ## Workflow: create + wire
 
-1. **Create via API** — POST to `/api/projects/{pid}/skills` with name, description, body.
-2. **Wire to run config — UI only** — PATCH `/run_configs/{rcid}` does not expose skills. Direct the user to the Run screen → Advanced → Skills section to add the skill to their config(s). Deep-link: `/run?run_config_id={rcid}` or `/optimize/{pid}/{tid}` to navigate there.
-3. **Report back** — after creation confirm: skill ID, name, and the deep-link to the skill detail page (`/skills/{pid}/{sid}`).
+1. **Create via API** — POST to `/api/projects/{project_id}/skills` with name, description, body.
+2. **Wire to run config — UI only** — PATCH `/run_configs/{rcid}` does not expose skills. Direct the user to the Run screen → Advanced → Skills section to add the skill to their config(s). Deep-link: `http://localhost:8757/run?run_config_id={rcid}` or `http://localhost:8757/optimize/{project_id}/{task_id}` to navigate there.
+3. **Report back** — after creation confirm: skill ID, name, and the deep-link to the skill detail page (`http://localhost:8757/skills/{project_id}/{sid}`).
 
 ## Deep links
 
-- `/skills/{pid}` — project skills list
-- `/skills/{pid}/{sid}` — skill detail page (after creation, link here to confirm)
-- `/run?run_config_id={rcid}` — Run screen pre-loaded with a config (user adds skill under Advanced → Skills)
-- `/optimize/{pid}/{tid}` — run configs list (user opens a config to wire the skill)
+- `http://localhost:8757/skills/{project_id}` — project skills list
+- `http://localhost:8757/skills/{project_id}/{sid}` — skill detail page (after creation, link here to confirm)
+- `http://localhost:8757/run?run_config_id={rcid}` — Run screen pre-loaded with a config (user adds skill under Advanced → Skills)
+- `http://localhost:8757/optimize/{project_id}/{task_id}` — run configs list (user opens a config to wire the skill)

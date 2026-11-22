@@ -44,7 +44,7 @@ If the user's first message is exceptionally clear about their intent, skip the 
 - "hi" / "hello" / "who are you" / "what can you do" / "help" → Learn About Kiln (greeting — give a generic capability overview)
 - "Create a new task for email classification" → Project Operations
 - "My agent is hallucinating, make it better" → Improve Task
-- "What are the results of this run?" / "Show me this run" / "What's in this run?" → Project Operations (inspecting one specific dataset run on a `/dataset/{pid}/{tid}/{run_id}/run` page — not enumerating run configs)
+- "What are the results of this run?" / "Show me this run" / "What's in this run?" → Project Operations (inspecting one specific dataset run on a `http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run` page — not enumerating run configs)
 - "List my run configs" / "which one is starred" / "show me my models on this task" → Improve Task (inventory + assessment of what's already deployed; not project_operations, which is for editing project resources)
 - "What is an eval?" → Learn About Kiln
 - "How much does GPT-5 cost?" → Improve Task (model selection)
@@ -65,7 +65,7 @@ If the user's first message is exceptionally clear about their intent, skip the 
 - "I'm getting an error when..." / "no eval config found" / "no eval found" / "my eval won't run" / "my run is stuck pending" → Learn About Kiln (runtime/setup error — even when the error message names a Kiln resource the user could create, the user is asking *what does this error mean and how do I fix it*, not *help me improve quality*)
 - "make me a sub agent" / "create a Subagent" / "wire this task as a tool" / "delegate to another task" / "how do I add a Subagent" / "how do I make a sub agent" / "how do I wire" → Improve Task (parent task in context) or Project Operations (creating from scratch) — these all mean Kiln Task as Tool; do NOT enumerate Kiln features and ask the user to pick which kind they mean. *"How do I add/make/wire"* phrasing is **action-shaped**, not a feature explanation — route to Improve Task even though it starts with "how do I".
 - "what is a sub-agent" / "how do Subagents work" / "explain Multi-Actor" → Learn About Kiln
-- "add a tool" / "connect MCP" / "set up MCP" / "wire up <Github | Slack | Firecrawl | Python | filesystem>" / "I want web search" / "let it run code" / "I need stock quotes" / "agent needs to call our API" → Improve Task (adding capability to an existing task; load `references/knowledge/tools.md`). MCP server wiring (`POST connect_local_mcp` / `connect_remote_mcp`) is UI-only — deep-link to `/settings/manage_tools/{pid}/add_tools`. Sub-agent wiring (`POST kiln_task_tool`) is handled with user approval — see `references/knowledge/subagents.md`.
+- "add a tool" / "connect MCP" / "set up MCP" / "wire up <Github | Slack | Firecrawl | Python | filesystem>" / "I want web search" / "let it run code" / "I need stock quotes" / "agent needs to call our API" → Improve Task (adding capability to an existing task; load `references/knowledge/tools.md`). MCP server wiring (`POST connect_local_mcp` / `connect_remote_mcp`) is UI-only — deep-link to `http://localhost:8757/tools/{project_id}/add_tools`. Sub-agent wiring (`POST kiln_task_tool`) is handled with user approval — see `references/knowledge/subagents.md`.
 - "what is MCP" / "how do tools work in Kiln" / "what tools can I add" / "explain tool servers" → Learn About Kiln
 
 Only quick-jump when the intent is unambiguous. When in doubt, ask.
@@ -159,7 +159,7 @@ When re-routing: load `references/modes/establish_intent.md`, reclassify, then l
 **Rate limits — throttle down and wait them out.** A provider `Rate limit exceeded` / `429` is a **transient provider error and a pace signal** — it does **not** mean the run config, model, or your plan is bad, and it is **never** a reason to abandon, revert, or swap models. If a `call_kiln_api` action (e.g. synthetic-data generation) hits it, run fewer at once, then retry to completion — a 429 is transient and clears. Do **NOT** react by switching model/provider or dropping a model as "too rate-limited": the user may be locked to one provider (e.g. *Gemini on Vertex only*), and a swap silently changes what you're measuring.
 
 **Passing query parameters:**
-- Pass query args via the `query_params` object — **never** append `?key=value` to `url_path`. Correct: `call_kiln_api("GET", "/api/projects/{pid}/tasks/{tid}/runs", query_params={"page_size": "50"})`. The tool rejects any `url_path` containing `?` or `#` with a hard error. This applies to every endpoint with query args (list filters, demo-tool toggles, anything). Deep-link paths in your *reply text* (e.g. `/specs/{pid}/{tid}/compare?columns=N`) still use `?` normally — this rule is only about `call_kiln_api` arguments.
+- Pass query args via the `query_params` object — **never** append `?key=value` to `url_path`. Correct: `call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/runs", query_params={"page_size": "50"})`. The tool rejects any `url_path` containing `?` or `#` with a hard error. This applies to every endpoint with query args (list filters, demo-tool toggles, anything). Deep-link paths in your *reply text* (e.g. `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N`) still use `?` normally — this rule is only about `call_kiln_api` arguments.
 
 **Writing `jq_filter`:**
 - Quote the endpoint doc's 200 response shape before writing the filter — `value: array of X` → `.[] | {fields}`; named wrapper (e.g. `data`, `items`) → `.wrapper[]`. Never use `.X[]` or `.items[]` unless the schema explicitly shows that key.
@@ -168,22 +168,22 @@ When re-routing: load `references/modes/establish_intent.md`, reclassify, then l
 
 ## Deep Links
 
-All paths are relative — no base URL prefix needed. Always render as markdown: `[Descriptive Title](path)`. **The leading slash is mandatory** — `optimize/...` is a broken link; `/optimize/...` is correct. If no path matches the action, omit the link entirely — never invent a path.
+Every Kiln app link is the app address plus the page path: `http://localhost:8757/<path>`. Always render as markdown: `[Descriptive Title](http://localhost:8757/<path>)`. A path with no address (`optimize/...`, with or without a leading slash) is a broken link outside the app. If no path matches the action, omit the link entirely — never invent a path.
 
-> ⚠️ Never put a domain on a Kiln app link. `https://kiln.tech` is Kiln's website, not the app, and `https://app.kiln.ai` does not exist. All Kiln app links are relative paths.
+> ⚠️ Never put another host on a Kiln app link. `https://kiln.tech` is Kiln's website, not the app, and `https://app.kiln.ai` does not exist. Every Kiln app link starts with `http://localhost:8757`.
 
 ### Run Configs & Task
 
-| Action | Path |
+| Action | Link |
 |--------|------|
-| View all run configs | `/optimize/{pid}/{tid}` |
-| Create run config | `/optimize/{pid}/{tid}/run_config/create` |
-| View/edit run config | `/optimize/{pid}/{tid}/run_config/{rcid}` |
-| Task settings | `/settings/edit_task/{pid}/{tid}` |
-| Run a test (interactive) | `/run` |
-| Run a test with a config pre-selected | `/run?run_config_id={rcid}` |
-| Run a test with a tool pre-selected | `/run?tool_id={tool_id}` |
-| View a specific run result | `/dataset/{pid}/{tid}/{run_id}/run` |
+| View all run configs | `http://localhost:8757/optimize/{project_id}/{task_id}` |
+| Create run config | `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/create` |
+| View/edit run config | `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` |
+| Task settings | `http://localhost:8757/settings/edit_task/{project_id}/{task_id}` |
+| Run a test (interactive) | `http://localhost:8757/run` |
+| Run a test with a config pre-selected | `http://localhost:8757/run?run_config_id={rcid}` |
+| Run a test with a tool pre-selected | `http://localhost:8757/run?tool_id={tool_id}` |
+| View a specific run result | `http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run` |
 
 ## Session Start
 

@@ -36,7 +36,7 @@ But: you MUST check `available_models` before creating a run config to confirm t
 
 ### Check Connected Providers First (MANDATORY)
 
-Connected providers come from the bootstrap `agent_overview.connected_providers`. Before proposing any models, surface them to the user ("I see OpenRouter and OpenAI connected — I'll stick to models on those unless you want to add more") and deep-link [Provider Settings](/settings/providers). Only recommend models from connected providers unless the user explicitly asks about adding one.
+Connected providers come from the bootstrap `agent_overview.connected_providers`. Before proposing any models, surface them to the user ("I see OpenRouter and OpenAI connected — I'll stick to models on those unless you want to add more") and deep-link [Provider Settings](http://localhost:8757/settings/providers). Only recommend models from connected providers unless the user explicitly asks about adding one.
 
 ### Batch Run Config Creation (3+) Requires Approval
 
@@ -46,7 +46,7 @@ When creating **3+ run configs** in one plan, show the proposed list (model, tie
 
 TypeSafe AI is a classification-only provider (its Jev models return probabilities, never text); load `references/knowledge/typesafe_jev.md` before recommending it for anything.
 
-When answering "what's the cheapest / best model?" without a task context, always caveat: "These recommendations depend on which providers you have connected" + deep-link to [Provider Settings](/settings/providers).
+When answering "what's the cheapest / best model?" without a task context, always caveat: "These recommendations depend on which providers you have connected" + deep-link to [Provider Settings](http://localhost:8757/settings/providers).
 
 ### Proportion Recommendations to Real Gaps
 
@@ -179,9 +179,9 @@ Group sections by relevance to the task ("High-Impact for Math (Reasoning Models
 After recommending a model, **immediately create a run config for it** — do not end on a recommendation. A recommendation without a config is not a usable answer.
 
 1. Load `references/knowledge/model_create_configs.md`.
-2. POST the new run config with the recommended model. Use a sanitized name and a real `prompt_id` from `GET /api/projects/{pid}/tasks/{tid}/prompts` (never the literal generator name like `simple_prompt_builder`).
-3. Include the `/optimize/{pid}/{tid}/run_config/{rcid}` deep-link in the response.
-4. If the POST fails (provider not connected, 422, etc.), fall back to `/optimize/{pid}/{tid}/run_config/create` with the recommended model as a UI suggestion.
+2. POST the new run config with the recommended model. Use a sanitized name and a real `prompt_id` from `GET /api/projects/{project_id}/tasks/{task_id}/prompts` (never the literal generator name like `simple_prompt_builder`).
+3. Include the `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` deep-link in the response.
+4. If the POST fails (provider not connected, 422, etc.), fall back to `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/create` with the recommended model as a UI suggestion.
 
 ## Workflow C — Ranking / "Which is best?" when evals exist or are missing
 
@@ -193,11 +193,11 @@ If the user asks "which model is best for this task?" or "what's the cheapest mo
 
 ## UI Deep Links
 
-| Action | Path |
+| Action | Link |
 |--------|------|
-| View connected providers | `/settings/providers` |
-| Add provider | `/settings/providers` |
-| Add custom model | `/settings/providers/add_models` |
-| View all run configs | `/optimize/{pid}/{tid}` |
-| Create run config (UI) | `/optimize/{pid}/{tid}/run_config/create` |
-| Single run config | `/optimize/{pid}/{tid}/run_config/{rcid}` |
+| View connected providers | `http://localhost:8757/settings/providers` |
+| Add provider | `http://localhost:8757/settings/providers` |
+| Add custom model | `http://localhost:8757/settings/providers/add_models` |
+| View all run configs | `http://localhost:8757/optimize/{project_id}/{task_id}` |
+| Create run config (UI) | `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/create` |
+| Single run config | `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` |

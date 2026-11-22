@@ -86,12 +86,12 @@ There are **no import restrictions** — but only what ships in the Kiln app's b
 
 Eval and judge creation route to the UI (the Eval Builder-first rule from `references/knowledge/specs_and_evals.md` is unchanged — you deep-link, the user builds):
 
-| Action | Path |
+| Action | Link |
 |--------|------|
-| New programmatic-check eval (skips the spec step) | `/specs/{pid}/{tid}/spec_builder?judge={type}&workflow=manual` — `{type}` is any type above except `llm_judge` |
-| New LLM-judge eval (guided, templated) | `/specs/{pid}/{tid}/spec_builder?type={spec_type}` per `references/knowledge/create_spec.md` |
-| Add a judge to an existing eval (picker) | `/specs/{pid}/{tid}/{spec_id_or_legacy}/{eval_id}/create_eval_config` |
-| Add a specific judge type to an existing eval | `/specs/{pid}/{tid}/{spec_id_or_legacy}/{eval_id}/create_eval_config/{type}` |
+| New programmatic-check eval (skips the spec step) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?judge={type}&workflow=manual` — `{type}` is any type above except `llm_judge` |
+| New LLM-judge eval (guided, templated) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}` per `references/knowledge/create_spec.md` |
+| Add a judge to an existing eval (picker) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config` |
+| Add a specific judge type to an existing eval | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config/{type}` |
 
 For a code eval, the complete handoff is: your drafted `score()` code block + the creation deep link + a reminder to test in the pane before saving (and that the app will ask for code trust).
 
