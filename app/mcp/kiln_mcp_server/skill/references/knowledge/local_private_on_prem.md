@@ -12,7 +12,7 @@ Reference knowledge for moving agents to open-weight models for privacy, local d
 - `references/knowledge/model_work.md` — for open-weight model suggestions, VRAM-to-parameter sizing, tier guide, and provider reference
 - `references/knowledge/provider_setup.md` — when the user needs to connect OpenRouter or another provider
 - `references/knowledge/tools.md` — when the user needs dedicated MCP tools as an advanced fallback
-- `references/modes/improve_task.md` — for running systematic model comparisons
+- `references/knowledge/run_an_experiment.md` — for comparing models on the task ("Variants"), on train and then on val
 
 ## API Docs
 
@@ -30,7 +30,7 @@ Load the relevant endpoint doc **before** making each API call. Use the domain c
 | GET run configs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md` |
 | POST create run config | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md` |
 | PATCH update run config | `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_run_configs_run_config_id.md` |
-| GET per-config eval scores | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md` |
+| GET per-config eval scores (test split; compare run configs on train and val, as `references/knowledge/train_val_test.md` says) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md` |
 | GET available models | `references/knowledge/api_docs/get_api_available_models.md` |
 | GET list provider models | `references/knowledge/api_docs/get_api_providers_models.md` |
 | POST connect Ollama | `references/knowledge/api_docs/post_api_provider_ollama_connect.md` |
@@ -86,7 +86,7 @@ If the user really means VPC, the approach is different — they'll use the same
 
 ### Run Experiments
 
-Plan and run a set of experiments using open-weight models. Read `references/modes/improve_task.md` for how to run the experiments, using these constraints:
+Plan and run a set of experiments using open-weight models. Read `references/knowledge/run_an_experiment.md` for how to run the experiments, using these constraints:
 - Only use models they have available
 - Only use models that fit their RAM/parameter limit
 - Only use open-weight models — use `GET /api/model_info/models` with `open_weights=true`, or find the model with `search` and check `open_weights` in `GET /api/model_info/model_details`. See also `references/knowledge/model_work.md` → Open-Weight Models for size guidance

@@ -24,7 +24,9 @@ By default `GET /api/model_info/models` lists only the provider entries the user
 
 > ⚠️ `search` is for a **specific named model**, not for enumerating a provider's catalog. Filter the list with `provider` for provider browsing — it's one call instead of a search loop.
 
-> ⚠️ **Model homepage / repo / paper / leaderboard URLs are not in the model info responses.** Don't emit them from priors — see `references/modes/improve_task.md` Response Contract item 7 (and the matching item in `references/modes/learn_about_kiln.md`) for the canonical rule and the "no curated link" phrasing.
+> ⚠️ **Model homepage / repo / paper / leaderboard URLs are not in the model info responses.** Don't emit them from priors — see `references/modes/improve_task.md` ("Reporting") and the matching item in `references/modes/learn_about_kiln.md` for the rule and the "no curated link" phrasing.
+
+> ⚠️ **No latency number that no call returned.** The model info endpoints return capabilities, prices and notes, not latency or tokens per second. When you discuss speed, compare tiers ("a Fast-tier model", "a smaller model usually answers sooner"), quote a model's notes word for word, or use a latency that a call returned (the recorded usage of an eval run, `references/knowledge/eval_scores.md`). A figure such as "~50 tok/s" or "<2 s p95" from memory is made up. When the user gives a latency target, say which change moves toward it; claim no number.
 
 ## Shared Rules (apply to every turn in this file)
 
@@ -52,7 +54,7 @@ When answering "what's the cheapest / best model?" without a task context, alway
 
 ### Proportion Recommendations to Real Gaps
 
-For "cheaper / reduce cost / faster" asks, the lead-recommendation gate lives in `references/modes/improve_task.md` Response Contract item 1 — quality-preserving mid-tier picks (Strong/Balanced or Fast tier; pull current names from `GET /api/model_info/models`, never name them from priors), never an Ultra-Fast/Cheapest floor model unless the user named a provider lock-in. When comparing speed or cost across options, name the multiplier (e.g. "~10× slower" / "~5× faster on Cerebras/Groq vs. native"), not the ordering. Options within ~2× are a tie; options ≥5× better lead unambiguously.
+For "cheaper / reduce cost / faster" asks, **lead with a pick that holds quality**: a Strong/Balanced or Fast-tier model (pull current names from `GET /api/model_info/models`, never name them from priors), not an Ultra-Fast/Cheapest floor model, unless the user named a provider lock-in ("must stay on OpenAI"). A user already on a budget config has a cheap floor; what they need is an alternative that keeps quality. Mention the floor option apart. Annotate each option with a real cost or speed multiplier against the user's current config (from the model info prices), never just an order: "~10× slower", "~5× faster on Cerebras/Groq vs. native". Options within ~2× are a tie; options ≥5× better lead unambiguously. When the user gives both a budget and a quality floor, show both in one table (`Option | Expected gain | Quality risk`). The order of what to try for a cheaper or faster agent is the playbook's: [cheaper or faster](references/improving_agents/playbooks/cheaper-or-faster.md).
 
 ## API Docs
 
@@ -70,13 +72,15 @@ Load the relevant endpoint doc **before** each call.
 | GET list available models | `references/knowledge/api_docs/get_api_available_models.md` |
 | GET available providers | `references/knowledge/api_docs/get_api_settings_available_providers.md` |
 | GET list provider models | `references/knowledge/api_docs/get_api_providers_models.md` |
-| GET run config eval scores | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md` |
+| GET run config eval scores (test split; see below) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md` |
 | GET eval configs score summary | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs_score_summary.md` |
-| GET eval config score summary (per run config) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_score_summary.md` |
+| GET eval config score summary (per run config; test split) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_score_summary.md` |
+
+The two score calls above read the test split. To compare or choose run configs, read train and val as `references/knowledge/train_val_test.md` says.
 
 ## Model Tier Categories
 
-Use these tier names when discussing models. `GET /api/model_info/models` with `featured=true` returns the current ranked list; each model's `editorial_notes` (with `include_notes=true`) and pricing place it in a tier.
+Use these tier names when discussing models. A tier is what the knowledge calls a model's *class* (for example in [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md)). `GET /api/model_info/models` with `featured=true` returns the current ranked list; each model's `editorial_notes` (with `include_notes=true`) and pricing place it in a tier.
 
 | Tier | Description | When to use |
 |------|-------------|-------------|
@@ -109,6 +113,8 @@ Reasoning models use the `thinking_level` parameter (`"low"` / `"medium"` / `"hi
 For local/on-prem/privacy cases, check `open_weights` in `GET /api/model_info/models` (or filter with `open_weights=true`). Search by family with `search=Llama`, `search=Qwen`, etc., or filter on `family`. For VRAM sizing: **N GB RAM ≈ N-billion-parameter model** at int8 (e.g., 32 GB → 32B). See also `references/knowledge/local_private_on_prem.md` for the end-to-end local workflow.
 
 ## Cost Estimation
+
+This arithmetic answers a price question that is not about a task ("what would 10,000 calls cost?"). The cost of an eval run on a task is measured, not computed from list prices: `references/knowledge/run_an_experiment.md` ("Cost before you spend").
 
 Get live numbers from `GET /api/model_info/model_details` — each provider entry's `input_price` and `output_price`, in USD per million tokens. `GET /api/model_info/models` also gives `median_input_price` and `median_output_price` across providers.
 
@@ -176,6 +182,8 @@ Task type affects tier relevance:
 
 Group sections by relevance to the task ("High-Impact for Math (Reasoning Models)" vs. "Strong General Models You're Missing"). Lead with the highest-impact group.
 
+When a model swap is a good experiment for the task, and how to run it, is the technique's: [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md). To find out which model is better on the task, compare them as `references/knowledge/run_an_experiment.md` ("Variants") says, on train and then on val.
+
 ### Step 4 — Default Action After Recommendation (execute, don't stop)
 
 After recommending a model, **immediately create a run config for it** — do not end on a recommendation. A recommendation without a config is not a usable answer.
@@ -189,7 +197,7 @@ After recommending a model, **immediately create a run config for it** — do no
 
 If the user asks "which model is best for this task?" or "what's the cheapest model that still passes?":
 
-- **Evals + scores exist** → hand off to `references/knowledge/eval_scores.md` for the scorecard + Compare link flow.
+- **Evals + scores exist** → hand off to `references/knowledge/eval_scores.md` for the scorecard + Compare link flow. A ranking that decides which run config to keep is an experiment: `references/knowledge/run_an_experiment.md` ("Variants").
 - **Specs configured, scores empty** (eval configs exist but no eval runs completed — `dataset_size: 0` everywhere) → hand off to the "Specs configured, scores empty — the Compare-link fallback" section of `references/knowledge/eval_scores.md`. Produce a cost ladder + Compare link, do not stop at "no scores yet."
 - **No evals yet** → hand off to the "No evals yet — minimum viable path" section of `references/knowledge/eval_scores.md` (Eval Builder → judge → run eval → re-check). Do not stop at "I can't help"; return the minimum viable path as the answer.
 

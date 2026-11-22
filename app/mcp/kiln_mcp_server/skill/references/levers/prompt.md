@@ -71,3 +71,5 @@ Rules of the object:
   create a saved prompt in Kiln, and the prompt types.
 - `references/knowledge/model_create_configs.md`: the run config payload,
   and the name rules.
+- `references/knowledge/run_an_experiment.md`: how to measure the change,
+  judge it and keep it.

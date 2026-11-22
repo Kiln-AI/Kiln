@@ -1,15 +1,15 @@
 ---
 name: prompt_rewrite
 description: |
-  Knowledge for editing or improving an agent's prompt — reading current prompts, suggesting improvements, creating saved prompts, and building prompts with examples. Loaded by the Project Operations mode.
+  Knowledge for an agent's prompt in Kiln — reading current prompts, creating saved prompts and the run config that uses one, building prompts with examples, the prompt types, and editing a prompt in place as a project operation. Loaded by the Project Operations and Improve Task modes.
 ---
 # Prompt Rewrite
 
-Reference knowledge for editing or improving the agent's task instruction or saved prompts. This is the fastest optimization lever when the prompt has obvious gaps, is too vague, or the user says "I want my agent to do X" and it's not in the prompt.
+Reference knowledge for the agent's task instruction and saved prompts in Kiln: how to read them, how to make a new prompt and use it, and how to edit one in place when the user asks.
 
 ## Knowledge Required
 
-- `references/knowledge/prompt_audit.md` — when the systematic audit checklist is needed to identify what to improve
+- `references/knowledge/prompt_audit.md` — a review checklist, for a new prompt or when the user asks for a review
 - `references/knowledge/model_create_configs.md` — for Kiln name validation rules when creating saved prompts
 - `references/knowledge/model_create_configs.md` — when creating a run config for a new saved prompt
 
@@ -37,61 +37,42 @@ If your endpoint isn't listed below, load the matching `*_api_list.md` catalog (
 2. **Existing prompt state?** Have they already written a prompt, or is this from scratch?
 3. **Constraints?** Any output format requirements, length limits, or persona needs?
 
-## Prompt Editing Approaches
-
-
-
-### Read the Current Task and Prompt
+## Read the Current Task and Prompt
 
 Load the current prompt and schemas — see `references/knowledge/prompt_audit.md` → Read the Current Task and Prompt.
 
-### Identify What to Change
+## A Prompt Change to Improve an Agent
 
-Based on the user's goal + reading the prompt, identify gaps. If unsure what to improve, load `references/knowledge/prompt_audit.md` for the systematic audit checklist.
+What to change, and how to change a prompt as an experiment, is the lever's: `references/levers/prompt.md`, reached through the playbook that fits (`references/modes/improve_task.md`). How to measure the new prompt against the baseline and keep it is `references/knowledge/run_an_experiment.md`. In Kiln the change is a **new saved prompt** and a **new run config** that names it; the task instruction and the saved prompt that the baseline uses stay as they are.
 
-### Propose Changes
+1. **Create a saved prompt**:
+   Read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_prompts.md`, then:
+   `call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/prompts", body={"name": "...", "prompt": "...", "description": "..."})`
+   See `references/knowledge/model_create_configs.md` → Kiln Name Validation for naming rules (forbidden characters: `. , ; : = / \ ? % * | < >`).
+2. **Create a run config that uses it**, a copy of the parent with the new `prompt_id` (the POST answers the bare id; the run config takes `id::<id>`, `references/knowledge/model_create_configs.md`):
 
-Show the user the full rewritten prompt and explain what changed and why.
+   ```json
+   {
+     "run_config_properties": {
+       "type": "kiln_agent",
+       "model_name": "...",
+       "model_provider_name": "...",
+       "prompt_id": "id::<saved_prompt_id>"
+     }
+   }
+   ```
 
-**Critical rule: Show, then END.** Display the full rewritten prompt and explain changes — then end the reply. The user's next message IS the approval signal. Do not add "Do you want to apply this?" or any trailing approval request — that is a contract violation per the mode's Response Contract. Showing and creating in the same turn is also a violation.
+- **Build prompt with examples**: `POST /api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples` (read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_build_prompt_with_examples.md` first), with `body={"examples": [{"input": "...", "output": "..."}]}`. For a prompt that an experiment measures, the examples use invented values, never the values of a train item: the leak rules of `references/knowledge/train_val_test.md`.
+- **No eval yet** to measure the change: `references/knowledge/create_spec.md` first.
 
-### Create or Update the Prompt
+## Project Operations: Edit a Prompt in Place
 
-After user approval:
+When the user asks for the task instruction to be changed in place, that is a project operation, not an experiment. A change in place makes the eval measurements made with that prompt wrong, so tell the user, and offer a new saved prompt in its place (`references/knowledge/working_with_project_files.md`, "Respect immutability"). When they still want it:
 
-- **Update task instruction**:
-  Read `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id.md`, then:
-  `call_kiln_api("PATCH", "/api/projects/{project_id}/tasks/{task_id}", body={"instruction": "..."})`
-- **Create a saved prompt**:
-  Read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_prompts.md`, then:
-  `call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/prompts", body={"name": "...", "prompt": "...", "description": "..."})`
-- **Build prompt with examples**:
-  Read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_build_prompt_with_examples.md`, then:
-  `call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples", body={"examples": [{"input": "...", "output": "..."}]})`
+- **Update the task instruction**: read `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id.md`, then `call_kiln_api("PATCH", "/api/projects/{project_id}/tasks/{task_id}", body={"instruction": "..."})`.
+- **A saved prompt's text cannot be changed**: `PATCH .../prompts/{prompt_id}` (`references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_prompts_prompt_id.md`) changes only its name and description. A new text is a new saved prompt (above).
 
-See `references/knowledge/model_create_configs.md` → Kiln Name Validation for naming rules (forbidden characters: `. , ; : = / \ ? % * | < >`).
-
-### Create a Run Config (If Needed)
-
-If a new saved prompt was created, create a run config that uses it:
-
-```json
-{
-  "run_config_properties": {
-    "type": "kiln_agent",
-    "model_name": "...",
-    "model_provider_name": "...",
-    "prompt_id": "<saved_prompt_id>"
-  }
-}
-```
-
-Load `references/knowledge/model_create_configs.md` if a model needs to be chosen.
-
-### Suggest Next Steps
-
-- **Run evals** to compare the new prompt against the baseline → deep-link to [Compare Eval Scores](http://localhost:8757/specs/{project_id}/{task_id}/compare)
-- **Create specs** if none exist yet to measure the improvement → `references/knowledge/create_spec.md`
+**Show, then END.** For a rewrite the user has not yet seen, display the full rewritten prompt and explain what changed — then end the reply. The user's next message is the approval. Do not add "Do you want to apply this?"; when the user's message already asked for exactly this change, the ask is the consent: make it and report it.
 
 ## Prompt Types in Kiln
 

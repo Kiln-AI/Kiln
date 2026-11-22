@@ -56,9 +56,7 @@ MAX_MAINTENANCE_LINES = 500
 
 # Rules whose problems do not fail the shipped-tree tests yet, each with the
 # content batch that makes it pass (skill_and_content section 9).
-PENDING_RULES: set[str] = {
-    "tree-test-split",  # batch 13a
-}
+PENDING_RULES: set[str] = set()
 
 # Files allowed over the size limit, each with its reason.
 OVER_BODY_LIMIT_ALLOWED: dict[str, str] = {}
@@ -222,6 +220,56 @@ def test_wrapper_templates_are_listed_by_the_authoring_guide():
         assert f"`{key}`" in guide, key
 
 
+# --- the glue files ------------------------------------------------------------
+
+RUN_AN_EXPERIMENT = "references/knowledge/run_an_experiment.md"
+DIAGNOSE_AN_AGENT = "references/knowledge/diagnose_an_agent.md"
+
+GLUE_FILE_PARTS = {
+    RUN_AN_EXPERIMENT: (
+        "Two paths",
+        "Words",
+        "Before you start",
+        "The hypothesis",
+        "Cost before you spend",
+        "Build the candidate",
+        "Measure on train, and judge",
+        "Confirm on val",
+        "Keep or discard",
+        "Record and report",
+        "Variants",
+    ),
+    DIAGNOSE_AN_AGENT: (
+        "The agent as it is",
+        "What the smells measure",
+        "The scores on train",
+        "The failing train items",
+        "Where to go next",
+    ),
+}
+
+
+def _sections(text: str) -> dict[str, str]:
+    """Each `## ` section's text by heading, in order of the file."""
+    sections = {}
+    for part in re.split(r"^## ", text, flags=re.M)[1:]:
+        heading, _, body = part.partition("\n")
+        sections[heading.strip()] = body
+    return sections
+
+
+@pytest.mark.parametrize("path", sorted(GLUE_FILE_PARTS))
+def test_the_glue_files_have_their_parts(path):
+    sections = _sections(read_file(path, get_index()))
+    assert tuple(sections) == GLUE_FILE_PARTS[path]
+
+
+def test_run_an_experiment_opens_with_the_two_paths():
+    two_paths = _sections(read_file(RUN_AN_EXPERIMENT, get_index()))["Two paths"]
+    assert "Kiln Harness Tuner" in two_paths
+    assert "one-off" in two_paths
+
+
 # --- SKILL.md ------------------------------------------------------------------
 
 SKILL_MD_MAX_LINES = 300
@@ -297,12 +345,8 @@ ENTRY_POINTS = (
 def _skill_md_sections() -> tuple[str, dict[str, str]]:
     """The served SKILL.md: the text before the first `## ` heading, and each
     section's text by heading."""
-    intro, *rest = re.split(r"^## ", read_skill(None, DEFAULT_ORIGIN), flags=re.M)
-    sections = {}
-    for part in rest:
-        heading, _, body = part.partition("\n")
-        sections[heading.strip()] = body
-    return intro, sections
+    text = read_skill(None, DEFAULT_ORIGIN)
+    return re.split(r"^## ", text, flags=re.M)[0], _sections(text)
 
 
 def test_skill_md_has_the_required_parts():

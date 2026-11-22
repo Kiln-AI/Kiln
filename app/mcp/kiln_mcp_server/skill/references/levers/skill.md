@@ -84,3 +84,5 @@ Rules of the object:
 
 - `references/knowledge/adding_skills.md`: the skill endpoints, the name
   limits, and how to attach a skill to a run config.
+- `references/knowledge/run_an_experiment.md`: how to measure the change,
+  judge it and keep it.

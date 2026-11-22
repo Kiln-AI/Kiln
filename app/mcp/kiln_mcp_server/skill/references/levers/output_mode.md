@@ -101,3 +101,5 @@ Rules of the object:
   the modes ranked by how reliably the output matches the schema.
 - `references/knowledge/model_create_configs.md`: the fields of
   `run_config_properties`, and the run config payload.
+- `references/knowledge/run_an_experiment.md`: how to measure the change,
+  judge it and keep it.

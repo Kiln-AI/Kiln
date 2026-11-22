@@ -7,6 +7,26 @@ description: |
 
 Read eval scores, build comparison tables, and understand the eval pipeline.
 
+**Which split each call reads.** Most score calls of this file read an eval's **test** split, and take no `split` argument. They answer "how did my evals go?": report their numbers to the user as test scores. They never decide an improvement: to measure, compare or keep a run config, read train (and val, by metrics only) with the results call, as `references/knowledge/train_val_test.md` says, and follow `references/knowledge/run_an_experiment.md`.
+
+| Call | Split it reads | For train or val |
+|---|---|---|
+| `eval_results_summary` (Approach 1) | test | the results call, with `split`, for each eval |
+| `score_summary` of one eval config (Approach 2) | test | the results call, with `split` |
+| `eval_scores` of one run config (Approach 3), with `mean_usage` | test | the results call, with `split`; its rows carry each item's usage |
+| `eval_configs_score_summary` (judge calibration) | the eval's judge calibration items, not a split of the run configs | — |
+| eval `progress` | `dataset_size` is the test split | `train_dataset_size`, `val_dataset_size` |
+| The results call (the paired recipe) | the `split` you give; it is required | `query_params={"split": "train"}`; on val, summary numbers only |
+| The Compare page and the spec pages | test | none; read train and val with the results call |
+
+**When the eval itself looks wrong** — the playbook for each problem, before you change the eval or the judge:
+
+- The judge fails right answers or passes wrong ones, or the eval does not measure the issue: [dealing with a wrong eval](references/improving_agents/playbooks/dealing-with-a-wrong-eval.md).
+- The baseline passes almost every item: [dealing with a saturated eval](references/improving_agents/playbooks/dealing-with-a-saturated-eval.md).
+- The baseline passes almost no item: [dealing with an eval near zero](references/improving_agents/playbooks/dealing-with-an-eval-near-zero.md).
+- A score moves between repeats with no change: [dealing with a noisy eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md).
+- A train win is rejected on val: [dealing with train wins rejected at validation](references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md).
+
 > **Before any eval scan:** confirm you have a specific project/task (or a short explicit list). "Summarize my evals" across an unknown number of projects is a scope-ambiguous request — ask once, then pull. A breadth-first scan across every project, task, and eval config will blow the session budget before producing output.
 
 ## Hard Requirements (response assembly)
@@ -15,12 +35,12 @@ Every scorecard or score comparison response MUST:
 
 1. **Never emit placeholder link targets.** Links of the form `[Name](...)`, `[Name](run)`, `[Name]()`, or any empty/sentinel URL are forbidden. If the `rcid` isn't in hand, fetch it via `GET /run_configs` before writing the table — do not ship the table without real targets.
 2. **Every ranked config row includes a `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` deep-link** built from the `id` field returned by the run_configs GET.
-3. **One Compare link after the table** using `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` where `N` is the number of run configs in the table — the `models=` query parameter MUST include **every** `rcid` in the table, URL-encoded and comma-joined. A bare `http://localhost:8757/specs/{project_id}/{task_id}/compare` without `models=` is incomplete. The Compare view renders **at most 6 run configs**; if the table has more, cap `models=` at the top 6 and mention the cap in the reply.
-4. **Latency and cost columns** when the user's ask implies optimization — cost comes from `mean_usage` on `GET /run_configs/{rcid}/eval_scores`, latency from per-run metadata when available.
+3. **One Compare link after the table** using `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` where `N` is the number of run configs in the table — the `models=` query parameter MUST include **every** `rcid` in the table, URL-encoded and comma-joined. A bare `http://localhost:8757/specs/{project_id}/{task_id}/compare` without `models=` is incomplete. The Compare view renders **at most 6 run configs**; if the table has more, cap `models=` at the top 6 and mention the cap in the reply. The page shows test scores: say so, so that the user does not take them as the result of an experiment.
+4. **Latency and cost columns** when the user's ask implies optimization — cost comes from `mean_usage` on `GET /run_configs/{rcid}/eval_scores` (test split), or for the split you measure, from each row's `task_run_usage` in the results call; latency from per-run metadata when available.
 5. **Coverage and significance before verdict-language.** Every comparison row carries a **coverage column (n scored / n expected)** and a **significance column (paired CI or p-value from `POST /api/statistics`)** — the table cannot be rendered until the stats call has run, so run it *before* composing the reply, not after the user pushes back. Sides covering different or partial item sets get fixed (re-trigger the idempotent job) or flagged — never silently compared. "Better" / "regressed" / "clear" requires the paired result behind it — `compare_paired` (continuous) or `mcnemar_paired` (binary), **never the unpaired `compare_proportions`** when both configs scored the same items, and never mental CI arithmetic in place of the call; a within-noise delta is reported as *no significant difference*.
 6. **A side with zero scored items has no row.** An all-items-errored config is an execution failure to name and diagnose (one cheap probe — same model on a different provider, or vice versa), never a comparison datapoint — no savings-at-matched-accuracy claim may rest on it, and any cost figure is labeled conditional on quality that hasn't been demonstrated.
-**Paired-test recipe (three calls, existing endpoints — don't fall back to unpaired because pairing "looks hard"):**
-1. For **each** config: `GET .../evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results` — this endpoint **requires a `split` query param** (`test` / `train` / `val`; usually `test` for scoring), passed via `query_params={"split": "test"}` (omitting it is a 422). Use `jq_filter: "[.results[] | {d: .dataset_id, s: .scores}] | sort_by(.d)"` — ~70 compact rows per side.
+**Paired-test recipe (three calls, existing endpoints — don't fall back to unpaired because pairing "looks hard"):** the comparison of an experiment on train, as `references/knowledge/run_an_experiment.md` uses it. On val, read summary numbers only, as `references/knowledge/train_val_test.md` says.
+1. For **each** config: `GET .../evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results` — this endpoint **requires a `split` query param** (omitting it is a 422): `query_params={"split": "train"}`. Use `jq_filter: "[.results[] | {d: .dataset_id, s: .scores}] | sort_by(.d)"` — ~70 compact rows per side.
 2. Join the two lists on `dataset_id` (drop items present on only one side — and report the drop as a coverage flag), map each item's score to 0/1 for the dimension under test.
 3. `POST /api/statistics` with `{"operation": "mcnemar_paired", "outcomes_a": [...], "outcomes_b": [...]}` (same order both arrays). For continuous metrics use `compare_paired` with `values_a`/`values_b` the same way.
 
@@ -45,7 +65,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 | GET eval configs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs.md` |
 | GET eval config | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id.md` |
 | GET per-eval-config score summary (drill-down) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_score_summary.md` |
-| GET eval configs score summary (scorecard fallback / judge calibration) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs_score_summary.md` |
+| GET eval configs score summary (judge calibration only) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs_score_summary.md` |
 | GET per-config eval scores | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md` |
 | GET run configs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md` |
 | GET specs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_specs.md` |
@@ -55,7 +75,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 
 
-After specs and evals exist, the agent reads scores to build comparison tables. **Prefer the aggregated `eval_results_summary` endpoint** — it returns everything in one call.
+After specs and evals exist, the agent reads scores to build comparison tables for the user. **Prefer the aggregated `eval_results_summary` endpoint** — it returns everything in one call. The three approaches below read the test split (the table at the top).
 
 ### Approach 1: eval_results_summary (Preferred)
 
@@ -70,7 +90,7 @@ One call returns scores across **all evals and all run configs** for the task. R
 
 2. **Read the response.** Use `evals_by_id` for eval metadata (name, output scores), `run_configs_by_id` for model/provider/name per rcid, and `scores_by_run_config_by_eval[rcid][eid]` for each cell in the scorecard.
 
-3. **If the batch is empty for specs you expect to have scores, probe per-eval before giving up.** When `dataset_size: 0` (or empty score blocks) appears for specs that `agent_overview` shows as configured with nonzero completion, call `eval_configs_score_summary` for each such eval (see the "Scorecard Fallback / Judge Calibration" section below) and merge its results into the scorecard — the scores may still exist there. Only after this probe also returns empty should you render the remediation block.
+3. **If the batch is empty for specs you expect to have scores, probe per-eval before giving up.** When `dataset_size: 0` (or empty score blocks) appears for specs that `agent_overview` shows as configured with nonzero completion, check why: `eval_results_summary` scores only the eval's default judge (`current_config_id`) on its test split, so an eval with no default judge or an empty test split shows nothing. List the eval's judges (`GET .../evals/{eid}/eval_configs`) and call `score_summary` (Approach 2) for each; scores of a judge that is not the default may exist there — say which judge they came from. Only after this probe also returns empty should you render the remediation block.
 
 4. **Surface unconfigured evals separately in the reply** — list them with numbered remediation, do not hide the gap.
 
@@ -88,7 +108,7 @@ One call returns scores across **all evals and all run configs** for the task. R
 
 ### Specs configured, scores empty — the Compare-link fallback
 
-When `eval_results_summary` and the per-eval `eval_configs_score_summary` fallback both return `dataset_size: 0` (or empty score blocks) for every spec the user wants to rank across, the user is mid-setup — eval configs exist but no eval runs have completed. **Do not stop at "no scores yet."** Produce three outputs in this order:
+When `eval_results_summary` and the per-judge `score_summary` probe both return `dataset_size: 0` (or empty score blocks) for every spec the user wants to rank across, the user is mid-setup — eval configs exist but no eval runs have completed. **Do not stop at "no scores yet."** Produce three outputs in this order:
 
 1. A **model + cost table** of the candidate run configs (model, provider, input/output $/M, est. $/call from `GET /api/model_info/model_details`), with a `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` deep-link per row. State explicitly that ranking is by cost only because no eval data exists yet.
 2. A **Compare link** of the form `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` populated with all candidate rcids URL-encoded and comma-joined — the UI compare view renders run outputs side-by-side and lets the user inspect quality manually while eval runs accumulate.
@@ -130,9 +150,9 @@ call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/run_configs/{rc
 
 **Do NOT loop this endpoint over all configs to build a scorecard.** Use Approach 1 instead.
 
-### eval_configs_score_summary (Scorecard Fallback / Judge Calibration)
+### eval_configs_score_summary (Judge Calibration)
 
-Two uses: (1) **scorecard fallback** — when `eval_results_summary` returns empty for specs you expect to have scores, call this per eval to recover scores (see the fallback rule in Approach 1 above); (2) judge calibration — compare judge quality across eval configs for one eval.
+Judge calibration only: it compares the eval's judges against human ratings on the eval's golden set (`eval_configs_filter_id`). It holds no run config's scores, so it is no source for a scorecard.
 
 ```
 # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs_score_summary.md
@@ -164,7 +184,7 @@ Many workflows end with comparing run configs. Follow this pattern:
 
 ## Significance & confidence (call the statistics endpoint, don't hand-compute)
 
-When asked for a standard error, a confidence interval, or whether a difference between run configs is real, load `references/knowledge/api_docs/post_api_statistics.md` and `call_kiln_api` `POST /api/statistics` (set `operation`) instead of computing by hand: `operation="proportion_ci"` (one pass-rate cell), `"compare_proportions"` (unpaired difference), `"compare_paired"` (continuous metrics like latency/cost/tokens). For binary pass/fail compared over the **same** eval items — the usual run-config comparison — prefer `operation="mcnemar_paired"`, the paired test: it is far more powerful at the ~100–200 sample sizes here. It needs per-item outcomes, so pull per-config eval scores (Approach 3) and pair them on `dataset_id` (1 = pass, 0 = fail).
+When asked for a standard error, a confidence interval, or whether a difference between run configs is real, load `references/knowledge/api_docs/post_api_statistics.md` and `call_kiln_api` `POST /api/statistics` (set `operation`) instead of computing by hand: `operation="proportion_ci"` (one pass-rate cell), `"compare_proportions"` (unpaired difference), `"compare_paired"` (continuous metrics like latency/cost/tokens). For binary pass/fail compared over the **same** eval items — the usual run-config comparison — prefer `operation="mcnemar_paired"`, the paired test: it is far more powerful at the ~100–200 sample sizes here. It needs per-item outcomes: take them from the results call of the paired-test recipe above, on train, and pair them on `dataset_id` (1 = pass, 0 = fail).
 
 ## Viewing and Editing Judge Prompts
 

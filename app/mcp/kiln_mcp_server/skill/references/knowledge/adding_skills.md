@@ -9,12 +9,9 @@ description: |
 
 Skills are reusable, lazily-loaded instruction sets. The agent sees all skill names + descriptions in its system prompt and decides which to load. Only description + name inject into context by default; full instructions load on-demand via the `skill()` tool.
 
-## When to use skills vs. alternatives
+## When to use a skill
 
-- **Skills** — conditional instructions/knowledge (guidelines, procedures, locale rules). Lazy-loaded; model decides when to pull.
-- **Tools** — external actions (APIs, databases). Use `references/knowledge/tools.md`.
-- **Sub-Agents** — multi-agent delegation. Use `references/knowledge/subagents.md`.
-- **RAG** — large/unbounded document sets. Skills cap at ~50 docs.
+When a skill helps an agent, and when another change fits better, is in the knowledge: the lever `references/levers/skill.md`, and the techniques [long prompt into a skill](references/improving_agents/techniques/long-prompt-into-a-skill.md), [document into a skill](references/improving_agents/techniques/document-into-a-skill.md), [guide skill for a tool set](references/improving_agents/techniques/guide-skill-for-a-tool-set.md), [rewrite an inherited skill](references/improving_agents/techniques/rewrite-an-inherited-skill.md) and [skill into the prompt](references/improving_agents/techniques/skill-into-the-prompt.md). For the setup of the alternatives: tools in `references/knowledge/tools.md`, sub-agents in `references/knowledge/subagents.md`, retrieval in `references/knowledge/rag.md`.
 
 ## API Endpoints
 
@@ -36,6 +33,8 @@ Key endpoint docs:
 - Prefer gerund / action-shaped names: `creating-personas`, `validating-claims`, `summarizing-medical-notes` — names describe what the skill *does* for the agent, not what it *is*. (`reviewer` / `style-guide` are flat; `reviewing-pull-requests` / `applying-style-guide` route better.)
 
 ## Authoring a good `description` (this is the trigger)
+
+The shape of a skill (its size, how many topics one skill holds, the length of its description, a faulty inherited skill) is the lever's and the skill smells': `references/levers/skill.md`, [very long skill description](references/improving_agents/smells/very-long-skill-description.md), [one-file skill with many topics](references/improving_agents/smells/one-file-skill-with-many-topics.md), [skill too small to earn its place](references/improving_agents/smells/skill-too-small-to-earn-its-place.md), [faulty inherited skill](references/improving_agents/smells/faulty-inherited-skill.md). The advice below is how to write one in Kiln.
 
 The description is the only part of the skill content that always sits in the agent's system prompt — it's what the agent reads to decide whether to load the body. A weak description means the skill exists in the catalogue but never fires.
 

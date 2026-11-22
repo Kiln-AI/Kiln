@@ -60,14 +60,15 @@ Only the EvalInput lane delivers `reference_data` — evals over stored TaskRuns
 To answer "how does model/prompt X do on this benchmark?":
 
 1. **Create the candidate run config** (or find its `rcid`) — `references/knowledge/model_create_configs.md`.
-2. **Enumerate the benchmark evals** — `GET /evals`, keep those whose `test` split is EvalInput-backed (`splits["test"].source == "eval_input"`); note each eval's default judge `current_config_id` (a benchmark task often has several, e.g. one code eval + one judge per bucket).
-3. **Run the benchmark evals** for the candidate config(s): one eval job per eval × run config, as `references/knowledge/specs_and_evals.md` ("Running an eval"). Benchmark runs can be sizeable — each `multi_turn_synthetic` item drives up to `turns` conversation turns (SU model call + full agent invocation per turn, tools included) **per run config**, plus a scoring call per eval × item — tell the user the size before you start a large run. The user can also run them from the Compare page (`http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={candidate_rcid}...`).
-4. **Read scores per eval** — `GET /evals/{eid}/eval_config/{ecid}/score_summary` → `results[rcid][score_key].mean_score` plus `run_config_percent_complete[rcid]` and `dataset_size`. Compare the candidate's means against the incumbent rcid's means in the same response.
-5. **Report** per the response-assembly rules in `references/knowledge/eval_scores.md` (deep links, coverage, significance).
+2. **Enumerate the benchmark evals** — `GET /evals`, keep those whose splits are EvalInput-backed (`splits[<split>].source == "eval_input"` for each split the eval has); note each eval's default judge `current_config_id` (a benchmark task often has several, e.g. one code eval + one judge per bucket).
+3. **Measure and compare** the candidate against the baseline as `references/knowledge/run_an_experiment.md` says: on the train split first, then the confirmation on val. Run each eval as a job, one per eval × run config × split (`references/knowledge/specs_and_evals.md`, "Running an eval"). A benchmark eval with only a test split gets its train and val splits first (`references/knowledge/train_val_test.md`). Benchmark runs can be sizeable — each `multi_turn_synthetic` item drives up to `turns` conversation turns (SU model call + full agent invocation per turn, tools included) **per run config**, plus a scoring call per eval × item — estimate the cost before a large run (`references/knowledge/run_an_experiment.md`, "Cost before you spend").
+4. **Pair per item** on `eval_input_id` in the results call (below), and report per the response-assembly rules in `references/knowledge/eval_scores.md` (deep links, coverage, significance).
 
 The `run_comparison` / `run_calibration` endpoints behind the app's Run button are event streams for the app; use the eval job instead.
 
 ## Reading scores: use score_summary, not the batch summary
+
+`score_summary` and `eval_results_summary` read the test split, for a report of where the benchmark stands; an experiment reads train and val with the results call (`references/knowledge/train_val_test.md`).
 
 - `GET .../evals/{eid}/eval_config/{ecid}/score_summary` **fully supports benchmark evals** — scores are keyed by run config and mean per score key, completion measured against the EvalInput count.
 - `GET .../eval_results_summary` (the batch scorecard endpoint) includes EvalInput-backed evals (`dataset_size` counts matching EvalInputs). If it returns empty `evals_by_id` on a benchmark task you are on an older server — fall back to looping `score_summary` over the benchmark evals' default configs.

@@ -86,6 +86,16 @@ call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/specs", jq_filt
 
 Confirm the evals look right and suggest running them to get baseline scores. (The underlying API still uses `specs` and `spec_type` field names — that's the data-model name; surface them to the user as "evals".)
 
+## From a problem to a type of eval
+
+Every quality problem that the user wants fixed becomes at least one eval, so it stays measured and does not come back:
+
+| The problem | The eval |
+|---|---|
+| A specific bug | An `issue` eval for that bug |
+| Hallucinations, made-up facts | A `hallucinations` or a `factual_correctness` eval |
+| General quality | 2–3 evals on the dimensions that matter most, for example `completeness`, `formatting`, `desired_behaviour` |
+
 ## Eval Type Reference
 
 These `spec_type` values create **LLM-judge** evals. When the concern is mechanical (an exact value, a regex, a required tool call, a step budget), a deterministic check or a code eval fits better and skips the spec step — deep-link `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?judge={type}&workflow=manual` and see `references/knowledge/judge_types.md` for the menu and type values.

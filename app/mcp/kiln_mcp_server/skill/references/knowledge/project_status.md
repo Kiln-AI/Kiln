@@ -18,7 +18,7 @@ The bootstrap `agent_overview` snapshot (loaded by the mode's "Starting Work in 
 
 | Endpoint | Load |
 |----------|------|
-| GET eval results summary (batch scores) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_eval_results_summary.md` |
+| GET eval results summary (batch scores, test split: report them as test scores; `references/knowledge/train_val_test.md`) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_eval_results_summary.md` |
 | GET runs summaries | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_runs_summaries.md` |
 | GET single run details | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_runs_run_id.md` |
 
@@ -92,7 +92,7 @@ Based on the assessment, identify what's missing and suggest next steps. Common 
 - **No specs** → "You need specs to measure quality. Let's create some." Load `references/knowledge/create_spec.md`
 - **No eval data** → "Specs exist but no evals have run. Let's run them." Run them with the eval job of `references/knowledge/specs_and_evals.md` ("Running an eval")
 - **Only one run config** → "You only have one config. Let's experiment with alternatives." Read `references/modes/improve_task.md`
-- **Low scores** → "Some scores are below target. Let's investigate." Read `references/modes/improve_task.md`
+- **Low scores** → "Some scores are below target. Let's investigate." Read `references/modes/improve_task.md`, which starts from `references/knowledge/diagnose_an_agent.md`
 - **No connected providers** → "You need at least one provider." Load `references/knowledge/provider_setup.md`
 - **Prompt is short/vague** → "The prompt could use more detail." Load `references/knowledge/prompt_rewrite.md`
 - **High cost** → "Costs are high. We could optimize." Read `references/modes/improve_task.md`

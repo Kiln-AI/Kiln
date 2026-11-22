@@ -1,62 +1,26 @@
 ---
 name: improve_task
 description: |
-  Mode for making an existing AI agent better — quality, cost, speed, model selection, experiments, local/on-prem deployment. Enter when the user wants to optimize.
+  Mode for making an existing AI agent better — quality, cost, speed, model selection, experiments, tools and skills, fine-tuning, local/on-prem deployment. Enter when the user wants to improve or compare. It routes to the knowledge that owns each question.
 ---
 # Mode: Improve Task
 
-Make an existing AI agent better. This mode covers quality optimization, cost/speed reduction, model selection, systematic experiments, and moving to local/private deployment.
+Make an existing agent better: its quality, cost or speed, its model, its tools and skills. This mode states no method of its own. It finds the task, then sends you to the file that owns each question:
 
-## Goal
+- **What to try, in what order, and when**: the playbooks, smells and techniques, from `references/improving_agents/index.md`.
+- **How to change one part of a run config as an experiment**: its lever, from `references/levers/index.md`.
+- **How to do it in Kiln** (request bodies, name rules, traps, app links): the knowledge file of that feature, in the table at the end.
+- **How to measure a change, judge it and keep it**: `references/knowledge/run_an_experiment.md`.
+- **The split rule and the leak rules**: `references/knowledge/train_val_test.md`.
 
-Help the user improve their agent's quality, cost, speed, or model coverage. Load the right knowledge based on their specific optimization goal, and execute the approach.
+## Two paths
 
-## Response Contract
+- **Experimentation at scale** (many rounds, "take it as far as it goes", a search over many ideas) goes to Kiln Harness Tuner: recommend it to the user. Never manage many waves of experiments yourself. `references/knowledge/run_an_experiment.md` ("Two paths").
+- **One or two clear ideas** are done in the chat, with the by-hand procedure of `references/knowledge/run_an_experiment.md`.
 
-Every substantive reply in this mode follows this shape:
+## Task context
 
-1. **Recommendation** — one sentence naming the concrete next step (e.g., "Upgrade to a Strong/Balanced-tier model — pull the current pick from `GET /api/model_info/models`."). For **"cheaper / reduce cost / faster"** asks, the lead recommendation MUST be a quality-preserving mid-tier model (Strong/Balanced or Fast tier — pull current names from `GET /api/model_info/models`, never recommend by name from priors), NOT an Ultra-Fast/Cheapest floor model, unless the user's prompt contains an explicit provider lock-in phrase (e.g. "must stay on OpenAI"). Leading with a weak-and-cheap floor model when the user is already on a budget config is a contract violation — their floor is already cheap; what they need is a quality-preserving alternative. Annotate each option with a real cost or throughput multiplier vs. the user's current config, never just an ordering.
-2. **Why** — one or two sentences of evidence
-3. **Data / details** — table, list, or scores
-4. **Deep links** — clickable links to act on it
-5. **Compare link** (required when the reply lists ≥ 2 run configs) — `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...` where `N` is the number of run configs listed, with every rcid URL-encoded and comma-joined. Applies before scores exist too. Compare view caps at **6 run configs** — if there are more, link the top 6 and note the cap. See `references/knowledge/eval_scores.md` for the exact shape.
-6. **End on the recommendation, not a question.** A trailing "Shall I…?" / "Want me to…?" / "Want me to patch / apply / call / search / draft …now?" / "Would you like A or B?" / "What's your quality floor?" / "Ping me once …and I'll…" is a contract violation — pose the choice *instead of* recommending, never in addition. Deliver analysis the same turn as the fetch; going silent after a tool call is a bug. **Declarative deferred-action closers are the same violation in disguise.** Phrases like *"I'll apply this once you…"*, *"just say the word"*, *"let me know when ready and I'll…"*, *"happy to update it if you approve"* hand the next action back to the user under cover of a statement. If you've drafted the artefact, apply it in the same turn (unless the "Default to executing" paragraph below explicitly requires consent) — the artefact IS the recommendation's closure.
-7. **External URLs come only from data, never priors.** External URLs (anything not a Kiln app link on `http://localhost:8757`) are valid only if they appeared in a tool response (`call_kiln_api`, the model info endpoints included) or an `online_url:` frontmatter from a loaded `references/docs/*.md`. This applies to every category the agent might be tempted to "remember": **benchmark / leaderboard sites** (Artificial Analysis, LMSYS, HuggingFace leaderboards), **research papers** (arxiv, conference PDFs), and **model homepages / repos / org pages** (Moonshot, Kimi, GitHub orgs, vendor microsites). For these three categories, **omit the URL** and say *"I don't have a curated link for that — searching for `<name>` will reach the source."* Do not derive URLs by extending a curated path with prior structural knowledge (e.g. taking a curated `github.com/Org/Repo` URL and appending `/graphs/contributors`). The agent has no web access; any URL the model "knows" but no tool returned is a guess.
-
-**Default to executing.** Creating run configs, fetching scores, listing models, reading the model info endpoints are all direct actions — do them, then report. Confirm only when **you** are initiating an irreversible/destructive op the user didn't ask for (DELETE, or an unrequested prompt-text overwrite). Also ask first for the operations that the section "Working with the user" of `SKILL.md`, or the knowledge file you follow, names. If the user's message directly asks for the change ("update X", "add Y to the prompt", "apply this rewrite"), draft **and** PATCH in the same turn — the ask is the consent, and a trailing "Want me to apply it?" is a Response Contract violation.
-
-**Do the work through the API.** Creating run configs, editing prompts, wiring tools and sub-agents, and running evals (`references/knowledge/specs_and_evals.md` ("Running an eval")) all go through the API — do the work and report the result. The Eval Builder is the recommended way to create a new eval: deep-link it (`references/knowledge/create_spec.md`). For what this connection cannot do, see the end of `SKILL.md`.
-
-## Endpoint Conventions
-
-All Kiln resources are project-scoped. There is **no** `/api/tasks/{task_id}`, `/api/run_configs`, `/api/specs`, `/api/evals`, `/api/experiments`, or `/api/v1/...`. Every resource URL begins with `/api/projects/{project_id}/...`. If you cannot construct a path under `/api/projects/{project_id}/...`, the endpoint does not exist — load an api_doc instead of guessing.
-
-**Index-first for unfamiliar paths.** Before calling a path that isn't already documented in a loaded api_docs file, load its catalog (your knowledge file's API Docs table names one, or pick the matching `*_api_list.md` — e.g. `references/knowledge/api_docs/tasks_api_list.md`, `references/knowledge/api_docs/evals_api_list.md`, `references/knowledge/api_docs/documents_api_list.md`, `references/knowledge/api_docs/run_configs_api_list.md`). If the catalog doesn't list the path, the endpoint doesn't exist — admit it instead of calling. `GET /api/projects/{project_id}/tasks/{task_id}/run_configs/{rcid}` is one such non-existent path: `run_configs` supports List and Create only. `POST .../generate_qna` is RAG/document-specific — don't call it from task or optimize flows.
-
-## Verified Deep-Link Prefixes
-
-Only emit deep links matching one of these prefixes (each starts with the app address `http://localhost:8757`). Anything else is a guess — don't link it:
-
-- `http://localhost:8757/optimize/{project_id}/{task_id}` — run configs page
-- `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` — single run config
-- `http://localhost:8757/run?run_config_id={rcid}` — Run page with a specific run config pre-selected (use whenever you suggest "try this config on the Run page")
-- `http://localhost:8757/run?tool_id={tool_id}` — Run page with a specific tool pre-selected
-- `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder` — Eval Builder (optional `?type={spec_type}` preselects the eval type — verified values: `desired_behaviour`, `issue`)
-- `http://localhost:8757/generate/{project_id}/{task_id}/synth` — Synthetic Data page; also `http://localhost:8757/generate/{project_id}/{task_id}/data_guide`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_chooser`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup_copilot` (Data Guide surfaces — see `references/knowledge/data_guides.md`)
-- `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}` — single spec
-- `http://localhost:8757/specs/{project_id}/{task_id}/compare` — Compare Eval Scores
-- `http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run` — single run detail
-- `http://localhost:8757/settings/providers` — provider settings
-- `http://localhost:8757/settings/edit_task/{project_id}/{task_id}` — task settings
-- `http://localhost:8757/skills/{project_id}` — project skills list
-- `http://localhost:8757/skills/{project_id}/{sid}` — skill detail page
-
-## Task Context Discovery
-
-Before any API call in this mode, resolve `(project_id, task_id)` using the cases below in order. Never guess project or task IDs.
-
-1. **User named a task or project** → run the discovery step below.
-2. **User did not name one** → run the discovery step below and ask the user which project/task (present the list).
+Before any API call in this mode, resolve `(project_id, task_id)`. Never guess project or task IDs.
 
 1. Load the task_summaries endpoint doc and pull the full workspace in one call:
 
@@ -66,103 +30,103 @@ Before any API call in this mode, resolve `(project_id, task_id)` using the case
    ```
 
 2. **Exactly one match** → proceed with that `project_id` and `task_id`.
-3. **Multiple matches** → list all with deep links and ask the user to confirm.
-4. **Partial or fuzzy match (no exact match but a close one exists)** → treat the same as multiple matches. List the candidate(s) with project context and deep links and ask the user to confirm. Never silently proceed with a near-match (e.g., "content classifier" → "Email Classifier") as if it were the intended task.
-5. **No match at all** → tell the user no task with that name was found and ask for clarification.
+3. **Several matches, or only a close one** → list the candidates with project context and deep links, and ask the user to confirm. Never proceed silently with a near-match (e.g., "content classifier" → "Email Classifier").
+4. **No match** → tell the user no task with that name was found and ask.
 
-**Discovery turn budget.** If two consecutive assistant turns have been spent on task disambiguation without a resolved `(project_id, task_id)`, on the next turn commit: list the final candidate set with deep-links **and** load the archetype's knowledge files so the user's pick lands you ready to execute. A third disambiguation-only turn spends the session on routing and leaves the real ask untouched.
+After two replies spent on finding the task, list the final candidates with deep links and read the knowledge of the request, so that the user's pick lands you ready to work.
 
-## When the Request Changes
+Once the task is known, take the snapshot in one call, and trust it as the inventory for this mode (specs, run configs, prompts, tool servers, skills, dataset counts, connected providers) rather than fetching each again:
 
-Before each reply, check that the user's message still fits this mode. If the user pivots to creating or editing project resources that are not about an improvement, or to learning about a feature, route again with the routing table of `SKILL.md`; read `references/modes/establish_intent.md` when the new goal is unclear.
+```
+# read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_agent_overview.md
+call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/agent_overview")
+```
 
-## Suggested Questions
+Every resource URL begins with `/api/projects/{project_id}/...`; there is no `/api/tasks/{task_id}` and no `/api/run_configs`. `run_configs` has list, create and PATCH (name, starred, prompt name) only: there is no GET of one run config, so list them and filter by id. When no catalogue lists a path, the endpoint does not exist.
 
-1. **"What do you want to improve?"** — Quality, cost, speed, model coverage, privacy?
-2. **"Which project and task?"** — Establish context if not already known.
-3. **"What's the current state?"** — Do they have evals, multiple run configs, or are they starting fresh?
-4. **"Constraints?"** — Budget ceiling, latency requirements, quality floor?
+At the start, ask what is not yet known: the goal (quality, cost, speed, a model, privacy), the restrictions, the models allowed, and a spend limit. Read the project's memory first (`references/knowledge/memory.md`, "Orientation"): never ask what is already answered there. A request that could fan out over many projects, tasks or run configs gets one question on its scope before any wide scan.
 
-## Archetype Bundles
+## The usual path for a one-off
 
-Most intents map to a specific set of knowledge files. When the user's ask matches one of these archetypes, load the listed files as a set rather than guessing per-turn:
+1. `references/knowledge/diagnose_an_agent.md`: read the agent, its scores on train and its failing train items.
+2. The playbook that fits, through `references/improving_agents/index.md`. Inside the knowledge the path is a smell or a playbook, then a technique, then the lever it uses. Prefer a playbook.
+3. `references/knowledge/run_an_experiment.md`: build, measure, confirm and keep.
 
-| Archetype | Trigger phrases | Load together |
-|-----------|----------------|---------------|
-| Check / analyze eval scores | "how did my eval go", "check scores", "summarize my evals", "summary of my evals", "eval overview", "compare configs", "scorecard" | `references/knowledge/eval_scores.md` + its api_docs `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_eval_results_summary.md` and `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs_score_summary.md` (the fallback; preload so an empty batch doesn't cost a round-trip) |
-| Run / kick off eval | "run my evals", "kick off evals", "run the eval batch", "kick off the eval batch", "launch eval run", "just want to see scores now" (when implying a run trigger) | `references/knowledge/specs_and_evals.md` + `references/knowledge/eval_scores.md` |
-| Find cheaper / faster model | "cheaper model", "reduce cost", "faster model", "cost down" | `references/knowledge/model_work.md` |
-| Find better model / gap analysis | "better model", "what models am I missing", "tier analysis", "try newer models" | `references/knowledge/model_work.md` |
-| Improve quality | "improve quality", "fix hallucination", "make it better", "reduce errors" | `references/knowledge/eval_scores.md` for baseline |
-| Improve prompt (workflow / menu) | "improve my prompt", "better prompt", "incorporate eval feedback into prompt", "what's the best workflow for prompt improvement" | `references/knowledge/prompt_rewrite.md` |
-| Run an experiment | "experiment", "compare models", "A/B test", "batch of configs" | `references/knowledge/model_create_configs.md` |
-| Upgrade run config model | "upgrade my model", "swap the model", "move to GPT-5 Mini" | `references/knowledge/model_work.md` → `references/knowledge/model_create_configs.md` |
-| Fine-tune a model | "fine-tune", "finetune", "train a model", "training job", "custom model", "create a fine-tune", "fine-tuning dataset", "check fine-tune status", "should I fine-tune" | `references/knowledge/fine_tuning.md` |
-| Add evals | "add N evals", "what should I be measuring", "build me an eval from my data" | `references/knowledge/create_spec.md` + `references/knowledge/specs_and_evals.md` |
-| Choose / write a judge type | "code eval", "check a tool was called", "exact match / regex eval", "which judge type", "help me write a score() function" | `references/knowledge/judge_types.md` |
-| Synthetic data / data guide | "generate synthetic data", "make test data", "data guide", "generated inputs don't look real" | `references/knowledge/data_guides.md` |
+Do not build an eval in the middle of another request. When no eval measures the user's problem, list the gap, and build the eval only when the user agrees (`references/knowledge/create_spec.md`).
 
-Load the bundle, then drill into sub-dependencies declared in each knowledge file's Knowledge Required section.
+## Routing by what the user asks
+
+| The user asks | Start from |
+|---|---|
+| Make it better; fix a named problem | `references/knowledge/diagnose_an_agent.md`, then the failure playbook that fits |
+| Many rounds of experiments; take it as far as it goes | The Kiln Harness Tuner path of `references/knowledge/run_an_experiment.md` |
+| Cheaper or faster | [cheaper or faster](references/improving_agents/playbooks/cheaper-or-faster.md), with `references/knowledge/model_work.md` |
+| Which model is best; compare these run configs | `references/knowledge/run_an_experiment.md` ("Variants"), with `references/knowledge/model_work.md` and [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md) |
+| The scores jump, all pass, none pass, the judge looks wrong | The eval playbook that fits (`references/improving_agents/index.md`, "Eval problems"), then `references/knowledge/judge_types.md` or `references/knowledge/create_spec.md` for the change |
+| A provider, origin or privacy limit; a local model | [working inside restrictions](references/improving_agents/playbooks/working-inside-restrictions.md), `references/knowledge/local_private_on_prem.md` |
+| Add a tool, a skill, retrieval, a sub-agent | The knowledge file for the setup (`references/knowledge/tools.md`, `references/knowledge/code_tools.md`, `references/knowledge/adding_skills.md`, `references/knowledge/rag.md`, `references/knowledge/subagents.md`), the lever (`references/levers/index.md`), and the technique or smell that says when it helps |
+| Fine-tune | `references/knowledge/fine_tuning.md`, after [ordering work](references/improving_agents/playbooks/ordering-work.md) |
+| How did my evals go | `references/knowledge/eval_scores.md` |
+| Run my evals | `references/knowledge/specs_and_evals.md` ("Running an eval"), then `references/knowledge/eval_scores.md` |
+| Add an eval; choose a judge | `references/knowledge/create_spec.md`, `references/knowledge/specs_and_evals.md`, `references/knowledge/judge_types.md` |
+| Synthetic data; a data guide | `references/knowledge/data_guides.md` |
+| There is no eval yet | An eval first: `references/knowledge/create_spec.md` |
+
+When the request changes to creating project resources that are not about an improvement, route to `references/modes/project_operations.md`; to learning about a feature or an error, `references/modes/learn_about_kiln.md`; when the new goal is unclear, `references/modes/establish_intent.md`.
+
+## Reporting
+
+- **The recommendation first**, then the evidence with the split that each number came from, then the links. End on the recommendation, not on a question; when the user asked for a change, make it and report it.
+- **A reply that lists 2 or more run configs** gets the prefilled Compare link of `references/knowledge/eval_scores.md`, with its note that the page shows test scores.
+- **External URLs come only from data**: a tool response, or the `online_url` of a help article in `references/docs/`. For a benchmark site, a paper or a model's home page that no response gave, give no URL; say that a search for the name finds it.
+- A help article says what a feature does; the knowledge says when to use it.
 
 ## Knowledge
 
-| Knowledge | What It Provides | Load |
-|-----------|-----------------|------|
-| **Model Work** | Recommend models, assess existing configs, tier taxonomy, the model info endpoints, provider reference, cost estimation — one file for every "what model?" question | `references/knowledge/model_work.md` |
-| **Fine-Tuning** | Training a custom model on task data — workflow, dataset requirements, pre-submission confirmation, status checking | `references/knowledge/fine_tuning.md` |
-| **Local / Private / On-Prem** | Moving to open-weight models for privacy or local deployment | `references/knowledge/local_private_on_prem.md` |
-| **Prompt Audit** | Systematic prompt review checklist | `references/knowledge/prompt_audit.md` |
-| **Model Create Configs** | Creating run configs, model parameters | `references/knowledge/model_create_configs.md` |
-| **Eval Scores** | Score reading, jq filters, scorecards, comparison tables, and viewing/editing judge prompts | `references/knowledge/eval_scores.md` |
-| **Evals** | Background on evals, eval pipeline, Eval Builder vs manual, agent's role | `references/knowledge/specs_and_evals.md` |
-| **Create Eval** | Eval creation asks — eval types, typed Eval Builder deep-links (`?type=`), default-run-config reminder | `references/knowledge/create_spec.md` |
-| **RAG** | Document retrieval setup | `references/knowledge/rag.md` |
-| **Tools** | MCP tool servers | `references/knowledge/tools.md` |
-| **Code Tools** | Native Python functions as tools (Beta, trust-gated) — draft, test, create, attach | `references/knowledge/code_tools.md` |
-| **Code Tool Authoring** | A code tool for an agent as an experiment — when a tool is the right change, the eight wrapper templates, the allowlist rule, the contract, the build rules | `references/knowledge/code_tool_authoring.md` |
-| **Sub-Agents** | Wiring a sub-agent (Kiln Task as Tool) — end-to-end setup workflow, when to ask the user first, tool name/description guidance | `references/knowledge/subagents.md` |
-| **Skills** | Creating project-level skills (lazy-loaded instructions), name constraints, editing limitations, attaching to run configs, and correct deep links | `references/knowledge/adding_skills.md` |
-| **Benchmark Eval Inputs** | EvalInput-backed benchmark evals — generate-then-score eval runs, synthetic-user drives, reference data, and the candidate-run-config benchmark recipe | `references/knowledge/benchmark_eval_inputs.md` |
-| **Data Guides** | Task Data Guides for synthetic data — authoring flows (manual / Kiln Pro), the refine loop, how the guide shapes generation | `references/knowledge/data_guides.md` |
-| **Judge Types** | The eval judge menu — LLM judge, deterministic checks (exact/contains/pattern/set/tool-call/step-count), code evals; selection rule, the code-eval `score()` contract, gotchas | `references/knowledge/judge_types.md` |
-| **TypeSafe AI (Jev)** | Classification-only provider for judges and closed-set structured tasks — where it fits, what it rejects, judge tips, reading its probabilities | `references/knowledge/typesafe_jev.md` |
-| **Memory** | The project's durable memory — the six endpoints, scopes, what to read at the start of work, the write discipline, the tags | `references/knowledge/memory.md` |
-| **Project Files** | The project's files on disk — read directly when faster, write only through the API, never change a prompt, skill or run config in place | `references/knowledge/working_with_project_files.md` |
+**Method**
 
-## Tools
+| File | What it holds; read it when |
+|---|---|
+| `references/improving_agents/index.md` | The smells, playbooks and techniques, and how to read them: to choose what to try |
+| `references/levers/index.md` | The parts of a run config an experiment can change, and the rules of each: before you build a candidate |
+| `references/knowledge/diagnose_an_agent.md` | The calls that read the agent, its train scores and its failing items: before you choose a playbook |
+| `references/knowledge/run_an_experiment.md` | The two paths, and how to measure, judge and keep a change: before any experiment or comparison |
+| `references/knowledge/train_val_test.md` | Which split may decide what, which call reads which split, the leak rules: before you measure or change anything |
+| `references/knowledge/memory.md` | The project's durable memory: at the start of work, and to record each finding |
+| `references/knowledge/working_with_project_files.md` | The project's files on disk: before you read or change one |
 
-### Kiln API
+**Run configs, models, prompts**
 
-`call_kiln_api(method, url_path, body?, jq_filter?)` calls the Kiln REST API. Returns JSON with `status_code` and `body`. See the section "Calling the Kiln API" of `SKILL.md` for the full contract (load endpoint docs first, jq filter writing, diagnose-before-retry). Mode-specific reminders:
+| File | What it holds; read it when |
+|---|---|
+| `references/knowledge/model_work.md` | Model facts, tiers, prices, providers, the model info endpoints: any "which model?" question |
+| `references/knowledge/model_create_configs.md` | The create call of a run config, the model and provider check, name rules: to create a run config |
+| `references/knowledge/prompt_rewrite.md` | Reading prompts, saved prompts, the prompt types: to make a new prompt |
+| `references/knowledge/prompt_audit.md` | A review checklist for a prompt: a new prompt, or a user who asks for a review |
+| `references/knowledge/fine_tuning.md` | The fine-tune workflow, datasets, the check before submitting, status: to fine-tune |
+| `references/knowledge/local_private_on_prem.md` | Open-weight models for privacy or local use: a local or private deployment |
+| `references/knowledge/typesafe_jev.md` | A classification-only provider for judges and closed-set tasks: a classifier or a judge on a decision model |
 
-```
-# read first: references/knowledge/api_docs/<endpoint>.md
-call_kiln_api("METHOD", "/api/path", ...)
-```
+**Evals**
 
-- **Anticipate fields and pull them in one call.** A second same-endpoint call with a slightly widened filter is almost always an avoidable round-trip; reuse the prior response already in context before re-fetching.
+| File | What it holds; read it when |
+|---|---|
+| `references/knowledge/eval_scores.md` | The score calls and the split each reads, the paired statistics recipe, scorecards, judge prompts: to read or compare scores |
+| `references/knowledge/specs_and_evals.md` | What evals are, the splits, running an eval as a job: to run an eval or explain the pipeline |
+| `references/knowledge/create_spec.md` | Eval types, the Eval Builder links, the map from a problem to a type of eval: to add an eval |
+| `references/knowledge/judge_types.md` | The judge menu and the code-eval contract: to choose or write a judge |
+| `references/knowledge/benchmark_eval_inputs.md` | Benchmark and multi-turn evals, reference data, synthetic-user drives: an eval built on eval inputs |
+| `references/knowledge/data_guides.md` | Task data guides for synthetic data: to generate data |
 
-## Mode Transitions
+**Capabilities**
 
-- User asks to create a new project or task (not motivated by quality improvement) → route to **Project Operations** (`references/modes/project_operations.md`)
-- User asks "how does X work?" or has an error → route to **Learn About Kiln** (`references/modes/learn_about_kiln.md`)
+| File | What it holds; read it when |
+|---|---|
+| `references/knowledge/tools.md` | MCP tool servers, demo tools, wiring a server, tool state: to add or check a tool |
+| `references/knowledge/code_tools.md` | Code tools: trust, testing, the dry run, create and attach: to add a Python tool |
+| `references/knowledge/code_tool_authoring.md` | A code tool for an agent as an experiment, and the eight wrapper templates: to build a new tool or a wrapper |
+| `references/knowledge/subagents.md` | A Kiln task as a tool: to wire a sub-agent |
+| `references/knowledge/adding_skills.md` | Project skills, the name limits, attaching one: to add a skill |
+| `references/knowledge/rag.md` | Document retrieval setup: to ground the agent in the user's documents |
 
-## Freeform Fallback
-
-If no knowledge file covers what the user needs, load `references/knowledge/freeform_help.md` as a last resort. Prefer specific knowledge files whenever possible.
-
-## Starting Work in This Mode
-
-When you start work in this mode, **before loading knowledge or calling APIs**:
-
-1. **Reflect on the user's intent.** Read what they've asked and identify the specific optimization goal. Match the goal to the most relevant file in the Knowledge table (or the archetype bundle) and load it first.
-2. **Establish task context first.** If the user's project and task are not yet identified, run **Task Context Discovery** above before loading knowledge or making API calls.
-3. **Bootstrap the task snapshot.** Once `(project_id, task_id)` is known, issue a single `agent_overview` call and treat its response as the canonical inventory for this mode — downstream knowledge trusts `specs`, `run_configs`, `prompts`, `tool_servers`, `skills`, `dataset`/`docs` counts, and `connected_providers` from this snapshot rather than re-fetching:
-
-   ```
-   # read first: references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_agent_overview.md
-   call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/agent_overview")
-   ```
-
-4. **Scope Gate (required for "summarize / review / overview" intents).** If the user's request could naturally fan out across projects, tasks, or configs AND they have not named a specific scope, ask *which project/task* before issuing any enumeration calls beyond the initial `task_summaries` list. One clarification turn is cheaper than a 60-call scan that times out. This gate applies even when the user's intent seems clear — scope, not intent, is what's missing.
-5. **Never call `call_kiln_api` before loading the relevant knowledge file AND the endpoint's api_doc.** Correct paths and schemas live only in the `references/knowledge/api_docs/` files — do not guess and do not rely on memory. Even for trivially short "list my X" / "which is starred" prompts, load the knowledge bundle declared by the Archetype Bundles table first, then load the api_doc for the specific endpoint you'll call. The same entity (a run config, a prompt, an eval) can have different field paths on different endpoints — the api_doc for the endpoint you just hit is the authoritative reference.
+When no file covers what the user needs, read `references/knowledge/freeform_help.md` as a last resort.

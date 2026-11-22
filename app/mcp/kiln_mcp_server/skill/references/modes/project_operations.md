@@ -37,7 +37,7 @@ Only emit deep links matching one of these prefixes (each starts with the app ad
 - `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` — single run config
 - `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder` — Eval Builder (optional `?type={spec_type}` preselects the eval type — verified values: `desired_behaviour`, `issue`)
 - `http://localhost:8757/generate/{project_id}/{task_id}/synth` — Synthetic Data page; also `http://localhost:8757/generate/{project_id}/{task_id}/data_guide`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_chooser`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup_copilot` (Data Guide surfaces — see `references/knowledge/data_guides.md`)
-- `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}` — single spec
+- `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}` — single spec (its scores are test scores; `references/knowledge/train_val_test.md`)
 - `http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run` — single run detail
 - `http://localhost:8757/settings/edit_task/{project_id}/{task_id}` — task settings
 - `http://localhost:8757/settings/providers` — provider settings

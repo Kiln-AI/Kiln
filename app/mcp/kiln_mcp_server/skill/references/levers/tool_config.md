@@ -86,3 +86,5 @@ Rules of the object:
   and attach them, and the tool id forms.
 - `references/knowledge/subagents.md`: a Kiln task called as a tool.
 - `references/knowledge/rag.md`: the search tool of a RAG config.
+- `references/knowledge/run_an_experiment.md`: how to measure the change,
+  judge it and keep it.

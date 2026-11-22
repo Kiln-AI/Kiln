@@ -32,6 +32,9 @@ Load the relevant endpoint doc **before** making each API call — they have req
 | GET eval configs comparison summary | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_configs_score_summary.md` |
 | GET eval run results | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_run_config_run_config_id_results.md` |
 | GET run config eval scores | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md` |
+
+The score summary, the eval scores of a run config and the eval progress read the test split; the results call takes the `split` you give (`references/knowledge/train_val_test.md`).
+
 ## What Are Evals?
 
 An ML product can be described as a set of evals — the itemized requirements, goals, and intentions of a successful product. Each eval defines one specific thing the product should (or shouldn't) do, with a clear definition, examples, and a judge that measures compliance.
@@ -104,6 +107,18 @@ An eval runs as a background job: one job runs one split of one eval, with one j
 
 The user can also run an eval in the app: the **Run Eval** button on the Compare page (`http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models={rcid1}%2C{rcid2}%2C...`) or on the spec page (`http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}`). The `run_comparison` and `run_calibration` endpoints behind those buttons are event streams for the app; use the job above.
 
+## When the eval is the problem
+
+When the scores look wrong, before you change an eval or a judge, read the playbook that fits; it says when the eval is the problem and what not to do:
+
+- [dealing with a wrong eval](references/improving_agents/playbooks/dealing-with-a-wrong-eval.md): the judge fails right answers or passes wrong ones, or the eval does not measure the issue;
+- [dealing with a saturated eval](references/improving_agents/playbooks/dealing-with-a-saturated-eval.md): the baseline passes almost every item;
+- [dealing with an eval near zero](references/improving_agents/playbooks/dealing-with-an-eval-near-zero.md): the baseline passes almost no item;
+- [dealing with a noisy eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md): a score moves between repeats with no change;
+- [dealing with train wins rejected at validation](references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md): a train win does not hold on val.
+
+How to change the eval or the judge in Kiln is in `references/knowledge/create_spec.md` and `references/knowledge/judge_types.md`.
+
 ## Underlying Data Hierarchy
 
 The user-facing "eval" maps to this internal data model — useful when calling the API:
@@ -145,10 +160,12 @@ Dataset items carry string tags, and an eval selects its items by tag. On curren
 
 | Split | Tag | Purpose |
 |-------|-----|---------|
-| test | `test_{slug}` | The items the eval scores |
-| train | `train_{slug}` | Fine-tuning training data |
-| val | `val_{slug}` | Validation slice |
+| test | `test_{slug}` | The items the eval scores by default; the user's own final check |
+| train | `train_{slug}` | Fine-tuning training data; the items an experiment tunes and measures on |
+| val | `val_{slug}` | Validation slice; the confirmation of an experiment's winner, by metrics only |
 | golden | `golden_{slug}` | Judge-vs-human calibration (rated items) |
+
+How an improvement uses train, val and test, which call reads which split, and what to do when an eval has only a test split: `references/knowledge/train_val_test.md`. Most score calls and the eval pages read the test split when no split is asked for (`references/knowledge/eval_scores.md`).
 
 The slug is the eval name lowercased with spaces→underscores. (Older evals used flat `eval_set_filter_id` / `train_set_filter_id` fields and `eval_` / `eval_golden_` tag names — both deprecated; read the `splits` map and the `test_`/`train_`/`val_`/`golden_` tags instead.)
 

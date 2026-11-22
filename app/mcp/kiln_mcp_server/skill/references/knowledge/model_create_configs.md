@@ -33,7 +33,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 | GET list run configs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md` |
 | POST create run config | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md` |
 | PATCH update run config | `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_run_configs_run_config_id.md` |
-| GET run config eval scores | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md` |
+| GET run config eval scores (test split; for train or val see `references/knowledge/train_val_test.md`) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md` |
 | POST create MCP run config | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_mcp_run_config.md` |
 | GET get task | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id.md` |
 | GET list prompts | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_prompts.md` |
@@ -58,34 +58,14 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## Key Parameters
 
-### Temperature
-Controls randomness. Lower = more deterministic, higher = more creative.
-- `0.0-0.3` — factual tasks, classification, structured extraction
-- `0.5-0.7` — balanced (good default for most tasks)
-- `0.8-1.0` — creative tasks, brainstorming
+The fields of `run_config_properties`, one line each. When and why to change one, and its limits, are in its lever:
 
-### Top P
-Controls diversity of token selection. Usually leave at `1.0` unless you know what you're doing.
-
-### Thinking Level
-For reasoning models only. Controls how much "thinking" the model does before answering.
-- `"low"` — quick reasoning, cheaper
-- `"medium"` — balanced
-- `"high"` — deep reasoning, most expensive
-- `null` — use model defaults
-
-### Structured Output Mode
-How the model produces JSON output:
-- `"json_schema"` — enforced by the provider (most reliable, not all models support it)
-- `"json_instruction_and_object"` — instructed via prompt + `response_format: json_object`
-- `"json_instruction"` — instructed via prompt only (least reliable, widest support)
-- `"default"` — let Kiln decide based on model capabilities
-
-### Tools Config
-Whether the run config uses tools (MCP servers). Set to `null` for no tools, or configure which tool servers to use. See the Tools knowledge for details.
-
-### Input Transform
-Optionally reshape the task input before it reaches the model — e.g. **drop fields** the model shouldn't see, or render structured JSON as prose. Set `input_transform` to `{"type": "jinja", "template": "..."}`; the template sees one variable `input` (the parsed input object, so `{{ input.field_name }}`) and its rendered text becomes the first user message. Leave `null` (default) to pass the raw input through unchanged. The template is compiled when the config is saved — an invalid template returns 422.
+- `model_name`, `model_provider_name` — the model and its provider; check the pair as above. Lever: `references/levers/model.md`.
+- `prompt_id` — the saved prompt or prompt generator; see "Getting the Prompt ID" below. Lever: `references/levers/prompt.md`.
+- `temperature`, `top_p`, `thinking_level` — the provider settings (`thinking_level` only for reasoning models: `"low"`, `"medium"`, `"high"`, or `null` for the model default). Lever: `references/levers/params.md`.
+- `structured_output_mode` — how the model produces JSON: `"json_schema"`, `"json_instruction_and_object"`, `"json_instructions"`, `"default"` and the others of the endpoint doc. Lever: `references/levers/output_mode.md`.
+- `tools_config` — the tools and skills the run config attaches, or `null` for none (`references/knowledge/tools.md`, `references/knowledge/adding_skills.md`). Lever: `references/levers/tool_config.md`.
+- `input_transform` — optionally reshape the task input before it reaches the model, e.g. drop fields the model shouldn't see, or render structured JSON as prose: `{"type": "jinja", "template": "..."}`. The template sees one variable `input` (the parsed input object, so `{{ input.field_name }}`), and its rendered text becomes the first user message. `null` (default) passes the raw input through. The template is compiled when the config is saved; an invalid template returns 422.
 
 ## Kiln Name Validation
 
@@ -116,6 +96,8 @@ Use the returned ID as the `prompt_id` in the run config body. If `.prompts` is 
 > 3. **`POST /prompts` and `GET /prompts` return the prompt ID in different shapes.** `GET /prompts` returns the prefixed form (`"id::197516709367"`) which is what `/run_configs` requires — use it as-is. `POST /prompts` returns the **bare** form (`"197516709367"`). If you just created the prompt this turn, either (a) re-fetch via `GET /prompts`, or (b) prepend `id::` to the POST-response `id`. Sending the bare form to `/run_configs` returns `422 Invalid prompt ID`.
 
 ## Creating a Run Config
+
+The properties of a run config cannot be changed after creation (PATCH changes only its name, starred flag and prompt name): a change is a new run config. For an experiment, the lever's rule applies: copy every property of the parent run config and change one (`references/levers/index.md`; the procedure is `references/knowledge/run_an_experiment.md`).
 
 ```
 # read first: references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md
