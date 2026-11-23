@@ -10,6 +10,7 @@
 import type { ModelChoice } from "$lib/eval/default_judge"
 import type { KilnAgentRunConfigProperties, OpenEnvReset } from "$lib/types"
 import type { SuggestedEdit } from "../spec_utils"
+import type { GroundingDrop } from "./batch_plan_guidance"
 import type { BatchSize } from "./batch_profiles"
 
 // A generated synthetic-user case as the wire carries it: the seed message,
@@ -74,10 +75,27 @@ export type CachedGroundedCases = {
   // Missing on older drafts, which grounded without one.
   synthetic_user_guide?: string
   cases: SyntheticUserCaseWire[]
-  // Cases dropped in grounding and accepted with Continue. The drive counts
-  // them as planned-for, not failed, so the shortfall it reports is only its
-  // own.
+  // How many cases grounding dropped. The drive counts them as planned-for,
+  // not failed, so the shortfall it reports is only its own.
   grounding_dropped: number
+  // The dropped cases themselves, which the review's notice lists, and
+  // whether that notice has been closed. Both belong to this grounded set, so
+  // a new plan or a new grounding starts them over.
+  drops: GroundingDrop[]
+  drops_notice_seen: boolean
+}
+
+// A grounded set as a stored draft holds it. Drafts written before drops were
+// kept lack both keys and restore with no drops, so they show no notice.
+export function restore_cached_grounded_cases(
+  saved: Partial<CachedGroundedCases> | null | undefined,
+): CachedGroundedCases | null {
+  if (!saved || !Array.isArray(saved.cases)) return null
+  return {
+    ...(saved as CachedGroundedCases),
+    drops: Array.isArray(saved.drops) ? saved.drops : [],
+    drops_notice_seen: saved.drops_notice_seen === true,
+  }
 }
 
 export type CaseGroundingKey = {
@@ -309,8 +327,9 @@ export type BuilderDraft = {
   // looked up again. Null when no lookup is on record, including on older
   // drafts.
   openenv_server_lookup: OpenEnvServerLookup | null
-  // The Refine Plan steer the plan on screen was drafted under. A grounding
-  // Retry re-plans with it, so it has to survive a reload too.
+  // The Refine Plan steer the plan on screen was drafted under. A Refine Plan
+  // opened because cases dropped starts from it, so it has to survive a
+  // reload too.
   landed_plan_steer: string
 }
 

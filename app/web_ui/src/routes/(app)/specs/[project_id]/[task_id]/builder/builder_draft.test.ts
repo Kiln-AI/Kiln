@@ -9,6 +9,7 @@ import {
   draft_is_resumable,
   questions_are_current,
   reset_draft_keeping_tags,
+  restore_cached_grounded_cases,
   restore_step,
   restore_synthetic_user_guide,
   reusable_cached_cases,
@@ -113,6 +114,15 @@ const full_draft: BuilderDraft = {
       },
     ],
     grounding_dropped: 1,
+    drops: [
+      {
+        scenario_index: 1,
+        scenario: "Customer closes an account.",
+        drop_detail: "Accounts can't be closed on this server.",
+        drop_reason: "unsupported",
+      },
+    ],
+    drops_notice_seen: true,
   },
   cached_minted_inputs: {
     prompts_json: JSON.stringify([
@@ -433,6 +443,8 @@ describe("reusable_grounded_cases", () => {
       },
     ],
     grounding_dropped: 2,
+    drops: [],
+    drops_notice_seen: false,
   }
   const key = {
     openenv_server_id: "srv_1",
@@ -500,6 +512,30 @@ describe("reusable_grounded_cases", () => {
       }),
     ).toBe(older)
     expect(reusable_grounded_cases(older, prompts, spec, key)).toBeNull()
+  })
+})
+
+describe("restore_cached_grounded_cases", () => {
+  const stored = full_draft.cached_grounded_cases as CachedGroundedCases
+
+  it("restores the drops and whether their notice was seen", () => {
+    const restored = JSON.parse(JSON.stringify(stored))
+    expect(restore_cached_grounded_cases(restored)).toEqual(stored)
+  })
+
+  it("restores an older cache with no drops and an unseen notice", () => {
+    const { drops: _drops, drops_notice_seen: _seen, ...older } = stored
+    expect(restore_cached_grounded_cases(older)).toEqual({
+      ...older,
+      drops: [],
+      drops_notice_seen: false,
+    })
+  })
+
+  it("restores nothing from a missing or malformed cache", () => {
+    expect(restore_cached_grounded_cases(null)).toBeNull()
+    expect(restore_cached_grounded_cases(undefined)).toBeNull()
+    expect(restore_cached_grounded_cases({ prompts_json: "[]" })).toBeNull()
   })
 })
 

@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest"
 import { KilnError } from "$lib/utils/error_handlers"
-import type { SyntheticUserCaseWire } from "./builder_draft"
 import {
+  restore_cached_grounded_cases,
+  type CachedGroundedCases,
+  type SyntheticUserCaseWire,
+} from "./builder_draft"
+import {
+  all_dropped_message,
   apply_grounding_frame,
+  dropped_notice,
+  dropped_notice_drops,
   flatten_reset_arguments,
   ground_cases_request,
   grounded_server_id,
@@ -409,5 +416,95 @@ describe("flatten_reset_arguments", () => {
   it("is empty without arguments", () => {
     expect(flatten_reset_arguments(undefined)).toEqual([])
     expect(flatten_reset_arguments({})).toEqual([])
+  })
+})
+
+describe("dropped_notice_drops", () => {
+  const plan_json = JSON.stringify(PLAN)
+  const drop = {
+    scenario_index: 1,
+    scenario: "Close an account",
+    drop_detail: "Accounts can't be closed.",
+  }
+  const cache: CachedGroundedCases = {
+    prompts_json: plan_json,
+    spec_text: "spec",
+    openenv_server_id: "srv_1",
+    judge_model: "openai/gpt_5_4",
+    synthetic_user_guide: "",
+    cases: [CASES[0]],
+    grounding_dropped: 1,
+    drops: [drop],
+    drops_notice_seen: false,
+  }
+
+  it("lists the drops of the grounded set the review was driven from", () => {
+    expect(dropped_notice_drops(cache, plan_json)).toEqual([drop])
+  })
+
+  it("is shown once: a seen notice stays closed", () => {
+    expect(
+      dropped_notice_drops({ ...cache, drops_notice_seen: true }, plan_json),
+    ).toBeNull()
+  })
+
+  it("stays closed after a reload of a draft that saw it", () => {
+    const restored = restore_cached_grounded_cases(
+      JSON.parse(JSON.stringify({ ...cache, drops_notice_seen: true })),
+    )
+    expect(dropped_notice_drops(restored, plan_json)).toBeNull()
+  })
+
+  it("still opens after a reload of a draft that hadn't seen it", () => {
+    const restored = restore_cached_grounded_cases(
+      JSON.parse(JSON.stringify(cache)),
+    )
+    expect(dropped_notice_drops(restored, plan_json)).toEqual([drop])
+  })
+
+  it("says nothing when nothing dropped, or for an older draft's cache", () => {
+    expect(dropped_notice_drops({ ...cache, drops: [] }, plan_json)).toBeNull()
+    const { drops: _d, drops_notice_seen: _s, ...older } = cache
+    expect(
+      dropped_notice_drops(restore_cached_grounded_cases(older), plan_json),
+    ).toBeNull()
+  })
+
+  it("says nothing for a set the batch under review wasn't driven from", () => {
+    expect(dropped_notice_drops(cache, JSON.stringify(["other"]))).toBeNull()
+    expect(dropped_notice_drops(cache, null)).toBeNull()
+    expect(dropped_notice_drops(null, plan_json)).toBeNull()
+  })
+})
+
+describe("dropped_notice", () => {
+  it("counts several drops against the plan", () => {
+    expect(dropped_notice(2, 20)).toEqual({
+      title: "Some Conversations Were Dropped",
+      summary:
+        "2 of 20 planned conversations were dropped when Kiln checked them against your OpenEnv server. Each row says why. Continue reviewing the conversations that fit, or refine the plan with these reasons in hand.",
+    })
+  })
+
+  it("reads in the singular for one drop", () => {
+    expect(dropped_notice(1, 20)).toEqual({
+      title: "A Conversation Was Dropped",
+      summary:
+        "1 of 20 planned conversations was dropped when Kiln checked it against your OpenEnv server. The row below says why. Continue reviewing the conversations that fit, or refine the plan with these reasons in hand.",
+    })
+  })
+})
+
+describe("all_dropped_message", () => {
+  it("says none of the planned conversations fit", () => {
+    expect(all_dropped_message(20)).toBe(
+      "None of the 20 planned conversations fit your OpenEnv server. Each row says why.",
+    )
+  })
+
+  it("reads in the singular for a one-conversation plan", () => {
+    expect(all_dropped_message(1)).toBe(
+      "The planned conversation didn't fit your OpenEnv server. The row below says why.",
+    )
   })
 })

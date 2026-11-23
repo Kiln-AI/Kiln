@@ -53,8 +53,8 @@ before any UI work.
 ## The flow, for a multi-turn build on an OpenEnv run config
 
 The builder keeps its steps. New on screen: a tool-support requirement on the Judge Model, a
-"checking cases" progress stage, a dropped-cases screen, and a read-only section in review
-(`ui_design.md`).
+"checking cases" progress stage, a notice in review when some cases dropped, and a read-only
+section in review (`ui_design.md`).
 
 1. **Run config.** The user picks a run config whose tools come from an OpenEnv server. The
    server is found from the config's tool ids (`kiln_tool::openenv::<server id>::…`), and the eval
@@ -108,7 +108,8 @@ on the plan page's "Prompt changes" tab.
 
 ### Dropped cases section
 
-Added only on a Retry after drops, before the Refine Plan steer, which stays last. It lists each
+Added only on a Refine Plan opened because cases dropped (from the review's notice, or from Step 4
+when every case dropped), before the Refine Plan steer, which stays last. It lists each
 dropped scenario with its reason, and tells the planner these could not be checked against the
 environment, so it should not plan them again in the same form.
 
@@ -281,8 +282,8 @@ fills in.
 | Server unreachable during grounding or driving | The step fails on the existing "Error Creating Eval Dataset" screen, with the server URL and error, and its existing Retry. No case is dropped for it. |
 | Server publishes no reset schema | The reset arguments section is left out; the grounding agent resets with no arguments. |
 | No starting state fits a case | The agent tries a setup argument if one is described, otherwise drops the case. |
-| Some cases drop | "Errors During Dataset Creation" lists each dropped case's scenario with its one-sentence reason (`drop_detail`), under four actions: **Continue With N** saves the grounded cases; **Retry** opens the Refine Plan dialog, whose warning says the cases that fit are discarded and the new plan is checked again; its submit plans the batch again, with the dropped scenarios and their reasons added to the planner guidance ("Dropped cases section", below), and stops on the new plan for approval; **Replace Dropped Cases** plans, generates and grounds new cases for only the dropped rows ("Phase 10", below); **Cancel**, after a confirm that it discards the simulated users and the cases that fit, goes back to the plan. |
-| Every case drops | The same screen without Continue or Replace Dropped Cases. |
+| Some cases drop | The build doesn't stop: the cases that fit are driven and reviewed. When the review opens, a dialog says how many planned conversations were dropped ("2 of 20 planned conversations were dropped…") and lists each dropped scenario with its one-sentence reason (`drop_detail`). **Refine Plan** goes back to the plan and opens the Refine Plan dialog, whose warning says the generated conversations and any review progress are discarded and the new plan is checked again; its submit plans the batch again with the dropped scenarios and their reasons added to the planner guidance ("Dropped cases section", above), and stops on the new plan for approval. **Continue** closes the dialog and leaves the review as it is. The dialog shows once per grounded set, including across a reload: the drops and whether the dialog was closed are kept with the grounded cases in the draft. |
+| Every case drops | Nothing is driven. Step 4 stays on the "Error Creating Eval Dataset" screen, saying none of the planned conversations fit the OpenEnv server, with each dropped scenario and its reason, **Back to Plan**, and **Refine Plan** (carrying the drops, as above). |
 | Drive fails for some cases after grounding | Today's "Errors During Dataset Creation" screen, unchanged. |
 | Grounding agent hits a limit | The case drops with the limit as its reason. |
 | User cancels | Every open episode is ended. |
@@ -335,25 +336,9 @@ Behaviour after this phase:
   eval's cases run in <name>.", and its Run Eval button is disabled with that reason as tooltip.
   Run All shows which were skipped. A refused run shows the server's message, not just a count.
 
-### Phase 10: replace only the dropped cases
+### Phase 10: replace only the dropped cases (removed)
 
-On the dropped-cases screen, a fourth action, **Replace Dropped Cases**, beside Retry (which still
-re-plans everything). Shown when at least one case fit; when every case dropped, Retry is the
-only way forward.
-
-1. Plans `count = number of dropped cases` new scenarios with the batch planner. Guidance is the
-   same sections as the original plan, plus the dropped-cases section (reasons), plus a new
-   section listing the kept scenarios: "These scenarios are already in the batch; plan different
-   ones." The Refine Plan steer stays last. The result is clamped to `count`.
-2. Generates simulated users for the new scenarios only, then grounds only those.
-3. The new scenarios take the dropped rows' places in `batch_plan.prompts`, so kept rows keep their
-   indices. `GroundingDrop` gains `scenario_index` to make this possible.
-4. Both caches are rewritten for the merged plan: `cached_su_cases` (kept generated cases plus the
-   new ones, indices remapped) and `cached_grounded_cases` (kept grounded plus newly grounded).
-   The drive then reuses them without generating or grounding again.
-5. If some replacements drop, the screen shows again for those drops only, with the same actions.
-   A replacement that is itself replaced works the same way.
-6. Kiln_server's generate step may return fewer cases than asked (salvage). Missing ones count as
-   dropped with a reason saying the simulated user couldn't be written.
-
-Not planned: replacing cases after the conversations are driven.
+Phase 10 added **Replace Dropped Cases** to the dropped-cases screen. Both were removed when drops
+stopped interrupting the build ("Some cases drop", above): drops affect about 1% of cases, and a
+stop screen for them cost more than it saved. Refine Plan from the review's notice is the way to
+plan again with the drop reasons in hand.

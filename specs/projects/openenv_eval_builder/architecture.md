@@ -380,8 +380,8 @@ frontend's `is_openenv_unreachable` already titles it.
 - `multiturn_plan_guidance(spec, { openenv: boolean })` swaps the rule-12 paragraph for the OpenEnv
   wording.
 - `on_plan_batch` fetches the brief once per build (cached in the draft with the server id), and
-  passes `pending_retry_drops` when set. `pending_retry_drops` is set by the drop screen's Retry
-  and cleared when a plan lands.
+  passes `pending_retry_drops` when set. `pending_retry_drops` is set when a Refine Plan opened
+  because cases dropped is submitted, and cleared when a plan lands.
 
 ### Grounding as its own stream
 
@@ -438,17 +438,25 @@ prints "None." under its heading.
 - `SyntheticUserCaseWire` gains `openenv_reset?: OpenEnvReset` and `judge_guidance?: string`.
 - Two case caches (`builder_draft.ts`). `cached_su_cases` holds kiln_server's generated simulated
   users, keyed on the plan and spec only, as before this project. `cached_grounded_cases` holds the
-  same cases after grounding, keyed on plan, spec, OpenEnv server id and judge model, with the count
-  of drops accepted with Continue. A grounding failure or a changed judge or server re-grounds the
+  same cases after grounding, keyed on plan, spec, OpenEnv server id and judge model, with the
+  drops (`drops`, and their count in `grounding_dropped`) and whether the review's notice of them
+  was closed (`drops_notice_seen`). Drafts without the last two restore with no drops
+  (`restore_cached_grounded_cases`). A grounding failure or a changed judge or server re-grounds the
   cached generated cases without calling `generate_cases` again.
 - `on_drive_multi_turn` runs `grounding_cases` after `generating_cases` when the run config's
   server is known. The server is looked up with `lookup_run_openenv_server` when the first plan
   needs it, only when the run config has an OpenEnv tool id, and kept in the draft keyed by the
   tool set.
-- Drops collect into `grounding_drops: {scenario, drop_detail}[]`. Any drop stops before driving
-  and shows the drop screen (`ui_design.md`). Continue drives the grounded cases; Retry sets
-  `pending_retry_drops = grounding_drops` and calls `on_plan_batch()`; Cancel clears the batch's
-  cases and returns to the plan.
+- Drops collect into `GroundingDrop[]`. When some cases fit, they are cached with the drops and
+  driven at once; the drive counts the drops as planned-for, not failed, so no stop screen
+  follows. When none fit, `grounding_all_dropped` holds the drops and Step 4 shows them instead
+  of driving (`ui_design.md`).
+- The review's notice reads `dropped_notice_drops(cached_grounded_cases, driven_prompts_json)`
+  (`grounding_flow.ts`): the drops of the grounded set the batch was driven from, until the notice
+  is closed. Closing marks `drops_notice_seen` on the cache, which rides the draft. Its Refine Plan
+  goes back to Step 4 and opens the Refine Plan dialog with `refine_from_drops` set; the dialog's
+  warning is `refine_after_drops_confirm` (`plan_flow.ts`), and its submit moves the drops into
+  `pending_retry_drops` before `on_plan_batch()`.
 
 ### Driving each case in its episode
 
@@ -603,8 +611,9 @@ the LLM stubbed by patching `acompletion_checking_response`, as `test_run_sessio
   - `EvalTaskInput.from_trace` with a golden `TaskRun` that has `reference`.
   - Save: inputs carry `openenv_reset` and `judge_guidance`, golden leaves carry `reference`,
     `Eval.openenv_server_id` set, mismatched server rejected.
-  - Frontend: guidance composition order; drop screen actions (Continue, Retry sets
-    `pending_retry_drops`, Cancel); progress counts from the stream; judge lane settings on
+  - Frontend: guidance composition order; the review's drop notice (count, list, shown once,
+    draft restore), every case dropped staying on Step 4, Refine Plan carrying the drops; progress
+    counts from the stream; judge lane settings on
     OpenEnv builds; cache key includes server and judge model.
 
 ## Open technical questions

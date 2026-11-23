@@ -131,7 +131,7 @@ export type GroundingDrop = {
 // calls or time, or its result was unusable), not when the scenario didn't fit.
 const CHECK_FAILED_REASONS = new Set(["limit", "invalid_output"])
 
-// On a Retry after drops: the scenarios that didn't fit, so the planner
+// On a Refine Plan after drops: the scenarios that didn't fit, so the planner
 // doesn't plan them again in the same form, and the ones that couldn't be
 // checked, which it may keep. Null when nothing dropped.
 export function dropped_cases_section(drops: GroundingDrop[]): string | null {
@@ -168,23 +168,6 @@ ${rows}
 </unchecked_scenarios>`)
   }
   return sections.length > 0 ? sections.join("\n\n") : null
-}
-
-// On Replace Dropped Cases: the scenarios that fit and stay in the batch, so
-// the replacements add something new rather than restate them. Null when none.
-export function kept_scenarios_section(scenarios: string[]): string | null {
-  const rows = scenarios
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => `- ${s}`)
-  if (rows.length === 0) return null
-  return `## Scenarios already in the batch
-
-These scenarios are already in the batch, and the scenarios you plan join them. Plan different ones: don't repeat or restate any of these.
-
-<kept_scenarios>
-${rows.join("\n")}
-</kept_scenarios>`
 }
 
 // The multi-turn world-state paragraph. Without an OpenEnv server the planner

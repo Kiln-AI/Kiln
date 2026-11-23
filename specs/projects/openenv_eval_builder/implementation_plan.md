@@ -54,5 +54,9 @@ ship"). This is local setup, not a phase.
   skips with the reason, and the comparison table warns and disables the run.
 - [x] Phase 10: Replace Dropped Cases on the dropped-cases screen: plan, generate and ground only
   replacements for the dropped rows, merge them into the plan and both caches.
+- [x] Phase 11: Drops don't stop the build. The cases that fit are driven; a dialog over the
+  review lists the drops once, with Refine Plan and Continue; when every case drops, Step 4 shows
+  them with Refine Plan. The dropped-cases screen, its Cancel and Retry, and Phase 10's Replace
+  Dropped Cases are removed.
 - [ ] Later, once its UI is scoped: the project-wide multi-turn synthetic user guide, wired into
   the planner's section and the grounding request.

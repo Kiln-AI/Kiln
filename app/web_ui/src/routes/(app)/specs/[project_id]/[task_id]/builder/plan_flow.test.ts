@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
 import {
-  cancel_grounding_confirm,
   clamp_turns_per_case,
   compact_batch_slots,
   dominant_failure_message,
@@ -15,7 +14,7 @@ import {
   load_plan_openenv_context,
   missing_slot_indices,
   new_plan_confirm,
-  retry_grounding_confirm,
+  refine_after_drops_confirm,
   unless_aborted,
   pick_target_run_config,
   plan_drive,
@@ -1084,11 +1083,11 @@ describe("stale_case_caches", () => {
     ).toEqual({ generated: true, grounded: true })
   })
 
-  it("keeps a set cached since the short batch, such as a Continue's", () => {
+  it("keeps a set cached since the short batch", () => {
     // An earlier drive of this plan came back short. The user then drove
-    // again under a new judge, some cases dropped, and Continue cached the
-    // cases that fit. That set is not the short batch, so it survives, and
-    // the drive uses it instead of generating and grounding again.
+    // again under a new judge, which grounded and cached a new set before the
+    // drive failed with nothing driven. That set is not the short batch, so
+    // it survives, and the next drive uses it instead of grounding again.
     const short_batch = ["old1", "old2"]
     expect(
       stale_case_caches({
@@ -1164,68 +1163,50 @@ describe("judge_thinking_level_refused", () => {
   })
 })
 
-describe("retry_grounding_confirm", () => {
-  const base = {
-    has_driven_results: false,
-    survivors: 0,
-    include_review_progress: false,
-    plan_edited: false,
-  }
+describe("refine_after_drops_confirm", () => {
   const RECHECK =
     "Every item in the new plan gets a new simulated user and is checked against your OpenEnv server again."
 
-  it("names the cases that fit and that the new plan is checked again", () => {
-    expect(retry_grounding_confirm({ ...base, fit: 7 })).toBe(
-      `Are you sure you want to discard the current items, including the 7 that fit your OpenEnv server? ${RECHECK} This cannot be undone.`,
-    )
-  })
-
-  it("reads in the singular for one case that fits", () => {
-    expect(retry_grounding_confirm({ ...base, fit: 1 })).toContain(
-      "including the 1 that fits your OpenEnv server?",
-    )
-  })
-
-  it("leaves out the fit clause when nothing fit", () => {
-    expect(retry_grounding_confirm({ ...base, fit: 0 })).toBe(
-      `Are you sure you want to discard the current items? ${RECHECK} This cannot be undone.`,
-    )
-  })
-
-  it("adds the removed rows on an edited plan", () => {
+  it("says the generated conversations and review progress go, from the review", () => {
     expect(
-      retry_grounding_confirm({ ...base, plan_edited: true, fit: 2 }),
-    ).toBe(
-      `Are you sure you want to discard the current items, including the ones you removed and the 2 that fit your OpenEnv server? ${RECHECK} This cannot be undone.`,
-    )
-  })
-
-  it("leads with driven results when there are any", () => {
-    expect(
-      retry_grounding_confirm({
-        ...base,
+      refine_after_drops_confirm({
         has_driven_results: true,
-        survivors: 4,
-        include_review_progress: true,
-        plan_edited: true,
-        fit: 3,
+        conversations: 18,
+        plan_edited: false,
       }),
     ).toBe(
-      `You have 4 completed eval inputs and your review progress. A new batch plan will discard them, along with the 3 that fit your OpenEnv server. ${RECHECK} This cannot be undone.`,
-    )
-  })
-})
-
-describe("cancel_grounding_confirm", () => {
-  it("names the simulated users and the ones that fit", () => {
-    expect(cancel_grounding_confirm(10, 7)).toBe(
-      "Are you sure you want to go back to the plan? The 10 simulated users written for it will be discarded, including the 7 that fit your OpenEnv server. The next run writes and checks them again. This cannot be undone.",
+      `Refining the plan discards your 18 generated conversations and any review progress. ${RECHECK} This cannot be undone.`,
     )
   })
 
-  it("reads in the singular and drops the fit clause when nothing fit", () => {
-    expect(cancel_grounding_confirm(1, 0)).toBe(
-      "Are you sure you want to go back to the plan? The 1 simulated user written for it will be discarded. The next run writes and checks them again. This cannot be undone.",
+  it("reads in the singular for one conversation", () => {
+    expect(
+      refine_after_drops_confirm({
+        has_driven_results: true,
+        conversations: 1,
+        plan_edited: true,
+      }),
+    ).toContain("discards your 1 generated conversation and any")
+  })
+
+  it("names only the plan when nothing was driven", () => {
+    expect(
+      refine_after_drops_confirm({
+        has_driven_results: false,
+        conversations: 0,
+        plan_edited: false,
+      }),
+    ).toBe(
+      `Are you sure you want to discard the current items? ${RECHECK} This cannot be undone.`,
+    )
+    expect(
+      refine_after_drops_confirm({
+        has_driven_results: false,
+        conversations: 0,
+        plan_edited: true,
+      }),
+    ).toBe(
+      `Are you sure you want to discard the current items, including the ones you removed? ${RECHECK} This cannot be undone.`,
     )
   })
 })

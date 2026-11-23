@@ -83,8 +83,7 @@ export function pick_target_run_config<C extends { id?: string | null }>(
 // with the same list would replace the batch with the same shortfall forever;
 // only a fresh generation can supply the missing scenarios. A cache is
 // dropped only when it holds the batch's own cases (the same list), so a set
-// cached since, such as the cases a dropped-cases Continue just accepted, is
-// kept. Dropping the grounded set drops the generated cases it came from too.
+// cached since is kept. Dropping the grounded set drops the generated cases it came from too.
 export function stale_case_caches<T>(args: {
   batch_cases: T[] | null
   built_slots: readonly unknown[]
@@ -494,51 +493,26 @@ export function new_plan_confirm(state: {
 const GROUNDING_RECHECK =
   "Every item in the new plan gets a new simulated user and is checked against your OpenEnv server again."
 
-function fit_count(fit: number): string {
-  return fit === 1 ? "the 1 that fits" : `the ${fit} that fit`
-}
-
-// The Refine Plan dialog's warning when it opens from the dropped-cases
-// screen's Retry: new_plan_confirm's tiers, plus the cases that fit the
-// OpenEnv server, which the new plan discards and checks again.
-export function retry_grounding_confirm(state: {
+// The Refine Plan dialog's warning when it opens because planned
+// conversations were dropped: from the review's notice, where the driven
+// conversations and the review go with the plan, or from Step 4 when every
+// conversation dropped and nothing was driven.
+export function refine_after_drops_confirm(state: {
   has_driven_results: boolean
-  survivors: number
-  include_review_progress: boolean
+  conversations: number
   plan_edited: boolean
-  fit: number
   plan_noun?: string
 }): string {
-  const plan_noun = state.plan_noun ?? "items"
-  const fit =
-    state.fit > 0 ? `${fit_count(state.fit)} your OpenEnv server` : null
   if (state.has_driven_results) {
-    const progress_clause = state.include_review_progress
-      ? " and your review progress"
-      : ""
-    return `You have ${state.survivors} completed eval input${
-      state.survivors === 1 ? "" : "s"
-    }${progress_clause}. A new batch plan will discard them${
-      fit ? `, along with ${fit}` : ""
-    }. ${GROUNDING_RECHECK} This cannot be undone.`
+    const conversations = `${state.conversations} generated conversation${
+      state.conversations === 1 ? "" : "s"
+    }`
+    return `Refining the plan discards your ${conversations} and any review progress. ${GROUNDING_RECHECK} This cannot be undone.`
   }
-  const including = [
-    state.plan_edited ? "the ones you removed" : null,
-    fit,
-  ].filter((part): part is string => part !== null)
+  const plan_noun = state.plan_noun ?? "items"
   return `Are you sure you want to discard the current ${plan_noun}${
-    including.length > 0 ? `, including ${including.join(" and ")}` : ""
+    state.plan_edited ? ", including the ones you removed" : ""
   }? ${GROUNDING_RECHECK} This cannot be undone.`
-}
-
-// The dropped-cases screen's Cancel discards the simulated users written for
-// the plan and the record of which fit the OpenEnv server; the next run pays
-// for both again.
-export function cancel_grounding_confirm(total: number, fit: number): string {
-  const users = `${total} simulated user${total === 1 ? "" : "s"}`
-  return `Are you sure you want to go back to the plan? The ${users} written for it will be discarded${
-    fit > 0 ? `, including ${fit_count(fit)} your OpenEnv server` : ""
-  }. The next run writes and checks them again. This cannot be undone.`
 }
 
 // ── Abortable plan requests ──────────────────────────────────────────────

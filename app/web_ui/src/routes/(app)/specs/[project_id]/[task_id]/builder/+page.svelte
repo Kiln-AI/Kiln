@@ -43,6 +43,7 @@
     draft_is_resumable,
     questions_are_current,
     reset_draft_keeping_tags,
+    restore_cached_grounded_cases,
     restore_step,
     restore_synthetic_user_guide,
     reusable_cached_cases,
@@ -64,6 +65,9 @@
   // Grounding a multi-turn build's cases in its OpenEnv server: the request,
   // the stream's frames, and what the save and the review read from them.
   import {
+    all_dropped_message,
+    dropped_notice,
+    dropped_notice_drops,
     ground_cases_request,
     grounded_server_id,
     grounding_request_cases,
@@ -74,15 +78,7 @@
     type GroundingModel,
     type GroundingOutcome,
   } from "./grounding_flow"
-  import DroppedCasesScreen from "./dropped_cases_screen.svelte"
-  import {
-    interrupted_replacement,
-    kept_scenarios,
-    merge_cases,
-    merge_drops,
-    plan_and_generate_replacements,
-    type CommittedReplacement,
-  } from "./replace_flow"
+  import DroppedCasesList from "./dropped_cases_list.svelte"
   import {
     load_openenv_server_reset_arguments_brief,
     lookup_run_openenv_server,
@@ -124,7 +120,6 @@
     dropped_cases_section,
     grounding_data_guide,
     join_data_guides,
-    kept_scenarios_section,
     multiturn_plan_guidance,
     reset_arguments_section,
     single_turn_plan_guidance,
@@ -187,11 +182,10 @@
     drive_lanes_unchanged,
     drive_stop_banner,
     driven_data_confirm,
-    cancel_grounding_confirm,
     first_preflight_failure,
     load_plan_openenv_context,
     new_plan_confirm,
-    retry_grounding_confirm,
+    refine_after_drops_confirm,
     throw_if_aborted,
     plan_drive,
     resolved_selected_count,
@@ -586,7 +580,9 @@
       batch_plan = saved.batch_plan
       batch_plan_edited = saved.batch_plan_edited
       cached_su_cases = saved.cached_su_cases ?? null
-      cached_grounded_cases = saved.cached_grounded_cases ?? null
+      cached_grounded_cases = restore_cached_grounded_cases(
+        saved.cached_grounded_cases,
+      )
       cached_minted_inputs = saved.cached_minted_inputs ?? null
       grounding_sample = saved.grounding_sample ?? null
       // Older drafts lack the guide keys and restore as no guide, off.
@@ -1196,6 +1192,7 @@
     batch_plan !== null &&
     !generation_loading &&
     !generation_error &&
+    grounding_all_dropped === null &&
     // The preparing-review gate owns the screen between drive and review.
     !preparing_review &&
     claims_gate_error === null
@@ -1238,43 +1235,25 @@
   let grounding_total = 0
   let grounding_checked = 0
   let grounding_dropped = 0
-  // Set when grounding dropped at least one case: the step stops on the
-  // dropped-cases screen before anything is driven. Holds the cases that fit,
-  // which Continue drives, and the run config and judge model they were
-  // grounded with, which Replace Dropped Cases grounds its new cases with.
-  let grounding_stop:
-    | (GroundingOutcome & {
-        total: number
-        openenv_server_id: string
-        judge_model: string
-        synthetic_user_guide: string
-        target_run_config_id: string
-        judge_choice: GroundingModel
-        // Why the last Replace Dropped Cases stopped part-way, when it failed.
-        replace_error?: string | null
-      })
-    | null = null
-  // While Replace Dropped Cases runs: how many cases it is replacing, which
-  // the progress screen names in place of the whole plan.
-  let replacing_count: number | null = null
-  // A Retry from that screen: the dropped scenarios and their reasons, added
-  // to the next plan's guidance. They belong to that Retry's plan alone:
-  // cleared once a plan lands, and by any other new plan (Refine Plan, or
-  // leaving the step to edit the spec). The error screen's Retry keeps them,
-  // since it re-tries the same plan.
+  // Set when grounding dropped every planned case, so nothing was driven:
+  // Step 4 shows them with their reasons in place of the plan.
+  let grounding_all_dropped: GroundingDrop[] | null = null
+  // A Refine Plan opened because cases dropped: the dropped scenarios and
+  // their reasons, added to the next plan's guidance. They belong to that
+  // plan alone: cleared once a plan lands, and by any other new plan (Refine
+  // Plan, or leaving the step to edit the spec). The error screen's Retry
+  // keeps them, since it re-tries the same plan.
   let pending_retry_drops: GroundingDrop[] = []
-  // Set while the Refine Plan dialog is open from the dropped-cases screen's
-  // Retry: the drops its plan carries, and how many cases fit, for the
-  // dialog's warning. Any close clears it.
-  let retry_from_grounding: { drops: GroundingDrop[]; fit: number } | null =
-    null
+  // Set while the Refine Plan dialog is open because cases dropped: the drops
+  // its plan carries. Any close clears it.
+  let refine_from_drops: GroundingDrop[] | null = null
   // The steer the plan on screen was drafted under. pending_plan_steer is
-  // spent when a plan lands, and a Retry re-plans with the same steer. Rides
-  // the draft.
+  // spent when a plan lands, and a Refine Plan after drops re-plans with the
+  // same steer. Rides the draft.
   let landed_plan_steer = ""
-  // The current batch's cases that grounding dropped and the user accepted
-  // with Continue. Kept with the batch's slots, so a retry measures the
-  // batch's shortfall against what it set out to drive.
+  // How many of the current batch's planned cases grounding dropped. Kept
+  // with the batch's slots, so a retry measures the batch's shortfall against
+  // what it set out to drive.
   let batch_grounding_drops = 0
 
   // The cases whose conversations were actually driven (chains exist on
@@ -1419,12 +1398,10 @@
 
   // The multi-turn plan's guidance: the base, then on a build with an OpenEnv
   // server the reset arguments it offers, the synthetic user guide and, on a
-  // Retry after drops, the scenarios that didn't fit; the user's steer last.
-  // A plan for Replace Dropped Cases names its own drops and the scenarios
-  // staying in the batch, under the steer the plan on screen was drafted with.
-  // Throws an AbortError once the signal aborts, before the plan is requested.
+  // Refine Plan after drops, the scenarios that didn't fit; the user's steer
+  // last. Throws an AbortError once the signal aborts, before the plan is
+  // requested.
   async function multi_turn_plan_guidance(
-    replacing: { drops: GroundingDrop[]; kept_scenarios: string[] } | null,
     signal: AbortSignal,
   ): Promise<string> {
     const { openenv_server_id, reset_arguments_brief: brief } =
@@ -1442,15 +1419,14 @@
         : [
             reset_arguments_section(brief),
             synthetic_user_guide_section(synthetic_user_guide),
-            dropped_cases_section(replacing?.drops ?? pending_retry_drops),
-            kept_scenarios_section(replacing?.kept_scenarios ?? []),
+            dropped_cases_section(pending_retry_drops),
           ]
     return compose_plan_guidance(
       multiturn_plan_guidance(spec_text(), {
         openenv: openenv_server_id !== null,
       }),
       sections,
-      replacing ? landed_plan_steer : pending_plan_steer,
+      pending_plan_steer,
     )
   }
 
@@ -2106,7 +2082,7 @@
     cached_minted_inputs = null
     reset_pipeline_counters()
     drive_stop = null
-    grounding_stop = null
+    grounding_all_dropped = null
     // Deliberately NOT clearing the live batch tag (save still needs it)
     // or undeleted_batch_tags: the next drive passes the cleanup list as
     // replace_batch_tags, and the server deletes those batches once the new
@@ -2156,7 +2132,7 @@
       // (when they typed one) is appended to it, never replaces it — see
       // compose_plan_guidance.
       const guidance = is_multi_turn
-        ? await multi_turn_plan_guidance(null, signal)
+        ? await multi_turn_plan_guidance(signal)
         : compose_plan_guidance(
             single_turn_plan_guidance(spec_text()),
             [],
@@ -2176,7 +2152,7 @@
       // A plan landed, so the steer it was drafted under is spent. Every
       // earlier return in this function leaves it in place, which is what
       // makes Retry re-send the steer the user asked for. The dropped
-      // scenarios of a grounding Retry are spent the same way.
+      // scenarios a Refine Plan after drops carried are spent the same way.
       landed_plan_steer = pending_plan_steer
       pending_plan_steer = ""
       plan_steer = ""
@@ -2318,13 +2294,11 @@
   // warning rides inside the dialog (above its submit) rather than a native
   // confirm, so the same click that accepts the loss also chooses the size
   // and steer of what replaces it.
-  $: new_plan_warning = retry_from_grounding
-    ? retry_grounding_confirm({
+  $: new_plan_warning = refine_from_drops
+    ? refine_after_drops_confirm({
         has_driven_results,
-        survivors: trace_claims.length,
-        include_review_progress: drive_stop === null,
+        conversations: trace_claims.length,
         plan_edited: batch_plan_edited,
-        fit: retry_from_grounding.fit,
         plan_noun,
       })
     : new_plan_confirm({
@@ -2346,7 +2320,7 @@
   // A submitted one has already moved to pending_plan_steer, which this
   // restores verbatim.
   function discard_plan_steer_draft() {
-    retry_from_grounding = null
+    refine_from_drops = null
     plan_steer = pending_plan_steer
     staged_batch_size = { ...batch_size }
     use_data_guide_draft = use_data_guide
@@ -2361,8 +2335,8 @@
     // Off plus Refine Plan re-plans without the guide; the mint follows the
     // plan, since both send the same value.
     use_data_guide = use_data_guide_draft
-    pending_retry_drops = retry_from_grounding?.drops ?? []
-    retry_from_grounding = null
+    pending_retry_drops = refine_from_drops ?? []
+    refine_from_drops = null
     new_plan_dialog?.close()
     void on_plan_batch()
   }
@@ -2561,214 +2535,54 @@
     }
   }
 
-  // The dropped-cases screen's Continue: drive the cases that fit. They are
-  // cached as this plan's cases, with the drops on record so the drive
-  // doesn't count them as failures, and the drive reuses them.
-  function on_continue_with_grounded_cases() {
-    if (!grounding_stop || !batch_plan) return
-    cached_grounded_cases = {
-      prompts_json: JSON.stringify(batch_plan.prompts),
-      spec_text: spec_text(),
-      openenv_server_id: grounding_stop.openenv_server_id,
-      judge_model: grounding_stop.judge_model,
-      synthetic_user_guide: grounding_stop.synthetic_user_guide,
-      cases: grounding_stop.grounded,
-      grounding_dropped: grounding_stop.drops.length,
-    }
-    grounding_stop = null
-    void on_drive_multi_turn()
-  }
-
-  // Retry: the Refine Plan dialog, warning that the cases that fit go too,
-  // with the steer of the plan on screen filled in. Its submit plans again
-  // with the dropped scenarios and their reasons in the guidance, and the new
-  // plan waits for approval like any other.
-  function on_retry_grounding() {
-    if (!grounding_stop) return
-    retry_from_grounding = {
-      drops: grounding_stop.drops,
-      fit: grounding_stop.grounded.length,
-    }
+  // Refine Plan, with the dropped scenarios and their reasons carried into
+  // the new plan's guidance and the steer of the plan on screen filled in.
+  // The new plan waits for approval like any other.
+  function open_refine_plan_after_drops(drops: GroundingDrop[]) {
+    refine_from_drops = drops
     plan_steer = landed_plan_steer
     open_new_plan_dialog()
   }
 
-  // Replace Dropped Cases: plan one new scenario per dropped case, then
-  // generate and ground only those. They take the dropped rows' places in the
-  // plan, so the cases that fit keep their rows, and both caches are rebuilt
-  // for the merged plan from the kept cases plus the new ones; the drive then
-  // reuses them. Drops among the new cases stop on the same screen again, and
-  // so does a failure or abort part-way (interrupted_replacement), with the
-  // failure shown on the screen rather than the step's error block.
-  async function on_replace_dropped_cases() {
-    const stop = grounding_stop
-    const plan = batch_plan
-    if (!stop || !plan || generation_loading) return
-    // One signal for every request below, so a Back during any of them, the
-    // lookups before the plan included, stops the rest.
-    const signal = new_copilot_abort_signal()
-    const spec = spec_text()
-    generation_loading = true
-    generation_error = null
-    grounding_stop = null
-    replacing_count = stop.drops.length
-    generation_phase = "planning"
-    let committed: CommittedReplacement | null = null
-    // Set once the outcome is decided: a new stop or a drive.
-    let settled = false
-    let ready_to_drive = false
-    // The page's request helpers report a failure through generation_error;
-    // it moves onto the dropped-cases screen instead.
-    let failure: string | null = null
-    const take_failure = () => {
-      failure = generation_error
-      generation_error = null
+  // The review's notice of dropped conversations, once per grounded set. Any
+  // close marks it seen, on the draft too, so a reload or a re-drive of the
+  // same set doesn't bring it back.
+  let dropped_notice_dialog: Dialog | null = null
+  $: notice_drops =
+    current_step === "review" &&
+    trace_claims.length > 0 &&
+    !review_results_stale
+      ? dropped_notice_drops(cached_grounded_cases, driven_prompts_json)
+      : null
+  // What the open notice shows, kept as it was when it opened so the dialog
+  // doesn't empty while it closes.
+  let notice_shown:
+    | (ReturnType<typeof dropped_notice> & { drops: GroundingDrop[] })
+    | null = null
+  $: if (notice_drops && dropped_notice_dialog) {
+    notice_shown = {
+      drops: notice_drops,
+      ...dropped_notice(notice_drops.length, driven_plan_size),
     }
-    try {
-      const replacements = await plan_and_generate_replacements({
-        prompts: plan.prompts,
-        drops: stop.drops,
-        signal,
-        guidance: (signal) =>
-          multi_turn_plan_guidance(
-            {
-              drops: stop.drops,
-              kept_scenarios: kept_scenarios(plan.prompts, stop.drops),
-            },
-            signal,
-          ),
-        request_plan: (guidance, count, signal) =>
-          request_batch_plan(guidance, count, null, signal),
-        generate: request_generated_cases,
-        on_generating: () => {
-          generation_phase = "generating_cases"
-        },
-      })
-      if (replacements === null) {
-        take_failure()
-        return
-      }
-      const { merged, placed } = replacements
-      const replaced_rows = new Set(merged.replacements.map((r) => r.row))
-
-      // The merged plan is committed once its new simulated users exist, so a
-      // grounding failure from here keeps them: a re-drive reuses them.
-      if (has_driven_results) discard_driven_results()
-      const kept_generated = reusable_cached_cases(
-        cached_su_cases,
-        plan.prompts,
-        spec,
-      )
-      batch_plan = { ...plan, prompts: merged.prompts }
-      // The planner's summary describes the scenarios that were replaced.
-      batch_plan_edited = true
-      cached_su_cases = kept_generated
-        ? {
-            prompts_json: JSON.stringify(merged.prompts),
-            spec_text: spec,
-            cases: merge_cases(kept_generated, replaced_rows, placed.cases),
-          }
-        : null
-      cached_grounded_cases = null
-      committed = {
-        prompts: merged.prompts,
-        unreplaced: merged.unreplaced,
-        missing: placed.missing,
-        sent_for_grounding: placed.cases,
-      }
-
-      generation_phase = "grounding_cases"
-      const outcome =
-        placed.cases.length === 0
-          ? { grounded: [], drops: [] }
-          : await ground_planned_cases(
-              placed.cases,
-              merged.prompts,
-              stop.target_run_config_id,
-              stop.judge_choice,
-              stop.synthetic_user_guide,
-              signal,
-            )
-      if (outcome === null) {
-        take_failure()
-        return
-      }
-      const grounded = merge_cases(
-        stop.grounded,
-        replaced_rows,
-        outcome.grounded,
-      )
-      const drops = merge_drops(
-        merged.unreplaced,
-        placed.missing,
-        outcome.drops,
-      )
-      posthog.capture("eval_v2_grounding_replaced", {
-        num_replaced: merged.replacements.length,
-        num_dropped: drops.length,
-      })
-      settled = true
-      if (drops.length > 0) {
-        grounding_stop = {
-          ...stop,
-          grounded,
-          drops,
-          total: grounded.length + drops.length,
-          replace_error: null,
-        }
-        return
-      }
-      cached_grounded_cases = {
-        prompts_json: JSON.stringify(merged.prompts),
-        spec_text: spec,
-        openenv_server_id: stop.openenv_server_id,
-        judge_model: stop.judge_model,
-        synthetic_user_guide: stop.synthetic_user_guide,
-        cases: grounded,
-        grounding_dropped: 0,
-      }
-      ready_to_drive = true
-    } catch (e) {
-      if (!is_abort_error(e)) {
-        failure =
-          e instanceof KilnError
-            ? e.getMessage()
-            : e instanceof Error
-              ? e.message
-              : "Replacing the dropped cases failed."
-      }
-    } finally {
-      generation_loading = false
-      replacing_count = null
-      if (!settled) {
-        const back = interrupted_replacement({
-          kept: stop.grounded,
-          drops: stop.drops,
-          committed,
-          error: failure,
-        })
-        grounding_stop = {
-          ...stop,
-          ...back,
-          total: back.grounded.length + back.drops.length,
-        }
-      }
-    }
-    if (ready_to_drive && !signal.aborted) void on_drive_multi_turn()
+    dropped_notice_dialog.show()
   }
 
-  // Cancel: back to the plan, discarding this batch's cases once the user
-  // confirms; the next run writes and checks them again.
-  function on_cancel_grounding() {
-    if (!grounding_stop) return
-    const msg = cancel_grounding_confirm(
-      grounding_stop.total,
-      grounding_stop.grounded.length,
-    )
-    if (!confirm(msg)) return
-    grounding_stop = null
-    cached_su_cases = null
-    cached_grounded_cases = null
+  function mark_dropped_notice_seen() {
+    if (cached_grounded_cases && !cached_grounded_cases.drops_notice_seen) {
+      cached_grounded_cases = {
+        ...cached_grounded_cases,
+        drops_notice_seen: true,
+      }
+    }
+  }
+
+  // The notice's Refine Plan: back to the plan the review was pushed over,
+  // then the Refine Plan dialog over it. A cancelled dialog leaves the plan
+  // and its results as they were, with Continue back to the review.
+  function refine_plan_from_notice() {
+    const drops = notice_shown?.drops ?? []
+    history.back()
+    open_refine_plan_after_drops(drops)
   }
 
   async function on_drive_multi_turn() {
@@ -2799,14 +2613,14 @@
     // before the post-preflight clear, and its error must not render
     // alongside a stale stop screen.
     drive_stop = null
-    grounding_stop = null
+    grounding_all_dropped = null
     generation_phase = "preflight"
     // Set once the drive's batch bookkeeping is committed; the abort
     // handler must leave the previous results untouched before that point.
     let drive_committed = false
     // How many cases this drive sets out to drive: the plan, less any cases
-    // grounding dropped that the user accepted with Continue. The shortfall
-    // the stop screen reports is measured against it.
+    // grounding dropped. The shortfall the stop screen reports is measured
+    // against it.
     let planned_cases = approved_prompts.length
 
     try {
@@ -2918,7 +2732,7 @@
           )
         : null
       let cases: SyntheticUserCaseWire[] | null = grounded_cache?.cases ?? null
-      const drive_grounding_drops = grounded_cache?.grounding_dropped ?? 0
+      let drive_grounding_drops = grounded_cache?.grounding_dropped ?? 0
       if (cases) {
         posthog.capture("eval_v2_su_cases_reused", {
           num_cases: cases.length,
@@ -2928,9 +2742,10 @@
         cases = await generated_cases_for_plan(approved_prompts)
         if (cases === null) return
         if (grounding_key) {
-          // Check each case against the server before anything is driven. A
-          // drop stops here, on the dropped-cases screen, with the previous
-          // drive's results untouched; Continue drives the cases that fit.
+          // Check each case against the server before anything is driven.
+          // The cases that fit are driven; the drops are kept with them for
+          // the review's notice. When nothing fits, the step stops here with
+          // the previous drive's results untouched.
           generation_phase = "grounding_cases"
           const outcome = await ground_planned_cases(
             cases,
@@ -2946,22 +2761,21 @@
               num_cases: cases.length,
               num_dropped: outcome.drops.length,
             })
-            grounding_stop = {
-              ...outcome,
-              total: cases.length,
-              ...grounding_key,
-              target_run_config_id,
-              judge_choice: grounding_model,
-            }
+          }
+          if (outcome.grounded.length === 0) {
+            grounding_all_dropped = outcome.drops
             return
           }
           cases = outcome.grounded
+          drive_grounding_drops = outcome.drops.length
           cached_grounded_cases = {
             prompts_json: JSON.stringify(approved_prompts),
             spec_text: spec_text(),
             ...grounding_key,
             cases,
-            grounding_dropped: 0,
+            grounding_dropped: outcome.drops.length,
+            drops: outcome.drops,
+            drops_notice_seen: false,
           }
         }
       }
@@ -5060,7 +4874,7 @@
       if (generation_loading || preparing_review || data_guide_offer_pending)
         return
       if (show_plan_approval && batch_plan) {
-        if (grounding_stop || (drive_stop && is_partial_stop(drive_stop))) {
+        if (drive_stop && is_partial_stop(drive_stop)) {
           // The stop screen has no keyboard path: its buttons carry no
           // shortcut hint, and which of them leads changes with the batch, so
           // the shortcut would fire an unannounced action — on most of those
@@ -5076,7 +4890,11 @@
           event.preventDefault()
           on_continue_with_survivors()
         }
-      } else if (!generation_error && !claims_gate_error) {
+      } else if (
+        !generation_error &&
+        !claims_gate_error &&
+        !grounding_all_dropped
+      ) {
         event.preventDefault()
         if (trace_claims.length > 0) {
           continue_to_review()
@@ -5210,11 +5028,9 @@
               : "Creating Simulated Users"
   $: generate_animation_description =
     generation_phase === "planning"
-      ? replacing_count !== null
-        ? `Kiln is planning ${replacing_count === 1 ? "a new conversation" : `${replacing_count} new conversations`} to replace the cases that didn't fit.`
-        : is_multi_turn
-          ? "Kiln is planning a diverse batch of conversations, tailored to your task and guidance."
-          : "Kiln is planning a diverse batch of eval data, tailored to your task and guidance."
+      ? is_multi_turn
+        ? "Kiln is planning a diverse batch of conversations, tailored to your task and guidance."
+        : "Kiln is planning a diverse batch of eval data, tailored to your task and guidance."
       : generation_phase === "authoring_judge"
         ? "Authoring a judge rubric tailored to your eval."
         : generation_phase === "preflight"
@@ -5227,9 +5043,7 @@
             ? `Creating ${planned_total} dataset items.`
             : generation_phase === "grounding_cases"
               ? "Kiln's agent looks inside the OpenEnv server to fit each case to real data and write what the judge should check."
-              : replacing_count !== null
-                ? `Setting up simulated users for the ${replacing_count === 1 ? "replacement case" : `${replacing_count} replacement cases`}.`
-                : `Setting up ${planned_total} simulated users from the approved plan.`
+              : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
   // no progress bar. Stages that show a bar let the bar carry the wait, and
@@ -5629,25 +5443,43 @@
                 </button>
               </div>
             </div>
+          {:else if grounding_all_dropped && batch_plan}
+            <!-- Every planned conversation dropped in grounding, so there is
+                 nothing to drive or review. The step error's layout, with the
+                 reasons, and Refine Plan to plan again with them in hand. -->
+            <div
+              class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+            >
+              <div class="font-medium">Error Creating Eval Dataset</div>
+              <div class="text-error text-sm">
+                {all_dropped_message(batch_plan.prompts.length)}
+              </div>
+              <div class="w-full max-w-2xl mt-4">
+                <DroppedCasesList drops={grounding_all_dropped} />
+              </div>
+              <div class="flex justify-center gap-2 mt-4">
+                <button
+                  class="btn"
+                  on:click={() => {
+                    grounding_all_dropped = null
+                  }}
+                >
+                  Back to Plan
+                </button>
+                <button
+                  class="btn btn-primary"
+                  on:click={() =>
+                    grounding_all_dropped &&
+                    open_refine_plan_after_drops(grounding_all_dropped)}
+                >
+                  Refine Plan
+                </button>
+              </div>
+            </div>
           {/if}
 
           {#if show_plan_approval && batch_plan}
-            {#if grounding_stop}
-              <!-- Some cases didn't fit the OpenEnv server. Nothing has been
-                   driven yet: the user drives the cases that fit, plans
-                   again with the reasons in hand, or goes back to the plan. -->
-              <div class="mt-6">
-                <DroppedCasesScreen
-                  drops={grounding_stop.drops}
-                  total={grounding_stop.total}
-                  on_cancel={on_cancel_grounding}
-                  on_retry={() => void on_retry_grounding()}
-                  on_replace={() => void on_replace_dropped_cases()}
-                  error={grounding_stop.replace_error ?? null}
-                  on_continue={on_continue_with_grounded_cases}
-                />
-              </div>
-            {:else if drive_stop && is_partial_stop(drive_stop)}
+            {#if drive_stop && is_partial_stop(drive_stop)}
               <!-- A stop that left usable work behind takes over the step:
                    how much failed, one line of diagnosis and the two ways out
                    are the whole decision, and the plan underneath has nothing
@@ -5781,7 +5613,7 @@
                 </div>
               {/if}
             {/if}
-          {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error && !data_guide_offer_pending}
+          {:else if !generation_loading && !generation_error && !grounding_all_dropped && !preparing_review && !claims_gate_error && !data_guide_offer_pending}
             <div class="flex justify-end mt-8">
               {#if trace_claims.length > 0}
                 <!-- Generation already ran (navigated back into this step) —
@@ -6076,6 +5908,36 @@
       {/if}
     </KilnProBatchForm>
   </FormContainer>
+</Dialog>
+
+<!-- Shown once over the review when grounding dropped some planned
+     conversations and the rest were driven. Closing it any way marks it seen
+     for this grounded set. -->
+<Dialog
+  bind:this={dropped_notice_dialog}
+  title={notice_shown?.title ?? ""}
+  on:close={mark_dropped_notice_seen}
+  action_buttons={[
+    {
+      label: "Refine Plan",
+      action: () => {
+        refine_plan_from_notice()
+        return true
+      },
+    },
+    {
+      label: "Continue",
+      isPrimary: true,
+      action: () => true,
+    },
+  ]}
+>
+  {#if notice_shown}
+    <div class="flex flex-col gap-4">
+      <p class="text-sm text-gray-500">{notice_shown.summary}</p>
+      <DroppedCasesList drops={notice_shown.drops} />
+    </div>
+  {/if}
 </Dialog>
 
 <!-- Generation Settings: the drive's single entrance. Every run passes

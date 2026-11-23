@@ -8,7 +8,10 @@ import type { OpenEnvReset } from "$lib/types"
 import { KilnError } from "$lib/utils/error_handlers"
 import { sse_data_payloads } from "$lib/utils/sse"
 import type { GroundingDrop } from "./batch_plan_guidance"
-import type { SyntheticUserCaseWire } from "./builder_draft"
+import type {
+  CachedGroundedCases,
+  SyntheticUserCaseWire,
+} from "./builder_draft"
 
 export type { GroundingDrop } from "./batch_plan_guidance"
 
@@ -232,6 +235,48 @@ export async function read_grounding_stream(
     )
   }
   return grounding_outcome(state)
+}
+
+// The drops the review's notice lists: those of the grounded set the batch
+// under review was driven from, until the notice has been closed once. Null
+// when there is nothing to tell.
+export function dropped_notice_drops(
+  cache: CachedGroundedCases | null,
+  driven_prompts_json: string | null,
+): GroundingDrop[] | null {
+  if (!cache || cache.drops_notice_seen) return null
+  if (driven_prompts_json === null) return null
+  if (cache.prompts_json !== driven_prompts_json) return null
+  return cache.drops.length > 0 ? cache.drops : null
+}
+
+// The review's notice, when some planned conversations dropped and the rest
+// were driven. planned is the plan's size.
+export function dropped_notice(
+  dropped: number,
+  planned: number,
+): { title: string; summary: string } {
+  const one = dropped === 1
+  return {
+    title: one
+      ? "A Conversation Was Dropped"
+      : "Some Conversations Were Dropped",
+    summary: `${dropped} of ${planned} planned conversations ${
+      one ? "was" : "were"
+    } dropped when Kiln checked ${
+      one ? "it" : "them"
+    } against your OpenEnv server. ${
+      one ? "The row below says" : "Each row says"
+    } why. Continue reviewing the conversations that fit, or refine the plan with these reasons in hand.`,
+  }
+}
+
+// Step 4's message when every planned conversation dropped, so nothing was
+// driven.
+export function all_dropped_message(planned: number): string {
+  return planned === 1
+    ? "The planned conversation didn't fit your OpenEnv server. The row below says why."
+    : `None of the ${planned} planned conversations fit your OpenEnv server. Each row says why.`
 }
 
 // The OpenEnv server a batch's cases were grounded in, or null for an

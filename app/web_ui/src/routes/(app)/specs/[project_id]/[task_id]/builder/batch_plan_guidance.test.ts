@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 import {
   compose_plan_guidance,
   dropped_cases_section,
-  kept_scenarios_section,
   grounding_data_guide,
   join_data_guides,
   multiturn_plan_guidance,
@@ -340,25 +339,5 @@ describe("dropped_cases_section", () => {
 
   it("is null when nothing dropped", () => {
     expect(dropped_cases_section([])).toBeNull()
-  })
-})
-
-describe("kept_scenarios_section", () => {
-  it("lists each kept scenario and asks for different ones", () => {
-    const section = kept_scenarios_section([
-      " Refund a shipped order ",
-      "",
-      "Close an account",
-    ])
-    expect(section).toContain("## Scenarios already in the batch")
-    expect(section).toContain("Plan different ones")
-    expect(section).toContain(
-      "<kept_scenarios>\n- Refund a shipped order\n- Close an account\n</kept_scenarios>",
-    )
-  })
-
-  it("is null when nothing is kept", () => {
-    expect(kept_scenarios_section([])).toBeNull()
-    expect(kept_scenarios_section([" "])).toBeNull()
   })
 })

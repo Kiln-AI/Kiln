@@ -8,8 +8,8 @@ Everything here applies to a multi-turn build whose run config reaches one OpenE
 build looks and behaves exactly as today.
 
 The builder keeps its steps (describe, clarify, refine, generate, review, save). The changes are:
-one more model requirement in Generation Settings, one more progress stage, a new screen for
-dropped cases, a read-only section in review, and a note where users write judges.
+one more model requirement in Generation Settings, one more progress stage, a notice in review
+when cases were dropped, a read-only section in review, and a note where users write judges.
 
 Names below are the ones in `builder/+page.svelte` today.
 
@@ -40,31 +40,46 @@ are driven.
 
 ## Dropped cases
 
-The screen appears after grounding when at least one case dropped. It replaces today's partial-stop
-text for this case only; drive failures later in the pipeline keep today's screen.
+A dropped case doesn't stop the build. The cases that fit are driven, and the review says what was
+dropped. Drive failures later in the pipeline keep today's screen.
 
-Layout, top to bottom:
+### Notice over the review
 
-- Title: "Some Cases Don't Fit Your Environment".
-- One line: "Kiln checked each case against your OpenEnv server. 3 of 20 couldn't be made to fit."
-- The dropped cases, one row each: the planned scenario (one line, clamped, "See all" opens it),
-  and under it the reason in muted text. The reason is the grounding agent's `drop_detail`, as
-  written. No reason codes on screen.
-- Buttons, right-aligned, primary last:
-  - **Cancel**: back to the plan, discarding this batch's simulated users and checked cases. It
-    asks first, in a confirm that counts the simulated users and the cases that fit, and says the
-    next run writes and checks them again.
-  - **Retry**: opens the Refine Plan dialog, with the plan's steer filled in. Its warning names
-    what a new plan discards, including the cases that fit, and says every item in the new plan
-    gets a new simulated user and is checked against the OpenEnv server again. Submitting plans
-    the batch again with the dropped scenarios and their reasons added to the planner guidance,
-    then stops on the new plan for approval. Nothing is generated, checked or driven until the
-    user approves it. Closing the dialog leaves this screen as it was.
-  - **Continue With 17** (primary): drives and reviews the 17 cases that fit.
-- When every case dropped: the same screen without Continue, and the line reads "None of the 20
-  cases could be made to fit."
+Shown once, over the first Step 5 screen, when the review opens after a drive whose grounding
+dropped some cases. A `Dialog`, laid out like the Improve Judge dialog:
 
-Nothing about dropped cases is shown after Continue.
+- Title: "Some Conversations Were Dropped" ("A Conversation Was Dropped" for one).
+- One paragraph: "2 of 20 planned conversations were dropped when Kiln checked them against your
+  OpenEnv server. Each row says why. Continue reviewing the conversations that fit, or refine the
+  plan with these reasons in hand." (Singular: "1 of 20 planned conversations was dropped when
+  Kiln checked it… The row below says why.")
+- The dropped cases (`dropped_cases_list.svelte`), one table row each: the planned scenario (one
+  line, clamped, "See all" opens it), and under it the reason in muted text. The reason is the
+  grounding agent's `drop_detail`, as written. No reason codes on screen. The first five rows
+  show; the rest sit in a `Collapse` titled "N More".
+- Buttons: **Refine Plan** (grey) and **Continue** (primary).
+  - **Refine Plan** goes back to the plan screen and opens the Refine Plan dialog there, with the
+    plan's steer filled in. Its warning reads "Refining the plan discards your 18 generated
+    conversations and any review progress. Every item in the new plan gets a new simulated user
+    and is checked against your OpenEnv server again. This cannot be undone." Submitting plans the
+    batch again with the dropped scenarios and their reasons added to the planner guidance, then
+    stops on the new plan for approval. Closing the dialog leaves the plan and its results, with
+    Continue back to the review.
+  - **Continue** closes the dialog and leaves the review as it is.
+- Any close (either button, Esc, the X) marks the notice seen. It doesn't show again for the same
+  grounded cases, including after a reload or a re-drive that reuses them.
+
+### Every case dropped
+
+Nothing is driven, and Step 4 stays put, in the layout of its existing error screen:
+
+- Title: "Error Creating Eval Dataset".
+- Message: "None of the 20 planned conversations fit your OpenEnv server. Each row says why."
+  (One planned conversation: "The planned conversation didn't fit your OpenEnv server. The row
+  below says why.")
+- The same dropped-cases list.
+- Buttons: **Back to Plan** and **Refine Plan** (primary), which opens the Refine Plan dialog with
+  the drops, as above.
 
 ## Review ("Align the Judge")
 
