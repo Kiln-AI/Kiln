@@ -246,3 +246,101 @@ describe("dataset run +page.svelte — fork send lifecycle", () => {
     ).toBeNull()
   })
 })
+
+describe("dataset run +page.svelte — ended OpenEnv session", () => {
+  const ENDED =
+    "The OpenEnv session for this conversation ended after 30 minutes without a message. Start a new conversation to keep using this OpenEnv server."
+  const openenv_leaf = {
+    ...leaf1_run,
+    openenv_episode: {
+      episode_id: "ep_1",
+      openenv_version: "acme@1",
+      reset: { openenv_server_id: "env1", reset_kwargs: {} },
+    },
+  }
+
+  function serve(session: { state: string; message?: string | null }) {
+    mockClientGET.mockImplementation((path: string) => {
+      if (path.includes("/openenv_session")) {
+        return Promise.resolve({ data: session, error: null })
+      }
+      if (path.includes("/chain")) {
+        return Promise.resolve({ data: chain_data, error: null })
+      }
+      return Promise.resolve({ data: openenv_leaf, error: null })
+    })
+  }
+
+  beforeEach(() => {
+    resetStubState()
+    mockGoto.mockReset()
+    mockLoadTask.mockReset()
+    mockClientGET.mockReset()
+    setRunId("leaf1")
+    mockLoadTask.mockResolvedValue(multiturn_task)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    globalThis.requestAnimationFrame = ((cb: (t: number) => void) => {
+      cb(0)
+      return 0
+    }) as any
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
+  })
+
+  afterEach(() => cleanup())
+
+  it("shows the reason and New Chat in place of the composer", async () => {
+    serve({ state: "ended", message: ENDED })
+    const { container, getByRole } = render(Page)
+    await settle()
+    const ended = container.querySelector(
+      "[data-testid='openenv-session-ended']",
+    )
+    expect(ended?.textContent).toContain(ENDED)
+    expect(
+      container.querySelector("[data-testid='composer-append']"),
+    ).toBeNull()
+    getByRole("button", { name: "New Chat" }).click()
+    expect(mockGoto).toHaveBeenCalledWith("/run")
+  })
+
+  it("keeps the composer while the session is open", async () => {
+    serve({ state: "open" })
+    const { container } = render(Page)
+    await settle()
+    expect(
+      container.querySelector("[data-testid='composer-append']"),
+    ).not.toBeNull()
+    expect(
+      container.querySelector("[data-testid='openenv-session-ended']"),
+    ).toBeNull()
+  })
+
+  it("checks again when the tab comes back into view", async () => {
+    serve({ state: "open" })
+    const { container } = render(Page)
+    await settle()
+    serve({ state: "ended", message: ENDED })
+    document.dispatchEvent(new Event("visibilitychange"))
+    await settle()
+    expect(
+      container.querySelector("[data-testid='openenv-session-ended']")
+        ?.textContent,
+    ).toContain(ENDED)
+  })
+
+  it("doesn't ask for a conversation without an OpenEnv server", async () => {
+    mockClientGET.mockImplementation((path: string) => {
+      if (path.includes("/chain")) {
+        return Promise.resolve({ data: chain_data, error: null })
+      }
+      return Promise.resolve({ data: leaf1_run, error: null })
+    })
+    render(Page)
+    await settle()
+    expect(
+      mockClientGET.mock.calls.some(([path]) =>
+        String(path).includes("/openenv_session"),
+      ),
+    ).toBe(false)
+  })
+})

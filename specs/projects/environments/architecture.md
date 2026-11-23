@@ -303,7 +303,8 @@ def shared_conversation_sessions() -> ConversationSessions
 
 - `run_sidebar.svelte` and the conversation page's sidebar read `run.openenv_episode`. They show a `PropertyList` titled "OpenEnv" after Usage, with OpenEnv Server (a link to the detail page), Version (`openenv_episode.openenv_version`) and Reset Arguments (formatted JSON).
 - The conversation page adds a prop to `lib/ui/trace/chat_message_actions.svelte`: `fork_disabled_reason: string | null`. When the conversation has `openenv_episode`, Fork is disabled on earlier turns, with that text as a tooltip.
-- A `session_ended` 409 from the composer shows above the composer as an error `Warning`, using the existing error display.
+- A `session_ended` 409 from the composer shows above the composer as an error `Warning`, using the existing error display. Every OpenEnv refusal carries `code: openenv_<kind>`, and `run_request_error` shows those messages without the "Unexpected error:" prefix.
+- The conversation page reads `GET .../runs/{run_id}/openenv_session` (`conversation_session_status`) and swaps the composer for the ended message before a send. `ConversationSessions.record_end` keeps why each conversation's session ended (bounded, in memory); `OpenEnvSessionManager.lost_cause` keeps why a dropped session failed until its episode is released.
 
 ## 9. Shared component changes
 
