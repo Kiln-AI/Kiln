@@ -151,15 +151,18 @@
     cleanupAutoUpdate = null
   }
 
-  function getEffectiveViewportHeight(element: HTMLElement): number {
-    // Check if we're inside a Kiln Dialog.svelte or DaisyUI dialog element
+  // The on-screen area the list must stay inside: the dialog box it's in, or
+  // the window.
+  function getVisibleBounds(element: HTMLElement): {
+    top: number
+    bottom: number
+  } {
     const dialog = element.closest(".modal-box")
     if (dialog) {
-      return dialog.clientHeight
+      const rect = dialog.getBoundingClientRect()
+      return { top: rect.top, bottom: rect.top + dialog.clientHeight }
     }
-
-    // Fall back to window height if not in a dialog
-    return window.innerHeight
+    return { top: 0, bottom: window.innerHeight }
   }
 
   function setupFloatingPosition() {
@@ -175,15 +178,21 @@
           {
             name: "customPositioningAndSizing",
             fn: ({ x, y, rects, elements }) => {
-              // Find the effective viewport height - could be constrained by a dialog/modal
-              const viewportHeight = getEffectiveViewportHeight(selectedElement)
+              // Measured on screen. Inside a dialog, `y` is relative to the
+              // dialog box (its transform makes it the containing block) and
+              // includes its scroll, so on-screen positions are converted back
+              // by the offset between the two.
+              const bounds = getVisibleBounds(selectedElement)
+              const viewportHeight = bounds.bottom - bounds.top
               const referenceRect = rects.reference
+              const referenceBottom =
+                selectedElement.getBoundingClientRect().bottom
+              const toFloatingY = y - (referenceBottom + 2)
               const padding = 10
               const floatingEl = elements.floating
 
               // Calculate space below reference element
-              const spaceBelow =
-                viewportHeight - (referenceRect.y + referenceRect.height) - 2 // 2px gap
+              const spaceBelow = bounds.bottom - referenceBottom - 2 // 2px gap
 
               // Get the natural height of the dropdown content (measure only once)
               if (naturalDropdownHeight === null) {
@@ -215,13 +224,14 @@
               else if (naturalDropdownHeight <= viewportHeight - 20) {
                 finalHeight = naturalDropdownHeight
                 // Anchor to bottom of viewport with 10px padding
-                finalY = viewportHeight - naturalDropdownHeight - padding
+                finalY =
+                  bounds.bottom - naturalDropdownHeight - padding + toFloatingY
               }
               // CASE 3: Taller than viewport - 20px (padding)
               else {
                 finalHeight = viewportHeight - 2 * padding
                 // Position from top of viewport with 10px padding
-                finalY = padding
+                finalY = bounds.top + padding + toFloatingY
               }
 
               // Set the width of the dropdown
