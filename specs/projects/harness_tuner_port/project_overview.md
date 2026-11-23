@@ -41,7 +41,10 @@ Everything harness-tuner's own tooling does that a general MCP client could also
 ## Part 3: The rest of the skill
 
 - Finish the port of harness-tuner's skill content into Kiln's skill, on top of what spec one ports (the knowledge).
-- **Open:** whether harness-tuner's role procedures (planner, builder, analyst, etc) move into `kiln_skill`, clearly marked, or stay in harness-tuner's prompts. Both work.
+- **Open:** where harness-tuner's role procedures (planner, builder, analyst, etc) live. Leave it open; the options, in order of preference:
+  - Leaning: they become prompts that harness-tuner sends when it starts a sub-agent. They aren't really general enough for the skill.
+  - Alternatively, harness-tuner maintains its own harness-tuner skill and points its agents at it. But removing the skill-copying code is a nice benefit of this project, so the first option is preferred.
+  - Or they move into `kiln_skill`, clearly marked.
 - The backlog item from spec one, `using_harness_tuner`: a skill file that tells a coding agent with `kiln_skill` how to run the harness-tuner CLI instead of running experiments itself.
 
 ## Part 4: Update harness-tuner to use the new version

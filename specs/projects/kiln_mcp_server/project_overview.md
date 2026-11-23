@@ -6,12 +6,12 @@ status: complete
 
 Build an MCP server into the Kiln app, so anyone running Kiln can use it from any agent (Claude Code, Codex, etc). Think "local Kiln assistant": add the MCP to your agent, and your agent knows what Kiln is and how to drive it.
 
-This started as "move the harness-tuner MCP into Kiln". After looking at the code, the plan changed: this project is a clean, general Kiln MCP. Fencing, and everything else harness-tuner needs from the MCP, is a second spec: [kiln_mcp_fencing](../kiln_mcp_fencing/project_overview.md).
+This started as "move the harness-tuner MCP into Kiln". After looking at the code, the plan changed: this project is a clean, general Kiln MCP. Fencing, and everything else harness-tuner needs from the MCP, is a second spec: [harness_tuner_port](../harness_tuner_port/project_overview.md).
 
 ## Roadmap
 
 1. **This spec:** the MCP server running in the desktop app, with knowledge and APIs. Gets us to a smart agent fast.
-2. **Spec two ([kiln_mcp_fencing](../kiln_mcp_fencing/project_overview.md)):** support for fencing, and everything harness-tuner needs.
+2. **Spec two ([harness_tuner_port](../harness_tuner_port/project_overview.md)):** support for fencing, and everything harness-tuner needs.
 
 Both specs are written together, so the planning is aligned. They are built separately.
 
