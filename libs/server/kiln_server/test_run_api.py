@@ -522,9 +522,13 @@ class OpenEnvChat:
 
 
 @pytest.fixture
-def openenv_chat(app, task_run_setup_multiturn):
+def openenv_chat(app, task_run_setup_multiturn, request):
     project = task_run_setup_multiturn["project"]
     task = task_run_setup_multiturn["task"]
+    # Indirect parametrize with TurnMode.single_turn for a single-turn task.
+    if getattr(request, "param", TurnMode.multiturn) == TurnMode.single_turn:
+        task = Task(name="Single", instruction="keep notes", parent=project)
+        task.save_to_file()
     provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt-4")
     manager = OpenEnvSessionManager()
     replies: list = []
@@ -592,6 +596,25 @@ class TestRunApiConversation:
         assert all(
             e["reset"]["reset_kwargs"] == {"fixture_id": "acme"} for e in episodes
         )
+
+    @pytest.mark.parametrize("openenv_chat", [TurnMode.single_turn], indirect=True)
+    def test_single_turn_runs_open_and_close_their_own_session(self, openenv_chat):
+        assert openenv_chat.task.turn_mode == TurnMode.single_turn
+        first = openenv_chat.send("one", openenv_reset_kwargs={"fixture_id": "acme"})
+        assert first.status_code == 200, first.text
+        second = openenv_chat.send("two")
+        assert second.status_code == 200, second.text
+
+        first_episode = first.json()["openenv_episode"]
+        second_episode = second.json()["openenv_episode"]
+        assert first_episode["reset"]["reset_kwargs"] == {"fixture_id": "acme"}
+        assert first_episode["final_state"]["notes"] == ["one"]
+        # A fresh session each run, reset with no arguments when none are sent.
+        assert second_episode["episode_id"] != first_episode["episode_id"]
+        assert second_episode["reset"]["reset_kwargs"] == {}
+        assert second_episode["final_state"]["notes"] == ["two"]
+        assert openenv_chat.manager._sessions == {}
+        assert not openenv_chat.manager.conversations.holds_turn(first.json()["id"])
 
     def test_earlier_turn_is_refused(self, openenv_chat):
         first = openenv_chat.send("one")
