@@ -4,6 +4,9 @@
 
 **Tags:** Tools & MCP
 
+Add a local MCP server (a command Kiln starts) to the project as a tool
+server.
+
 ## Request
 
 ### Path Parameters

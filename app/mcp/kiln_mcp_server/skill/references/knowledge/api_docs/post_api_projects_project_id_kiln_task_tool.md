@@ -4,6 +4,9 @@
 
 **Tags:** Tools & MCP
 
+Offer a Kiln task as a tool that other tasks' agents can call, through one of
+its run configs.
+
 ## Request
 
 ### Path Parameters

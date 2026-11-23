@@ -4,6 +4,8 @@
 
 **Tags:** Jobs
 
+Cancel a background job.
+
 ## Request
 
 ### Path Parameters

@@ -1,10 +1,11 @@
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Path
+from fastapi import FastAPI, Path
 from kiln_ai.datamodel import Feedback, TaskRun
 from kiln_ai.datamodel.datamodel_enums import FeedbackSource
 from pydantic import BaseModel, Field
 
+from kiln_server.custom_errors import not_found_error
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 
@@ -25,10 +26,7 @@ def _run_from_ids(project_id: str, task_id: str, run_id: str) -> TaskRun:
     task = task_from_id(project_id, task_id)
     run = TaskRun.from_id_and_parent_path(run_id, task.path)
     if run is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Task run not found. ID: {run_id}",
-        )
+        raise not_found_error("Run", run_id, "task's runs")
     return run
 
 
@@ -51,6 +49,7 @@ def connect_feedback_api(app: FastAPI):
             str, Path(description="The unique identifier of the task run.")
         ],
     ) -> list[Feedback]:
+        """List the feedback left on a run."""
         run = _run_from_ids(project_id, task_id, run_id)
         return run.feedback(readonly=True)
 
@@ -73,6 +72,7 @@ def connect_feedback_api(app: FastAPI):
         ],
         body: CreateFeedbackRequest,
     ) -> Feedback:
+        """Add written feedback to a run."""
         run = _run_from_ids(project_id, task_id, run_id)
         fb = Feedback(
             feedback=body.feedback,
@@ -103,11 +103,9 @@ def connect_feedback_api(app: FastAPI):
             str, Path(description="The unique identifier of the feedback.")
         ],
     ) -> None:
+        """Delete one piece of feedback from a run."""
         run = _run_from_ids(project_id, task_id, run_id)
         fb = Feedback.from_id_and_parent_path(feedback_id, run.path)
         if fb is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Feedback not found. ID: {feedback_id}",
-            )
+            raise not_found_error("Feedback", feedback_id, "run's feedback")
         fb.delete()

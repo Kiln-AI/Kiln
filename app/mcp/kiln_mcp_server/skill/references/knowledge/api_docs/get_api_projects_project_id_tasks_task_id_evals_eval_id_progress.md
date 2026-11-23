@@ -4,6 +4,10 @@
 
 **Tags:** Evals
 
+Get the size of each split of an eval, and how much of its golden set is rated.
+
+Also names the eval's default judge.
+
 ## Request
 
 ### Path Parameters

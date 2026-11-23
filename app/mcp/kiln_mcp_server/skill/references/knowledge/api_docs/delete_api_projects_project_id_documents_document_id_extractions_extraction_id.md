@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Delete one extraction of a document.
+
 ## Request
 
 ### Path Parameters

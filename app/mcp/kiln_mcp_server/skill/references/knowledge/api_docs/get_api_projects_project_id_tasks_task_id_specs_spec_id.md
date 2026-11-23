@@ -4,6 +4,8 @@
 
 **Tags:** Specs
 
+Get one spec.
+
 ## Request
 
 ### Path Parameters

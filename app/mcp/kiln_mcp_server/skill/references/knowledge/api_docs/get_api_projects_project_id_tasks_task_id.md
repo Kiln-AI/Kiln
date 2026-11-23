@@ -4,6 +4,8 @@
 
 **Tags:** Tasks
 
+Get one task: instruction, requirements, schemas and default run config.
+
 ## Request
 
 ### Path Parameters

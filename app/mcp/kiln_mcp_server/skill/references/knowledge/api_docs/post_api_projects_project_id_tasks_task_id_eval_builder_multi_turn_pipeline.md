@@ -4,6 +4,8 @@
 
 **Tags:** Eval Builder
 
+Drive each multi-turn case against the task, then judge it, as one event stream.
+
 The merged multi-turn stream: [drive → judge] per case.
 
 Emits (all frames `type`-discriminated; errors carry {code, message}):

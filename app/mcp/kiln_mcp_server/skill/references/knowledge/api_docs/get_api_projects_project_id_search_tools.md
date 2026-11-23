@@ -4,6 +4,9 @@
 
 **Tags:** Tools & MCP
 
+List the project's search tools: one per RAG config, with its tool name and
+description.
+
 ## Request
 
 ### Path Parameters

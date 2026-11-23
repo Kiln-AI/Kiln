@@ -4,7 +4,9 @@
 
 **Tags:** Copilot
 
-Proxy to Kiln Copilot ``GET /v1/chat/sessions``.
+List the user's Kiln Assistant chat sessions (needs Kiln Pro).
+
+Proxies Kiln Copilot's ``GET /v1/chat/sessions``.
 
 ## Request
 

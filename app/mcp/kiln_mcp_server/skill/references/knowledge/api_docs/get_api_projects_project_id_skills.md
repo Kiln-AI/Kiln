@@ -4,6 +4,8 @@
 
 **Tags:** Skills
 
+List the project's skills.
+
 ## Request
 
 ### Path Parameters

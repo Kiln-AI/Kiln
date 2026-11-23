@@ -4,11 +4,12 @@
 
 **Tags:** Providers & Models
 
-List Kiln's models with prices, limits and release dates from
-models.dev, and for each provider entry whether the user can run it
-now (status). By default only entries the user can run now (status
-ready, not deprecated) are listed. Rows with no listed entry are left
-out. `total` counts the rows after all filters; page with `offset`.
+List Kiln's models, with prices and limits, and whether each can run now.
+
+Prices, limits and release dates come from models.dev; each provider entry has a
+status saying whether the user can run it now. By default only entries the user
+can run now (status ready, not deprecated) are listed. Rows with no listed entry
+are left out. `total` counts the rows after all filters; page with `offset`.
 
 ## Request
 
@@ -64,6 +65,8 @@ Validation Error
 
 ### ModelInfoProviderEntryRow
 
+One provider entry of a model in a list row: status and prices.
+
 |Field|Type|Required|Description|
 |-|-|-|-|
 |provider|string|Yes|Kiln provider id.|
@@ -71,14 +74,16 @@ Validation Error
 |input_price|one of: number or null|No|Input price, USD per million tokens. Null: no price data.|
 |output_price|one of: number or null|No|Output price, USD per million tokens. Null: no price data.|
 |tags|array of string|No|Kiln's tags for this provider entry.|
-|deprecated|boolean|No||
+|deprecated|boolean|No|Kiln marks this provider entry deprecated.|
 
 ### ModelInfoRow
+
+One model in a list of models, with its provider entries.
 
 |Field|Type|Required|Description|
 |-|-|-|-|
 |model|string|Yes|Kiln's model id. Use it in a run config.|
-|display_name|string|Yes||
+|display_name|string|Yes|The model's name as Kiln shows it.|
 |family|one of: string or null|No|Kiln's model family.|
 |kiln_featured_rank|one of: integer or null|No|Kiln's ranking, 1 first. Null: not featured.|
 |tags|array of string|No|Kiln's model tags, for example current, recommended, top_value.|

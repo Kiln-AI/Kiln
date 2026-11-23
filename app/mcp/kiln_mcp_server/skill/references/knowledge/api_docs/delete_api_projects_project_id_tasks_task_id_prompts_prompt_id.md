@@ -4,6 +4,8 @@
 
 **Tags:** Prompts
 
+Delete a custom prompt.
+
 ## Request
 
 ### Path Parameters

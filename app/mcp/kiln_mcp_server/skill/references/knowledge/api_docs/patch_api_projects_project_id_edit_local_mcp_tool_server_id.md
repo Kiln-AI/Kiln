@@ -4,6 +4,9 @@
 
 **Tags:** Tools & MCP
 
+Change a local MCP tool server's name, description, command, arguments or
+environment.
+
 ## Request
 
 ### Path Parameters

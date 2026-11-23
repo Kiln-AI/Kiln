@@ -4,6 +4,8 @@
 
 **Tags:** Jobs
 
+Get a background job's record: status, progress and result.
+
 ## Request
 
 ### Path Parameters

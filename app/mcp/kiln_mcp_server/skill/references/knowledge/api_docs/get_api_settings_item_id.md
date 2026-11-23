@@ -4,6 +4,8 @@
 
 **Tags:** Settings & Utilities
 
+Get one Kiln setting by name. Null when it is not set; secrets are hidden.
+
 ## Request
 
 ### Path Parameters

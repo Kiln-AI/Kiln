@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Download an extraction's text as a file.
+
 ## Request
 
 ### Path Parameters

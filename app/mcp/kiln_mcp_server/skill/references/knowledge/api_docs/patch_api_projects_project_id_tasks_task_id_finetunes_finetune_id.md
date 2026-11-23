@@ -4,6 +4,8 @@
 
 **Tags:** Fine-tuning
 
+Change a fine-tune's name or description.
+
 ## Request
 
 ### Path Parameters

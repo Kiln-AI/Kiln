@@ -4,6 +4,8 @@
 
 **Tags:** Jobs
 
+Get the result of a finished background job.
+
 ## Request
 
 ### Path Parameters

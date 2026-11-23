@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Get how many of the project's documents an extractor config has extracted.
+
 ## Request
 
 ### Path Parameters

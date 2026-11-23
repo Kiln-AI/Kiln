@@ -4,7 +4,9 @@
 
 **Tags:** Eval Builder
 
-One cheap completion through the SAME adapter model/provider
+Check that a model runs on the user's keys with one cheap completion.
+
+The completion goes through the SAME adapter model/provider
 resolution a real run uses (that resolution is where a dead model
 surfaces), on the user's same keys. Catches key/billing/deprecation/
 unreachable failures for a lane BEFORE the drive commits the

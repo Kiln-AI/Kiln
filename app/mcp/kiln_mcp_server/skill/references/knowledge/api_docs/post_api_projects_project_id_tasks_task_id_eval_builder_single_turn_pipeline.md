@@ -4,6 +4,8 @@
 
 **Tags:** Eval Builder
 
+Run the task once on each generated input, then judge each run, as one stream.
+
 The single-turn stream: [run → judge] per generated input.
 
 The one-turn sibling of multi_turn_pipeline: the task runs ONCE per

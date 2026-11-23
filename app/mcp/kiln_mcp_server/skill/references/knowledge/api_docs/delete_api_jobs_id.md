@@ -4,6 +4,9 @@
 
 **Tags:** Jobs
 
+Delete the record of a background job that has ended (succeeded, failed or
+cancelled).
+
 ## Request
 
 ### Path Parameters

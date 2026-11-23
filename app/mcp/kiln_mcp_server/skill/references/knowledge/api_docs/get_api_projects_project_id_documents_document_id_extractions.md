@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+List a document's extractions, one per extractor config that ran on it.
+
 ## Request
 
 ### Path Parameters

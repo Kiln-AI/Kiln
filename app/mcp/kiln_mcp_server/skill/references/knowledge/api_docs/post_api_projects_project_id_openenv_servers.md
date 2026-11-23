@@ -4,6 +4,9 @@
 
 **Tags:** OpenEnv Servers
 
+Add an OpenEnv server to the project: a running environment whose tools
+agents can use.
+
 ## Request
 
 ### Path Parameters

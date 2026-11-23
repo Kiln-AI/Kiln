@@ -4,6 +4,9 @@
 
 **Tags:** Fine-tuning
 
+Start a fine-tune of the task on a dataset split. Starts a paid job at the
+provider.
+
 ## Request
 
 ### Path Parameters

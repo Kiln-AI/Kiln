@@ -4,6 +4,9 @@
 
 **Tags:** Copilot
 
+Generate a batch of synthetic inputs for a spec, grouped by topic (needs Kiln
+Pro). Saves nothing.
+
 ## Request
 
 ### Request Body

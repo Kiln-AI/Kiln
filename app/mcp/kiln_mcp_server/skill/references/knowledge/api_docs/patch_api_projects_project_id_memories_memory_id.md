@@ -4,6 +4,8 @@
 
 **Tags:** Memory
 
+Correct a memory's overview, content, tags or scope.
+
 ## Request
 
 ### Path Parameters

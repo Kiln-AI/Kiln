@@ -4,6 +4,8 @@
 
 **Tags:** Runs
 
+Delete one run from the task's dataset.
+
 ## Request
 
 ### Path Parameters

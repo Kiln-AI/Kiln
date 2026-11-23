@@ -4,6 +4,9 @@
 
 **Tags:** Evals
 
+Get the default LLM judge prompt and system prompt for an eval, and the
+reference keys it needs.
+
 ## Request
 
 ### Path Parameters

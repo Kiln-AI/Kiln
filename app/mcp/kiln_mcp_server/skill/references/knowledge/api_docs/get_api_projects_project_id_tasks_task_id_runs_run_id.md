@@ -4,6 +4,8 @@
 
 **Tags:** Runs
 
+Get one run (dataset item): input, output, ratings, tags and trace.
+
 ## Request
 
 ### Path Parameters

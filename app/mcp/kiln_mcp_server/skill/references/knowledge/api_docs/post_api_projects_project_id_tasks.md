@@ -4,6 +4,9 @@
 
 **Tags:** Tasks
 
+Create a task in a project: its instruction, requirements and input and
+output schemas.
+
 ## Request
 
 ### Path Parameters

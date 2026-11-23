@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+List the tags used on the project's documents.
+
 ## Request
 
 ### Path Parameters

@@ -34,6 +34,8 @@ def _price(what: str) -> str:
 
 
 class ModelInfoKilnSource(BaseModel):
+    """Where Kiln's model list came from, and how old it is."""
+
     origin: Literal["remote_config", "built_in"] = Field(
         description="remote_config: Kiln's remote model list was loaded in this"
         " process. built_in: the list shipped with the installed app."
@@ -48,6 +50,8 @@ class ModelInfoKilnSource(BaseModel):
 
 
 class ModelInfoModelsDevSource(BaseModel):
+    """The state and age of the models.dev data."""
+
     state: Literal["ok", "stale", "unavailable"] = Field(
         description="ok: models.dev data younger than 6 hours. stale: older data is"
         " served, because a refresh failed or did not finish in time. unavailable:"
@@ -75,6 +79,8 @@ class ModelInfoSources(BaseModel):
 
 
 class ModelInfoProviderEntryRow(BaseModel):
+    """One provider entry of a model in a list row: status and prices."""
+
     provider: str = Field(description="Kiln provider id.")
     status: ModelInfoStatus = Field(description=STATUS)
     input_price: float | None = Field(default=None, description=_price("Input price"))
@@ -82,12 +88,16 @@ class ModelInfoProviderEntryRow(BaseModel):
     tags: list[str] = Field(
         default_factory=list, description="Kiln's tags for this provider entry."
     )
-    deprecated: bool = False
+    deprecated: bool = Field(
+        default=False, description="Kiln marks this provider entry deprecated."
+    )
 
 
 class ModelInfoRow(BaseModel):
+    """One model in a list of models, with its provider entries."""
+
     model: str = Field(description="Kiln's model id. Use it in a run config.")
-    display_name: str
+    display_name: str = Field(description="The model's name as Kiln shows it.")
     family: str | None = Field(default=None, description="Kiln's model family.")
     kiln_featured_rank: int | None = Field(default=None, description=KILN_FEATURED_RANK)
     tags: list[str] = Field(
@@ -120,6 +130,8 @@ class ModelInfoRow(BaseModel):
 
 
 class ModelInfoList(BaseModel):
+    """A page of models, with the sources the answer is built from."""
+
     sources: ModelInfoSources
     total: int = Field(description="Rows after all filters, the same on every page.")
     fuzzy_match: bool = Field(
@@ -131,6 +143,8 @@ class ModelInfoList(BaseModel):
 
 
 class ModelInfoProviderEntryDetails(BaseModel):
+    """The full record of one provider entry of a model."""
+
     provider: str = Field(description="Kiln provider id.")
     status: ModelInfoStatus = Field(description=STATUS)
     provider_model_id: str | None = Field(
@@ -138,7 +152,9 @@ class ModelInfoProviderEntryDetails(BaseModel):
         description="The provider's own id for the model. Null for a model Kiln"
         " only knows from the user's setup.",
     )
-    deprecated: bool = False
+    deprecated: bool = Field(
+        default=False, description="Kiln marks this provider entry deprecated."
+    )
     untested: bool = Field(default=False, description=UNTESTED)
     input_price: float | None = Field(default=None, description=_price("Input price"))
     output_price: float | None = Field(default=None, description=_price("Output price"))
@@ -175,7 +191,11 @@ class ModelInfoProviderEntryDetails(BaseModel):
         default_factory=list,
         description="The thinking levels a run config can set, in Kiln's order.",
     )
-    default_thinking_level: str | None = None
+    default_thinking_level: str | None = Field(
+        default=None,
+        description="Kiln's suggested default thinking level for the pair. Null"
+        " when Kiln suggests none.",
+    )
     default_structured_output_mode: str | None = Field(
         default=None, description="Kiln's suggested default output mode for the pair."
     )
@@ -187,9 +207,11 @@ class ModelInfoProviderEntryDetails(BaseModel):
 
 
 class ModelInfoDetails(BaseModel):
+    """The full record of one model, with every provider entry."""
+
     sources: ModelInfoSources
     model: str = Field(description="Kiln's model id. Use it in a run config.")
-    display_name: str
+    display_name: str = Field(description="The model's name as Kiln shows it.")
     family: str | None = Field(default=None, description="Kiln's model family.")
     kiln_featured_rank: int | None = Field(default=None, description=KILN_FEATURED_RANK)
     tags: list[str] = Field(default_factory=list, description="Kiln's model tags.")
@@ -228,6 +250,8 @@ class ModelInfoDetails(BaseModel):
 
 
 class ModelInfoProviderRow(BaseModel):
+    """One model provider: whether it is connected, and how many models are ready on it."""
+
     provider: str = Field(description="Kiln provider id.")
     name: str | None = Field(default=None, description="The provider's name in Kiln.")
     status: Literal["connected", "not_connected"] = Field(
@@ -246,5 +270,7 @@ class ModelInfoProviderRow(BaseModel):
 
 
 class ModelInfoProviderList(BaseModel):
+    """Every model provider Kiln knows, with the sources the answer is built from."""
+
     sources: ModelInfoSources
     providers: list[ModelInfoProviderRow] = Field(default_factory=list)

@@ -4,6 +4,8 @@
 
 **Tags:** Tools & MCP
 
+Change a Kiln task tool's name, description, task or run config.
+
 ## Request
 
 ### Path Parameters

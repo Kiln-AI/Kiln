@@ -4,6 +4,9 @@
 
 **Tags:** Tools & MCP
 
+Get one tool server and the tools it serves now. Connects to the server to
+list them.
+
 ## Request
 
 ### Path Parameters

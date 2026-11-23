@@ -4,6 +4,9 @@
 
 **Tags:** Synthetic Data
 
+Generate question and answer pairs from the text of one document, for a RAG
+task. Calls a model; saves nothing.
+
 ## Request
 
 ### Path Parameters

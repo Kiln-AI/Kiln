@@ -4,6 +4,9 @@
 
 **Tags:** Runs
 
+Get the chain of runs of a multi-turn conversation, from the first turn to
+the given run.
+
 ## Request
 
 ### Path Parameters

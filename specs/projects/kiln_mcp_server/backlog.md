@@ -44,3 +44,7 @@
   Pick the emoji for the "Use your own coding agent" bullet (`README.md:54`) and remove its `<!-- TODO: ... -->` comment. `.github/workflows/debug_detector.yml` excludes `*.md`, so CI will not flag it.
 - [ ] **B22 — Owner check: user-level install against the Claude Code `.mcp.json` note**
   `agent_install.md` step 2 says "Add it at user level", but "Notes for each agent" → Claude Code then offers a project-level `.mcp.json` as the by-hand alternative. Verbatim from the owner's draft; check in phase 14.
+- [ ] **B23 — The code tool descriptions name an endpoint agents are denied**
+  `app/desktop/studio_server/code_tool_api.py:229-231, 278-280`: the descriptions of Create Code Tool and Test Code Tool say "Until the project's code is trusted (Add code trust)", naming `POST /api/projects/{project_id}/add_code_trust`, which is `DENY_AGENT`. Reword to tell the agent what to do (for example "until the user trusts the project's code in the Kiln app"), then regenerate the API reference and the web schema.
+- [ ] **B24 — Pre-existing bug: Delete Extraction deletes before it checks the extractor config**
+  `libs/server/kiln_server/document_api.py:1869-1886`: it calls `extraction.delete()` before it looks up the extractor config. When that config is gone it returns 404 with the dangling-reference message although the extraction was deleted, so a retry gets "Extraction not found". Look the config up first, or delete regardless and return success.

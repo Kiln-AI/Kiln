@@ -399,7 +399,7 @@ def test_get_eval_not_found(client, mock_task, mock_task_from_id):
     response = client.get("/api/projects/project1/tasks/task1/evals/non_existent")
 
     assert response.status_code == 404
-    assert response.json()["message"] == "Eval not found. ID: non_existent"
+    assert response.json()["message"].startswith("Eval not found. ID: non_existent.")
 
 
 @pytest.fixture

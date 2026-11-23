@@ -4,6 +4,8 @@
 
 **Tags:** Run Configs
 
+Get one run config's scores on every eval of the task.
+
 ## Request
 
 ### Path Parameters

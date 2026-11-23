@@ -4,6 +4,8 @@
 
 **Tags:** OpenEnv Servers
 
+Change an OpenEnv server's name, description or URL.
+
 ## Request
 
 ### Path Parameters

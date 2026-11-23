@@ -4,6 +4,10 @@
 
 **Tags:** Prompts
 
+List the task's prompts and prompt generators, with the ID to use for each.
+
+Includes saved prompts and the prompts of fine-tunes and run configs.
+
 ## Request
 
 ### Path Parameters

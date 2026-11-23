@@ -4,6 +4,8 @@
 
 **Tags:** OpenEnv Servers
 
+List the project's OpenEnv servers.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,8 @@
 
 **Tags:** OpenEnv Servers
 
+Get one OpenEnv server.
+
 ## Request
 
 ### Path Parameters

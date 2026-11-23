@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Get one document's record: name, description, tags and file details.
+
 ## Request
 
 ### Path Parameters

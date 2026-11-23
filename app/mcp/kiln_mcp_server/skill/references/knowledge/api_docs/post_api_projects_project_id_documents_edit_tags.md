@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Add tags to, or remove tags from, several documents at once.
+
 ## Request
 
 ### Path Parameters

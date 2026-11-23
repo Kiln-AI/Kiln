@@ -4,6 +4,9 @@
 
 **Tags:** Synthetic Data
 
+Save the task's data guide, replacing the current one. A task has at most
+one.
+
 ## Request
 
 ### Path Parameters

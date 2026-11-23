@@ -4,6 +4,9 @@
 
 **Tags:** Documents
 
+List the documents in the project's library, optionally only those with given
+tags.
+
 ## Request
 
 ### Path Parameters

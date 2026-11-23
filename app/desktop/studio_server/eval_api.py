@@ -93,6 +93,7 @@ from kiln_ai.utils.open_ai_types import (
 )
 from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.custom_errors import not_found_error
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.provenance_api import validate_provenance_or_400
@@ -164,10 +165,7 @@ def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
     if eval is not None:
         return eval
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Eval not found. ID: {eval_id}",
-    )
+    raise not_found_error("Eval", eval_id, "task's evals")
 
 
 def resolve_eval_display_fields(eval: Eval, spec: Spec | None = None) -> Eval:
@@ -191,10 +189,7 @@ def eval_config_from_id(
         if config.id == eval_config_id:
             return config
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Eval config not found. ID: {eval_config_id}",
-    )
+    raise not_found_error("Eval config", eval_config_id, "eval's configs")
 
 
 def eval_input_from_id(project_id: str, task_id: str, eval_input_id: str) -> EvalInput:
@@ -203,10 +198,7 @@ def eval_input_from_id(project_id: str, task_id: str, eval_input_id: str) -> Eva
     if eval_input is not None:
         return eval_input
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Eval input not found. ID: {eval_input_id}",
-    )
+    raise not_found_error("Eval input", eval_input_id, "task's eval inputs")
 
 
 class EvalInputReferences(BaseModel):
@@ -320,10 +312,7 @@ def task_run_config_from_id(
                 parent=task,  # special case, we need to reference the task model
             )
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Task run config not found. ID: {run_config_id}",
-    )
+    raise not_found_error("Task run config", run_config_id, "task's run configs")
 
 
 async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingResponse:
@@ -2043,6 +2032,8 @@ def connect_evals_api(app: FastAPI):
         ],
         request: CreateEvaluatorRequest,
     ) -> Eval:
+        """Create an eval without a spec (a legacy eval). Prefer Create Spec, which
+        creates the eval with its spec."""
         task = task_from_id(project_id, task_id)
 
         # When no eval set filter is provided, generate the same tag-based
@@ -2110,6 +2101,8 @@ def connect_evals_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> list[TaskRunConfig]:
+        """List the task's saved run configs, and a run config for each completed
+        fine-tune."""
         return get_all_run_configs(project_id, task_id)
 
     @app.get(
@@ -2128,6 +2121,7 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> Eval:
+        """Get one eval: its scores, its splits and its default judge."""
         return resolve_eval_display_fields(eval_from_id(project_id, task_id, eval_id))
 
     @app.delete(
@@ -2146,6 +2140,7 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> None:
+        """Delete an eval, with its judges and their scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
         eval.delete()
 
@@ -2168,6 +2163,8 @@ def connect_evals_api(app: FastAPI):
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: UpdateEvalRequest,
     ) -> Eval:
+        """Change an eval's name, description, priority, status, score display names, or
+        set its train split."""
         eval = eval_from_id(project_id, task_id, eval_id)
 
         if request.name is not None:
@@ -2327,6 +2324,7 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the eval input.")
         ],
     ) -> EvalInput:
+        """Get one eval input item."""
         return eval_input_from_id(project_id, task_id, eval_input_id)
 
     @app.post(
@@ -2481,6 +2479,7 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> list[EvalConfig]:
+        """List an eval's judges (eval configs)."""
         eval = eval_from_id(project_id, task_id, eval_id)
         return eval.configs()
 
@@ -2503,6 +2502,7 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the eval configuration.")
         ],
     ) -> EvalConfig:
+        """Get one judge (eval config) of an eval."""
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         return eval_config
 
@@ -2522,6 +2522,8 @@ def connect_evals_api(app: FastAPI):
         ],
         request: CreateTaskRunConfigRequest,
     ) -> TaskRunConfig:
+        """Create a run config for the task: the model, prompt, tools and settings to
+        run it with."""
         task = task_from_id(project_id, task_id)
         name = request.name or generate_memorable_name()
         await validate_run_config_tools(task, request.run_config_properties)
@@ -2614,6 +2616,8 @@ def connect_evals_api(app: FastAPI):
         ],
         request: UpdateRunConfigRequest,
     ) -> TaskRunConfig:
+        """Change a run config's name, starred flag or prompt name. What it runs can't
+        change: create a new run config."""
         run_config = task_run_config_from_id(project_id, task_id, run_config_id)
         if run_config.path is None:
             raise HTTPException(
@@ -2653,6 +2657,7 @@ def connect_evals_api(app: FastAPI):
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: CreateEvalConfigRequest,
     ) -> EvalConfig:
+        """Create a judge (eval config) for an eval from its full properties."""
         if request.type in (EvalConfigType.g_eval, EvalConfigType.llm_as_judge):
             if not request.model_name or not request.provider:
                 raise HTTPException(
@@ -2722,6 +2727,8 @@ def connect_evals_api(app: FastAPI):
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: CreateLlmJudgeConfigRequest,
     ) -> EvalConfig:
+        """Create an LLM judge for an eval from a judge prompt and model; Kiln builds
+        the judge's template."""
         eval = eval_from_id(project_id, task_id, eval_id)
         name = request.name or generate_memorable_name()
 
@@ -2773,6 +2780,8 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> DefaultLlmJudgePromptResponse:
+        """Get the default LLM judge prompt and system prompt for an eval, and the
+        reference keys it needs."""
         eval = eval_from_id(project_id, task_id, eval_id)
         # `reference_keys` comes from the same predicate `materialize_llm_judge_properties`
         # uses, so what the builder is told to collect is what the saved judge requires —
@@ -2801,6 +2810,7 @@ def connect_evals_api(app: FastAPI):
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: TestV2EvalRequest,
     ) -> TestV2EvalResponse:
+        """Run a judge config on a few items without saving it, to check its scores."""
         try:
             eval_obj = eval_from_id(project_id, task_id, eval_id)
 
@@ -2971,6 +2981,8 @@ def connect_evals_api(app: FastAPI):
             ),
         ],
     ) -> Eval:
+        """Make a judge (eval config) the eval's default, the one whose scores Kiln
+        shows."""
         eval = eval_from_id(project_id, task_id, eval_id)
 
         if eval_config_id == "None":
@@ -3118,14 +3130,14 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the eval run.")
         ],
     ) -> list[ChatCompletionMessageParam] | None:
-        """The judge's full conversation for one eval run: the system prompt, the rendered judge prompt, and every reply. Null for runs whose judge called no model, and for runs recorded before judge traces were saved."""
+        """Get the judge's full conversation for one eval run: system prompt, judge prompt, replies.
+
+        Null for runs whose judge called no model, and for runs recorded before
+        judge traces were saved."""
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         eval_run = EvalRun.from_id_and_parent_path(eval_run_id, eval_config.path)
         if eval_run is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Eval run not found. ID: {eval_run_id}",
-            )
+            raise not_found_error("Eval run", eval_run_id, "run config's eval results")
         return eval_run.judge_trace
 
     # Overview of the eval progress
@@ -3145,6 +3157,9 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> EvalProgress:
+        """Get the size of each split of an eval, and how much of its golden set is rated.
+
+        Also names the eval's default judge."""
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
 
@@ -3209,6 +3224,8 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the eval configuration.")
         ],
     ) -> EvalResultSummary:
+        """Get one judge's mean scores on the eval's test split, for every run config of
+        the task."""
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
@@ -3238,6 +3255,8 @@ def connect_evals_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> EvalResultsSummaryResponse:
+        """Get the test-split scores of every eval of the task, for every run config, in
+        one table."""
         task = task_from_id(project_id, task_id)
         task_run_configs = get_all_run_configs(project_id, task_id)
 
@@ -3327,6 +3346,8 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> EvalConfigCompareSummary:
+        """Compare an eval's judges against the human ratings of its golden set: how
+        well each judge agrees."""
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_configs = eval.configs(readonly=True)
@@ -3482,6 +3503,8 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the run configuration.")
         ],
     ) -> RunConfigEvalScoresSummary:
+        """Get one run config's scores on every eval of the task."""
+
         def read() -> RunConfigEvalScoresSummary:
             task = task_from_id(project_id, task_id)
             # Called for its 404 when the run config doesn't exist.
@@ -3529,6 +3552,8 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> CodeTrustResponse:
+        """Trust the project's code for this app session, so new code tools and code
+        judges can run."""
         project = project_from_id(project_id)
         add_code_trust(str(project.path))
         return CodeTrustResponse(trusted=True)
@@ -3544,5 +3569,6 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> CodeTrustResponse:
+        """Check whether the project's code is trusted for this app session."""
         project = project_from_id(project_id)
         return CodeTrustResponse(trusted=has_add_code_trust(str(project.path)))

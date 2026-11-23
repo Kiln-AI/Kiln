@@ -4,6 +4,8 @@
 
 **Tags:** Synthetic Data
 
+Get the progress and the results so far of a Generate Inputs Batch job.
+
 ## Request
 
 ### Path Parameters

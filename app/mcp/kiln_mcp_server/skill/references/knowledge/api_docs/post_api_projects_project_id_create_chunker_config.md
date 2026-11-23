@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Create a chunker config: how extracted text is split into chunks for search.
+
 ## Request
 
 ### Path Parameters

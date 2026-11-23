@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Get one extraction of a document, with its text.
+
 ## Request
 
 ### Path Parameters

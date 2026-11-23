@@ -4,6 +4,9 @@
 
 **Tags:** Run Configs
 
+Change a run config's name, starred flag or prompt name. What it runs can't
+change: create a new run config.
+
 ## Request
 
 ### Path Parameters

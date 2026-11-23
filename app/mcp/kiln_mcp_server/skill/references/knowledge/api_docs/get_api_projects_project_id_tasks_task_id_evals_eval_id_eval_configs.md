@@ -4,6 +4,8 @@
 
 **Tags:** Evals
 
+List an eval's judges (eval configs).
+
 ## Request
 
 ### Path Parameters

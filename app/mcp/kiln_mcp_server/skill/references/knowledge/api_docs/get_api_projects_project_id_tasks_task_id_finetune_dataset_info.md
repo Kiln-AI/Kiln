@@ -4,6 +4,10 @@
 
 **Tags:** Fine-tuning
 
+Get the task's dataset splits, fine-tunes and run counts by tag, for a fine-tune.
+
+With tool_ids, only data made with those tools counts as eligible.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,10 @@
 
 **Tags:** Tools & MCP
 
+List the project's tool servers, with any secrets they are missing.
+
+Tool servers are remote and local MCP servers and Kiln task tools.
+
 ## Request
 
 ### Path Parameters

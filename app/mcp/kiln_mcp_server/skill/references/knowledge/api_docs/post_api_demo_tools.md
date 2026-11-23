@@ -4,6 +4,8 @@
 
 **Tags:** Tools & MCP
 
+Turn Kiln's demo math tools on or off.
+
 ## Request
 
 ### Query Parameters

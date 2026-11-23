@@ -4,6 +4,9 @@
 
 **Tags:** Evals
 
+Create an eval without a spec (a legacy eval). Prefer Create Spec, which
+creates the eval with its spec.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,9 @@
 
 **Tags:** Jobs
 
+Start a background job of a registered type. Returns at once, or with
+wait=true when the job ends.
+
 ## Request
 
 ### Path Parameters

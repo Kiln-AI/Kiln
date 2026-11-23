@@ -31,10 +31,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Projects */
+        /**
+         * List Projects
+         * @description List the projects Kiln knows, with their IDs.
+         */
         get: operations["get_projects_api_projects_get"];
         put?: never;
-        /** Create Project */
+        /**
+         * Create Project
+         * @description Create a project in the default Kiln Projects folder.
+         */
         post: operations["create_project_api_projects_post"];
         delete?: never;
         options?: never;
@@ -49,14 +55,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Project */
+        /**
+         * Get Project
+         * @description Get one project.
+         */
         get: operations["get_project_api_projects__project_id__get"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update Project */
+        /**
+         * Update Project
+         * @description Change a project's name or description.
+         */
         patch: operations["update_project_api_projects__project_id__patch"];
         trace?: never;
     };
@@ -69,7 +81,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Import Project */
+        /**
+         * Import Project
+         * @description Add an existing project to Kiln from the path of its project.kiln file.
+         */
         post: operations["import_project_api_import_project_post"];
         delete?: never;
         options?: never;
@@ -84,10 +99,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Tasks */
+        /**
+         * List Tasks
+         * @description List a project's tasks.
+         */
         get: operations["get_tasks_api_projects__project_id__tasks_get"];
         put?: never;
-        /** Create Task */
+        /**
+         * Create Task
+         * @description Create a task in a project: its instruction, requirements and input and
+         *     output schemas.
+         */
         post: operations["create_task_api_projects__project_id__tasks_post"];
         delete?: never;
         options?: never;
@@ -102,15 +124,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Task */
+        /**
+         * Get Task
+         * @description Get one task: instruction, requirements, schemas and default run config.
+         */
         get: operations["get_task_api_projects__project_id__tasks__task_id__get"];
         put?: never;
         post?: never;
-        /** Delete Task */
+        /**
+         * Delete Task
+         * @description Delete a task, with its runs, evals, prompts and run configs.
+         */
         delete: operations["delete_task_api_projects__project_id__tasks__task_id__delete"];
         options?: never;
         head?: never;
-        /** Update Task */
+        /**
+         * Update Task
+         * @description Change fields of a task, such as its name, description, instruction or
+         *     default run config.
+         */
         patch: operations["update_task_api_projects__project_id__tasks__task_id__patch"];
         trace?: never;
     };
@@ -164,10 +196,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Prompts */
+        /**
+         * List Prompts
+         * @description List the task's prompts and prompt generators, with the ID to use for each.
+         *
+         *     Includes saved prompts and the prompts of fine-tunes and run configs.
+         */
         get: operations["get_prompts_api_projects__project_id__tasks__task_id__prompts_get"];
         put?: never;
-        /** Create Prompt */
+        /**
+         * Create Prompt
+         * @description Save a custom prompt for the task. Its ID, id::<prompt_id>, can be used in
+         *     run configs.
+         */
         post: operations["create_prompt_api_projects__project_id__tasks__task_id__prompts_post"];
         delete?: never;
         options?: never;
@@ -185,11 +226,18 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete Prompt */
+        /**
+         * Delete Prompt
+         * @description Delete a custom prompt.
+         */
         delete: operations["delete_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__delete"];
         options?: never;
         head?: never;
-        /** Update Prompt */
+        /**
+         * Update Prompt
+         * @description Change a custom prompt's name or description. Its text can't change: save a
+         *     new prompt.
+         */
         patch: operations["update_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__patch"];
         trace?: never;
     };
@@ -226,9 +274,10 @@ export interface paths {
         };
         /**
          * Resolve an Available Spec Name
-         * @description Check a candidate spec name against the task's existing specs and
-         *     return an available one — the candidate itself, or the nearest
-         *     suffixed variant on a collision.
+         * @description Suggest a free spec name: the candidate itself, or the nearest suffixed one.
+         *
+         *     The candidate is checked against the task's existing specs; on a
+         *     collision the nearest suffixed variant is returned.
          *
          *     The check uses the derived-tag comparison the spec-save guard
          *     enforces (case/spacing-insensitive), so a name this endpoint returns
@@ -254,10 +303,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Specs */
+        /**
+         * List Specs
+         * @description List the task's specs.
+         */
         get: operations["get_specs_api_projects__project_id__tasks__task_id__specs_get"];
         put?: never;
-        /** Create Spec */
+        /**
+         * Create Spec
+         * @description Create a spec: a requirement for the task's output, with the eval that
+         *     measures it.
+         */
         post: operations["create_spec_api_projects__project_id__tasks__task_id__specs_post"];
         delete?: never;
         options?: never;
@@ -272,15 +328,24 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Spec */
+        /**
+         * Get Spec
+         * @description Get one spec.
+         */
         get: operations["get_spec_api_projects__project_id__tasks__task_id__specs__spec_id__get"];
         put?: never;
         post?: never;
-        /** Delete Spec */
+        /**
+         * Delete Spec
+         * @description Delete a spec.
+         */
         delete: operations["delete_spec_api_projects__project_id__tasks__task_id__specs__spec_id__delete"];
         options?: never;
         head?: never;
-        /** Update Spec */
+        /**
+         * Update Spec
+         * @description Change a spec's name, definition, properties, priority, status or tags.
+         */
         patch: operations["update_spec_api_projects__project_id__tasks__task_id__specs__spec_id__patch"];
         trace?: never;
     };
@@ -291,15 +356,24 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Run */
+        /**
+         * Get Run
+         * @description Get one run (dataset item): input, output, ratings, tags and trace.
+         */
         get: operations["get_run_api_projects__project_id__tasks__task_id__runs__run_id__get"];
         put?: never;
         post?: never;
-        /** Delete Run */
+        /**
+         * Delete Run
+         * @description Delete one run from the task's dataset.
+         */
         delete: operations["delete_run_api_projects__project_id__tasks__task_id__runs__run_id__delete"];
         options?: never;
         head?: never;
-        /** Update Run */
+        /**
+         * Update Run
+         * @description Change fields of a run, such as its rating, tags or repaired output.
+         */
         patch: operations["update_run_api_projects__project_id__tasks__task_id__runs__run_id__patch"];
         trace?: never;
     };
@@ -310,7 +384,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Run Chain */
+        /**
+         * Get Run Chain
+         * @description Get the chain of runs of a multi-turn conversation, from the first turn to
+         *     the given run.
+         */
         get: operations["get_run_chain_api_projects__project_id__tasks__task_id__runs__run_id__chain_get"];
         put?: never;
         post?: never;
@@ -329,7 +407,7 @@ export interface paths {
         };
         /**
          * List Runs
-         * @description For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
+         * @description List the task's runs (its dataset items), in full. For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
          */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
@@ -353,7 +431,7 @@ export interface paths {
         };
         /**
          * List Run Summaries
-         * @description For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized. For single-turn tasks this is equivalent to summarizing every run.
+         * @description List short summaries of the task's runs, lighter than List Runs. For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized. For single-turn tasks this is equivalent to summarizing every run.
          */
         get: operations["get_runs_summary_api_projects__project_id__tasks__task_id__runs_summaries_get"];
         put?: never;
@@ -373,7 +451,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Delete Runs */
+        /**
+         * Delete Runs
+         * @description Delete several runs from the task's dataset. Reports the ones it could not
+         *     delete.
+         */
         post: operations["delete_runs_api_projects__project_id__tasks__task_id__runs_delete_post"];
         delete?: never;
         options?: never;
@@ -410,7 +492,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Edit Run Tags */
+        /**
+         * Edit Run Tags
+         * @description Add tags to, or remove tags from, several runs at once.
+         */
         post: operations["edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post"];
         delete?: never;
         options?: never;
@@ -427,7 +512,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Bulk Upload Runs */
+        /**
+         * Bulk Upload Runs
+         * @description Import runs into the task's dataset from a CSV file, as multipart form data.
+         */
         post: operations["bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post"];
         delete?: never;
         options?: never;
@@ -444,7 +532,7 @@ export interface paths {
         };
         /**
          * List Run Tags
-         * @description Counts only include tags from leaf TaskRuns. For multi-turn tasks, tags attached to intermediate runs in a chain are not included.
+         * @description Count the task's runs for each tag. Counts only include tags from leaf TaskRuns. For multi-turn tasks, tags attached to intermediate runs in a chain are not included.
          */
         get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
         put?: never;
@@ -462,10 +550,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Feedback */
+        /**
+         * List Feedback
+         * @description List the feedback left on a run.
+         */
         get: operations["list_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_get"];
         put?: never;
-        /** Create Feedback */
+        /**
+         * Create Feedback
+         * @description Add written feedback to a run.
+         */
         post: operations["create_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_post"];
         delete?: never;
         options?: never;
@@ -483,7 +577,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete Feedback */
+        /**
+         * Delete Feedback
+         * @description Delete one piece of feedback from a run.
+         */
         delete: operations["delete_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback__feedback_id__delete"];
         options?: never;
         head?: never;
@@ -504,7 +601,12 @@ export interface paths {
          */
         get: operations["list_memories_api_projects__project_id__memories_get"];
         put?: never;
-        /** Save Memory */
+        /**
+         * Save Memory
+         * @description Save a memory: a note for agents working on the project.
+         *
+         *     It has an overview, a scope, and optional content and tags.
+         */
         post: operations["save_memory_api_projects__project_id__memories_post"];
         delete?: never;
         options?: never;
@@ -571,7 +673,10 @@ export interface paths {
         delete: operations["delete_memory_api_projects__project_id__memories__memory_id__delete"];
         options?: never;
         head?: never;
-        /** Update Memory */
+        /**
+         * Update Memory
+         * @description Correct a memory's overview, content, tags or scope.
+         */
         patch: operations["update_memory_api_projects__project_id__memories__memory_id__patch"];
         trace?: never;
     };
@@ -584,7 +689,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Bulk Create Documents */
+        /**
+         * Bulk Create Documents
+         * @description Upload files to the project's document library, as multipart form data.
+         */
         post: operations["create_documents_bulk_api_projects__project_id__documents_bulk_post"];
         delete?: never;
         options?: never;
@@ -599,7 +707,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Documents */
+        /**
+         * List Documents
+         * @description List the documents in the project's library, optionally only those with given
+         *     tags.
+         */
         get: operations["get_documents_api_projects__project_id__documents_get"];
         put?: never;
         post?: never;
@@ -636,7 +748,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Document Tags */
+        /**
+         * List Document Tags
+         * @description List the tags used on the project's documents.
+         */
         get: operations["get_document_tags_api_projects__project_id__documents_tags_get"];
         put?: never;
         post?: never;
@@ -653,7 +768,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Document Tag Counts */
+        /**
+         * Get Document Tag Counts
+         * @description Count the project's documents for each tag.
+         */
         get: operations["get_document_tag_counts_api_projects__project_id__documents_tag_counts_get"];
         put?: never;
         post?: never;
@@ -670,15 +788,24 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Document */
+        /**
+         * Get Document
+         * @description Get one document's record: name, description, tags and file details.
+         */
         get: operations["get_document_api_projects__project_id__documents__document_id__get"];
         put?: never;
         post?: never;
-        /** Delete Document */
+        /**
+         * Delete Document
+         * @description Delete one document, with its extractions.
+         */
         delete: operations["delete_document_api_projects__project_id__documents__document_id__delete"];
         options?: never;
         head?: never;
-        /** Patch Document */
+        /**
+         * Patch Document
+         * @description Change a document's display name, description or tags.
+         */
         patch: operations["patch_document_api_projects__project_id__documents__document_id__patch"];
         trace?: never;
     };
@@ -691,7 +818,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Edit Tags */
+        /**
+         * Edit Tags
+         * @description Add tags to, or remove tags from, several documents at once.
+         */
         post: operations["edit_tags_api_projects__project_id__documents_edit_tags_post"];
         delete?: never;
         options?: never;
@@ -708,7 +838,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Extractor Config */
+        /**
+         * Create Extractor Config
+         * @description Create an extractor config: how documents are turned into text (model,
+         *     prompts, output format).
+         */
         post: operations["create_extractor_config_api_projects__project_id__create_extractor_config_post"];
         delete?: never;
         options?: never;
@@ -723,7 +857,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Extractor Configs */
+        /**
+         * Get Extractor Configs
+         * @description List the project's extractor configs.
+         */
         get: operations["get_extractor_configs_api_projects__project_id__extractor_configs_get"];
         put?: never;
         post?: never;
@@ -740,14 +877,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Extractor Config */
+        /**
+         * Get Extractor Config
+         * @description Get one extractor config.
+         */
         get: operations["get_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__get"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Patch Extractor Config */
+        /**
+         * Patch Extractor Config
+         * @description Change an extractor config's name or description, or archive it.
+         */
         patch: operations["patch_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__patch"];
         trace?: never;
     };
@@ -758,7 +901,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Run Extractor Config */
+        /**
+         * Run Extractor Config
+         * @description Extract the text of the project's documents with one extractor config.
+         *     Streams progress as events.
+         */
         get: operations["run_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__run_extractor_config_get"];
         put?: never;
         post?: never;
@@ -775,7 +922,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Extractions */
+        /**
+         * Get Extractions
+         * @description List a document's extractions, one per extractor config that ran on it.
+         */
         get: operations["get_extractions_api_projects__project_id__documents__document_id__extractions_get"];
         put?: never;
         post?: never;
@@ -792,11 +942,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Extraction */
+        /**
+         * Get Extraction
+         * @description Get one extraction of a document, with its text.
+         */
         get: operations["get_extraction_api_projects__project_id__documents__document_id__extractions__extraction_id__get"];
         put?: never;
         post?: never;
-        /** Delete Extraction */
+        /**
+         * Delete Extraction
+         * @description Delete one extraction of a document.
+         */
         delete: operations["delete_extraction_api_projects__project_id__documents__document_id__extractions__extraction_id__delete"];
         options?: never;
         head?: never;
@@ -827,7 +983,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Extraction */
+        /**
+         * Download Extraction
+         * @description Download an extraction's text as a file.
+         */
         get: operations["download_extraction_api_projects__project_id__documents__document_id__download_extraction__extraction_id__get"];
         put?: never;
         post?: never;
@@ -863,7 +1022,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Delete Documents */
+        /**
+         * Delete Documents
+         * @description Delete several documents, with their extractions.
+         */
         post: operations["delete_documents_api_projects__project_id__documents_delete_post"];
         delete?: never;
         options?: never;
@@ -878,7 +1040,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Extraction Progress */
+        /**
+         * Get Extraction Progress
+         * @description Get how many of the project's documents an extractor config has extracted.
+         */
         get: operations["get_extraction_progress_api_projects__project_id__extractor_configs__extractor_config_id__progress_get"];
         put?: never;
         post?: never;
@@ -897,7 +1062,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Extract File */
+        /**
+         * Extract File
+         * @description Extract one document's text with the given extractor configs, or all active
+         *     ones. Streams progress.
+         */
         post: operations["extract_file_api_projects__project_id__documents__document_id__extract_post"];
         delete?: never;
         options?: never;
@@ -914,7 +1083,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Chunker Config */
+        /**
+         * Create Chunker Config
+         * @description Create a chunker config: how extracted text is split into chunks for search.
+         */
         post: operations["create_chunker_config_api_projects__project_id__create_chunker_config_post"];
         delete?: never;
         options?: never;
@@ -929,7 +1101,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Chunker Configs */
+        /**
+         * Get Chunker Configs
+         * @description List the project's chunker configs.
+         */
         get: operations["get_chunker_configs_api_projects__project_id__chunker_configs_get"];
         put?: never;
         post?: never;
@@ -948,7 +1123,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Embedding Config */
+        /**
+         * Create Embedding Config
+         * @description Create an embedding config: the embedding model and settings for search
+         *     chunks.
+         */
         post: operations["create_embedding_config_api_projects__project_id__create_embedding_config_post"];
         delete?: never;
         options?: never;
@@ -963,7 +1142,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Embedding Configs */
+        /**
+         * Get Embedding Configs
+         * @description List the project's embedding configs.
+         */
         get: operations["get_embedding_configs_api_projects__project_id__embedding_configs_get"];
         put?: never;
         post?: never;
@@ -982,7 +1164,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Reranker Config */
+        /**
+         * Create Reranker Config
+         * @description Create a reranker config: the model that reorders search results.
+         */
         post: operations["create_reranker_config_api_projects__project_id__create_reranker_config_post"];
         delete?: never;
         options?: never;
@@ -997,7 +1182,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Reranker Configs */
+        /**
+         * Get Reranker Configs
+         * @description List the project's reranker configs.
+         */
         get: operations["get_reranker_configs_api_projects__project_id__reranker_configs_get"];
         put?: never;
         post?: never;
@@ -1014,7 +1202,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Embedding Config */
+        /**
+         * Get Embedding Config
+         * @description Get one embedding config.
+         */
         get: operations["get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get"];
         put?: never;
         post?: never;
@@ -1033,7 +1224,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Vector Store Config */
+        /**
+         * Create Vector Store Config
+         * @description Create a vector store config: the index type and search settings for RAG.
+         */
         post: operations["create_vector_store_config_api_projects__project_id__create_vector_store_config_post"];
         delete?: never;
         options?: never;
@@ -1048,7 +1242,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Vector Store Configs */
+        /**
+         * Get Vector Store Configs
+         * @description List the project's vector store configs.
+         */
         get: operations["get_vector_store_configs_api_projects__project_id__vector_store_configs_get"];
         put?: never;
         post?: never;
@@ -1065,14 +1262,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Rag Config */
+        /**
+         * Get Rag Config
+         * @description Get one RAG config with its sub-configs.
+         */
         get: operations["get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update Rag Config */
+        /**
+         * Update Rag Config
+         * @description Change a RAG config's name, description or archived flag.
+         */
         patch: operations["update_rag_config_api_projects__project_id__rag_configs__rag_config_id__patch"];
         trace?: never;
     };
@@ -1085,7 +1288,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Rag Config */
+        /**
+         * Create Rag Config
+         * @description Create a RAG config from an extractor, chunker, embedding and vector store
+         *     config. It becomes a search tool.
+         */
         post: operations["create_rag_config_api_projects__project_id__rag_configs_create_rag_config_post"];
         delete?: never;
         options?: never;
@@ -1100,7 +1307,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Rag Configs */
+        /**
+         * Get Rag Configs
+         * @description List the project's RAG configs, each with its sub-configs.
+         */
         get: operations["get_rag_configs_api_projects__project_id__rag_configs_get"];
         put?: never;
         post?: never;
@@ -1117,7 +1327,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Run Rag Config */
+        /**
+         * Run Rag Config
+         * @description Build a RAG config's search index: extract, chunk, embed and index the
+         *     documents. Streams progress.
+         */
         get: operations["run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get"];
         put?: never;
         post?: never;
@@ -1136,7 +1350,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Get Rag Config Progress */
+        /**
+         * Get Rag Config Progress
+         * @description Get how far the index of each RAG config is built, for some or all of the
+         *     project's RAG configs.
+         */
         post: operations["get_rag_config_progress_api_projects__project_id__rag_configs_progress_post"];
         delete?: never;
         options?: never;
@@ -1171,7 +1389,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Check Library State */
+        /**
+         * Check Library State
+         * @description Check whether the project's document library is empty.
+         */
         get: operations["check_library_state_api_projects__project_id__check_library_state_get"];
         put?: never;
         post?: never;
@@ -1215,7 +1436,7 @@ export interface paths {
         put?: never;
         /**
          * Compute Statistics
-         * @description Confidence intervals and significance tests on eval metrics — use this INSTEAD of computing standard errors or significance by hand. Set `operation`:
+         * @description Confidence intervals and significance tests on eval metrics. Use this INSTEAD of computing standard errors or significance by hand. Set `operation`:
          *
          *     - "proportion_ci": confidence interval + standard error for ONE proportion (e.g. an "85% pass, n=200" cell). Params: `proportion` (a fraction in [0,1]) and `n`.
          *     - "compare_proportions": difference of two INDEPENDENT proportions with a significance verdict (conservative — for marginals only). Params: `proportion_a`, `n_a`, `proportion_b`, `n_b`.
@@ -1238,7 +1459,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Provider Models */
+        /**
+         * List Provider Models
+         * @description List every model in Kiln's built-in model list, by ID and name.
+         */
         get: operations["get_providers_models_api_providers_models_get"];
         put?: never;
         post?: never;
@@ -1255,7 +1479,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Available Models */
+        /**
+         * List Available Models
+         * @description List the models the user can run now, grouped by connected provider, with
+         *     each model's capabilities.
+         */
         get: operations["get_available_models_api_available_models_get"];
         put?: never;
         post?: never;
@@ -1272,7 +1500,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Provider Embedding Models */
+        /**
+         * List Provider Embedding Models
+         * @description List every embedding model in Kiln's built-in list, by ID and name.
+         */
         get: operations["get_providers_embedding_models_api_providers_embedding_models_get"];
         put?: never;
         post?: never;
@@ -1289,7 +1520,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Available Embedding Models */
+        /**
+         * List Available Embedding Models
+         * @description List the embedding models the user can run now, grouped by connected
+         *     provider.
+         */
         get: operations["get_available_embedding_models_api_available_embedding_models_get"];
         put?: never;
         post?: never;
@@ -1306,7 +1541,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Provider Reranker Models */
+        /**
+         * List Provider Reranker Models
+         * @description List every reranker model in Kiln's built-in list, by ID and name.
+         */
         get: operations["get_providers_reranker_models_api_providers_reranker_models_get"];
         put?: never;
         post?: never;
@@ -1323,7 +1561,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Available Reranker Models */
+        /**
+         * List Available Reranker Models
+         * @description List the reranker models the user can run now, grouped by connected provider.
+         */
         get: operations["get_available_reranker_models_api_available_reranker_models_get"];
         put?: never;
         post?: never;
@@ -1342,7 +1583,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Connect Ollama */
+        /**
+         * Connect Ollama
+         * @description Connect to a running Ollama server and list its models. Uses the default
+         *     address unless custom_ollama_url is set.
+         */
         post: operations["connect_ollama_api_api_provider_ollama_connect_post"];
         delete?: never;
         options?: never;
@@ -1359,7 +1604,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Connect Docker Model Runner */
+        /**
+         * Connect Docker Model Runner
+         * @description Connect to a running Docker Model Runner and list its models. Uses the
+         *     default address unless a custom URL is set.
+         */
         post: operations["connect_docker_model_runner_api_api_provider_docker_model_runner_connect_post"];
         delete?: never;
         options?: never;
@@ -1530,11 +1779,12 @@ export interface paths {
         };
         /**
          * List Model Info
-         * @description List Kiln's models with prices, limits and release dates from
-         *     models.dev, and for each provider entry whether the user can run it
-         *     now (status). By default only entries the user can run now (status
-         *     ready, not deprecated) are listed. Rows with no listed entry are left
-         *     out. `total` counts the rows after all filters; page with `offset`.
+         * @description List Kiln's models, with prices and limits, and whether each can run now.
+         *
+         *     Prices, limits and release dates come from models.dev; each provider entry has a
+         *     status saying whether the user can run it now. By default only entries the user
+         *     can run now (status ready, not deprecated) are listed. Rows with no listed entry
+         *     are left out. `total` counts the rows after all filters; page with `offset`.
          */
         get: operations["list_model_info_api_model_info_models_get"];
         put?: never;
@@ -1554,11 +1804,12 @@ export interface paths {
         };
         /**
          * Get Model Info Details
-         * @description The full record of one model: every provider entry with its status,
-         *     prices, limits, capabilities, thinking levels, default output mode and
-         *     what Kiln suggests the model for. Read the entry of the provider you
-         *     will use before you write a run config. 404 when the model, or its entry
-         *     for `provider`, does not exist.
+         * @description Get the full record of one model by its Kiln model ID, for every provider.
+         *
+         *     Every provider entry has its status, prices, limits, capabilities, thinking
+         *     levels, default output mode and what Kiln suggests the model for. Read the entry
+         *     of the provider you will use before you write a run config. 404 when the model,
+         *     or its entry for `provider`, does not exist.
          */
         get: operations["get_model_info_details_api_model_info_model_details_get"];
         put?: never;
@@ -1578,10 +1829,11 @@ export interface paths {
         };
         /**
          * List Model Info Providers
-         * @description Every model provider Kiln knows, each marked connected or
-         *     not_connected, with the number of models ready to run on it, and
-         *     Kiln's notes on data retention, rate limits and gotchas. Connected
-         *     providers with models come first.
+         * @description List the model providers Kiln knows, and whether each one is connected.
+         *
+         *     Each is marked connected or not_connected, with the number of models ready to
+         *     run on it, and Kiln's notes on data retention, rate limits and gotchas.
+         *     Connected providers with models come first.
          */
         get: operations["list_model_info_providers_api_model_info_providers_get"];
         put?: never;
@@ -1599,7 +1851,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Generate Prompt */
+        /**
+         * Generate Prompt
+         * @description Render the full prompt text that a prompt ID gives for the task, as the model
+         *     would see it.
+         */
         get: operations["generate_prompt_api_projects__project_id__tasks__task_id__gen_prompt__prompt_id__get"];
         put?: never;
         post?: never;
@@ -1656,7 +1912,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Settings */
+        /**
+         * Get Settings
+         * @description Get the user's Kiln settings. Secrets such as API keys are hidden.
+         */
         get: operations["read_settings_api_settings_get"];
         put?: never;
         /** Update Settings */
@@ -1674,7 +1933,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Setting Item */
+        /**
+         * Get Setting Item
+         * @description Get one Kiln setting by name. Null when it is not set; secrets are hidden.
+         */
         get: operations["read_setting_item_api_settings__item_id__get"];
         put?: never;
         post?: never;
@@ -1756,7 +2018,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Categories */
+        /**
+         * Generate Categories
+         * @description Generate topics, or subtopics under a node of the topic tree, for synthetic
+         *     data on the task. Calls a model; saves nothing. The task's saved data guide
+         *     is used unless data_guide is set.
+         */
         post: operations["generate_categories_api_projects__project_id__tasks__task_id__generate_categories_post"];
         delete?: never;
         options?: never;
@@ -1773,7 +2040,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Inputs */
+        /**
+         * Generate Inputs
+         * @description Generate synthetic inputs for the task, under one topic. Calls a model; saves
+         *     nothing. The task's saved data guide is used unless data_guide is set.
+         */
         post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post"];
         delete?: never;
         options?: never;
@@ -1810,7 +2081,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Sample */
+        /**
+         * Generate Sample
+         * @description Run the task on one synthetic input and return the run, tagged synthetic,
+         *     without saving it. Save it with Save Sample.
+         */
         post: operations["generate_sample_api_projects__project_id__tasks__task_id__generate_sample_post"];
         delete?: never;
         options?: never;
@@ -1846,7 +2121,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Generate Inputs Batch Status */
+        /**
+         * Generate Inputs Batch Status
+         * @description Get the progress and the results so far of a Generate Inputs Batch job.
+         */
         get: operations["generate_inputs_batch_status_api_projects__project_id__tasks__task_id__generate_inputs_batch__job_id__get"];
         put?: never;
         post?: never;
@@ -1884,7 +2162,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Generate Outputs Batch Status */
+        /**
+         * Generate Outputs Batch Status
+         * @description Get the progress and the saved runs so far of a Generate Outputs Batch job.
+         */
         get: operations["generate_outputs_batch_status_api_projects__project_id__tasks__task_id__generate_outputs_batch__job_id__get"];
         put?: never;
         post?: never;
@@ -1903,7 +2184,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Q&A Pairs */
+        /**
+         * Generate Q&A Pairs
+         * @description Generate question and answer pairs from the text of one document, for a RAG
+         *     task. Calls a model; saves nothing.
+         */
         post: operations["generate_qna_pairs_api_projects__project_id__tasks__task_id__generate_qna_post"];
         delete?: never;
         options?: never;
@@ -1940,12 +2225,23 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Task Data Guide */
+        /**
+         * Get Task Data Guide
+         * @description Get the task's saved data guide: what realistic inputs look like, used by
+         *     synthetic data generation. Null when there is none.
+         */
         get: operations["get_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_get"];
         put?: never;
-        /** Save Task Data Guide */
+        /**
+         * Save Task Data Guide
+         * @description Save the task's data guide, replacing the current one. A task has at most
+         *     one.
+         */
         post: operations["save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_post"];
-        /** Delete Task Data Guide */
+        /**
+         * Delete Task Data Guide
+         * @description Delete the task's saved data guide. Does nothing when there is none.
+         */
         delete: operations["delete_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_delete"];
         options?: never;
         head?: never;
@@ -1961,7 +2257,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Preview Task Data Guide */
+        /**
+         * Preview Task Data Guide
+         * @description Generate a few sample inputs from a draft data guide, to check it before
+         *     saving. Calls a model; saves nothing.
+         */
         post: operations["preview_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_preview_post"];
         delete?: never;
         options?: never;
@@ -1978,7 +2278,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Refine Task Data Guide */
+        /**
+         * Refine Task Data Guide
+         * @description Rewrite a draft data guide from feedback on its preview samples. Calls a
+         *     model; saves nothing: save the result with Save Task Data Guide.
+         */
         post: operations["refine_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_refine_post"];
         delete?: never;
         options?: never;
@@ -1993,10 +2297,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Dataset Splits */
+        /**
+         * List Dataset Splits
+         * @description List the task's dataset splits: frozen sets of runs used to fine-tune.
+         */
         get: operations["dataset_splits_api_projects__project_id__tasks__task_id__dataset_splits_get"];
         put?: never;
-        /** Create Dataset Split */
+        /**
+         * Create Dataset Split
+         * @description Freeze a set of the task's runs into a dataset split for fine-tuning.
+         */
         post: operations["create_dataset_split_api_projects__project_id__tasks__task_id__dataset_splits_post"];
         delete?: never;
         options?: never;
@@ -2011,10 +2321,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Finetunes */
+        /**
+         * List Finetunes
+         * @description List the task's fine-tunes. With update_status, ask each provider for the
+         *     job's current status first.
+         */
         get: operations["finetunes_api_projects__project_id__tasks__task_id__finetunes_get"];
         put?: never;
-        /** Create Finetune */
+        /**
+         * Create Finetune
+         * @description Start a fine-tune of the task on a dataset split. Starts a paid job at the
+         *     provider.
+         */
         post: operations["create_finetune_api_projects__project_id__tasks__task_id__finetunes_post"];
         delete?: never;
         options?: never;
@@ -2029,14 +2347,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Finetune */
+        /**
+         * Get Finetune
+         * @description Get one fine-tune with its job's current status from the provider.
+         */
         get: operations["finetune_api_projects__project_id__tasks__task_id__finetunes__finetune_id__get"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update Finetune */
+        /**
+         * Update Finetune
+         * @description Change a fine-tune's name or description.
+         */
         patch: operations["update_finetune_api_projects__project_id__tasks__task_id__finetunes__finetune_id__patch"];
         trace?: never;
     };
@@ -2047,7 +2371,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Finetune Providers */
+        /**
+         * List Finetune Providers
+         * @description List the providers that can fine-tune, with the base models each offers and
+         *     whether it is enabled.
+         */
         get: operations["finetune_providers_api_finetune_providers_get"];
         put?: never;
         post?: never;
@@ -2064,7 +2392,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Finetune Hyperparameters */
+        /**
+         * List Finetune Hyperparameters
+         * @description List the hyperparameters a fine-tune provider accepts, with their types.
+         */
         get: operations["finetune_hyperparameters_api_finetune_hyperparameters__provider_id__get"];
         put?: never;
         post?: never;
@@ -2081,7 +2412,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Finetune Dataset Info */
+        /**
+         * Get Finetune Dataset Info
+         * @description Get the task's dataset splits, fine-tunes and run counts by tag, for a fine-tune.
+         *
+         *     With tool_ids, only data made with those tools counts as eligible.
+         */
         get: operations["finetune_dataset_info_api_projects__project_id__tasks__task_id__finetune_dataset_info_get"];
         put?: never;
         post?: never;
@@ -2098,7 +2434,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Dataset JSONL */
+        /**
+         * Download Dataset JSONL
+         * @description Download one split of a dataset split as a JSONL file, in a fine-tuning
+         *     format.
+         */
         get: operations["download_dataset_jsonl_api_download_dataset_jsonl_get"];
         put?: never;
         post?: never;
@@ -2117,7 +2457,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Evaluator */
+        /**
+         * Create Evaluator
+         * @description Create an eval without a spec (a legacy eval). Prefer Create Spec, which
+         *     creates the eval with its spec.
+         */
         post: operations["create_evaluator_api_projects__project_id__tasks__task_id__create_evaluator_post"];
         delete?: never;
         options?: never;
@@ -2132,10 +2476,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Run Configs */
+        /**
+         * List Run Configs
+         * @description List the task's saved run configs, and a run config for each completed
+         *     fine-tune.
+         */
         get: operations["get_run_configs_api_projects__project_id__tasks__task_id__run_configs_get"];
         put?: never;
-        /** Create Run Config */
+        /**
+         * Create Run Config
+         * @description Create a run config for the task: the model, prompt, tools and settings to
+         *     run it with.
+         */
         post: operations["create_task_run_config_api_projects__project_id__tasks__task_id__run_configs_post"];
         delete?: never;
         options?: never;
@@ -2150,15 +2502,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval */
+        /**
+         * Get Eval
+         * @description Get one eval: its scores, its splits and its default judge.
+         */
         get: operations["get_eval_api_projects__project_id__tasks__task_id__evals__eval_id__get"];
         put?: never;
         post?: never;
-        /** Delete Eval */
+        /**
+         * Delete Eval
+         * @description Delete an eval, with its judges and their scores.
+         */
         delete: operations["delete_eval_api_projects__project_id__tasks__task_id__evals__eval_id__delete"];
         options?: never;
         head?: never;
-        /** Update Eval */
+        /**
+         * Update Eval
+         * @description Change an eval's name, description, priority, status, score display names, or
+         *     set its train split.
+         */
         patch: operations["update_eval_api_projects__project_id__tasks__task_id__evals__eval_id__patch"];
         trace?: never;
     };
@@ -2238,7 +2600,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Input */
+        /**
+         * Get Eval Input
+         * @description Get one eval input item.
+         */
         get: operations["get_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__get"];
         put?: never;
         post?: never;
@@ -2277,7 +2642,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Eval Configs */
+        /**
+         * List Eval Configs
+         * @description List an eval's judges (eval configs).
+         */
         get: operations["get_eval_configs_api_projects__project_id__tasks__task_id__evals__eval_id__eval_configs_get"];
         put?: never;
         post?: never;
@@ -2294,7 +2662,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Config */
+        /**
+         * Get Eval Config
+         * @description Get one judge (eval config) of an eval.
+         */
         get: operations["get_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__get"];
         put?: never;
         post?: never;
@@ -2317,7 +2688,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update Run Config */
+        /**
+         * Update Run Config
+         * @description Change a run config's name, starred flag or prompt name. What it runs can't
+         *     change: create a new run config.
+         */
         patch: operations["update_run_config_api_projects__project_id__tasks__task_id__run_configs__run_config_id__patch"];
         trace?: never;
     };
@@ -2330,7 +2705,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Eval Config */
+        /**
+         * Create Eval Config
+         * @description Create a judge (eval config) for an eval from its full properties.
+         */
         post: operations["create_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__create_eval_config_post"];
         delete?: never;
         options?: never;
@@ -2347,7 +2725,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create LLM Judge Eval Config */
+        /**
+         * Create LLM Judge Eval Config
+         * @description Create an LLM judge for an eval from a judge prompt and model; Kiln builds
+         *     the judge's template.
+         */
         post: operations["create_llm_judge_config_api_projects__project_id__tasks__task_id__evals__eval_id__create_llm_judge_config_post"];
         delete?: never;
         options?: never;
@@ -2362,7 +2744,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Default LLM Judge Prompt */
+        /**
+         * Get Default LLM Judge Prompt
+         * @description Get the default LLM judge prompt and system prompt for an eval, and the
+         *     reference keys it needs.
+         */
         get: operations["get_default_llm_judge_prompt_api_projects__project_id__tasks__task_id__evals__eval_id__default_llm_judge_prompt_get"];
         put?: never;
         post?: never;
@@ -2381,7 +2767,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Test V2 Eval Config */
+        /**
+         * Test V2 Eval Config
+         * @description Run a judge config on a few items without saving it, to check its scores.
+         */
         post: operations["test_v2_eval_api_projects__project_id__tasks__task_id__evals__eval_id__test_v2_eval_post"];
         delete?: never;
         options?: never;
@@ -2441,7 +2830,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Set Default Eval Config */
+        /**
+         * Set Default Eval Config
+         * @description Make a judge (eval config) the eval's default, the one whose scores Kiln
+         *     shows.
+         */
         post: operations["set_default_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__set_current_eval_config__eval_config_id__post"];
         delete?: never;
         options?: never;
@@ -2498,7 +2891,10 @@ export interface paths {
         };
         /**
          * Get Eval Run Judge Trace
-         * @description The judge's full conversation for one eval run: the system prompt, the rendered judge prompt, and every reply. Null for runs whose judge called no model, and for runs recorded before judge traces were saved.
+         * @description Get the judge's full conversation for one eval run: system prompt, judge prompt, replies.
+         *
+         *     Null for runs whose judge called no model, and for runs recorded before
+         *     judge traces were saved.
          */
         get: operations["get_eval_run_judge_trace_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__eval_run__eval_run_id__judge_trace_get"];
         put?: never;
@@ -2516,7 +2912,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Progress */
+        /**
+         * Get Eval Progress
+         * @description Get the size of each split of an eval, and how much of its golden set is rated.
+         *
+         *     Also names the eval's default judge.
+         */
         get: operations["get_eval_progress_api_projects__project_id__tasks__task_id__evals__eval_id__progress_get"];
         put?: never;
         post?: never;
@@ -2533,7 +2934,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Run Config Score Summary */
+        /**
+         * Get Run Config Score Summary
+         * @description Get one judge's mean scores on the eval's test split, for every run config of
+         *     the task.
+         */
         get: operations["get_eval_config_score_summary_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__score_summary_get"];
         put?: never;
         post?: never;
@@ -2550,7 +2955,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Results Summary */
+        /**
+         * Get Eval Results Summary
+         * @description Get the test-split scores of every eval of the task, for every run config, in
+         *     one table.
+         */
         get: operations["get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get"];
         put?: never;
         post?: never;
@@ -2567,7 +2976,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Config Comparison Summary */
+        /**
+         * Get Eval Config Comparison Summary
+         * @description Compare an eval's judges against the human ratings of its golden set: how
+         *     well each judge agrees.
+         */
         get: operations["get_eval_configs_score_summary_api_projects__project_id__tasks__task_id__evals__eval_id__eval_configs_score_summary_get"];
         put?: never;
         post?: never;
@@ -2584,7 +2997,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Run Config Eval Scores */
+        /**
+         * Get Run Config Eval Scores
+         * @description Get one run config's scores on every eval of the task.
+         */
         get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get"];
         put?: never;
         post?: never;
@@ -2621,10 +3037,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Check code trust for a project */
+        /**
+         * Check code trust for a project
+         * @description Check whether the project's code is trusted for this app session.
+         */
         get: operations["check_add_code_trust_endpoint_api_projects__project_id__add_code_trust_get"];
         put?: never;
-        /** Add code trust for a project */
+        /**
+         * Add code trust for a project
+         * @description Trust the project's code for this app session, so new code tools and code
+         *     judges can run.
+         */
         post: operations["add_code_trust_endpoint_api_projects__project_id__add_code_trust_post"];
         delete?: never;
         options?: never;
@@ -2641,7 +3064,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Validate Input Transform Template */
+        /**
+         * Validate Input Transform Template
+         * @description Check that an input transform template is valid Jinja2, and return the error
+         *     when it is not.
+         */
         post: operations["validate_input_transform_template_api_validate_input_transform_template_post"];
         delete?: never;
         options?: never;
@@ -2656,7 +3083,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Tasks Compatible With Tool */
+        /**
+         * Tasks Compatible With Tool
+         * @description List the project's tasks, each marked whether its input and output fit an MCP
+         *     tool's schemas.
+         */
         get: operations["tasks_compatible_with_tool_api_projects__project_id__tasks_compatible_with_tool_get"];
         put?: never;
         post?: never;
@@ -2675,7 +3106,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Mcp Run Config */
+        /**
+         * Create Mcp Run Config
+         * @description Create a run config that runs the task by calling a tool on an MCP server, in
+         *     place of a model.
+         */
         post: operations["create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post"];
         delete?: never;
         options?: never;
@@ -2692,7 +3127,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Task From Tool */
+        /**
+         * Create Task From Tool
+         * @description Create a task whose input and output schemas come from an MCP tool, and a run
+         *     config that calls it.
+         */
         post: operations["create_task_from_tool_api_projects__project_id__create_task_from_tool_post"];
         delete?: never;
         options?: never;
@@ -2724,7 +3163,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Available Tools */
+        /**
+         * Get Available Tools
+         * @description List every tool the project's tasks can use, grouped by kind.
+         *
+         *     The kinds are built-in tools, MCP servers, search tools, Kiln task tools
+         *     and code tools.
+         */
         get: operations["get_available_tools_api_projects__project_id__available_tools_get"];
         put?: never;
         post?: never;
@@ -2741,7 +3186,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Available Tool Servers */
+        /**
+         * Get Available Tool Servers
+         * @description List the project's tool servers, with any secrets they are missing.
+         *
+         *     Tool servers are remote and local MCP servers and Kiln task tools.
+         */
         get: operations["get_available_tool_servers_api_projects__project_id__available_tool_servers_get"];
         put?: never;
         post?: never;
@@ -2758,7 +3208,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Kiln Task Tools */
+        /**
+         * Get Kiln Task Tools
+         * @description List the Kiln tasks the project offers as tools, with each one's tool name
+         *     and run config.
+         */
         get: operations["get_kiln_task_tools_api_projects__project_id__kiln_task_tools_get"];
         put?: never;
         post?: never;
@@ -2775,11 +3229,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Tool Server */
+        /**
+         * Get Tool Server
+         * @description Get one tool server and the tools it serves now. Connects to the server to
+         *     list them.
+         */
         get: operations["get_tool_server_api_projects__project_id__tool_servers__tool_server_id__get"];
         put?: never;
         post?: never;
-        /** Delete Tool Server */
+        /**
+         * Delete Tool Server
+         * @description Delete a tool server from the project.
+         */
         delete: operations["delete_tool_server_api_projects__project_id__tool_servers__tool_server_id__delete"];
         options?: never;
         head?: never;
@@ -2793,7 +3254,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Tool Server Config */
+        /**
+         * Get Tool Server Config
+         * @description Get one tool server's saved settings, without connecting to it.
+         */
         get: operations["get_tool_server_config_api_projects__project_id__tool_servers__tool_server_id__config_get"];
         put?: never;
         post?: never;
@@ -2812,7 +3276,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Connect Remote Mcp */
+        /**
+         * Connect Remote Mcp
+         * @description Add a remote MCP server (an HTTP URL) to the project as a tool server.
+         */
         post: operations["connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post"];
         delete?: never;
         options?: never;
@@ -2833,7 +3300,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Edit Remote Mcp */
+        /**
+         * Edit Remote Mcp
+         * @description Change a remote MCP tool server's name, description, URL, headers or archived
+         *     flag.
+         */
         patch: operations["edit_remote_mcp_api_projects__project_id__edit_remote_mcp__tool_server_id__patch"];
         trace?: never;
     };
@@ -2846,7 +3317,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Connect Local Mcp */
+        /**
+         * Connect Local Mcp
+         * @description Add a local MCP server (a command Kiln starts) to the project as a tool
+         *     server.
+         */
         post: operations["connect_local_mcp_api_projects__project_id__connect_local_mcp_post"];
         delete?: never;
         options?: never;
@@ -2867,7 +3342,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Edit Local Mcp */
+        /**
+         * Edit Local Mcp
+         * @description Change a local MCP tool server's name, description, command, arguments or
+         *     environment.
+         */
         patch: operations["edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch"];
         trace?: never;
     };
@@ -2880,7 +3359,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Archive Tool Server */
+        /**
+         * Archive Tool Server
+         * @description Archive or unarchive a tool server. An archived server is hidden from tool
+         *     pickers.
+         */
         post: operations["archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post"];
         delete?: never;
         options?: never;
@@ -2897,7 +3380,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Add Kiln Task Tool */
+        /**
+         * Add Kiln Task Tool
+         * @description Offer a Kiln task as a tool that other tasks' agents can call, through one of
+         *     its run configs.
+         */
         post: operations["add_kiln_task_tool_api_projects__project_id__kiln_task_tool_post"];
         delete?: never;
         options?: never;
@@ -2918,7 +3405,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Edit Kiln Task Tool */
+        /**
+         * Edit Kiln Task Tool
+         * @description Change a Kiln task tool's name, description, task or run config.
+         */
         patch: operations["edit_kiln_task_tool_api_projects__project_id__edit_kiln_task_tool__tool_server_id__patch"];
         trace?: never;
     };
@@ -2929,10 +3419,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Demo Tools */
+        /**
+         * Get Demo Tools
+         * @description Check whether Kiln's demo math tools are turned on.
+         */
         get: operations["get_demo_tools_api_demo_tools_get"];
         put?: never;
-        /** Set Demo Tools */
+        /**
+         * Set Demo Tools
+         * @description Turn Kiln's demo math tools on or off.
+         */
         post: operations["set_demo_tools_api_demo_tools_post"];
         delete?: never;
         options?: never;
@@ -2947,7 +3443,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Search Tools */
+        /**
+         * Get Search Tools
+         * @description List the project's search tools: one per RAG config, with its tool name and
+         *     description.
+         */
         get: operations["get_search_tools_api_projects__project_id__search_tools_get"];
         put?: never;
         post?: never;
@@ -2992,10 +3492,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Code Tools */
+        /**
+         * List Code Tools
+         * @description List the project's code tools, archived ones last.
+         */
         get: operations["list_code_tools_api_projects__project_id__code_tools_get"];
         put?: never;
-        /** Create Code Tool */
+        /**
+         * Create Code Tool
+         * @description Create a code tool: Python code the project's agents can call as a tool.
+         *     Until the project's code is trusted (Add code trust), it saves nothing and
+         *     returns not_trusted.
+         */
         post: operations["create_code_tool_api_projects__project_id__code_tools_post"];
         delete?: never;
         options?: never;
@@ -3012,7 +3520,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Test Code Tool */
+        /**
+         * Test Code Tool
+         * @description Run a code tool's code once on test arguments, without saving the tool.
+         *     Returns its output or error, or not_trusted until the project's code is
+         *     trusted (Add code trust).
+         */
         post: operations["test_code_tool_api_projects__project_id__test_code_tool_post"];
         delete?: never;
         options?: never;
@@ -3027,15 +3540,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Code Tool */
+        /**
+         * Get Code Tool
+         * @description Get one code tool, with its code and parameter schema.
+         */
         get: operations["get_code_tool_api_projects__project_id__code_tools__code_tool_id__get"];
         put?: never;
         post?: never;
-        /** Delete Code Tool */
+        /**
+         * Delete Code Tool
+         * @description Delete a code tool from the project.
+         */
         delete: operations["delete_code_tool_api_projects__project_id__code_tools__code_tool_id__delete"];
         options?: never;
         head?: never;
-        /** Update Code Tool Metadata */
+        /**
+         * Update Code Tool Metadata
+         * @description Change a code tool's name or description. Its code and tool interface can't
+         *     be edited: create a new code tool instead.
+         */
         patch: operations["update_code_tool_api_projects__project_id__code_tools__code_tool_id__patch"];
         trace?: never;
     };
@@ -3048,7 +3571,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Archive/Unarchive Code Tool */
+        /**
+         * Archive/Unarchive Code Tool
+         * @description Archive or unarchive a code tool.
+         */
         post: operations["archive_code_tool_api_projects__project_id__code_tools__code_tool_id__archive_post"];
         delete?: never;
         options?: never;
@@ -3063,10 +3589,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List OpenEnv Servers */
+        /**
+         * List OpenEnv Servers
+         * @description List the project's OpenEnv servers.
+         */
         get: operations["list_openenv_servers_api_projects__project_id__openenv_servers_get"];
         put?: never;
-        /** Create OpenEnv Server */
+        /**
+         * Create OpenEnv Server
+         * @description Add an OpenEnv server to the project: a running environment whose tools
+         *     agents can use.
+         */
         post: operations["create_openenv_server_api_projects__project_id__openenv_servers_post"];
         delete?: never;
         options?: never;
@@ -3081,7 +3614,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get OpenEnv Server */
+        /**
+         * Get OpenEnv Server
+         * @description Get one OpenEnv server.
+         */
         get: operations["get_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__get"];
         put?: never;
         post?: never;
@@ -3097,7 +3633,10 @@ export interface paths {
         delete: operations["delete_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__delete"];
         options?: never;
         head?: never;
-        /** Update OpenEnv Server */
+        /**
+         * Update OpenEnv Server
+         * @description Change an OpenEnv server's name, description or URL.
+         */
         patch: operations["update_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__patch"];
         trace?: never;
     };
@@ -3128,10 +3667,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Skills */
+        /**
+         * Get Skills
+         * @description List the project's skills.
+         */
         get: operations["get_skills_api_projects__project_id__skills_get"];
         put?: never;
-        /** Create Skill */
+        /**
+         * Create Skill
+         * @description Create a skill in the project from a name, description and SKILL.md body.
+         */
         post: operations["create_skill_api_projects__project_id__skills_post"];
         delete?: never;
         options?: never;
@@ -3146,14 +3691,21 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Skill */
+        /**
+         * Get Skill
+         * @description Get one skill's name, description and archived flag.
+         */
         get: operations["get_skill_api_projects__project_id__skills__skill_id__get"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update Skill */
+        /**
+         * Update Skill
+         * @description Archive or unarchive a skill. A skill can't be edited: create a new skill
+         *     instead.
+         */
         patch: operations["update_skill_api_projects__project_id__skills__skill_id__patch"];
         trace?: never;
     };
@@ -3164,7 +3716,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Skill Content */
+        /**
+         * Get Skill Content
+         * @description Get a skill's SKILL.md: the full file and its body.
+         */
         get: operations["get_skill_content_api_projects__project_id__skills__skill_id__content_get"];
         put?: never;
         post?: never;
@@ -3200,7 +3755,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Clarify Spec */
+        /**
+         * Clarify Spec
+         * @description Generate example inputs and outputs that test a draft spec, for the user to
+         *     judge (needs Kiln Pro). Their judgements feed Refine Spec.
+         */
         post: operations["clarify_spec_api_copilot_clarify_spec_post"];
         delete?: never;
         options?: never;
@@ -3217,7 +3776,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Refine Spec */
+        /**
+         * Refine Spec
+         * @description Propose edits to a spec's fields from the user's feedback on examples (needs
+         *     Kiln Pro). Saves nothing.
+         */
         post: operations["refine_spec_api_copilot_refine_spec_post"];
         delete?: never;
         options?: never;
@@ -3234,7 +3797,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Batch */
+        /**
+         * Generate Batch
+         * @description Generate a batch of synthetic inputs for a spec, grouped by topic (needs Kiln
+         *     Pro). Saves nothing.
+         */
         post: operations["generate_batch_api_copilot_generate_batch_post"];
         delete?: never;
         options?: never;
@@ -3251,7 +3818,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Question Spec */
+        /**
+         * Question Spec
+         * @description Generate clarifying questions about a draft spec for the user to answer
+         *     (needs Kiln Pro).
+         */
         post: operations["question_spec_api_copilot_question_spec_post"];
         delete?: never;
         options?: never;
@@ -3268,7 +3839,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Submit Question Answers */
+        /**
+         * Submit Question Answers
+         * @description Propose spec edits and an eval name from the user's answers to Question Spec
+         *     (needs Kiln Pro). Saves nothing.
+         */
         post: operations["submit_question_answers_api_copilot_refine_spec_with_question_answers_post"];
         delete?: never;
         options?: never;
@@ -3426,7 +4001,9 @@ export interface paths {
         put?: never;
         /**
          * Run Multi-Turn Pipeline
-         * @description The merged multi-turn stream: [drive → judge] per case.
+         * @description Drive each multi-turn case against the task, then judge it, as one event stream.
+         *
+         *     The merged multi-turn stream: [drive → judge] per case.
          *
          *     Emits (all frames `type`-discriminated; errors carry {code, message}):
          *       - batch_started   { batch_tag, total_cases }
@@ -3464,7 +4041,9 @@ export interface paths {
         put?: never;
         /**
          * Run Single-Turn Review Pipeline
-         * @description The single-turn stream: [run → judge] per generated input.
+         * @description Run the task once on each generated input, then judge each run, as one stream.
+         *
+         *     The single-turn stream: [run → judge] per generated input.
          *
          *     The one-turn sibling of multi_turn_pipeline: the task runs ONCE per
          *     input on the target run config — tools live, the user's keys — and
@@ -3512,7 +4091,9 @@ export interface paths {
         put?: never;
         /**
          * Judge Saved Eval-Builder Results
-         * @description Re-judge previously driven results: [reload → judge] per case.
+         * @description Re-judge saved eval builder results with a new judge prompt, as an event stream.
+         *
+         *     [reload → judge] per case.
          *
          *     The judge calibration loop's re-score stream, both arms: after a
          *     refine produces a new judge prompt, this scores the SAME saved
@@ -3561,7 +4142,7 @@ export interface paths {
         put?: never;
         /**
          * Build Claims
-         * @description Claims-only primitive: build claims for one trace given a known verdict.
+         * @description Build the review claims for one judged trace, given its known verdict.
          *
          *     The multi-turn review's claims path: the pipeline stream stops at the
          *     judge, and the client calls this per trace the reviewer opens (under
@@ -3586,7 +4167,9 @@ export interface paths {
         put?: never;
         /**
          * Preflight a Model Lane
-         * @description One cheap completion through the SAME adapter model/provider
+         * @description Check that a model runs on the user's keys with one cheap completion.
+         *
+         *     The completion goes through the SAME adapter model/provider
          *     resolution a real run uses (that resolution is where a dead model
          *     surfaces), on the user's same keys. Catches key/billing/deprecation/
          *     unreachable failures for a lane BEFORE the drive commits the
@@ -3661,7 +4244,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Multi-Turn SU Cases */
+        /**
+         * Generate Multi-Turn SU Cases
+         * @description Generate synthetic-user cases (persona, goal, first message) for a multi-turn
+         *     task (needs Kiln Pro). Saves nothing.
+         */
         post: operations["generate_cases_api_projects__project_id__tasks__task_id__multiturn_sdg_generate_cases_post"];
         delete?: never;
         options?: never;
@@ -3678,7 +4265,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run Multi-Turn SU Cases Batch */
+        /**
+         * Run Multi-Turn SU Cases Batch
+         * @description Run one synthetic-user conversation with the task per case, saving the runs.
+         *
+         *     Streams progress as events.
+         */
         post: operations["stream_run_cases_batch_api_projects__project_id__tasks__task_id__multiturn_sdg_run_cases_batch_post"];
         delete?: never;
         options?: never;
@@ -3697,9 +4289,11 @@ export interface paths {
         put?: never;
         /**
          * Batch Plan
-         * @description Plan a synthetic batch: turn the user's guidance + count into one
-         *     tailored prompt per input (plus a user-facing summary). Requires a
-         *     connected Kiln Pro / Copilot key (connection only, no paid tier).
+         * @description Plan a synthetic batch: one tailored prompt per input, from the user's guidance.
+         *
+         *     Turns the guidance and a count into the prompts, plus a user-facing
+         *     summary. Requires a connected Kiln Pro / Copilot key (connection only,
+         *     no paid tier).
          */
         post: operations["batch_plan_api_projects__project_id__tasks__task_id__copilot_batch_plan_post"];
         delete?: never;
@@ -3986,11 +4580,12 @@ export interface paths {
         };
         /**
          * Client version policy
-         * @description Proxy to Kiln Copilot ``GET /v1/chat/version_policy``.
+         * @description Check whether this app version must or should upgrade for the Kiln Assistant.
          *
-         *     Lets the assistant page show the upgrade banners on load. Forwards the
-         *     desktop version header so the server can compute the verdict; on any
-         *     upstream/transport failure we degrade to "no banner" rather than error.
+         *     Proxies Kiln Copilot's ``GET /v1/chat/version_policy``. Lets the assistant page
+         *     show the upgrade banners on load. Forwards the desktop version header so the
+         *     server can compute the verdict; on any upstream/transport failure we degrade to
+         *     "no banner" rather than error.
          */
         get: operations["chat_version_policy_api_chat_version_policy_get"];
         put?: never;
@@ -4010,7 +4605,9 @@ export interface paths {
         };
         /**
          * List chat sessions
-         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions``.
+         * @description List the user's Kiln Assistant chat sessions (needs Kiln Pro).
+         *
+         *     Proxies Kiln Copilot's ``GET /v1/chat/sessions``.
          */
         get: operations["list_chat_sessions_api_chat_sessions_get"];
         put?: never;
@@ -4030,14 +4627,18 @@ export interface paths {
         };
         /**
          * Get chat session
-         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``.
+         * @description Get one Kiln Assistant chat session with its messages (needs Kiln Pro).
+         *
+         *     Proxies Kiln Copilot's ``GET /v1/chat/sessions/{session_id}``.
          */
         get: operations["get_chat_session_api_chat_sessions__session_id__get"];
         put?: never;
         post?: never;
         /**
          * Delete chat session
-         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+         * @description Delete one Kiln Assistant chat session (needs Kiln Pro).
+         *
+         *     Proxies Kiln Copilot's ``DELETE /v1/chat/sessions/{session_id}``.
          */
         delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
         options?: never;
@@ -4093,7 +4694,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Jobs */
+        /**
+         * List Jobs
+         * @description List background jobs, newest first, with filters for status, type, project
+         *     and time.
+         */
         get: operations["list_jobs_api_jobs_get"];
         put?: never;
         post?: never;
@@ -4185,7 +4790,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Job */
+        /**
+         * Create Job
+         * @description Start a background job of a registered type. Returns at once, or with
+         *     wait=true when the job ends.
+         */
         post: operations["create_job_api_jobs__type__post"];
         delete?: never;
         options?: never;
@@ -4200,11 +4809,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Job */
+        /**
+         * Get Job
+         * @description Get a background job's record: status, progress and result.
+         */
         get: operations["get_job_api_jobs__id__get"];
         put?: never;
         post?: never;
-        /** Delete Job */
+        /**
+         * Delete Job
+         * @description Delete the record of a background job that has ended (succeeded, failed or
+         *     cancelled).
+         */
         delete: operations["delete_job_api_jobs__id__delete"];
         options?: never;
         head?: never;
@@ -4218,7 +4834,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Job Result */
+        /**
+         * Get Job Result
+         * @description Get the result of a finished background job.
+         */
         get: operations["get_job_result_api_jobs__id__result_get"];
         put?: never;
         post?: never;
@@ -4259,7 +4878,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Job Errors */
+        /**
+         * Get Job Errors
+         * @description Get the errors a background job logged for its items. Empty when the job is
+         *     unknown or had none.
+         */
         get: operations["get_job_errors_api_jobs__id__errors_get"];
         put?: never;
         post?: never;
@@ -4278,7 +4901,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Pause Job */
+        /**
+         * Pause Job
+         * @description Pause a running background job. Resume it later with Resume Job.
+         */
         post: operations["pause_job_api_jobs__id__pause_post"];
         delete?: never;
         options?: never;
@@ -4295,7 +4921,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Resume Job */
+        /**
+         * Resume Job
+         * @description Resume a paused background job.
+         */
         post: operations["resume_job_api_jobs__id__resume_post"];
         delete?: never;
         options?: never;
@@ -4312,7 +4941,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancel Job */
+        /**
+         * Cancel Job
+         * @description Cancel a background job.
+         */
         post: operations["cancel_job_api_jobs__id__cancel_post"];
         delete?: never;
         options?: never;
@@ -10232,7 +10864,10 @@ export interface components {
              */
             deprecated: boolean;
         };
-        /** ModelInfoDetails */
+        /**
+         * ModelInfoDetails
+         * @description The full record of one model, with every provider entry.
+         */
         ModelInfoDetails: {
             sources: components["schemas"]["ModelInfoSources"];
             /**
@@ -10240,7 +10875,10 @@ export interface components {
              * @description Kiln's model id. Use it in a run config.
              */
             model: string;
-            /** Display Name */
+            /**
+             * Display Name
+             * @description The model's name as Kiln shows it.
+             */
             display_name: string;
             /**
              * Family
@@ -10325,7 +10963,10 @@ export interface components {
              */
             providers?: components["schemas"]["ModelInfoProviderEntryDetails"][];
         };
-        /** ModelInfoKilnSource */
+        /**
+         * ModelInfoKilnSource
+         * @description Where Kiln's model list came from, and how old it is.
+         */
         ModelInfoKilnSource: {
             /**
              * Origin
@@ -10344,7 +10985,10 @@ export interface components {
              */
             age_seconds?: number | null;
         };
-        /** ModelInfoList */
+        /**
+         * ModelInfoList
+         * @description A page of models, with the sources the answer is built from.
+         */
         ModelInfoList: {
             sources: components["schemas"]["ModelInfoSources"];
             /**
@@ -10361,7 +11005,10 @@ export interface components {
             /** Models */
             models?: components["schemas"]["ModelInfoRow"][];
         };
-        /** ModelInfoModelsDevSource */
+        /**
+         * ModelInfoModelsDevSource
+         * @description The state and age of the models.dev data.
+         */
         ModelInfoModelsDevSource: {
             /**
              * State
@@ -10385,7 +11032,10 @@ export interface components {
              */
             detail?: string | null;
         };
-        /** ModelInfoProviderEntryDetails */
+        /**
+         * ModelInfoProviderEntryDetails
+         * @description The full record of one provider entry of a model.
+         */
         ModelInfoProviderEntryDetails: {
             /**
              * Provider
@@ -10405,6 +11055,7 @@ export interface components {
             provider_model_id?: string | null;
             /**
              * Deprecated
+             * @description Kiln marks this provider entry deprecated.
              * @default false
              */
             deprecated: boolean;
@@ -10474,7 +11125,10 @@ export interface components {
              * @description The thinking levels a run config can set, in Kiln's order.
              */
             thinking_levels?: string[];
-            /** Default Thinking Level */
+            /**
+             * Default Thinking Level
+             * @description Kiln's suggested default thinking level for the pair. Null when Kiln suggests none.
+             */
             default_thinking_level?: string | null;
             /**
              * Default Structured Output Mode
@@ -10487,7 +11141,10 @@ export interface components {
              */
             kiln_suggested_for?: string[];
         };
-        /** ModelInfoProviderEntryRow */
+        /**
+         * ModelInfoProviderEntryRow
+         * @description One provider entry of a model in a list row: status and prices.
+         */
         ModelInfoProviderEntryRow: {
             /**
              * Provider
@@ -10517,17 +11174,24 @@ export interface components {
             tags?: string[];
             /**
              * Deprecated
+             * @description Kiln marks this provider entry deprecated.
              * @default false
              */
             deprecated: boolean;
         };
-        /** ModelInfoProviderList */
+        /**
+         * ModelInfoProviderList
+         * @description Every model provider Kiln knows, with the sources the answer is built from.
+         */
         ModelInfoProviderList: {
             sources: components["schemas"]["ModelInfoSources"];
             /** Providers */
             providers?: components["schemas"]["ModelInfoProviderRow"][];
         };
-        /** ModelInfoProviderRow */
+        /**
+         * ModelInfoProviderRow
+         * @description One model provider: whether it is connected, and how many models are ready on it.
+         */
         ModelInfoProviderRow: {
             /**
              * Provider
@@ -10562,14 +11226,20 @@ export interface components {
              */
             notes?: string | null;
         };
-        /** ModelInfoRow */
+        /**
+         * ModelInfoRow
+         * @description One model in a list of models, with its provider entries.
+         */
         ModelInfoRow: {
             /**
              * Model
              * @description Kiln's model id. Use it in a run config.
              */
             model: string;
-            /** Display Name */
+            /**
+             * Display Name
+             * @description The model's name as Kiln shows it.
+             */
             display_name: string;
             /**
              * Family

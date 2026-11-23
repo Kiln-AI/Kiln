@@ -16,6 +16,7 @@ from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_ai.tools.tool_registry import validate_unique_allowlist_tool_names
+from kiln_server.custom_errors import not_found_error
 from kiln_server.project_api import project_from_id
 from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
@@ -157,7 +158,7 @@ def _code_tool_from_id(project_id: str, code_tool_id: str) -> CodeTool:
     project = project_from_id(project_id)
     code_tool = CodeTool.from_id_and_parent_path(code_tool_id, project.path)
     if code_tool is None:
-        raise HTTPException(status_code=404, detail="Code tool not found")
+        raise not_found_error("Code tool", code_tool_id, "project's code tools")
     return code_tool
 
 
@@ -225,6 +226,9 @@ def connect_code_tool_api(app: FastAPI):
         ],
         request: CodeToolCreateRequest,
     ) -> CodeToolCreateResponse:
+        """Create a code tool: Python code the project's agents can call as a tool.
+        Until the project's code is trusted (Add code trust), it saves nothing and
+        returns not_trusted."""
         project = project_from_id(project_id)
 
         if not has_add_code_trust(str(project.path)):
@@ -271,6 +275,9 @@ def connect_code_tool_api(app: FastAPI):
         ],
         request: TestCodeToolRequest,
     ) -> TestCodeToolResponse:
+        """Run a code tool's code once on test arguments, without saving the tool.
+        Returns its output or error, or not_trusted until the project's code is
+        trusted (Add code trust)."""
         project = project_from_id(project_id)
 
         try:
@@ -324,6 +331,7 @@ def connect_code_tool_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[CodeToolResponse]:
+        """List the project's code tools, archived ones last."""
         project = project_from_id(project_id)
         tools = project.code_tools(readonly=True)
         tools.sort(key=lambda ct: (ct.is_archived, ct.created_at or datetime.min))
@@ -343,6 +351,7 @@ def connect_code_tool_api(app: FastAPI):
             str, Path(description="The unique identifier of the code tool.")
         ],
     ) -> CodeToolResponse:
+        """Get one code tool, with its code and parameter schema."""
         ct = _code_tool_from_id(project_id, code_tool_id)
         return _code_tool_to_response(ct)
 
@@ -361,6 +370,8 @@ def connect_code_tool_api(app: FastAPI):
         ],
         updates: CodeToolUpdateRequest,
     ) -> CodeToolResponse:
+        """Change a code tool's name or description. Its code and tool interface can't
+        be edited: create a new code tool instead."""
         ct = _code_tool_from_id(project_id, code_tool_id)
 
         update_fields = updates.model_dump(exclude_unset=True)
@@ -394,6 +405,7 @@ def connect_code_tool_api(app: FastAPI):
         ],
         request: CodeToolArchiveRequest,
     ) -> CodeToolResponse:
+        """Archive or unarchive a code tool."""
         ct = _code_tool_from_id(project_id, code_tool_id)
         ct.is_archived = request.archived
         ct.save_to_file()
@@ -413,6 +425,7 @@ def connect_code_tool_api(app: FastAPI):
             str, Path(description="The unique identifier of the code tool.")
         ],
     ) -> dict[str, str]:
+        """Delete a code tool from the project."""
         ct = _code_tool_from_id(project_id, code_tool_id)
         ct.delete()
         return {"status": "deleted"}

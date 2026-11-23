@@ -4,6 +4,8 @@
 
 **Tags:** Projects
 
+List the projects Kiln knows, with their IDs.
+
 ## Responses
 
 ### 200 OK

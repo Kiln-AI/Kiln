@@ -4,6 +4,9 @@
 
 **Tags:** Documents
 
+Create an extractor config: how documents are turned into text (model,
+prompts, output format).
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,9 @@
 
 **Tags:** Tools & MCP
 
+Archive or unarchive a tool server. An archived server is hidden from tool
+pickers.
+
 ## Request
 
 ### Path Parameters

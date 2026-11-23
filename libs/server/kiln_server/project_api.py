@@ -14,6 +14,7 @@ from kiln_ai.utils.project_utils import (
     project_from_id as project_from_id_core,
 )
 
+from kiln_server.custom_errors import not_found_error
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
@@ -27,10 +28,7 @@ def default_project_path():
 def project_from_id(project_id: str) -> Project:
     project = project_from_id_core(project_id)
     if project is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Project not found. ID: {project_id}",
-        )
+        raise not_found_error("Project", project_id, "projects")
     return project
 
 
@@ -51,6 +49,7 @@ def connect_project_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def create_project(project: Project) -> Project:
+        """Create a project in the default Kiln Projects folder."""
         project_path = os.path.join(default_project_path(), project.name)
         if os.path.exists(project_path):
             raise HTTPException(
@@ -85,6 +84,7 @@ def connect_project_api(app: FastAPI):
             Dict[str, Any], Body(description="Fields to update on the project.")
         ],
     ) -> Project:
+        """Change a project's name or description."""
         original_project = project_from_id(project_id)
         updated_project = original_project.model_copy(update=project_updates)
         # Force validation using model_validate()
@@ -99,6 +99,7 @@ def connect_project_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_projects() -> list[Project]:
+        """List the projects Kiln knows, with their IDs."""
         project_paths = Config.shared().projects
         projects = []
         for project_path in project_paths if project_paths is not None else []:
@@ -124,6 +125,7 @@ def connect_project_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> Project:
+        """Get one project."""
         return project_from_id(project_id)
 
     @app.post(
@@ -153,6 +155,7 @@ def connect_project_api(app: FastAPI):
             ),
         ] = False,
     ) -> Project:
+        """Add an existing project to Kiln from the path of its project.kiln file."""
         if not trusted:
             raise HTTPException(
                 status_code=400,

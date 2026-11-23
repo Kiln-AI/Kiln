@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Change a document's display name, description or tags.
+
 ## Request
 
 ### Path Parameters

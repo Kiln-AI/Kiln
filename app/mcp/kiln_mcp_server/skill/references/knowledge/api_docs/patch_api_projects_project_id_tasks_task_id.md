@@ -4,6 +4,9 @@
 
 **Tags:** Tasks
 
+Change fields of a task, such as its name, description, instruction or
+default run config.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,9 @@
 
 **Tags:** Skills
 
+Archive or unarchive a skill. A skill can't be edited: create a new skill
+instead.
+
 ## Request
 
 ### Path Parameters

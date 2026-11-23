@@ -4,6 +4,9 @@
 
 **Tags:** Documents
 
+Build a RAG config's search index: extract, chunk, embed and index the
+documents. Streams progress.
+
 ## Request
 
 ### Path Parameters

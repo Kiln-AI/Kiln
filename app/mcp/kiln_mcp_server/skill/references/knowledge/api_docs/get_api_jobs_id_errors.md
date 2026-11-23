@@ -4,6 +4,9 @@
 
 **Tags:** Jobs
 
+Get the errors a background job logged for its items. Empty when the job is
+unknown or had none.
+
 ## Request
 
 ### Path Parameters

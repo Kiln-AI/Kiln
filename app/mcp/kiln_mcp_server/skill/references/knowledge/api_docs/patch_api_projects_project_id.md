@@ -4,6 +4,8 @@
 
 **Tags:** Projects
 
+Change a project's name or description.
+
 ## Request
 
 ### Path Parameters

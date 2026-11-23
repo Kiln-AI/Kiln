@@ -4,6 +4,8 @@
 
 **Tags:** Providers & Models
 
+List every embedding model in Kiln's built-in list, by ID and name.
+
 ## Responses
 
 ### 200 OK

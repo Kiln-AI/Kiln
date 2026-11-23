@@ -4,6 +4,10 @@
 
 **Tags:** Code Tools
 
+Create a code tool: Python code the project's agents can call as a tool.
+Until the project's code is trusted (Add code trust), it saves nothing and
+returns not_trusted.
+
 ## Request
 
 ### Path Parameters

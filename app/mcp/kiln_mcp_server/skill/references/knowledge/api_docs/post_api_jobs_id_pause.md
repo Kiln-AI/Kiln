@@ -4,6 +4,8 @@
 
 **Tags:** Jobs
 
+Pause a running background job. Resume it later with Resume Job.
+
 ## Request
 
 ### Path Parameters

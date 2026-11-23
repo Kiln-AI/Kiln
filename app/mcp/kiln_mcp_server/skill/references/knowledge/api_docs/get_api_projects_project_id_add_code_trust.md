@@ -4,6 +4,8 @@
 
 **Tags:** Evals
 
+Check whether the project's code is trusted for this app session.
+
 ## Request
 
 ### Path Parameters

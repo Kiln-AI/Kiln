@@ -4,6 +4,11 @@
 
 **Tags:** Tools & MCP
 
+List every tool the project's tasks can use, grouped by kind.
+
+The kinds are built-in tools, MCP servers, search tools, Kiln task tools
+and code tools.
+
 ## Request
 
 ### Path Parameters

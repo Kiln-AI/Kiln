@@ -4,6 +4,8 @@
 
 **Tags:** Code Tools
 
+Delete a code tool from the project.
+
 ## Request
 
 ### Path Parameters

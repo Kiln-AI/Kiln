@@ -4,6 +4,8 @@
 
 **Tags:** Code Tools
 
+Get one code tool, with its code and parameter schema.
+
 ## Request
 
 ### Path Parameters

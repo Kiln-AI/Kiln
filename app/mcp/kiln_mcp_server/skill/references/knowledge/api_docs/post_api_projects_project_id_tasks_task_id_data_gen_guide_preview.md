@@ -4,6 +4,9 @@
 
 **Tags:** Synthetic Data
 
+Generate a few sample inputs from a draft data guide, to check it before
+saving. Calls a model; saves nothing.
+
 ## Request
 
 ### Path Parameters

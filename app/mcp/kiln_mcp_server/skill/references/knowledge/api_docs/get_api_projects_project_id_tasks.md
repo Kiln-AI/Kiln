@@ -4,6 +4,8 @@
 
 **Tags:** Tasks
 
+List a project's tasks.
+
 ## Request
 
 ### Path Parameters

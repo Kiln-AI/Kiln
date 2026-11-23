@@ -4,6 +4,8 @@
 
 **Tags:** Providers & Models
 
+List the reranker models the user can run now, grouped by connected provider.
+
 ## Responses
 
 ### 200 OK

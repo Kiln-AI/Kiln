@@ -4,6 +4,8 @@
 
 **Tags:** Evals
 
+Run a judge config on a few items without saving it, to check its scores.
+
 ## Request
 
 ### Path Parameters

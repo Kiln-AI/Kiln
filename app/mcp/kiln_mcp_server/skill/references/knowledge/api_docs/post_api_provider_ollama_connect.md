@@ -4,6 +4,9 @@
 
 **Tags:** Providers & Models
 
+Connect to a running Ollama server and list its models. Uses the default
+address unless custom_ollama_url is set.
+
 ## Request
 
 ### Query Parameters

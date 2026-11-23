@@ -4,6 +4,9 @@
 
 **Tags:** Tasks
 
+Create a task whose input and output schemas come from an MCP tool, and a run
+config that calls it.
+
 ## Request
 
 ### Path Parameters

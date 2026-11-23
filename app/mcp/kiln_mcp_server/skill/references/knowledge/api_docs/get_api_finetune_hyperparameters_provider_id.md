@@ -4,6 +4,8 @@
 
 **Tags:** Fine-tuning
 
+List the hyperparameters a fine-tune provider accepts, with their types.
+
 ## Request
 
 ### Path Parameters

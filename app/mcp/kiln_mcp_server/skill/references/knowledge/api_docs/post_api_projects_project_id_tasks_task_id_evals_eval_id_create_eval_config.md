@@ -4,6 +4,8 @@
 
 **Tags:** Evals
 
+Create a judge (eval config) for an eval from its full properties.
+
 ## Request
 
 ### Path Parameters

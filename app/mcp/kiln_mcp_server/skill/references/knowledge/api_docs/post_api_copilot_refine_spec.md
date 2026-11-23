@@ -4,6 +4,9 @@
 
 **Tags:** Copilot
 
+Propose edits to a spec's fields from the user's feedback on examples (needs
+Kiln Pro). Saves nothing.
+
 ## Request
 
 ### Request Body

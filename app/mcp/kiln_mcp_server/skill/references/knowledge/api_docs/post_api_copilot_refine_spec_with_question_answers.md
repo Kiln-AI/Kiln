@@ -4,6 +4,9 @@
 
 **Tags:** Copilot
 
+Propose spec edits and an eval name from the user's answers to Question Spec
+(needs Kiln Pro). Saves nothing.
+
 ## Request
 
 ### Request Body

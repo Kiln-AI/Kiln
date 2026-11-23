@@ -4,6 +4,8 @@
 
 **Tags:** Skills
 
+Create a skill in the project from a name, description and SKILL.md body.
+
 ## Request
 
 ### Path Parameters

@@ -4,11 +4,12 @@
 
 **Tags:** Providers & Models
 
-The full record of one model: every provider entry with its status,
-prices, limits, capabilities, thinking levels, default output mode and
-what Kiln suggests the model for. Read the entry of the provider you
-will use before you write a run config. 404 when the model, or its entry
-for `provider`, does not exist.
+Get the full record of one model by its Kiln model ID, for every provider.
+
+Every provider entry has its status, prices, limits, capabilities, thinking
+levels, default output mode and what Kiln suggests the model for. Read the entry
+of the provider you will use before you write a run config. 404 when the model,
+or its entry for `provider`, does not exist.
 
 ## Request
 
@@ -35,7 +36,7 @@ Successful Response
 |sources.models_dev.age_seconds|one of: integer or null|Seconds since loaded_at.|
 |sources.models_dev.detail|one of: string or null|Null when ok. Else why the data is missing or old: turned off, loading, not loaded, refresh running, or the last failure reason.|
 |model|string|Kiln's model id. Use it in a run config.|
-|display_name|string||
+|display_name|string|The model's name as Kiln shows it.|
 |family|one of: string or null|Kiln's model family.|
 |kiln_featured_rank|one of: integer or null|Kiln's ranking, 1 first. Null: not featured.|
 |tags|array of string|Kiln's model tags.|
@@ -65,12 +66,14 @@ Validation Error
 
 ### ModelInfoProviderEntryDetails
 
+The full record of one provider entry of a model.
+
 |Field|Type|Required|Description|
 |-|-|-|-|
 |provider|string|Yes|Kiln provider id.|
 |status|string|Yes|ready: the user can run the model on this provider now. not_offered: the provider is connected, but does not offer this model (for example an Ollama model that is not installed). not_connected: the provider is not connected in Kiln. One of: ready, not_offered, not_connected|
 |provider_model_id|one of: string or null|No|The provider's own id for the model. Null for a model Kiln only knows from the user's setup.|
-|deprecated|boolean|No||
+|deprecated|boolean|No|Kiln marks this provider entry deprecated.|
 |untested|boolean|No|Kiln has not tested this model, usually one a user added. The supports_* fields do not apply.|
 |input_price|one of: number or null|No|Input price, USD per million tokens. Null: no price data.|
 |output_price|one of: number or null|No|Output price, USD per million tokens. Null: no price data.|
@@ -84,7 +87,7 @@ Validation Error
 |supports_vision|one of: boolean or null|No|Kiln's flag: image input works on this pair.|
 |supports_temperature|one of: boolean or null|No|From models.dev.|
 |thinking_levels|array of string|No|The thinking levels a run config can set, in Kiln's order.|
-|default_thinking_level|one of: string or null|No||
+|default_thinking_level|one of: string or null|No|Kiln's suggested default thinking level for the pair. Null when Kiln suggests none.|
 |default_structured_output_mode|one of: string or null|No|Kiln's suggested default output mode for the pair.|
 |kiln_suggested_for|array of string|No|Uses that Kiln suggests the model for: eval_judge, synthetic_data, document_extraction, synthetic_user.|
 

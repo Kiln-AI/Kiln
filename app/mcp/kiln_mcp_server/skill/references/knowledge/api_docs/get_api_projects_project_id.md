@@ -4,6 +4,8 @@
 
 **Tags:** Projects
 
+Get one project.
+
 ## Request
 
 ### Path Parameters

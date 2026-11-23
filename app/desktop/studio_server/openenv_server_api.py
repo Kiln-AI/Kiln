@@ -15,6 +15,7 @@ from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 from kiln_ai.openenv.session_manager import OpenEnvError, shared_session_manager
+from kiln_server.custom_errors import not_found_error
 from kiln_server.project_api import project_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -91,7 +92,9 @@ def _openenv_server_from_id(project_id: str, openenv_server_id: str) -> OpenEnvS
         openenv_server_id, project.path
     )
     if openenv_server is None:
-        raise HTTPException(status_code=404, detail="OpenEnv server not found")
+        raise not_found_error(
+            "OpenEnv server", openenv_server_id, "project's OpenEnv servers"
+        )
     return openenv_server
 
 
@@ -121,6 +124,8 @@ def connect_openenv_server_api(app: FastAPI):
         ],
         request: OpenEnvServerCreateRequest,
     ) -> OpenEnvServerResponse:
+        """Add an OpenEnv server to the project: a running environment whose tools
+        agents can use."""
         project = project_from_id(project_id)
         try:
             openenv_server = OpenEnvServer(
@@ -145,6 +150,7 @@ def connect_openenv_server_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[OpenEnvServerResponse]:
+        """List the project's OpenEnv servers."""
         project = project_from_id(project_id)
         openenv_servers = project.openenv_servers(readonly=True)
         openenv_servers.sort(
@@ -169,6 +175,7 @@ def connect_openenv_server_api(app: FastAPI):
             str, Path(description="The unique identifier of the OpenEnv server.")
         ],
     ) -> OpenEnvServerResponse:
+        """Get one OpenEnv server."""
         return _openenv_server_response(
             _openenv_server_from_id(project_id, openenv_server_id)
         )
@@ -190,6 +197,7 @@ def connect_openenv_server_api(app: FastAPI):
         ],
         request: OpenEnvServerUpdateRequest,
     ) -> OpenEnvServerResponse:
+        """Change an OpenEnv server's name, description or URL."""
         openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
         try:
             for field, value in request.model_dump(exclude_unset=True).items():

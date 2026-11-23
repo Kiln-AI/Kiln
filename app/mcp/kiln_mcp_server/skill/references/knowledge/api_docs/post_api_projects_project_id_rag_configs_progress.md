@@ -4,6 +4,9 @@
 
 **Tags:** Documents
 
+Get how far the index of each RAG config is built, for some or all of the
+project's RAG configs.
+
 ## Request
 
 ### Path Parameters

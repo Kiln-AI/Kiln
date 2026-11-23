@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+List the project's reranker configs.
+
 ## Request
 
 ### Path Parameters

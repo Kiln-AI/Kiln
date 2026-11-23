@@ -4,6 +4,9 @@
 
 **Tags:** Documents
 
+Create an embedding config: the embedding model and settings for search
+chunks.
+
 ## Request
 
 ### Path Parameters

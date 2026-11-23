@@ -4,6 +4,9 @@
 
 **Tags:** Run Configs
 
+Create a run config for the task: the model, prompt, tools and settings to
+run it with.
+
 ## Request
 
 ### Path Parameters

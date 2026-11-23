@@ -4,6 +4,9 @@
 
 **Tags:** Evals
 
+Trust the project's code for this app session, so new code tools and code
+judges can run.
+
 ## Request
 
 ### Path Parameters

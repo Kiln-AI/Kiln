@@ -4,6 +4,10 @@
 
 **Tags:** Code Tools
 
+Run a code tool's code once on test arguments, without saving the tool.
+Returns its output or error, or not_trusted until the project's code is
+trusted (Add code trust).
+
 ## Request
 
 ### Path Parameters

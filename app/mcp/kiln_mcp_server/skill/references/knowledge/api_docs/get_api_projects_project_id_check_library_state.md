@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Check whether the project's document library is empty.
+
 ## Request
 
 ### Path Parameters

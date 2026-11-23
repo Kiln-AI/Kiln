@@ -4,6 +4,8 @@
 
 **Tags:** Specs
 
+Delete a spec.
+
 ## Request
 
 ### Path Parameters

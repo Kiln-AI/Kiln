@@ -4,6 +4,9 @@
 
 **Tags:** Jobs
 
+List background jobs, newest first, with filters for status, type, project
+and time.
+
 ## Request
 
 ### Query Parameters

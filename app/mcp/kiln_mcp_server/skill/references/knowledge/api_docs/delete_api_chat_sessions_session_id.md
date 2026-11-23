@@ -4,7 +4,9 @@
 
 **Tags:** Copilot
 
-Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+Delete one Kiln Assistant chat session (needs Kiln Pro).
+
+Proxies Kiln Copilot's ``DELETE /v1/chat/sessions/{session_id}``.
 
 ## Request
 

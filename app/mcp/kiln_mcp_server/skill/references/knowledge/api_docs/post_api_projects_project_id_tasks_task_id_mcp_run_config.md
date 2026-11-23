@@ -4,6 +4,9 @@
 
 **Tags:** Run Configs
 
+Create a run config that runs the task by calling a tool on an MCP server, in
+place of a model.
+
 ## Request
 
 ### Path Parameters

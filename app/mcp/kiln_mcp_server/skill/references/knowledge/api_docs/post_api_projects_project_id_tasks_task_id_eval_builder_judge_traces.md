@@ -4,7 +4,9 @@
 
 **Tags:** Eval Builder
 
-Re-judge previously driven results: [reload → judge] per case.
+Re-judge saved eval builder results with a new judge prompt, as an event stream.
+
+[reload → judge] per case.
 
 The judge calibration loop's re-score stream, both arms: after a
 refine produces a new judge prompt, this scores the SAME saved

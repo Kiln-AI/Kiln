@@ -4,6 +4,8 @@
 
 **Tags:** Runs
 
+Add tags to, or remove tags from, several runs at once.
+
 ## Request
 
 ### Path Parameters

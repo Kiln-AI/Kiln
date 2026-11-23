@@ -4,6 +4,9 @@
 
 **Tags:** Evals
 
+Change an eval's name, description, priority, status, score display names, or
+set its train split.
+
 ## Request
 
 ### Path Parameters

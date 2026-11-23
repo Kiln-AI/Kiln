@@ -4,6 +4,8 @@
 
 **Tags:** Projects
 
+Create a project in the default Kiln Projects folder.
+
 ## Request
 
 ### Request Body

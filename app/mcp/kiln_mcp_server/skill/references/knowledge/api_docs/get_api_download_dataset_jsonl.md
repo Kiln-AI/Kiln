@@ -4,6 +4,9 @@
 
 **Tags:** Fine-tuning
 
+Download one split of a dataset split as a JSONL file, in a fine-tuning
+format.
+
 ## Request
 
 ### Query Parameters

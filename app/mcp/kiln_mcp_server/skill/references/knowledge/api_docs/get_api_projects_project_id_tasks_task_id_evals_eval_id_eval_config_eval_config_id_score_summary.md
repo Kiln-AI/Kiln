@@ -4,6 +4,9 @@
 
 **Tags:** Evals
 
+Get one judge's mean scores on the eval's test split, for every run config of
+the task.
+
 ## Request
 
 ### Path Parameters

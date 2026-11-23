@@ -35,6 +35,7 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
 )
+from kiln_server.custom_errors import not_found_error
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -579,7 +580,14 @@ def _get_batch_job(
         or job.task_id != task_id
         or job.kind != kind
     ):
-        raise HTTPException(status_code=404, detail="Batch job not found")
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Batch job not found. ID: {job_id}. Batch jobs are kept only "
+                "while Kiln runs and are not listed in /api/jobs; start the batch "
+                "again."
+            ),
+        )
     return job
 
 
@@ -600,6 +608,9 @@ def connect_data_gen_api(app: FastAPI):
         ],
         input: DataGenCategoriesApiInput,
     ) -> TaskRun:
+        """Generate topics, or subtopics under a node of the topic tree, for synthetic
+        data on the task. Calls a model; saves nothing. The task's saved data guide
+        is used unless data_guide is set."""
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
@@ -651,6 +662,8 @@ def connect_data_gen_api(app: FastAPI):
         ],
         input: DataGenSampleApiInput,
     ) -> TaskRun:
+        """Generate synthetic inputs for the task, under one topic. Calls a model; saves
+        nothing. The task's saved data guide is used unless data_guide is set."""
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
@@ -731,6 +744,8 @@ def connect_data_gen_api(app: FastAPI):
             Query(description="Optional session ID to group generated samples."),
         ] = None,
     ) -> TaskRun:
+        """Run the task on one synthetic input and return the run, tagged synthetic,
+        without saving it. Save it with Save Sample."""
         task = task_from_id(project_id, task_id)
 
         # The Data Guide is intentionally NOT injected at the output generation
@@ -845,6 +860,7 @@ The topic path for this sample is:
         ],
         job_id: Annotated[str, Path(description="The batch job identifier.")],
     ) -> InputsBatchStatusOutput:
+        """Get the progress and the results so far of a Generate Inputs Batch job."""
         # Validate the route scope before serving by job_id.
         task_from_id(project_id, task_id)
         job = _get_batch_job(job_id, project_id, task_id, "inputs")
@@ -921,6 +937,7 @@ The topic path for this sample is:
         ],
         job_id: Annotated[str, Path(description="The batch job identifier.")],
     ) -> OutputsBatchStatusOutput:
+        """Get the progress and the saved runs so far of a Generate Outputs Batch job."""
         task_from_id(project_id, task_id)
         job = _get_batch_job(job_id, project_id, task_id, "outputs")
         return OutputsBatchStatusOutput(
@@ -952,6 +969,8 @@ The topic path for this sample is:
             Query(description="Optional session ID to group generated Q&A pairs."),
         ] = None,
     ) -> TaskRun:
+        """Generate question and answer pairs from the text of one document, for a RAG
+        task. Calls a model; saves nothing."""
         project = project_from_id(project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -962,7 +981,7 @@ The topic path for this sample is:
 
         doc = Document.from_id_and_parent_path(input.document_id, project.path)
         if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
+            raise not_found_error("Document", input.document_id, "project's documents")
 
         qna_task = DataGenQnaTask(target_task=task, guidance=input.guidance)
         task_input = DataGenQnaTaskInput(
@@ -1086,6 +1105,8 @@ The topic path for this sample is:
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> DataGuide | None:
+        """Get the task's saved data guide: what realistic inputs look like, used by
+        synthetic data generation. Null when there is none."""
         task = task_from_id(project_id, task_id)
         return task.current_data_guide()
 
@@ -1105,6 +1126,8 @@ The topic path for this sample is:
         ],
         input: SaveTaskDataGuideInput,
     ) -> DataGuide:
+        """Save the task's data guide, replacing the current one. A task has at most
+        one."""
         task = task_from_id(project_id, task_id)
 
         if not input.guide.strip():
@@ -1146,6 +1169,7 @@ The topic path for this sample is:
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> None:
+        """Delete the task's saved data guide. Does nothing when there is none."""
         task = task_from_id(project_id, task_id)
         existing = task.current_data_guide()
         if existing is not None:
@@ -1169,6 +1193,8 @@ The topic path for this sample is:
         ],
         input: GuidePreviewInput,
     ) -> list[GuidePreviewSample]:
+        """Generate a few sample inputs from a draft data guide, to check it before
+        saving. Calls a model; saves nothing."""
         return await generate_input_preview_samples(
             task=task_from_id(project_id, task_id),
             guide=input.guide,
@@ -1192,6 +1218,8 @@ The topic path for this sample is:
         ],
         input: GuideRefineInput,
     ) -> GuideRefineResponse:
+        """Rewrite a draft data guide from feedback on its preview samples. Calls a
+        model; saves nothing: save the result with Save Task Data Guide."""
         task = task_from_id(project_id, task_id)
 
         if input.source is not None:

@@ -4,7 +4,7 @@
 
 **Tags:** Eval Builder
 
-Claims-only primitive: build claims for one trace given a known verdict.
+Build the review claims for one judged trace, given its known verdict.
 
 The multi-turn review's claims path: the pipeline stream stops at the
 judge, and the client calls this per trace the reviewer opens (under

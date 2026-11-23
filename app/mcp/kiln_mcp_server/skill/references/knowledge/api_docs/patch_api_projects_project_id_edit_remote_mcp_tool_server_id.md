@@ -4,6 +4,9 @@
 
 **Tags:** Tools & MCP
 
+Change a remote MCP tool server's name, description, URL, headers or archived
+flag.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,9 @@
 
 **Tags:** Synthetic Data
 
+Rewrite a draft data guide from feedback on its preview samples. Calls a
+model; saves nothing: save the result with Save Task Data Guide.
+
 ## Request
 
 ### Path Parameters

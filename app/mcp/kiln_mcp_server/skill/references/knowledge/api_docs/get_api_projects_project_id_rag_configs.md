@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+List the project's RAG configs, each with its sub-configs.
+
 ## Request
 
 ### Path Parameters

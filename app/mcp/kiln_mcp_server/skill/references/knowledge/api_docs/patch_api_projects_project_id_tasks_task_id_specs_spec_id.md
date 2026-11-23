@@ -4,6 +4,8 @@
 
 **Tags:** Specs
 
+Change a spec's name, definition, properties, priority, status or tags.
+
 ## Request
 
 ### Path Parameters

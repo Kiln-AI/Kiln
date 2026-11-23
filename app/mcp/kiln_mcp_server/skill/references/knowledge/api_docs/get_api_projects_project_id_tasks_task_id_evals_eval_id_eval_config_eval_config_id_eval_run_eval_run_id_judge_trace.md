@@ -4,7 +4,10 @@
 
 **Tags:** Evals
 
-The judge's full conversation for one eval run: the system prompt, the rendered judge prompt, and every reply. Null for runs whose judge called no model, and for runs recorded before judge traces were saved.
+Get the judge's full conversation for one eval run: system prompt, judge prompt, replies.
+
+Null for runs whose judge called no model, and for runs recorded before
+judge traces were saved.
 
 ## Request
 

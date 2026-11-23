@@ -4,6 +4,9 @@
 
 **Tags:** Multiturn SDG
 
+Generate synthetic-user cases (persona, goal, first message) for a multi-turn
+task (needs Kiln Pro). Saves nothing.
+
 ## Request
 
 ### Path Parameters

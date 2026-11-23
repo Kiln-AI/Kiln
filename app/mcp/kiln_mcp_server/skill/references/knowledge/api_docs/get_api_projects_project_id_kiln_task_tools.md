@@ -4,6 +4,9 @@
 
 **Tags:** Tools & MCP
 
+List the Kiln tasks the project offers as tools, with each one's tool name
+and run config.
+
 ## Request
 
 ### Path Parameters

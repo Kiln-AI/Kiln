@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+List the project's embedding configs.
+
 ## Request
 
 ### Path Parameters

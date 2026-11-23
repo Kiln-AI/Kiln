@@ -92,7 +92,7 @@ Use the returned ID as the `prompt_id` in the run config body. If `.prompts` is 
 > ⚠️ **Three hard prerequisites — all have caused bugs when skipped:**
 >
 > 1. **`prompt_id` must come from a real `GET /prompts` call on THIS task.** The string `"simple_prompt_builder"` is a generator name, not a valid prompt_id. Do NOT copy from an existing run config's `run_config_properties.prompt_id` — that's a second-hand reference (the prompt may be deleted or belong to a different task). Use the filter above; `.[] | {id, name}` is wrong (response is not a flat array).
-> 2. **Name validation:** Periods, slashes, colons, and other forbidden chars (see "Kiln Name Validation" below) cause `Name: Value error, Name is invalid` (422). Model versions like "3.3" / "4.1" become "3p3" / "4p1". **Sanitize before POSTing.**
+> 2. **Name validation:** Periods, slashes, colons, and other forbidden chars (see "Kiln Name Validation" below) cause `Name: Name is invalid` (422). Model versions like "3.3" / "4.1" become "3p3" / "4p1". **Sanitize before POSTing.**
 > 3. **`POST /prompts` and `GET /prompts` return the prompt ID in different shapes.** `GET /prompts` returns the prefixed form (`"id::197516709367"`) which is what `/run_configs` requires — use it as-is. `POST /prompts` returns the **bare** form (`"197516709367"`). If you just created the prompt this turn, either (a) re-fetch via `GET /prompts`, or (b) prepend `id::` to the POST-response `id`. Sending the bare form to `/run_configs` returns `422 Invalid prompt ID`.
 
 ## Creating a Run Config

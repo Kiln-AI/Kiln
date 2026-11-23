@@ -4,7 +4,7 @@
 
 **Tags:** Runs
 
-For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized. For single-turn tasks this is equivalent to summarizing every run.
+List short summaries of the task's runs, lighter than List Runs. For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are summarized. For single-turn tasks this is equivalent to summarizing every run.
 
 ## Request
 

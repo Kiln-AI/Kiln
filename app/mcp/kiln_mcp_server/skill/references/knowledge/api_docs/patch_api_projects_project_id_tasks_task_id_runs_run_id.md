@@ -4,6 +4,8 @@
 
 **Tags:** Runs
 
+Change fields of a run, such as its rating, tags or repaired output.
+
 ## Request
 
 ### Path Parameters

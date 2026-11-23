@@ -4,6 +4,8 @@
 
 **Tags:** Specs
 
+List the task's specs.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+List the project's vector store configs.
+
 ## Request
 
 ### Path Parameters

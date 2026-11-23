@@ -4,6 +4,9 @@
 
 **Tags:** Evals
 
+Create an LLM judge for an eval from a judge prompt and model; Kiln builds
+the judge's template.
+
 ## Request
 
 ### Path Parameters

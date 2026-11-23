@@ -7,6 +7,7 @@ from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.validation import SkillNameString
+from kiln_server.custom_errors import not_found_error
 from kiln_server.document_api import OpenFileResponse
 from kiln_server.project_api import project_from_id
 from kiln_server.provenance_api import validate_provenance_or_400
@@ -91,7 +92,7 @@ def _get_skill(project_id: str, skill_id: str) -> Skill:
     project = project_from_id(project_id)
     skill = Skill.from_id_and_parent_path(skill_id, project.path)
     if skill is None:
-        raise HTTPException(status_code=404, detail="Skill not found")
+        raise not_found_error("Skill", skill_id, "project's skills")
     return skill
 
 
@@ -104,6 +105,7 @@ def connect_skill_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> List[SkillResponse]:
+        """List the project's skills."""
         project = project_from_id(project_id)
         return [skill_to_response(s) for s in project.skills(readonly=True)]
 
@@ -120,6 +122,7 @@ def connect_skill_api(app: FastAPI):
             str, Path(description="The unique identifier of the skill.")
         ],
     ) -> SkillResponse:
+        """Get one skill's name, description and archived flag."""
         skill = _get_skill(project_id, skill_id)
         return skill_to_response(skill)
 
@@ -136,10 +139,11 @@ def connect_skill_api(app: FastAPI):
             str, Path(description="The unique identifier of the skill.")
         ],
     ) -> SkillContentResponse:
+        """Get a skill's SKILL.md: the full file and its body."""
         project = project_from_id(project_id)
         skill = Skill.from_id_and_parent_path(skill_id, project.path)
         if skill is None:
-            raise HTTPException(status_code=404, detail="Skill not found")
+            raise not_found_error("Skill", skill_id, "project's skills")
         try:
             skill_md = skill.skill_md_raw()
         except FileNotFoundError:
@@ -160,6 +164,7 @@ def connect_skill_api(app: FastAPI):
         ],
         skill_data: SkillCreationRequest,
     ) -> SkillResponse:
+        """Create a skill in the project from a name, description and SKILL.md body."""
         project = project_from_id(project_id)
         skill = Skill(
             name=skill_data.name,
@@ -193,6 +198,8 @@ def connect_skill_api(app: FastAPI):
         ],
         updates: SkillUpdateRequest,
     ) -> SkillResponse:
+        """Archive or unarchive a skill. A skill can't be edited: create a new skill
+        instead."""
         skill = _get_skill(project_id, skill_id)
 
         update_fields = updates.model_dump(exclude_none=True)

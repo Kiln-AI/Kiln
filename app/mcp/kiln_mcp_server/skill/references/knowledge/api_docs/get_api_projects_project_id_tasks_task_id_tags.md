@@ -4,7 +4,7 @@
 
 **Tags:** Runs
 
-Counts only include tags from leaf TaskRuns. For multi-turn tasks, tags attached to intermediate runs in a chain are not included.
+Count the task's runs for each tag. Counts only include tags from leaf TaskRuns. For multi-turn tasks, tags attached to intermediate runs in a chain are not included.
 
 ## Request
 

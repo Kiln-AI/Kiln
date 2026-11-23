@@ -4,6 +4,8 @@
 
 **Tags:** Synthetic Data
 
+Delete the task's saved data guide. Does nothing when there is none.
+
 ## Request
 
 ### Path Parameters

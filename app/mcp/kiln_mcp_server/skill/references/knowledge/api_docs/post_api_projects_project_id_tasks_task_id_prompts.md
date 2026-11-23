@@ -4,6 +4,9 @@
 
 **Tags:** Prompts
 
+Save a custom prompt for the task. Its ID, id::<prompt_id>, can be used in
+run configs.
+
 ## Request
 
 ### Path Parameters

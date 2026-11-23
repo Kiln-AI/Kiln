@@ -4,6 +4,8 @@
 
 **Tags:** Skills
 
+Get a skill's SKILL.md: the full file and its body.
+
 ## Request
 
 ### Path Parameters

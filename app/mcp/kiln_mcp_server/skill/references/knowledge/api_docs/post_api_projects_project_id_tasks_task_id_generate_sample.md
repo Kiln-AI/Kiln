@@ -4,6 +4,9 @@
 
 **Tags:** Synthetic Data
 
+Run the task on one synthetic input and return the run, tagged synthetic,
+without saving it. Save it with Save Sample.
+
 ## Request
 
 ### Path Parameters

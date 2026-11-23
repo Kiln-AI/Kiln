@@ -4,6 +4,8 @@
 
 **Tags:** Code Tools
 
+Archive or unarchive a code tool.
+
 ## Request
 
 ### Path Parameters

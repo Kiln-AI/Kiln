@@ -267,6 +267,13 @@ def test_job_id_format():
     assert all(c in "abcdefghijklmnopqrstuvwxyz234567" for c in suffix)
 
 
+def test_type_names_are_the_registered_types_sorted():
+    reg = JobRegistry(max_concurrent=1)
+    assert reg.type_names() == []
+    reg.register_type(NoopJobWorker)
+    assert reg.type_names() == ["noop"]
+
+
 # -- lifecycle ---------------------------------------------------------------
 
 

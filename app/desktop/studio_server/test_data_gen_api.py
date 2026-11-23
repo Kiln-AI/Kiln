@@ -1750,6 +1750,10 @@ def test_inputs_batch_status_unknown_job_404(mock_task_from_id, client):
         "/api/projects/proj-ID/tasks/task-ID/generate_inputs_batch/does-not-exist"
     )
     assert resp.status_code == 404
+    assert resp.json()["message"] == (
+        "Batch job not found. ID: does-not-exist. Batch jobs are kept only while "
+        "Kiln runs and are not listed in /api/jobs; start the batch again."
+    )
 
 
 def test_inputs_batch_status_wrong_scope_404(

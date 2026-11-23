@@ -4,6 +4,9 @@
 
 **Tags:** Fine-tuning
 
+List the providers that can fine-tune, with the base models each offers and
+whether it is enabled.
+
 ## Responses
 
 ### 200 OK

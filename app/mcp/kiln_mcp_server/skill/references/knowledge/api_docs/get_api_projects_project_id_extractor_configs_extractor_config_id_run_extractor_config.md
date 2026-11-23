@@ -4,6 +4,9 @@
 
 **Tags:** Documents
 
+Extract the text of the project's documents with one extractor config.
+Streams progress as events.
+
 ## Request
 
 ### Path Parameters

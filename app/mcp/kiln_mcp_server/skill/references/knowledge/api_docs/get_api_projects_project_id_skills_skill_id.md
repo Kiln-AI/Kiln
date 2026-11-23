@@ -4,6 +4,8 @@
 
 **Tags:** Skills
 
+Get one skill's name, description and archived flag.
+
 ## Request
 
 ### Path Parameters

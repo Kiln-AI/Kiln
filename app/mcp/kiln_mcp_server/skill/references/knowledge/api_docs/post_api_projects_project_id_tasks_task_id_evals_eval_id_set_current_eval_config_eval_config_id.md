@@ -4,6 +4,9 @@
 
 **Tags:** Evals
 
+Make a judge (eval config) the eval's default, the one whose scores Kiln
+shows.
+
 ## Request
 
 ### Path Parameters

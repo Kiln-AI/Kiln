@@ -4,6 +4,8 @@
 
 **Tags:** Evals
 
+Delete an eval, with its judges and their scores.
+
 ## Request
 
 ### Path Parameters

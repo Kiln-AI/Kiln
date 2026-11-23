@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Count the project's documents for each tag.
+
 ## Request
 
 ### Path Parameters

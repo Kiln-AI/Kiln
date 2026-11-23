@@ -4,6 +4,8 @@
 
 **Tags:** Fine-tuning
 
+Freeze a set of the task's runs into a dataset split for fine-tuning.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,10 @@
 
 **Tags:** Multiturn SDG
 
+Run one synthetic-user conversation with the task per case, saving the runs.
+
+Streams progress as events.
+
 ## Request
 
 ### Path Parameters

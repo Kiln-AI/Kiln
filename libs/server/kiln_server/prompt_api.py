@@ -13,6 +13,7 @@ from kiln_ai.datamodel.prompt_type import prompt_type_label
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from pydantic import BaseModel, Field, field_validator
 
+from kiln_server.custom_errors import not_found_error
 from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -73,12 +74,16 @@ def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Pr
     if not prompt_id.startswith("id::"):
         raise HTTPException(
             status_code=400,
-            detail="Only custom prompts can be updated. Automatically frozen prompts can not be edited or deleted.",
+            detail=(
+                f"Prompt {prompt_id} can't be edited or deleted. Only custom prompts, "
+                "whose IDs start with id::, can be. Prompt generators are built in, "
+                "and frozen prompts are fixed because evals depend on them."
+            ),
         )
     id = prompt_id[4:]
     prompt = next((p for p in parent_task.prompts() if p.id == id), None)
     if not prompt:
-        raise HTTPException(status_code=404, detail="Prompt not found")
+        raise not_found_error("Prompt", prompt_id, "task's prompts")
     return prompt
 
 
@@ -229,6 +234,8 @@ def connect_prompt_api(app: FastAPI):
         ],
         prompt_data: PromptCreateRequest,
     ) -> ApiPrompt:
+        """Save a custom prompt for the task. Its ID, id::<prompt_id>, can be used in
+        run configs."""
         parent_task = task_from_id(project_id, task_id)
         prompt = Prompt(
             parent=parent_task,
@@ -263,6 +270,9 @@ def connect_prompt_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> PromptResponse:
+        """List the task's prompts and prompt generators, with the ID to use for each.
+
+        Includes saved prompts and the prompts of fine-tunes and run configs."""
         parent_task = task_from_id(project_id, task_id)
 
         prompts: list[ApiPrompt] = []
@@ -314,6 +324,8 @@ def connect_prompt_api(app: FastAPI):
         ],
         prompt_data: PromptUpdateRequest,
     ) -> ApiPrompt:
+        """Change a custom prompt's name or description. Its text can't change: save a
+        new prompt."""
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.name = prompt_data.name
         prompt.description = prompt_data.description
@@ -338,6 +350,7 @@ def connect_prompt_api(app: FastAPI):
             str, Path(description="The unique identifier of the prompt.")
         ],
     ) -> None:
+        """Delete a custom prompt."""
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.delete()
 

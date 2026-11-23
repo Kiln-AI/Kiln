@@ -4,6 +4,8 @@
 
 **Tags:** Projects
 
+Add an existing project to Kiln from the path of its project.kiln file.
+
 ## Request
 
 ### Query Parameters

@@ -4,6 +4,9 @@
 
 **Tags:** Copilot
 
+Generate clarifying questions about a draft spec for the user to answer
+(needs Kiln Pro).
+
 ## Request
 
 ### Request Body

@@ -45,6 +45,7 @@ def connect_settings(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     def read_settings() -> dict[str, Any]:
+        """Get the user's Kiln settings. Secrets such as API keys are hidden."""
         settings = Config.shared().settings(hide_sensitive=True)
         return settings
 
@@ -57,6 +58,7 @@ def connect_settings(app: FastAPI):
     def read_setting_item(
         item_id: Annotated[str, Path(description="The setting item key to retrieve.")],
     ):
+        """Get one Kiln setting by name. Null when it is not set; secrets are hidden."""
         settings = Config.shared().settings(hide_sensitive=True)
         return {item_id: settings.get(item_id, None)}
 

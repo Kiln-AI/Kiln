@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+List the project's extractor configs.
+
 ## Request
 
 ### Path Parameters

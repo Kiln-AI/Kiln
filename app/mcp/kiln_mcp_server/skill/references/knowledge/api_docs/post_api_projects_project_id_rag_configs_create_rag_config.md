@@ -4,6 +4,9 @@
 
 **Tags:** Documents
 
+Create a RAG config from an extractor, chunker, embedding and vector store
+config. It becomes a search tool.
+
 ## Request
 
 ### Path Parameters

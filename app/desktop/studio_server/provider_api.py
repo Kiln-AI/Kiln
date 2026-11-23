@@ -410,6 +410,7 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_providers_models() -> ProviderModels:
+        """List every model in Kiln's built-in model list, by ID and name."""
         models = {}
         for model in built_in_models:
             models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
@@ -423,6 +424,8 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_available_models() -> List[AvailableModels]:
+        """List the models the user can run now, grouped by connected provider, with
+        each model's capabilities."""
         return await available_models()
 
     @app.get(
@@ -432,6 +435,7 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_providers_embedding_models() -> ProviderEmbeddingModels:
+        """List every embedding model in Kiln's built-in list, by ID and name."""
         models = {}
         for model in built_in_embedding_models:
             models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
@@ -445,6 +449,8 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_available_embedding_models() -> List[EmbeddingProvider]:
+        """List the embedding models the user can run now, grouped by connected
+        provider."""
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
 
@@ -499,6 +505,7 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_providers_reranker_models() -> ProviderRerankerModels:
+        """List every reranker model in Kiln's built-in list, by ID and name."""
         models = {}
         for model in built_in_rerankers:
             models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
@@ -512,6 +519,7 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_available_reranker_models() -> List[RerankerProvider]:
+        """List the reranker models the user can run now, grouped by connected provider."""
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
 
@@ -563,6 +571,8 @@ def connect_provider_api(app: FastAPI):
             str | None, Query(description="Custom URL for the Ollama server.")
         ] = None,
     ) -> OllamaConnection:
+        """Connect to a running Ollama server and list its models. Uses the default
+        address unless custom_ollama_url is set."""
         return await connect_ollama(custom_ollama_url)
 
     @app.post(
@@ -576,6 +586,8 @@ def connect_provider_api(app: FastAPI):
             str | None, Query(description="Custom URL for the Docker Model Runner.")
         ] = None,
     ) -> DockerModelRunnerConnection:
+        """Connect to a running Docker Model Runner and list its models. Uses the
+        default address unless a custom URL is set."""
         chosen_url = docker_model_runner_custom_url
         return await connect_docker_model_runner(chosen_url)
 

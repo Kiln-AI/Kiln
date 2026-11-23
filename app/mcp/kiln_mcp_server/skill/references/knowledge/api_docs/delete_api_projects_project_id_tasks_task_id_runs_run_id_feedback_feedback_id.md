@@ -4,6 +4,8 @@
 
 **Tags:** Feedback
 
+Delete one piece of feedback from a run.
+
 ## Request
 
 ### Path Parameters

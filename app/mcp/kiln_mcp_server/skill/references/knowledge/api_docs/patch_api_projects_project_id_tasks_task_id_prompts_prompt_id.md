@@ -4,6 +4,9 @@
 
 **Tags:** Prompts
 
+Change a custom prompt's name or description. Its text can't change: save a
+new prompt.
+
 ## Request
 
 ### Path Parameters

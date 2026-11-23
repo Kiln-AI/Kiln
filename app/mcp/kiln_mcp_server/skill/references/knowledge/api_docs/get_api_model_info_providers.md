@@ -4,10 +4,11 @@
 
 **Tags:** Providers & Models
 
-Every model provider Kiln knows, each marked connected or
-not_connected, with the number of models ready to run on it, and
-Kiln's notes on data retention, rate limits and gotchas. Connected
-providers with models come first.
+List the model providers Kiln knows, and whether each one is connected.
+
+Each is marked connected or not_connected, with the number of models ready to
+run on it, and Kiln's notes on data retention, rate limits and gotchas.
+Connected providers with models come first.
 
 ## Responses
 
@@ -29,6 +30,8 @@ Successful Response
 ## Schemas
 
 ### ModelInfoProviderRow
+
+One model provider: whether it is connected, and how many models are ready on it.
 
 |Field|Type|Required|Description|
 |-|-|-|-|

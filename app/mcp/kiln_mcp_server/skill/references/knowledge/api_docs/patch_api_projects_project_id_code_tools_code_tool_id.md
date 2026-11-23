@@ -4,6 +4,9 @@
 
 **Tags:** Code Tools
 
+Change a code tool's name or description. Its code and tool interface can't
+be edited: create a new code tool instead.
+
 ## Request
 
 ### Path Parameters

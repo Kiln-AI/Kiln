@@ -4,6 +4,9 @@
 
 **Tags:** Fine-tuning
 
+List the task's fine-tunes. With update_status, ask each provider for the
+job's current status first.
+
 ## Request
 
 ### Path Parameters

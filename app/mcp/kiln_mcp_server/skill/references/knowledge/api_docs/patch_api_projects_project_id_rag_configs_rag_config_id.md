@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Change a RAG config's name, description or archived flag.
+
 ## Request
 
 ### Path Parameters

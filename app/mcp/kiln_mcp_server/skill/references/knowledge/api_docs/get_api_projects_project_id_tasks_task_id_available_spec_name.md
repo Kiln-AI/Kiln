@@ -4,9 +4,10 @@
 
 **Tags:** Specs
 
-Check a candidate spec name against the task's existing specs and
-return an available one — the candidate itself, or the nearest
-suffixed variant on a collision.
+Suggest a free spec name: the candidate itself, or the nearest suffixed one.
+
+The candidate is checked against the task's existing specs; on a
+collision the nearest suffixed variant is returned.
 
 The check uses the derived-tag comparison the spec-save guard
 enforces (case/spacing-insensitive), so a name this endpoint returns

@@ -4,6 +4,9 @@
 
 **Tags:** Evals
 
+Compare an eval's judges against the human ratings of its golden set: how
+well each judge agrees.
+
 ## Request
 
 ### Path Parameters

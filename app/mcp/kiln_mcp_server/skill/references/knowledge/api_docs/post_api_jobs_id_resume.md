@@ -4,6 +4,8 @@
 
 **Tags:** Jobs
 
+Resume a paused background job.
+
 ## Request
 
 ### Path Parameters

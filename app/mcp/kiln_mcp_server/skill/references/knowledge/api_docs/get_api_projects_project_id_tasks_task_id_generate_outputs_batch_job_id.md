@@ -4,6 +4,8 @@
 
 **Tags:** Synthetic Data
 
+Get the progress and the saved runs so far of a Generate Outputs Batch job.
+
 ## Request
 
 ### Path Parameters

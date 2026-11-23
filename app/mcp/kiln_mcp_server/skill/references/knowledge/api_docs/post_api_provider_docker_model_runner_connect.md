@@ -4,6 +4,9 @@
 
 **Tags:** Providers & Models
 
+Connect to a running Docker Model Runner and list its models. Uses the
+default address unless a custom URL is set.
+
 ## Request
 
 ### Query Parameters

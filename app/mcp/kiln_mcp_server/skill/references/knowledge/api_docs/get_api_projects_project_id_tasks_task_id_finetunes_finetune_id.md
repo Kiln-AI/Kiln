@@ -4,6 +4,8 @@
 
 **Tags:** Fine-tuning
 
+Get one fine-tune with its job's current status from the provider.
+
 ## Request
 
 ### Path Parameters

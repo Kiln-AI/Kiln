@@ -4,6 +4,9 @@
 
 **Tags:** Run Configs
 
+Check that an input transform template is valid Jinja2, and return the error
+when it is not.
+
 ## Request
 
 ### Request Body

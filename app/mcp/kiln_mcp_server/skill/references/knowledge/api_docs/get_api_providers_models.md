@@ -4,6 +4,8 @@
 
 **Tags:** Providers & Models
 
+List every model in Kiln's built-in model list, by ID and name.
+
 ## Responses
 
 ### 200 OK

@@ -4,6 +4,8 @@
 
 **Tags:** Evals
 
+Get one judge (eval config) of an eval.
+
 ## Request
 
 ### Path Parameters

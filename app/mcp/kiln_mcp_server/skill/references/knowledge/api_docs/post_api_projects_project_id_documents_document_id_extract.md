@@ -4,6 +4,9 @@
 
 **Tags:** Documents
 
+Extract one document's text with the given extractor configs, or all active
+ones. Streams progress.
+
 ## Request
 
 ### Path Parameters

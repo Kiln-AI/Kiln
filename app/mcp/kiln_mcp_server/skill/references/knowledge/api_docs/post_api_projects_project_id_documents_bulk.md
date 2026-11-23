@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Upload files to the project's document library, as multipart form data.
+
 ## Request
 
 ### Path Parameters

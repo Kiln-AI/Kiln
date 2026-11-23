@@ -4,6 +4,9 @@
 
 **Tags:** Providers & Models
 
+List the models the user can run now, grouped by connected provider, with
+each model's capabilities.
+
 ## Responses
 
 ### 200 OK

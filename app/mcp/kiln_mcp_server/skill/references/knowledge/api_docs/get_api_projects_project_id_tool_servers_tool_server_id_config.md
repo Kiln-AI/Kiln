@@ -4,6 +4,8 @@
 
 **Tags:** Tools & MCP
 
+Get one tool server's saved settings, without connecting to it.
+
 ## Request
 
 ### Path Parameters

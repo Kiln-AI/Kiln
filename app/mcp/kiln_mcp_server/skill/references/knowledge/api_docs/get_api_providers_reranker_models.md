@@ -4,6 +4,8 @@
 
 **Tags:** Providers & Models
 
+List every reranker model in Kiln's built-in list, by ID and name.
+
 ## Responses
 
 ### 200 OK

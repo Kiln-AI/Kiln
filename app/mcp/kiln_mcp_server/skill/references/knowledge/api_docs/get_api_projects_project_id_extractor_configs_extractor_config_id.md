@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Get one extractor config.
+
 ## Request
 
 ### Path Parameters

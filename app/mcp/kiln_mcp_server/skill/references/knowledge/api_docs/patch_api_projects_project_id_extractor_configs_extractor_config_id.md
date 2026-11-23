@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Change an extractor config's name or description, or archive it.
+
 ## Request
 
 ### Path Parameters

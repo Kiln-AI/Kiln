@@ -4,7 +4,7 @@
 
 **Tags:** Runs
 
-For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
+List the task's runs (its dataset items), in full. For multi-turn tasks, only leaf TaskRuns (those that are not the parent of another run via parent_task_run_id) are returned. Intermediate runs in a chain are filtered out. For single-turn tasks this is equivalent to listing every run.
 
 ## Request
 

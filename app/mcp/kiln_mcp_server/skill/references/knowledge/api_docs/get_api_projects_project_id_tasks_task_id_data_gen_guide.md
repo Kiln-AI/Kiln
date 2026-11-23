@@ -4,6 +4,9 @@
 
 **Tags:** Synthetic Data
 
+Get the task's saved data guide: what realistic inputs look like, used by
+synthetic data generation. Null when there is none.
+
 ## Request
 
 ### Path Parameters

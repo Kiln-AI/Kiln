@@ -183,11 +183,12 @@ def connect_chat_api(app: FastAPI) -> None:
         openapi_extra=DENY_AGENT,
     )
     async def chat_version_policy() -> ClientVersionPolicy:
-        """Proxy to Kiln Copilot ``GET /v1/chat/version_policy``.
+        """Check whether this app version must or should upgrade for the Kiln Assistant.
 
-        Lets the assistant page show the upgrade banners on load. Forwards the
-        desktop version header so the server can compute the verdict; on any
-        upstream/transport failure we degrade to "no banner" rather than error.
+        Proxies Kiln Copilot's ``GET /v1/chat/version_policy``. Lets the assistant page
+        show the upgrade banners on load. Forwards the desktop version header so the
+        server can compute the verdict; on any upstream/transport failure we degrade to
+        "no banner" rather than error.
         """
         api_key = get_copilot_api_key()
         try:
@@ -219,7 +220,9 @@ def connect_chat_api(app: FastAPI) -> None:
         ] = 50,
         offset: Annotated[int, Query(description="Number of sessions to skip")] = 0,
     ) -> list[ChatSessionListItem]:
-        """Proxy to Kiln Copilot ``GET /v1/chat/sessions``."""
+        """List the user's Kiln Assistant chat sessions (needs Kiln Pro).
+
+        Proxies Kiln Copilot's ``GET /v1/chat/sessions``."""
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
         detailed = await list_sessions_v1_chat_sessions_get.asyncio_detailed(
@@ -254,7 +257,9 @@ def connect_chat_api(app: FastAPI) -> None:
             Path(description="Chat session id (same as trace id for continuation)."),
         ],
     ) -> ChatSessionSnapshot:
-        """Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``."""
+        """Get one Kiln Assistant chat session with its messages (needs Kiln Pro).
+
+        Proxies Kiln Copilot's ``GET /v1/chat/sessions/{session_id}``."""
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
         detailed = await get_session_v1_chat_sessions_session_id_get.asyncio_detailed(
@@ -275,7 +280,9 @@ def connect_chat_api(app: FastAPI) -> None:
     async def delete_chat_session(
         session_id: Annotated[str, Path(description="Chat session id to delete.")],
     ) -> None:
-        """Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``."""
+        """Delete one Kiln Assistant chat session (needs Kiln Pro).
+
+        Proxies Kiln Copilot's ``DELETE /v1/chat/sessions/{session_id}``."""
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
         detailed = (

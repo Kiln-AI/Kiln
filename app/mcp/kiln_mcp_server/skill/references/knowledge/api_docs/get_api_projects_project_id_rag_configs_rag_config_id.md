@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Get one RAG config with its sub-configs.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,10 @@
 
 **Tags:** Memory
 
+Save a memory: a note for agents working on the project.
+
+It has an overview, a scope, and optional content and tags.
+
 ## Request
 
 ### Path Parameters

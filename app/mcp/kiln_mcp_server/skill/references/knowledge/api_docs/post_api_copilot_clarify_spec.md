@@ -4,6 +4,9 @@
 
 **Tags:** Copilot
 
+Generate example inputs and outputs that test a draft spec, for the user to
+judge (needs Kiln Pro). Their judgements feed Refine Spec.
+
 ## Request
 
 ### Request Body

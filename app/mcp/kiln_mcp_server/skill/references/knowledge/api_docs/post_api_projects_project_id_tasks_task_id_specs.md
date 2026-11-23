@@ -4,6 +4,9 @@
 
 **Tags:** Specs
 
+Create a spec: a requirement for the task's output, with the eval that
+measures it.
+
 ## Request
 
 ### Path Parameters

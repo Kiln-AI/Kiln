@@ -4,6 +4,9 @@
 
 **Tags:** Runs
 
+Delete several runs from the task's dataset. Reports the ones it could not
+delete.
+
 ## Request
 
 ### Path Parameters

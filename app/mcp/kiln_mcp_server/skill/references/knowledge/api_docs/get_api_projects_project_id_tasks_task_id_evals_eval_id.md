@@ -4,6 +4,8 @@
 
 **Tags:** Evals
 
+Get one eval: its scores, its splits and its default judge.
+
 ## Request
 
 ### Path Parameters

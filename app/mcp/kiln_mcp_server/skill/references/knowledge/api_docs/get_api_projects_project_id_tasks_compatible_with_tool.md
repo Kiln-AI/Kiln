@@ -4,6 +4,9 @@
 
 **Tags:** Tasks
 
+List the project's tasks, each marked whether its input and output fit an MCP
+tool's schemas.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,8 @@
 
 **Tags:** Tools & MCP
 
+Delete a tool server from the project.
+
 ## Request
 
 ### Path Parameters

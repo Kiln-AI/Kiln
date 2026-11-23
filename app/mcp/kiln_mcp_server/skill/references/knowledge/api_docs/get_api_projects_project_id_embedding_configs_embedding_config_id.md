@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Get one embedding config.
+
 ## Request
 
 ### Path Parameters

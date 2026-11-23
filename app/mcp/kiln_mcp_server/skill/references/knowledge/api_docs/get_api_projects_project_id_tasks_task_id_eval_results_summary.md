@@ -4,6 +4,9 @@
 
 **Tags:** Evals
 
+Get the test-split scores of every eval of the task, for every run config, in
+one table.
+
 ## Request
 
 ### Path Parameters

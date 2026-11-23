@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Create a vector store config: the index type and search settings for RAG.
+
 ## Request
 
 ### Path Parameters

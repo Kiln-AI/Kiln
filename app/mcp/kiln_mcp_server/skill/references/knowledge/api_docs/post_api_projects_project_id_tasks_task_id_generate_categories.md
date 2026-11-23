@@ -4,6 +4,10 @@
 
 **Tags:** Synthetic Data
 
+Generate topics, or subtopics under a node of the topic tree, for synthetic
+data on the task. Calls a model; saves nothing. The task's saved data guide
+is used unless data_guide is set.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,8 @@
 
 **Tags:** Fine-tuning
 
+List the task's dataset splits: frozen sets of runs used to fine-tune.
+
 ## Request
 
 ### Path Parameters

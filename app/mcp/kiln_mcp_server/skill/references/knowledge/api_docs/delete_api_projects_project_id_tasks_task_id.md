@@ -4,6 +4,8 @@
 
 **Tags:** Tasks
 
+Delete a task, with its runs, evals, prompts and run configs.
+
 ## Request
 
 ### Path Parameters

@@ -4,6 +4,8 @@
 
 **Tags:** Documents
 
+Create a reranker config: the model that reorders search results.
+
 ## Request
 
 ### Path Parameters

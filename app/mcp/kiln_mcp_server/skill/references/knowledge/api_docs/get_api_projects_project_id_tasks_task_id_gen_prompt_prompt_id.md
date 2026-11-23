@@ -4,6 +4,9 @@
 
 **Tags:** Prompts
 
+Render the full prompt text that a prompt ID gives for the task, as the model
+would see it.
+
 ## Request
 
 ### Path Parameters

@@ -133,11 +133,12 @@ def connect_model_info_api(
         limit: Annotated[int, Query(ge=1, le=200, description="Page size.")] = 25,
         offset: Annotated[int, Query(ge=0, description="Rows to skip.")] = 0,
     ) -> ModelInfoList:
-        """List Kiln's models with prices, limits and release dates from
-        models.dev, and for each provider entry whether the user can run it
-        now (status). By default only entries the user can run now (status
-        ready, not deprecated) are listed. Rows with no listed entry are left
-        out. `total` counts the rows after all filters; page with `offset`."""
+        """List Kiln's models, with prices and limits, and whether each can run now.
+
+        Prices, limits and release dates come from models.dev; each provider entry has a
+        status saying whether the user can run it now. By default only entries the user
+        can run now (status ready, not deprecated) are listed. Rows with no listed entry
+        are left out. `total` counts the rows after all filters; page with `offset`."""
         query = ListModelsQuery(
             search=search,
             featured=featured,
@@ -187,11 +188,12 @@ def connect_model_info_api(
             ),
         ] = None,
     ) -> ModelInfoDetails:
-        """The full record of one model: every provider entry with its status,
-        prices, limits, capabilities, thinking levels, default output mode and
-        what Kiln suggests the model for. Read the entry of the provider you
-        will use before you write a run config. 404 when the model, or its entry
-        for `provider`, does not exist."""
+        """Get the full record of one model by its Kiln model ID, for every provider.
+
+        Every provider entry has its status, prices, limits, capabilities, thinking
+        levels, default output mode and what Kiln suggests the model for. Read the entry
+        of the provider you will use before you write a run config. 404 when the model,
+        or its entry for `provider`, does not exist."""
         try:
             return await service.model_details(model_id, provider)
         except ModelNotFoundError as e:
@@ -204,8 +206,9 @@ def connect_model_info_api(
         openapi_extra=ALLOW_AGENT,
     )
     async def list_model_info_providers() -> ModelInfoProviderList:
-        """Every model provider Kiln knows, each marked connected or
-        not_connected, with the number of models ready to run on it, and
-        Kiln's notes on data retention, rate limits and gotchas. Connected
-        providers with models come first."""
+        """List the model providers Kiln knows, and whether each one is connected.
+
+        Each is marked connected or not_connected, with the number of models ready to
+        run on it, and Kiln's notes on data retention, rate limits and gotchas.
+        Connected providers with models come first."""
         return await service.list_providers()

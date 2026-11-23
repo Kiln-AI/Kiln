@@ -4,6 +4,8 @@
 
 **Tags:** Tools & MCP
 
+Add a remote MCP server (an HTTP URL) to the project as a tool server.
+
 ## Request
 
 ### Path Parameters
