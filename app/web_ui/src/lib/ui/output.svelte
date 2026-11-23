@@ -125,12 +125,39 @@
     }
   })
 
+  const COPY_FEEDBACK_MS = 1500
+  let copy_feedback: "idle" | "copied" | "failed" = "idle"
+  let copy_feedback_timer: ReturnType<typeof setTimeout> | null = null
+  let is_destroyed = false
+
   onDestroy(() => {
+    is_destroyed = true
     resize_observer?.disconnect()
+    if (copy_feedback_timer) clearTimeout(copy_feedback_timer)
   })
 
-  function copy_to_clipboard() {
-    navigator.clipboard.writeText(raw_output)
+  async function copy_to_clipboard() {
+    try {
+      // navigator.clipboard is undefined outside secure contexts.
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API is not available")
+      }
+      await navigator.clipboard.writeText(raw_output)
+      show_copy_feedback("copied")
+    } catch (error) {
+      console.error("Failed to copy to clipboard", error)
+      show_copy_feedback("failed")
+    }
+  }
+
+  function show_copy_feedback(feedback: "copied" | "failed") {
+    if (is_destroyed) return
+    if (copy_feedback_timer) clearTimeout(copy_feedback_timer)
+    copy_feedback = feedback
+    copy_feedback_timer = setTimeout(() => {
+      copy_feedback = "idle"
+      copy_feedback_timer = null
+    }, COPY_FEEDBACK_MS)
   }
 
   function toggle_expansion() {
@@ -189,23 +216,75 @@
     <div class="flex-none">
       <button
         on:click|stopPropagation={copy_to_clipboard}
-        class="btn btn-sm btn-square h-8 w-8 shadow-none text-gray-400 hover:text-gray-900"
+        aria-label="Copy"
+        title="Copy"
+        class="btn btn-sm btn-square h-8 w-8 shadow-none {copy_feedback ===
+        'copied'
+          ? 'text-success'
+          : copy_feedback === 'failed'
+            ? 'text-error'
+            : 'text-gray-400 hover:text-gray-900'}"
       >
-        <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-        <svg
-          class="w-5 h-5 p-0"
-          viewBox="0 0 64 64"
-          xmlns="http://www.w3.org/2000/svg"
-          stroke-width="3"
-          stroke="currentColor"
-          fill="none"
-        >
-          <rect x="11.13" y="17.72" width="33.92" height="36.85" rx="2.5" />
-          <path
-            d="M19.35,14.23V13.09a3.51,3.51,0,0,1,3.33-3.66H49.54a3.51,3.51,0,0,1,3.33,3.66V42.62a3.51,3.51,0,0,1-3.33,3.66H48.39"
-          />
-        </svg>
+        {#if copy_feedback === "copied"}
+          <svg
+            data-copy-icon="copied"
+            class="w-5 h-5 p-0"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            stroke-width="2"
+            stroke="currentColor"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4.5 12.75l6 6 9-13.5"
+            />
+          </svg>
+        {:else if copy_feedback === "failed"}
+          <svg
+            data-copy-icon="failed"
+            class="w-5 h-5 p-0"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            stroke-width="2"
+            stroke="currentColor"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        {:else}
+          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+          <svg
+            data-copy-icon="idle"
+            class="w-5 h-5 p-0"
+            viewBox="0 0 64 64"
+            xmlns="http://www.w3.org/2000/svg"
+            stroke-width="3"
+            stroke="currentColor"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect x="11.13" y="17.72" width="33.92" height="36.85" rx="2.5" />
+            <path
+              d="M19.35,14.23V13.09a3.51,3.51,0,0,1,3.33-3.66H49.54a3.51,3.51,0,0,1,3.33,3.66V42.62a3.51,3.51,0,0,1-3.33,3.66H48.39"
+            />
+          </svg>
+        {/if}
       </button>
+      <span class="sr-only" aria-live="polite"
+        >{copy_feedback === "copied"
+          ? "Copied"
+          : copy_feedback === "failed"
+            ? "Copy failed"
+            : ""}</span
+      >
     </div>
   </div>
 
