@@ -21,10 +21,13 @@
 - [ ] **B7 — Owner decision: three entries of the knowledge backlog**
   In `app/mcp/knowledge_backlog.md`, "Smell: an old model" starts "Done in Kiln Harness Tuner: …", but skill_and_content section 7 says only "Model and provider information" was marked done (and dropped). Confirm whether this entry is still open in Kiln: the smell doc comes in batch 7, and the detector stays in harness-tuner. Also confirm the renames "A repeat measurement on request" (was "A repeat measurement the planner can ask for") and "A quick check for room to improve" (was "A probe for room to improve").
   Decision (owner, Phase 16 batch 2): (1) drop the 'Smell: an old model' entry from `app/mcp/knowledge_backlog.md` (the smell doc is already in the skill as `smells/old-model.md`). (2) Keep the rename 'A repeat measurement on request', and keep Kiln Harness Tuner as an example in the entry, since Harness Tuner consumes this skill, e.g. 'Example: the Kiln Harness Tuner planner may request a repeat measurement to analyze noise.' (3) Ditto for 'A quick check for room to improve': keep the rename and add a Harness Tuner example in the same style. Edits go through the knowledge-maintenance skill's backlog procedure.
-- [ ] **B8 — Owner decision: "metrics only" on val and the paired statistics call**
+- [x] **B8 — Owner decision: "metrics only" on val and the paired statistics call**
   `app/mcp/kiln_mcp_server/skill/references/knowledge/train_val_test.md` counts "whether it is significant" as a val summary number, but significance by hand needs per-item val scores sent to `post_api_statistics`, which the same file forbids; its statistics row says "On train" only, while skill_and_content 4.5 and 9.3 (row 8) say the paired statistics call is used on val. The file also omits harness-tuner's sanctioned zero-number val→train channels (the rejection reason, the regressed-issue flag), which step D1 of `playbooks/dealing-with-train-wins-rejected-at-val.md` relies on. For the owner's phase-13 read of the file.
-- [ ] **B9 — Product gap: no way to add a val split to an existing eval**
+  Decision (owner, Phase 16 batch 3): resolved by tracking: a knowledge-backlog entry for Mike to review `train_val_test.md` (sign off or improve), and API enforcement of the policy in the fencing spec. Not changed now.
+  Closed: tracked in `app/mcp/knowledge_backlog.md` (entry "Mike's review of `references/knowledge/train_val_test.md`") and in `specs/projects/kiln_mcp_fencing/project_overview.md` (the train-filtered fence).
+- [x] **B9 — Product gap: no way to add a val split to an existing eval**
   No endpoint and no app page adds a val split to an eval that has none (`PATCH .../evals/{eval_id}` sets a train split once, with `train_set_filter_id`); only an eval built by the eval builder gets all three splits. `train_val_test.md` tells the agent to ask the user: build the eval again, or work on train only.
+  Decision (owner, Phase 16 batch 3): accepted: keep the wording (the agent offers to rebuild the eval with the eval builder, or to go train only). The product gap is outside this project.
 - [ ] **B10 — `test_the_knowledge_was_imported_whole` fails on the first new knowledge document**
   `IMPORTED_FILES` in `app/mcp/kiln_mcp_server/skill_checks/test_shipped_skill.py` asserts exact counts of the 74 imported files, so the first document added by procedure 4.3 of the `knowledge-maintenance` skill fails it. Assert that the imported stems are a subset of the tree (or `>=` per kind), or add the count bump to the maintenance skill.
   Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
@@ -36,10 +39,13 @@
   Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B13 — Owner decision: when the `val` memory record may be read**
   `app/mcp/kiln_mcp_server/skill/references/knowledge/memory.md` (the Orientation steps and the `val` row) allows a read of the `val` record only when confirming on val or reporting. Harness-tuner's `memory` skill also allows it for human or interactive orientation. This narrows the source beyond C11: keep it, or widen it to match.
-- [ ] **B14 — Owner decision: the exact cost or speed rule on val (relates to B8)**
+  Decision (owner, Phase 16 batch 3): pending: owner asked for more explanation.
+- [x] **B14 — Owner decision: the exact cost or speed rule on val (relates to B8)**
   `references/knowledge/run_an_experiment.md` ("Confirm on val") keeps a plain-words rule (clearly cheaper or faster, no worse on quality) and says that Kiln Harness Tuner's exact rule applies when running it. Port the exact rule instead? It is: a paired sign test on the same items, median ratio below 1, no significant p90 regression; no eval down significantly, pooled net item change ≥ 0 with weights p0=4, p1=3, p2=2, p3=1, none=1, and no single eval down more than max(1, round(0.10 × items)) net items.
-- [ ] **B15 — Content sizes over their targets**
+  Decision (owner, Phase 16 batch 3): keep as is.
+- [x] **B15 — Content sizes over their targets**
   `references/modes/improve_task.md` (about 10.8k body characters against "about 8,000") and `references/knowledge/run_an_experiment.md` (about 13.5k against "about 10,000") are well over their targets; `references/knowledge/memory.md` sits at about 11,997 of a hard 12,000. Revisit in phase 10's text tuning or the owner's read.
+  Decision (owner, Phase 16 batch 3): accept the sizes.
 - [ ] **B16 — "See also" lines go stale silently (relates to B10)**
   `OVERLAP_GROUPS` in `app/mcp/kiln_mcp_server/skill_checks/test_shipped_skill.py` writes groups 7, 10 and 12 (defined by rules in skill_and_content 9.1) as fixed lists, and section 4.3 of `.agents/skills/knowledge-maintenance/SKILL.md` never mentions `OVERLAP_GROUPS` or the "See also" lines. Adding a technique with lever `new_tool`, a smell that applies to `tools`, or a new lever leaves the lines incomplete with all tests passing. Fix: build those groups from the tree (the lever files; the links of `cheaper-or-faster.md`; the `levers` and `applies_to` front matter), or add a step to section 4.3 that updates `OVERLAP_GROUPS` and the lines.
   Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
@@ -84,5 +90,7 @@
 - [ ] **B30 — Apply review A (owner's answers): say only "no sandbox"**
   In the skill and anywhere else in this project's product text, say only "no sandbox": drop "resource sandbox" and every use of "sandbox" for the child process ("the same sandbox", "out of the sandbox"), and remove anything saying Kiln runs code in a sandbox. Files from the phase 13 packet (paths under `app/mcp/kiln_mcp_server/skill/references/`, `K/` = `knowledge/`): `K/code_tools.md` (lines ~10, 16, 29), `K/judge_types.md` (~51, 55, 60, 78), `levers/new_tool.md` (~3, 20–21); check `SKILL.md:49` and `K/code_tool_authoring.md:156–158`. Leave the third-party Pydantic "Run Python" MCP server mentions (`K/tools.md:80`, `docs/tools-and-mcp/README.md:40`), which are about a different product.
   Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
-- [ ] **B31 — Owner's read of four files (phase 13 review C), not done**
+- [x] **B31 — Owner's read of four files (phase 13 review C), not done**
   `SKILL.md`, `K/train_val_test.md`, `K/run_an_experiment.md` and `K/diagnose_an_agent.md` (paths as in B30), with the questions in `phase_plans/phase_13.md` section 3. The open decisions there are B8, B9, B13, B14, B15, B18 and B19.
+  Decision (owner, Phase 16 batch 3): resolved by tracking: a knowledge-backlog entry for the manual review.
+  Closed: tracked in `app/mcp/knowledge_backlog.md` (entry "A manual review of four files against the port rules").

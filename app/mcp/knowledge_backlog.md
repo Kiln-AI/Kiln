@@ -649,6 +649,28 @@ On a long multi-turn trace that can use it, check that the prompt cache is used.
 caching is off; the account or provider does not have it; the agent edits its own history. That
 edit saves a few tokens, but it breaks the cache and can cost 10x more.
 
+### Mike's review of `references/knowledge/train_val_test.md`
+
+- Kind: guide
+- Where: knowledge
+- Depends on: None
+- Source: kiln_mcp_server backlog B8; API enforcement of the rule is tracked in `specs/projects/kiln_mcp_fencing/project_overview.md`
+
+Mike signs it off or improves it. Open: val is summary numbers only, yet "whether it is significant"
+is one; that needs per-item val scores, and the spec planned the paired statistics call on val.
+Absent: Kiln Harness Tuner's zero-number val→train signals (rejection reason, regressed-issue flag).
+
+### A manual review of four files against the port rules
+
+- Kind: guide
+- Where: knowledge
+- Depends on: None
+- Source: kiln_mcp_server backlog B31; `specs/projects/kiln_mcp_server/phase_plans/phase_13.md`, section 3
+
+Review `SKILL.md`, and `train_val_test.md`, `run_an_experiment.md` and `diagnose_an_agent.md` of
+`references/knowledge/`, against the port rules: Kiln Harness Tuner's method unchanged (vocabulary
+only); one owner per question; nothing selects on test. The questions: phase_13.md, section 3.
+
 ### using_harness_tuner
 
 - Kind: guide

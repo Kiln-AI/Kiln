@@ -20,6 +20,7 @@ Harness-tuner runs many agent sessions against Kiln. Each one must be held to it
 - General settings, not harness-tuner roles. Kiln does not need to know harness-tuner's role names; harness-tuner maps each role to settings.
 - A project/task allow list as an option. Defaults to all.
 - Train-filtered: select APIs error if you try to access val/test data, with a clear error.
+  - The fence enforces the rules of the Kiln skill's `references/knowledge/train_val_test.md`: reading test results or test data fails, and reading val item-level data fails (val summary numbers only). So the policy is enforced by the API, not only by the skill text.
 - The fenced session design needs its own design step.
 - A clean design in Kiln. Harness-tuner's gateway is the reference for what the fence must do (how the train set is worked out, which names are held out, its tests as a checklist). We port the rules, not the code.
 - P2, but track it: "only evals this run created can be edited". This rule needs to know what a run created, which can live in the data (a run id tag) rather than in server memory.
