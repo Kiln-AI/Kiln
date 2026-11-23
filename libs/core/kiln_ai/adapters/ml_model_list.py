@@ -5646,6 +5646,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/nvidia/nemotron-3-120b-a12b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -6086,6 +6087,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="meta-llama/llama-3.2-1b-instruct",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
@@ -7566,6 +7568,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -7610,8 +7613,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
-                suggested_for_synthetic_user=True,
                 model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -11116,8 +11119,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
-                suggested_for_synthetic_user=True,
                 model_id="@cf/zai-org/glm-5.3-flash",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -11246,6 +11249,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.2",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_2_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -11968,6 +11972,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/moonshotai/kimi-k2.6",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=KIMI_K2_6_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
