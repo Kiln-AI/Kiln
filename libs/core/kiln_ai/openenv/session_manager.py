@@ -341,7 +341,11 @@ class OpenEnvSessionManager:
             return await _reset_schema_at(client, openenv_server, base_url, "/schema")
 
     async def start_episode(
-        self, openenv_server: OpenEnvServer, reset_kwargs: dict[str, JsonValue]
+        self,
+        openenv_server: OpenEnvServer,
+        reset_kwargs: dict[str, JsonValue],
+        *,
+        capacity_wait_s: float | None = None,
     ) -> OpenEnvEpisode:
         """Open a session on the environment and reset it with `reset_kwargs`.
         The session stays live until `end_episode` or `release`.
@@ -349,15 +353,18 @@ class OpenEnvSessionManager:
         Once the server has refused a reset for capacity and reported its limit, at most
         that many episodes are open on it at once, and a caller over the limit waits for
         one to end. Raises `OpenEnvCapacityError` when the server refuses without
-        reporting a limit, or when no session comes free within `capacity_wait_s`."""
+        reporting a limit, or when no session comes free within `capacity_wait_s`: this
+        call's value when given (0 fails at once, for a person waiting on one run), else
+        the manager's."""
         if openenv_server.id is None:
             raise ValueError("OpenEnv server must be saved before starting an episode")
         server = await self._server_for(openenv_server)
         slots = self._slots.setdefault(openenv_server.id, _SessionSlots())
-        deadline = time.monotonic() + self._capacity_wait_s
+        wait_s = self._capacity_wait_s if capacity_wait_s is None else capacity_wait_s
+        deadline = time.monotonic() + wait_s
         backoff_s = _CAPACITY_BACKOFF_MIN_S
         while True:
-            await self._take_slot(slots, server, deadline)
+            await self._take_slot(slots, server, deadline, wait_s)
             try:
                 return await self._reset_session(
                     openenv_server.id, server, slots, reset_kwargs
@@ -580,7 +587,11 @@ class OpenEnvSessionManager:
         )
 
     async def _take_slot(
-        self, slots: _SessionSlots, server: _ServerInfo, deadline: float
+        self,
+        slots: _SessionSlots,
+        server: _ServerInfo,
+        deadline: float,
+        wait_s: float,
     ) -> None:
         """Wait until the server has room for one more of Kiln's episodes, then count
         it as held. Polls rather than waiting on an asyncio primitive: the shared
@@ -592,10 +603,14 @@ class OpenEnvSessionManager:
             while not slots.has_room_for(ticket):
                 remaining_s = deadline - time.monotonic()
                 if remaining_s <= 0:
+                    waited = (
+                        f"none came free within {wait_s:g}s."
+                        if wait_s > 0
+                        else "all of them are in use."
+                    )
                     raise OpenEnvCapacityError(
                         f"{server.base_url} holds {slots.limit} sessions at once, and "
-                        f"none came free within {self._capacity_wait_s:g}s."
-                        f"{_CAPACITY_HINT}",
+                        f"{waited}{_CAPACITY_HINT}",
                         max_sessions=slots.limit,
                     )
                 await asyncio.sleep(min(_SLOT_POLL_S, remaining_s))

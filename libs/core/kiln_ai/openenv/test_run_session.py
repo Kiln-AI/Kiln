@@ -37,6 +37,7 @@ from kiln_ai.openenv.run_session import (
     openenv_for_run,
 )
 from kiln_ai.openenv.session_manager import (
+    OpenEnvCapacityError,
     OpenEnvRejectedError,
     OpenEnvSessionManager,
     OpenEnvTransientError,
@@ -222,6 +223,35 @@ class TestSetupErrors:
             "OpenEnv server Acme is at capacity. Wait for a run to finish, or raise the "
             "server's session limit."
         )
+
+    async def test_at_capacity_fails_at_once_when_the_server_reports_its_limit(
+        self, project, task, session_manager
+    ):
+        # Batch callers wait for a slot once the limit is known; a run that opens
+        # its own session must not.
+        real_request = session_manager._request
+
+        async def reports_limit(ws, message, expected_type):
+            try:
+                return await real_request(ws, message, expected_type)
+            except OpenEnvCapacityError as e:
+                raise OpenEnvCapacityError(str(e), max_sessions=1) from e
+
+        with serve_in_thread(max_sessions=1) as url:
+            openenv_server = _openenv_server(project, url)
+            held = await session_manager.start_episode(openenv_server, {})
+            with patch.object(session_manager, "_request", new=reports_limit):
+                started = asyncio.get_running_loop().time()
+                with pytest.raises(OpenEnvRunError) as raised:
+                    await _enter(
+                        task,
+                        _openenv_server_properties(openenv_server),
+                        session_manager,
+                    )
+                elapsed = asyncio.get_running_loop().time() - started
+            await session_manager.release(held)
+        assert raised.value.kind == "at_capacity"
+        assert elapsed < 5
 
     async def test_reset_rejected(self, task, openenv_server, session_manager):
         with pytest.raises(OpenEnvRunError) as raised:

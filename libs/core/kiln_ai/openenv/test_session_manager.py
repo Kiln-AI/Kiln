@@ -576,6 +576,30 @@ class TestSessionLimit:
             await manager.shutdown()
 
     @pytest.mark.parametrize("limited_server", [1], indirect=True)
+    async def test_a_zero_wait_fails_at_once_on_a_full_server(
+        self, session_manager, limited_server
+    ):
+        openenv_server, _ = limited_server
+        first = await session_manager.start_episode(openenv_server, {})
+        patcher, refusals = _report_session_limit(session_manager, 1)
+        with patcher:
+            # The refusal that teaches the limit fails at once too.
+            with pytest.raises(OpenEnvCapacityError):
+                await session_manager.start_episode(
+                    openenv_server, {}, capacity_wait_s=0
+                )
+            assert len(refusals) == 1
+            # Once the limit is known, a full server fails before any reset is sent.
+            with pytest.raises(OpenEnvCapacityError, match="all of them are in use"):
+                await session_manager.start_episode(
+                    openenv_server, {}, capacity_wait_s=0
+                )
+            assert len(refusals) == 1
+        slots = session_manager._slots[openenv_server.id]
+        assert slots.held == 1 and slots.waiting == []
+        await session_manager.release(first)
+
+    @pytest.mark.parametrize("limited_server", [1], indirect=True)
     async def test_refusal_without_a_limit_raises_at_once(
         self, session_manager, limited_server
     ):

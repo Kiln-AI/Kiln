@@ -342,7 +342,12 @@ async def _start_episode(
     except OpenEnvError as e:
         raise _session_error(openenv_server, e) from e
     try:
-        episode = await manager.start_episode(openenv_server, reset_kwargs)
+        # A run that opens its own session (the run page, an API call) has someone
+        # waiting on it, so a full server fails it at once rather than queueing it
+        # behind other work. Batch callers own their episodes and wait instead.
+        episode = await manager.start_episode(
+            openenv_server, reset_kwargs, capacity_wait_s=0
+        )
     except OpenEnvRejectedError as e:
         raise OpenEnvRunError(
             "reset_rejected",
