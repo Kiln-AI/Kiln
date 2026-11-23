@@ -62,5 +62,6 @@ Not specced now:
 
 This spec builds none of the fencing. Its design must not block it:
 
-- Spec two scopes a connection by its URL path. `/mcp` here is the open default.
-- Spec two adds no tools and changes no skill files. A scoped connection gets the same two tools and the same API, and a clear error when it goes outside what it was given. So `call_kiln_api` needs one place where a per-connection policy can be applied later.
+- Spec two scopes a connection by its URL path. `/mcp` here is the open default. Spec two changes that default: it withholds val and test item data, and test numbers, unless the URL opts out.
+- Spec two adds no tools. A scoped connection gets the same two tools and the same API, and a clear error when it goes outside what it was given. So `call_kiln_api` needs one place where a per-connection policy can be applied later.
+- Spec two adds a note to the skill about what a connection withholds by default, and why.
