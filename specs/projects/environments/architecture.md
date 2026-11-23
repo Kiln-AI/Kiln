@@ -46,7 +46,7 @@ World is on `origin/main` (commit `6a1820f37`) but in no release, so there's no 
 | `WorldSessionManager` protocol, `world_version()` | `OpenEnvSessionManager`, `openenv_version()` |
 | `_ServerInfo.world_id`, `.world_version`, `_compose_world_version` | `.openenv_server_id`, `.openenv_version`, `_compose_openenv_version` |
 | `EpisodeContext.world`, `.session_manager: WorldSessionManager` | `.openenv`, `OpenEnvSessionManager` |
-| `validate_world_tool_ids` (`adapter_registry.py`) | `validate_openenv_tool_ids` (rewritten in phase 3) |
+| `validate_world_tool_ids` (`adapter_registry.py`) | `validate_openenv_tool_ids`, unchanged from its released behaviour. Run config validation uses `validate_run_config_openenv_tools` instead. |
 | `world_trace_tag` (`trace_index.py`) | `openenv_trace_tag` |
 | Eval runner: `_WorldTarget`, `_world_*` helpers, `world_session_manager` kwarg, `_WorldToolMismatch` literals `"no_world_reset"`, `"other_world"` | `_OpenEnvTarget`, `_openenv_*`, `openenv_session_manager`, `"no_openenv_reset"`, `"other_openenv"` |
 | `studio/world_api.py`, `/api/projects/{project_id}/worlds...`, `World*Request/Response`, tag "Worlds" | `studio/openenv_server_api.py`, `/openenv_servers...`, `OpenEnv*Request/Response`, tag "Environments" |
@@ -131,7 +131,7 @@ def single_openenv_server_id(project: Project, tool_ids: list[ToolId]) -> str | 
 
 | Caller | Change |
 |---|---|
-| `validate_openenv_tool_ids` (`adapter_registry.py`), used by `validate_run_config_tool_names` when a run config is saved | Replace the direct-only check with `single_openenv_server_id` over all tools. Keep the existence and name-collision checks. |
+| `validate_run_config_openenv_tools` (`adapter_registry.py`), used by `validate_run_config_tool_names` when a run config is saved | Takes the whole tool list and runs `single_openenv_server_id` over it, with the existence and name-collision checks. The released `validate_openenv_tool_ids` keeps its signature and its direct-only check for library callers. |
 | Code tool create (`studio/code_tool_api.py`, around line 234, via `validate_unique_allowlist_tool_names`) | Call `single_openenv_server_id(project, allowlist)` |
 | Run start (section 5) | Called by the session setup |
 | Lookup endpoint (below) | Called directly |
@@ -248,7 +248,7 @@ def shared_conversation_sessions() -> ConversationSessions
 | Later turn, no session, `holds_turn(parent_id)` is true | Raise `fork_refused`: "This conversation uses an OpenEnv server, so it can only continue from the latest turn." |
 | Later turn, no session, parent has `openenv_episode` | Raise `session_ended`, with the spec's message |
 | Later turn, parent has no `openenv_episode`, tools now reach an environment | Raise `not_started_with_openenv`: "This conversation started without an OpenEnv server. Start a new conversation to use one." |
-| The turn raises | If `is_run_ending_tool_error`, release the session. Otherwise `put(parent_id, held)` back, so the user can retry the same turn. |
+| The turn raises | Release the session if the error ended it (an `OpenEnvError` that `tool_call_error_ends_session` reports), the turn was cancelled, or the turn called one of the environment's tools (`OpenEnvSessionManager.tool_calls` went up during the turn). Otherwise `put(parent_id, held)` back, so the user can retry the same turn. A model error, even a run-ending one such as a rate limit, doesn't end the session. |
 
 `take` removes the entry, so two concurrent sends on the same turn can't share a session. The second one gets `session_ended`. The UI already blocks double sends.
 
@@ -303,7 +303,8 @@ def shared_conversation_sessions() -> ConversationSessions
 
 - `run_sidebar.svelte` and the conversation page's sidebar read `run.openenv_episode`. They show a `PropertyList` titled "OpenEnv" after Usage, with OpenEnv Server (a link to the detail page), Version (`openenv_episode.openenv_version`) and Reset Arguments (formatted JSON).
 - The conversation page adds a prop to `lib/ui/trace/chat_message_actions.svelte`: `fork_disabled_reason: string | null`. When the conversation has `openenv_episode`, Fork is disabled on earlier turns, with that text as a tooltip.
-- A `session_ended` 409 from the composer shows above the composer as an error `Warning`, using the existing error display.
+- A `session_ended` 409 from the composer shows above the composer as an error `Warning`, using the existing error display. Every OpenEnv refusal carries `code: openenv_<kind>`, and `run_request_error` shows those messages without the "Unexpected error:" prefix.
+- The conversation page reads `GET .../runs/{run_id}/openenv_session` (`conversation_session_status`) and swaps the composer for the ended message before a send. `ConversationSessions.record_end` keeps why each conversation's session ended (bounded, in memory); `OpenEnvSessionManager.lost_cause` keeps why a dropped session failed until its episode is released.
 
 ## 9. Shared component changes
 
@@ -345,7 +346,7 @@ Python uses pytest, following `python_test_guide.md`. Web uses vitest, following
 | Lookup endpoint | The three result shapes, plus a missing environment |
 | `openenv_for_run` (fake session manager from `openenv/testing.py`) | No environment: a no-op. Kwargs without an environment. Single-turn start, set, end, and `openenv_episode` saved twice. Release on exception. Each error kind, and its HTTP mapping in run API tests. A sub-run reuses the episode. |
 | `read_state` | Returns state, keeps the session open, drops it on failure |
-| `ConversationSessions` | Put and take re-keying. Fork refused. Session ended. Not started with an environment. Retry after a non-ending error. Reap after idle, with an injected clock. `release_runs`. `close_all`. |
+| `ConversationSessions` | Put and take re-keying. Fork refused. Session ended. Not started with an environment. Retry after a non-ending error with no tool call. Session ended after a failed turn that called a tool. Reap after idle, with an injected clock. `release_runs`. `close_all`. |
 | Run API multi-turn | Three turns share one episode. Each turn's `openenv_episode.final_state` comes from `read_state`. The run delete hook releases the session. |
 | `available_tools` | An OpenEnv set is listed. An offline or archived environment is skipped. The timeout is respected. |
 | Web | `tool_options` rank, `drop_unselectable_tools` keeping env ids and dropping archived ones, all four `environment_preset_field` states and its place in Advanced Options, optional enums leading with "Not Set", the component prop defaults (each new prop off renders as before), and the request body including `openenv_reset_kwargs` |
@@ -360,7 +361,7 @@ These follow from the spec and the code. They're listed so a reviewer can disagr
 - **Session setup lives in core, in `BaseAdapter.invoke`,** not in the run API. Without that, the library and Kiln task tool sub-runs would need their own path.
 - **Multi-turn sessions are keyed by the latest turn's run id.** There's no conversation id in Kiln, and this key makes "only the latest turn" automatic.
 - **Later turns ignore `openenv_reset_kwargs`.** The choice is locked at the first turn.
-- **After a non-ending error, the session goes back under the parent turn,** so retrying the same message works.
+- **After a non-ending error, the session goes back under the parent turn,** so retrying the same message works, but only if the failed turn called none of the environment's tools. A tool call may have changed the environment in a way the parent's history doesn't show. The count is kept by the session manager, so calls made through code tools and Kiln task tools count too.
 - **`available_tools` checks each environment with a 5-second timeout, in parallel,** so one slow server doesn't stall the picker.
 - **The eval runner keeps its own session code.** Only its names change. Merging it with `openenv_for_run` is a later cleanup.
 
@@ -386,11 +387,11 @@ Kiln's schema form reads `JsonSchemaProperty` (`lib/utils/json_schema_editor/jso
 
 - `reset_schema_to_form_schema(schema: unknown): JsonSchemaProperty | null`
   - Resolves local `$ref`s (`#/$defs/...`). A missing or cyclic ref returns null.
-  - Collapses `anyOf: [X, {type: "null"}]` to X, and marks that property not required.
+  - Collapses `anyOf: [X, {type: "null"}]` to X. A property the schema requires stays required, since the form can't send `null`.
   - Keeps `title`, `description`, `enum`, `type`, `properties` and `required`. Drops `default` and `additionalProperties: false`.
   - Returns null for the whole schema when it meets anything else: another `anyOf`, `oneOf` or `allOf`, a `type` list, a property with no type, or an object with no `properties` (a free-form dict). The dialog then stays on the JSON editor.
-- `kwargs_fit_form(kwargs, form_schema): { fits: true } | { fits: false, reason: string }`. Every key must be a known property, and every value must match its property's type or enum, recursively. `null` doesn't fit, because the form can't produce it.
-- `form_value_to_kwargs(value)`: drops empty strings, `undefined` and `null`, and objects left empty after that, recursively.
+- `kwargs_fit_form(kwargs, form_schema): { fits: true } | { fits: false, reason: string }`. Every key must be a known property, and every value must match its property's type or enum, recursively. `null` doesn't fit, because the form can't produce it. An empty object fits only where the schema requires it.
+- `form_value_to_kwargs(value, form_schema)`: drops empty strings, `undefined` and `null`, and optional objects left empty after that, recursively. A required object left empty is sent as `{}`, because the server needs the key.
 
 ### Dialog (`routes/(app)/tools/[project_id]/openenv_servers/[openenv_server_id]/environment_preset_dialog.svelte`)
 

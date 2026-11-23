@@ -182,7 +182,9 @@ def test_missing_and_malformed_targets_are_skipped(
 
     tool_ids = [
         "kiln_tool::code::missing",
+        "kiln_tool::code::",
         "kiln_task::missing_server",
+        "kiln_task::",
         "kiln_tool::openenv::",
         missing_run_config,
         missing_task,

@@ -96,7 +96,7 @@ An OpenEnv server can publish a JSON schema for its reset arguments. When it doe
 - **No schema:** the dialog is the JSON editor, as before, with no error or notice.
 - **The form:** one field per schema property, using Kiln's own form controls: a dropdown for an enum, number inputs for numbers and integers, a text input for strings, and a nested group for an object. Each field shows the schema's title and description, and is marked optional unless the schema requires it.
 - **Raw JSON:** a toggle switches between the form and the JSON editor. Values carry across in both directions.
-- **What gets saved:** an empty form field is left out of `reset_kwargs`, so the server's `reset()` never receives it. What the server does with a missing argument is up to the server. A nested object whose fields are all empty is left out too. Saving an explicit `null` needs Raw JSON.
+- **What gets saved:** an empty form field is left out of `reset_kwargs`, so the server's `reset()` never receives it. What the server does with a missing argument is up to the server. An optional nested object whose fields are all empty is left out too; a required one is saved as `{}`. A field the schema requires stays required in the form, even when it also allows `null`. Saving an explicit `null` needs Raw JSON.
 - **Optional enums:** an optional enum's dropdown starts on "Not Set", listed first. A required enum asks for a pick. This is the shared run input form, so the run page's structured inputs behave the same way.
 - **Checks:** the form checks what the schema states: types, enum values and required fields. It doesn't enforce rules the schema can't express, such as two fields that can't be combined. The schema is a description, not a contract: the server still checks the arguments when a run starts, with the existing reset error.
 - **When the form can't be used:** if the schema uses a construct the form can't show, the dialog stays on the JSON editor. An optional field that is an object with no fields of its own, such as Seahaven's `startup` for a world with no startup keywords, is left out of the form instead, since there's nothing in it to fill in. If an existing preset's arguments include keys or values the form can't show, the dialog opens on Raw JSON, and switching to the form is refused with the reason. Nothing is dropped silently.
@@ -116,7 +116,7 @@ Environments are managed in the Tools area, next to MCP servers. See `ui_design.
 - **Archive:** `OpenEnvServer.is_archived`, set by `POST .../openenv_servers/{id}/archive` with `{"is_archived": bool}`, the same field name and request shape as an MCP server's archive. The detail page has Archive and Unarchive, and the Tools list shows "Archived". An archived server's tools behave as an archived MCP server's do: `available_tools` leaves them out, the tool picker drops them from the selection, and a saved run config that already lists them still runs, since tool ids resolve without checking the archive flag.
 - **No delete in V1:** the UI has no way to delete an environment. The existing delete route and its rule (refused while a saved eval input resets into the environment) are unchanged.
 - **Seahaven:** a callout at the top of the Connect OpenEnv Server page promotes Kiln Seahaven (https://github.com/Kiln-AI/Seahaven) for people who don't have an environment yet.
-- **Docs:** Connect OpenEnv Server's "Read the Docs" link points at https://docs.kiln.tech/docs/tools-and-mcp/openenv, which needs writing before merge. The OpenEnv Servers item on Add Tools has no link, like the other items there.
+- **Docs:** Connect OpenEnv Server's "Read the Docs" link points at https://docs.kiln.tech/docs/evals-and-specs/openenv. The OpenEnv Servers item on Add Tools has no link, like the other items there.
 
 ## Tool picker
 
@@ -144,6 +144,8 @@ The check runs:
 - When a run starts, before any model call.
 - In code tool allowlist editing, where a code tool's allowlist can't reach more than one environment itself.
 
+Evals use the same collection to decide whether a job runs in its input's environment. A run config that reaches the environment only through a code tool or a Kiln task tool starts the input's episode, the same as one that lists the environment's tools.
+
 ## Run page
 
 ### The Environment Preset dropdown
@@ -170,7 +172,12 @@ Multi-turn tasks:
 - One session lasts for the whole conversation, across turns.
 - The session closes after 30 minutes without a turn, when the app exits, or when the conversation is deleted. Leaving the page doesn't close it, because browsers don't reliably report that and the conversation page can be reopened.
 - Each turn's run saves the environment's state at the end of that turn.
-- If the session is gone for any reason, sending a message shows an error: "The OpenEnv session for this conversation ended. Start a new conversation to keep using this OpenEnv server." The history stays readable. Kiln never silently starts a new session, because the agent would be in a different state from the one in its history.
+- If the session is gone for any reason, the conversation can't take another message: "The OpenEnv session for this conversation ended[ reason]. Start a new conversation to keep using this OpenEnv server." The history stays readable. Kiln never silently starts a new session, because the agent would be in a different state from the one in its history.
+  - The reason says why, when this Kiln process ended the session: "after 30 minutes without a message", "when the [tool] tool call failed: [error]", "when reading the OpenEnv server's state failed: [error]", or "when a message failed after calling the OpenEnv server's tools". Reasons are kept in memory, so after a restart the message has none.
+  - A tool call that drops the session partway through a turn doesn't fail the turn by itself. Later OpenEnv calls in that turn fail with "The OpenEnv session ended when [cause]. OpenEnv tools can't be called again in this run.", so the model can say what happened. The turn is saved with its episode but no final state, and the conversation ends.
+  - `GET /api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/openenv_session` reports `none`, `open`, or `ended` with that message, so the conversation page can show it before anyone types. A send is still refused with the same message if the session ends in between.
+- If a message fails before any of the environment's tools ran, the user can send it again in the same session. If one of the environment's tools already ran, the session ends, because the environment may have changed in a way the history doesn't show. Tools reached through code tools and Kiln task tools count too.
+- A later turn whose tools reach a different OpenEnv server, or none, is refused with "This conversation uses OpenEnv server X. Start a new conversation to ...". A turn that reaches none is refused after the session has ended too, because the earlier turns' saved episodes show the conversation used one. With no held session to name the server, the message is "This conversation uses an OpenEnv server. Start a new conversation to run without it."
 - Continuing from anything but the latest turn is refused in a conversation with an environment, because its state has moved past it.
 
 ### Run records
@@ -206,7 +213,7 @@ A session lost during or between turns fails that run with the error above.
 
 - No client names in specs, code, tests or commits.
 - Nothing changes for projects with no environments, or for run configs that reach none.
-- Evals behave as they do today, apart from the rename.
+- Evals behave as they do today, apart from the rename and from counting environments reached through code tools and Kiln task tools (see One environment per run).
 
 ## V2: swapping real and synthetic tools
 

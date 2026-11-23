@@ -19,6 +19,7 @@ import {
   openenv_server_id_of_tool,
   parse_reset_arguments,
   reset_kwargs_for,
+  run_request_error,
   selected_preset_after_change,
 } from "./openenv"
 
@@ -423,5 +424,31 @@ describe("matching_preset_name", () => {
   it("is null with no OpenEnv server or no presets", () => {
     expect(matching_preset_name(null, { a: 1 })).toBeNull()
     expect(matching_preset_name(server([]), { a: 1 })).toBeNull()
+  })
+})
+
+describe("run_request_error", () => {
+  it("shows an OpenEnv refusal as written, keeping its code", () => {
+    const error = run_request_error({
+      message: {
+        message: "The OpenEnv session for this conversation ended.",
+        code: "openenv_session_ended",
+      },
+    })
+    expect(error.getMessage()).toBe(
+      "The OpenEnv session for this conversation ended.",
+    )
+    expect(error.getCode()).toBe("openenv_session_ended")
+  })
+
+  it("keeps the prefix for other errors", () => {
+    expect(run_request_error({ message: "boom" }).getMessage()).toBe(
+      "Unexpected error: boom",
+    )
+    expect(
+      run_request_error({
+        message: { message: "Model refused", code: "model_error" },
+      }).getMessage(),
+    ).toBe("Unexpected error: Model refused")
   })
 })

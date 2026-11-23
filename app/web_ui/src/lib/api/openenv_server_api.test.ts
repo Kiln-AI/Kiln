@@ -17,6 +17,7 @@ import {
   create_openenv_server,
   is_openenv_unreachable,
   load_archived_openenv_server_ids,
+  load_conversation_openenv_session,
   load_openenv_server_reset_arguments_brief,
   lookup_run_openenv_server,
   openenv_server_error,
@@ -223,5 +224,27 @@ describe("load_openenv_server_reset_arguments_brief", () => {
     expect(error).toBeInstanceOf(KilnError)
     expect(is_openenv_unreachable(error)).toBe(true)
     expect(error.getMessage()).toBe("No OpenEnv server answered.")
+  })
+})
+
+describe("load_conversation_openenv_session", () => {
+  it("asks for the turn's session and returns the answer", async () => {
+    mockGet.mockResolvedValue({
+      data: { state: "ended", message: "The session ended." },
+      error: undefined,
+    })
+    const status = await load_conversation_openenv_session("p1", "t1", "r1")
+    expect(status).toEqual({ state: "ended", message: "The session ended." })
+    expect(mockGet).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/openenv_session",
+      { params: { path: { project_id: "p1", task_id: "t1", run_id: "r1" } } },
+    )
+  })
+
+  it("throws a KilnError when the request fails", async () => {
+    mockGet.mockResolvedValue({ data: undefined, error: { message: "boom" } })
+    await expect(
+      load_conversation_openenv_session("p1", "t1", "r1"),
+    ).rejects.toBeInstanceOf(KilnError)
   })
 })

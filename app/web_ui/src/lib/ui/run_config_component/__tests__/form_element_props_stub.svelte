@@ -33,3 +33,8 @@
   data-empty-state-subtitle={empty_state_subtitle}
   data-empty-state-link={empty_state_link}
 ></div>
+<!-- Lets a test pick a value, as a user would in the real control. -->
+<input
+  data-testid="form-element-value"
+  on:input={(e) => (value = e.currentTarget.value)}
+/>

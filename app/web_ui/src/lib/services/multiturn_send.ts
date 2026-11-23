@@ -4,7 +4,7 @@ import {
   type RunConfigProperties,
   type TaskRun,
 } from "$lib/types"
-import type { ResetKwargs } from "$lib/utils/openenv"
+import { reset_kwargs_for_send, type ResetKwargs } from "$lib/utils/openenv"
 
 export type RunConfigController = {
   clear_run_options_errors: () => void
@@ -102,9 +102,15 @@ export async function send_multiturn(
   }
 
   const text = plaintext ?? input_form?.get_plaintext_input_data() ?? ""
-  const openenv_reset_kwargs = parent_task_run_id
-    ? null
-    : (await run_config_component.get_openenv_reset_kwargs?.()) ?? null
+  const get_openenv_reset_kwargs = run_config_component.get_openenv_reset_kwargs
+  let openenv_reset_kwargs: ResetKwargs | null = null
+  if (!parent_task_run_id && get_openenv_reset_kwargs) {
+    openenv_reset_kwargs = await reset_kwargs_for_send(
+      run_config_properties,
+      get_openenv_reset_kwargs,
+      () => run_config_component.run_options_as_run_config_properties(),
+    )
+  }
   const {
     data,
     error: fetch_error,

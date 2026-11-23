@@ -5,6 +5,7 @@
   import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
   import ToolArgumentsList from "$lib/components/tool_arguments_list.svelte"
   import EnvironmentPresetDialog from "./environment_preset_dialog.svelte"
   import OpenEnvServerEditDialog from "./openenv_server_edit_dialog.svelte"
@@ -29,6 +30,7 @@
     load_openenv_server_tools,
     load_openenv_server_version,
     load_reset_form_schema,
+    one_at_a_time,
     presets_without,
     save_environment_presets,
     reload_details_after_edit,
@@ -84,6 +86,8 @@
   ) {
     loading = true
     loading_error = null
+    presets_error = null
+    archive_error = null
     try {
       const loaded = await load_openenv_server(
         req_project_id,
@@ -143,24 +147,52 @@
     }
   }
 
-  async function save_presets(presets: NamedResetKwargs[]) {
-    openenv_server = await save_environment_presets(
-      project_id,
-      openenv_server_id,
-      presets,
-    )
-    expanded = []
+  const queue_preset_save = one_at_a_time()
+  // Preset saves not yet finished. While any is pending, Add, Edit, Clone and
+  // Remove are unavailable: a dialog opened now would build its list from the
+  // one before that save, and undo it on Save.
+  let pending_preset_saves = 0
+
+  // `change` builds the new list from the latest saved one when the save starts.
+  function save_presets_with(
+    change: (current: NamedResetKwargs[]) => NamedResetKwargs[],
+  ): Promise<void> {
+    const req_project_id = project_id
+    const req_openenv_server_id = openenv_server_id
+    pending_preset_saves++
+    return queue_preset_save(async () => {
+      if (!openenv_server || !is_current(req_project_id, req_openenv_server_id))
+        return
+      const saved = await save_environment_presets(
+        req_project_id,
+        req_openenv_server_id,
+        change(openenv_server.named_reset_kwargs ?? []),
+      )
+      if (!openenv_server || !is_current(req_project_id, req_openenv_server_id))
+        return
+      // Only the presets: an archive save may have changed the rest meanwhile.
+      openenv_server = {
+        ...openenv_server,
+        named_reset_kwargs: saved.named_reset_kwargs,
+      }
+      expanded = []
+    }).finally(() => pending_preset_saves--)
   }
 
-  async function remove_preset(index: number) {
-    if (!openenv_server) return
+  function save_presets(presets: NamedResetKwargs[]): Promise<void> {
+    return save_presets_with(() => presets)
+  }
+
+  async function remove_preset(name: string) {
+    const req_project_id = project_id
+    const req_openenv_server_id = openenv_server_id
     presets_error = null
     try {
-      await save_presets(
-        presets_without(openenv_server.named_reset_kwargs ?? [], index),
-      )
+      await save_presets_with((current) => presets_without(current, name))
     } catch (e) {
-      presets_error = createKilnError(e)
+      if (is_current(req_project_id, req_openenv_server_id)) {
+        presets_error = createKilnError(e)
+      }
     }
   }
 
@@ -169,28 +201,43 @@
   }
 
   async function update_archive(is_archived: boolean) {
+    const req_project_id = project_id
+    const req_openenv_server_id = openenv_server_id
     archive_loading = true
     archive_error = null
     try {
-      openenv_server = await set_openenv_server_archived(
-        project_id,
-        openenv_server_id,
+      const saved = await set_openenv_server_archived(
+        req_project_id,
+        req_openenv_server_id,
         is_archived,
       )
-      await load_available_tools(project_id, true)
+      if (openenv_server && is_current(req_project_id, req_openenv_server_id)) {
+        // Only the archive flag: a preset save may have changed the presets.
+        openenv_server = { ...openenv_server, is_archived: saved.is_archived }
+      }
+      await load_available_tools(req_project_id, true)
     } catch (e) {
-      archive_error = createKilnError(e)
+      if (is_current(req_project_id, req_openenv_server_id)) {
+        archive_error = createKilnError(e)
+      }
     } finally {
       archive_loading = false
     }
   }
 
   function after_edit(saved: OpenEnvServer) {
+    // A save can finish after moving to another server's page.
+    if (!openenv_server || saved.id !== openenv_server_id) return
     const reload_server_details = reload_details_after_edit(
       openenv_server,
       saved,
     )
-    openenv_server = saved
+    openenv_server = {
+      ...openenv_server,
+      name: saved.name,
+      description: saved.description,
+      url: saved.url,
+    }
     uncache_available_tools(project_id)
     if (reload_server_details) {
       load_server_details(project_id, openenv_server_id)
@@ -307,27 +354,20 @@
       </div>
 
       <div class="flex flex-col gap-4 mb-10">
-        <!-- The title's basis is the narrowest it gets beside the button. When
-             both don't fit on one line, the button moves under the title. -->
-        <div class="flex flex-wrap items-center gap-x-8 gap-y-4">
-          <div class="grow basis-80">
-            <h2 class="text-lg font-medium text-gray-900">
-              Environment Presets
-            </h2>
-            <div class="text-sm text-gray-500">
-              Named sets of reset arguments for this OpenEnv server. Pick one
-              under Advanced Options on the run page.
-            </div>
-          </div>
-          <div class="flex flex-wrap items-center gap-3 whitespace-nowrap">
-            <button
-              class="btn btn-mid"
-              on:click={() => preset_dialog.show_add()}
-            >
-              Add Environment Preset
-            </button>
-          </div>
-        </div>
+        <SettingsHeader
+          title="Environment Presets"
+          subtitle="Named sets of reset arguments for this OpenEnv server. Pick one under Advanced Options on the run page."
+          show_divider={false}
+        >
+          <button
+            slot="actions"
+            class="btn btn-mid"
+            disabled={pending_preset_saves > 0}
+            on:click={() => preset_dialog.show_add()}
+          >
+            Add Environment Preset
+          </button>
+        </SettingsHeader>
         {#if presets_error}
           <Warning
             warning_message={presets_error.getMessage() ||
@@ -336,7 +376,7 @@
           />
         {/if}
         {#if presets.length === 0}
-          <div class="text-gray-500 rounded-lg border p-4 text-sm">
+          <div class="text-sm text-gray-500">
             No Environment Presets yet. Add one by clicking "Add Environment
             Preset" above.
           </div>
@@ -385,22 +425,31 @@
                     </td>
                     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
                     <td class="p-0 align-top" on:click|stopPropagation>
-                      <TableActionMenu
-                        items={[
-                          {
-                            label: "Edit",
-                            onclick: () => preset_dialog.show_edit(index),
-                          },
-                          {
-                            label: "Clone",
-                            onclick: () => preset_dialog.show_clone(index),
-                          },
-                          {
-                            label: "Remove",
-                            onclick: () => remove_preset(index),
-                          },
-                        ]}
-                      />
+                      {#if pending_preset_saves > 0}
+                        <!-- The menu has no disabled state; its actions return
+                             when the save finishes. -->
+                        <div class="flex h-8 w-8 items-center justify-center">
+                          <span class="loading loading-spinner loading-xs"
+                          ></span>
+                        </div>
+                      {:else}
+                        <TableActionMenu
+                          items={[
+                            {
+                              label: "Edit",
+                              onclick: () => preset_dialog.show_edit(index),
+                            },
+                            {
+                              label: "Clone",
+                              onclick: () => preset_dialog.show_clone(index),
+                            },
+                            {
+                              label: "Remove",
+                              onclick: () => remove_preset(preset.name),
+                            },
+                          ]}
+                        />
+                      {/if}
                     </td>
                   </tr>
                 {/each}
@@ -455,20 +504,24 @@
         {/if}
       </div>
 
-      <EnvironmentPresetDialog
-        bind:this={preset_dialog}
-        {presets}
-        {form_schema}
-        {form_schema_loading}
-        save={save_presets}
-      />
-      <OpenEnvServerEditDialog
-        bind:this={edit_dialog}
-        {project_id}
-        {openenv_server_id}
-        {openenv_server}
-        after_save={after_edit}
-      />
+      <!-- Moving to another server rebuilds the dialogs, closing an open one,
+           so an edit made on one server is never saved to another. -->
+      {#key `${project_id}/${openenv_server_id}`}
+        <EnvironmentPresetDialog
+          bind:this={preset_dialog}
+          {presets}
+          {form_schema}
+          {form_schema_loading}
+          save={save_presets}
+        />
+        <OpenEnvServerEditDialog
+          bind:this={edit_dialog}
+          {project_id}
+          {openenv_server_id}
+          {openenv_server}
+          after_save={after_edit}
+        />
+      {/key}
     {/if}
   </AppPage>
 </div>

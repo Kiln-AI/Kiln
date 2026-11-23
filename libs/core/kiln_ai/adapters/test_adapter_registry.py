@@ -7,6 +7,8 @@ from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import (
     adapter_for_task,
     load_skills_for_task,
+    validate_openenv_tool_ids,
+    validate_run_config_openenv_tools,
     validate_run_config_tool_names,
 )
 from kiln_ai.adapters.ml_model_list import (
@@ -1409,6 +1411,51 @@ class TestValidateRunConfigToolNames:
             tools_config=ToolsRunConfig(tools=[f"kiln_tool::code::{code_tool.id}"])
         )
         await validate_run_config_tool_names(task, rc)
+
+    def test_released_validate_openenv_tool_ids_checks_only_listed_ids(
+        self, project_task
+    ):
+        """The released signature and behaviour: the OpenEnv tool ids alone, passed by
+        keyword, and a code tool reaching another OpenEnv server isn't followed."""
+        project, task = project_task
+        openenv_server_a = self._make_openenv_server(project, "a")
+        openenv_server_b = self._make_openenv_server(project, "b")
+        self._make_code_tool_reaching(
+            project, "lookup", build_openenv_tool_id(openenv_server_b.id, "search")
+        )
+        validate_openenv_tool_ids(
+            task=task,
+            openenv_tool_ids=[build_openenv_tool_id(openenv_server_a.id, "graphql")],
+            project_tool_names=["lookup"],
+        )
+        with pytest.raises(ValueError, match="lists tools from more than one OpenEnv"):
+            validate_openenv_tool_ids(
+                task,
+                [
+                    build_openenv_tool_id(openenv_server_a.id, "graphql"),
+                    build_openenv_tool_id(openenv_server_b.id, "search"),
+                ],
+                [],
+            )
+        with pytest.raises(ValueError, match="share the same function name: graphql"):
+            validate_openenv_tool_ids(
+                task,
+                [build_openenv_tool_id(openenv_server_a.id, "graphql")],
+                ["graphql"],
+            )
+
+    def test_tools_without_openenv_need_no_project(self, basic_task):
+        validate_run_config_openenv_tools(basic_task, ["kiln_tool::add_numbers"], [])
+
+    def test_openenv_tools_need_a_project(self, basic_task):
+        with pytest.raises(ValueError, match="require the task to belong to a project"):
+            validate_run_config_openenv_tools(
+                basic_task, ["kiln_tool::openenv::acme::search"], []
+            )
+
+    def test_released_validate_openenv_tool_ids_needs_a_project(self, basic_task):
+        with pytest.raises(ValueError, match="require the task to belong to a project"):
+            validate_openenv_tool_ids(basic_task, [], [])
 
     async def test_rejects_openenv_tool_colliding_with_project_tool(
         self, project_task, _agent_config

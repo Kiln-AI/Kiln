@@ -1068,7 +1068,13 @@ describe("ChatTrace component — fork affordance", () => {
     const buttons = fork_button(container)
     expect(buttons.length).toBe(2)
     for (const button of buttons) {
-      expect(button.disabled).toBe(true)
+      expect(button.getAttribute("aria-disabled")).toBe("true")
+      // Focusable, so a keyboard user can reach the reason.
+      expect(button.disabled).toBe(false)
+      const described_by = button.getAttribute("aria-describedby")
+      expect(container.querySelector(`#${described_by}`)?.textContent).toBe(
+        reason,
+      )
       expect(button.parentElement?.getAttribute("data-tip")).toBe(reason)
       expect(button.title).toBe(reason)
       await fireEvent.click(button)

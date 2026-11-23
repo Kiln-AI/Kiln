@@ -19,8 +19,11 @@ from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.openenv.run_session import (
+    ConversationSessionState,
     OpenEnvRunError,
     OpenEnvRunErrorKind,
+    conversation_session_status,
+    openenv_run_error_code,
 )
 from kiln_ai.openenv.session_manager import shared_conversation_sessions
 from kiln_ai.utils.dataset_import import (
@@ -447,6 +450,17 @@ class CreateTaskRunRequest(BaseModel):
     )
 
 
+class ConversationOpenEnvSession(BaseModel):
+    state: ConversationSessionState = Field(
+        description='"none" when the conversation uses no OpenEnv server, "open" when '
+        'it can take another message, "ended" when its session is gone.'
+    )
+    message: str | None = Field(
+        default=None,
+        description='Why the conversation can\'t continue. Set when "ended".',
+    )
+
+
 def run_from_id(project_id: str, task_id: str, run_id: str) -> TaskRun:
     _, run = task_and_run_from_id(project_id, task_id, run_id)
     return run
@@ -486,6 +500,32 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> TaskRun:
         return run_from_id(project_id, task_id, run_id)
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/openenv_session",
+        summary="Get Conversation OpenEnv Session",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_conversation_openenv_session(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str,
+            Path(description="The latest turn of the multi-turn conversation."),
+        ],
+    ) -> ConversationOpenEnvSession:
+        """Whether a message sent after this turn can use the conversation's OpenEnv
+        session. Sessions live in this process, so after a restart every
+        conversation that used one reports "ended"."""
+        task, run = task_and_run_from_id(project_id, task_id, run_id)
+        status = conversation_session_status(task, run)
+        return ConversationOpenEnvSession(state=status.state, message=status.message)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain",
@@ -582,11 +622,14 @@ def connect_run_api(app: FastAPI):
         # is in our delete-set. Stop at the first ancestor that still has another
         # live child (a sibling branch) — or one an eval still needs.
         runs_to_delete = _collect_cascade_delete_runs(task, run)
-        for r in runs_to_delete:
-            r.delete()
-        await shared_conversation_sessions().release_runs(
-            str(r.id) for r in runs_to_delete
-        )
+        deleted_ids: list[str] = []
+        try:
+            for r in runs_to_delete:
+                r.delete()
+                deleted_ids.append(str(r.id))
+        finally:
+            # A failure partway still ends the sessions of the turns already gone.
+            await shared_conversation_sessions().release_runs(deleted_ids)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
@@ -849,7 +892,8 @@ def connect_run_api(app: FastAPI):
             )
         except OpenEnvRunError as e:
             raise HTTPException(
-                status_code=_OPENENV_RUN_ERROR_STATUS[e.kind], detail=e.message
+                status_code=_OPENENV_RUN_ERROR_STATUS[e.kind],
+                detail={"message": e.message, "code": openenv_run_error_code(e)},
             ) from e
 
         # The conversation may have been cascade-deleted while the model was

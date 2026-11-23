@@ -136,6 +136,21 @@ class TestRemoteSessions:
             await session_manager.call_tool(episode, "append_note", {"note": "late"})
         assert await session_manager.end_episode(final) is final
 
+    async def test_counts_tool_calls_per_session(
+        self, session_manager, remote_openenv_server
+    ):
+        one = await session_manager.start_episode(remote_openenv_server, {})
+        two = await session_manager.start_episode(remote_openenv_server, {})
+        assert session_manager.tool_calls(one) == 0
+        await session_manager.call_tool(one, "append_note", {"note": "hi"})
+        # A call the environment reports as an error still counts.
+        await session_manager.call_tool(one, "explode", {})
+        assert session_manager.tool_calls(one) == 2
+        assert session_manager.tool_calls(two) == 0
+        await session_manager.release(one)
+        assert session_manager.tool_calls(one) == 0
+        await session_manager.release(two)
+
     async def test_sessions_are_isolated(self, session_manager, remote_openenv_server):
         one = await session_manager.start_episode(
             remote_openenv_server, {"fixture_id": "one"}
@@ -219,6 +234,18 @@ class TestFailurePaths:
             with pytest.raises(OpenEnvTransientError, match=r"within 0\.3s"):
                 await session_manager.call_tool(episode, "sleep", {"seconds": 1})
             assert session_manager._sessions == {}
+            cause = session_manager.lost_cause(episode)
+            assert cause is not None
+            assert cause.startswith("the sleep tool call failed: ")
+            assert "within 0.3s" in cause
+            with pytest.raises(
+                RuntimeError,
+                match=r"The OpenEnv session ended when the sleep tool call failed: .*"
+                r"OpenEnv tools can't be called again in this run\.",
+            ):
+                await session_manager.call_tool(episode, "read_notes", {})
+            await session_manager.release(episode)
+            assert session_manager.lost_cause(episode) is None
             with pytest.raises(RuntimeError, match="no live session"):
                 await session_manager.call_tool(episode, "read_notes", {})
         finally:
@@ -893,6 +920,16 @@ class TestResetSchema:
                 await session_manager.reset_schema(self._server(project, base_url))
                 is None
             )
+
+    async def test_body_that_isnt_json_is_none(self, session_manager, project):
+        async def not_json(self, url, **kwargs):
+            return httpx.Response(200, text="<html>not json</html>")
+
+        with patch.object(httpx.AsyncClient, "get", not_json):
+            schema = await session_manager.reset_schema(
+                self._server(project, "http://127.0.0.1:1")
+            )
+        assert schema is None
 
     async def test_unreachable_url_is_an_error(self, session_manager, project):
         openenv_server = self._server(project, f"http://127.0.0.1:{free_port()}")

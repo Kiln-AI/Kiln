@@ -119,10 +119,50 @@ async def validate_run_config_tool_names(
         task, project_tool_ids, list(skills.values())
     )
     tool_names = [await tool.name() for tool in tools]
-    validate_openenv_tool_ids(task, tools_config.tools, tool_names)
+    validate_run_config_openenv_tools(task, tools_config.tools, tool_names)
 
 
 def validate_openenv_tool_ids(
+    task: datamodel.Task,
+    openenv_tool_ids: list[str],
+    project_tool_names: list[str],
+) -> None:
+    """Check a run config's OpenEnv tool ids without an active episode.
+
+    Raises ValueError when an OpenEnv server is not in the task's project, when the ids
+    name more than one OpenEnv server, or when an OpenEnv tool's name collides with another
+    OpenEnv tool or with one of *project_tool_names* (the names of the run config's
+    resolved project tools, including the "skill" tool when skills are selected).
+
+    Only the listed OpenEnv tool ids are checked. To also count the OpenEnv servers
+    reached through code tools and Kiln task tools, use
+    `validate_run_config_openenv_tools`.
+    """
+    openenv_and_tool_names = [
+        openenv_and_tool_name_from_id(t) for t in openenv_tool_ids
+    ]
+    openenv_server_ids = sorted(
+        {openenv_server_id for openenv_server_id, _ in openenv_and_tool_names}
+    )
+
+    project = task.parent_project()
+    if project is None:
+        raise ValueError(
+            "OpenEnv tools require the task to belong to a project: "
+            f"{', '.join(openenv_tool_ids)}"
+        )
+    _require_openenv_servers(project, openenv_server_ids)
+    if len(openenv_server_ids) > 1:
+        raise ValueError(
+            f"Run config lists tools from more than one OpenEnv server ({', '.join(openenv_server_ids)}). "
+            "A job runs in one OpenEnv server, so all OpenEnv tools must come from the same OpenEnv server."
+        )
+    _require_unique_tool_names(
+        project_tool_names + [name for _, name in openenv_and_tool_names]
+    )
+
+
+def validate_run_config_openenv_tools(
     task: datamodel.Task,
     tool_ids: list[str],
     project_tool_names: list[str],
@@ -149,9 +189,19 @@ def validate_openenv_tool_ids(
     openenv_and_tool_names = [
         openenv_and_tool_name_from_id(t) for t in openenv_tool_ids
     ]
-    openenv_server_ids = sorted(
-        {openenv_server_id for openenv_server_id, _ in openenv_and_tool_names}
+    _require_openenv_servers(
+        project,
+        sorted({openenv_server_id for openenv_server_id, _ in openenv_and_tool_names}),
     )
+    single_openenv_server_id(project, tool_ids)
+    _require_unique_tool_names(
+        project_tool_names + [name for _, name in openenv_and_tool_names]
+    )
+
+
+def _require_openenv_servers(
+    project: datamodel.Project, openenv_server_ids: list[str]
+) -> None:
     found = OpenEnvServer.from_ids_and_parent_path(
         set(openenv_server_ids), project.path, readonly=True
     )
@@ -166,9 +216,9 @@ def validate_openenv_tool_ids(
             f"config not found in project {project.id}. Create the OpenEnv server first, or "
             "remove its tools from the run config."
         )
-    single_openenv_server_id(project, tool_ids)
 
-    tool_names = project_tool_names + [name for _, name in openenv_and_tool_names]
+
+def _require_unique_tool_names(tool_names: list[str]) -> None:
     if len(tool_names) != len(set(tool_names)):
         duplicates = sorted({n for n in tool_names if tool_names.count(n) > 1})
         raise ValueError(

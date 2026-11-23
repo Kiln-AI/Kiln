@@ -29,6 +29,7 @@ import {
   load_openenv_server_version,
   load_reset_form_schema,
   presets_with_draft,
+  one_at_a_time,
   presets_without,
   reset_arguments_for_form,
   reset_arguments_from_form,
@@ -174,9 +175,47 @@ describe("presets_with_draft", () => {
 })
 
 describe("presets_without", () => {
-  it("removes only the preset at the index", () => {
-    expect(presets_without(PRESETS, 0)).toEqual([ACME_TECH])
-    expect(presets_without(PRESETS, 1)).toEqual([ACME_MANAGER])
+  it("removes only the named preset", () => {
+    expect(presets_without(PRESETS, ACME_MANAGER.name)).toEqual([ACME_TECH])
+    expect(presets_without(PRESETS, ACME_TECH.name)).toEqual([ACME_MANAGER])
+    expect(presets_without(PRESETS, "missing")).toEqual(PRESETS)
+  })
+})
+
+describe("one_at_a_time", () => {
+  it("starts each task after the one before it settles", async () => {
+    const queue = one_at_a_time()
+    const events: string[] = []
+    let finish_first: () => void = () => {}
+    const first = queue(
+      () =>
+        new Promise<void>((resolve) => {
+          events.push("first start")
+          finish_first = () => {
+            events.push("first end")
+            resolve()
+          }
+        }),
+    )
+    const second = queue(async () => {
+      events.push("second start")
+    })
+    await Promise.resolve()
+    expect(events).toEqual(["first start"])
+    finish_first()
+    await Promise.all([first, second])
+    expect(events).toEqual(["first start", "first end", "second start"])
+  })
+
+  it("keeps going after a task fails, and the failure reaches its caller", async () => {
+    const queue = one_at_a_time()
+    const failed = queue(async () => {
+      throw new Error("save failed")
+    })
+    const next = vi.fn(async () => {})
+    await expect(failed).rejects.toThrow("save failed")
+    await queue(next)
+    expect(next).toHaveBeenCalledOnce()
   })
 })
 
@@ -237,7 +276,10 @@ describe("reset_arguments_for_form", () => {
 describe("reset_arguments_from_form", () => {
   it("formats the form value without its empty fields", () => {
     expect(
-      reset_arguments_from_form({ company: "acme", user: { id: undefined } }),
+      reset_arguments_from_form(
+        { company: "acme", user: { id: undefined } },
+        FORM_SCHEMA,
+      ),
     ).toBe('{\n  "company": "acme"\n}')
   })
 
@@ -245,7 +287,8 @@ describe("reset_arguments_from_form", () => {
     const text = '{\n  "company": "beta",\n  "user": {\n    "id": 7\n  }\n}'
     const result = reset_arguments_for_form(text, FORM_SCHEMA)
     expect(
-      "form_value" in result && reset_arguments_from_form(result.form_value),
+      "form_value" in result &&
+        reset_arguments_from_form(result.form_value, FORM_SCHEMA),
     ).toBe(text)
   })
 })

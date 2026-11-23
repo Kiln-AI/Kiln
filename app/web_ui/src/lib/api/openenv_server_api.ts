@@ -1,5 +1,9 @@
 import { client } from "$lib/api_client"
-import type { OpenEnvServer, RunOpenEnvServer } from "$lib/types"
+import type {
+  ConversationOpenEnvSession,
+  OpenEnvServer,
+  RunOpenEnvServer,
+} from "$lib/types"
 import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
 /** The KilnError code for a save refused because no OpenEnv server answered. */
@@ -166,6 +170,25 @@ export async function lookup_run_openenv_server(
   )
   if (error) {
     throw error
+  }
+  return data
+}
+
+/**
+ * Whether a message sent after this conversation turn could use its OpenEnv
+ * session. "ended" carries the message to show in place of the composer.
+ */
+export async function load_conversation_openenv_session(
+  project_id: string,
+  task_id: string,
+  run_id: string,
+): Promise<ConversationOpenEnvSession> {
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/openenv_session",
+    { params: { path: { project_id, task_id, run_id } } },
+  )
+  if (error) {
+    throw createKilnError(error)
   }
   return data
 }

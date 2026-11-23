@@ -452,7 +452,9 @@ def test_run_task_maps_openenv_errors(client, task_run_setup, kind, status):
         client, task_run_setup, {}, AsyncMock(side_effect=error)
     )
     assert response.status_code == status
-    assert response.json() == {"message": f"OpenEnv Acme: {kind}"}
+    assert response.json() == {
+        "message": {"message": f"OpenEnv Acme: {kind}", "code": f"openenv_{kind}"}
+    }
 
 
 def _model_reply(content=None, note=None):
@@ -522,9 +524,13 @@ class OpenEnvChat:
 
 
 @pytest.fixture
-def openenv_chat(app, task_run_setup_multiturn):
+def openenv_chat(app, task_run_setup_multiturn, request):
     project = task_run_setup_multiturn["project"]
     task = task_run_setup_multiturn["task"]
+    # Indirect parametrize with TurnMode.single_turn for a single-turn task.
+    if getattr(request, "param", TurnMode.multiturn) == TurnMode.single_turn:
+        task = Task(name="Single", instruction="keep notes", parent=project)
+        task.save_to_file()
     provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt-4")
     manager = OpenEnvSessionManager()
     replies: list = []
@@ -593,12 +599,32 @@ class TestRunApiConversation:
             e["reset"]["reset_kwargs"] == {"fixture_id": "acme"} for e in episodes
         )
 
+    @pytest.mark.parametrize("openenv_chat", [TurnMode.single_turn], indirect=True)
+    def test_single_turn_runs_open_and_close_their_own_session(self, openenv_chat):
+        assert openenv_chat.task.turn_mode == TurnMode.single_turn
+        first = openenv_chat.send("one", openenv_reset_kwargs={"fixture_id": "acme"})
+        assert first.status_code == 200, first.text
+        second = openenv_chat.send("two")
+        assert second.status_code == 200, second.text
+
+        first_episode = first.json()["openenv_episode"]
+        second_episode = second.json()["openenv_episode"]
+        assert first_episode["reset"]["reset_kwargs"] == {"fixture_id": "acme"}
+        assert first_episode["final_state"]["notes"] == ["one"]
+        # A fresh session each run, reset with no arguments when none are sent.
+        assert second_episode["episode_id"] != first_episode["episode_id"]
+        assert second_episode["reset"]["reset_kwargs"] == {}
+        assert second_episode["final_state"]["notes"] == ["two"]
+        assert openenv_chat.manager._sessions == {}
+        assert not openenv_chat.manager.conversations.holds_turn(first.json()["id"])
+
     def test_earlier_turn_is_refused(self, openenv_chat):
         first = openenv_chat.send("one")
         openenv_chat.send("two", parent_id=first.json()["id"])
         fork = openenv_chat.send("fork", parent_id=first.json()["id"])
         assert fork.status_code == 409
-        assert "only continue from the latest turn" in fork.json()["message"]
+        assert fork.json()["message"]["code"] == "openenv_fork_refused"
+        assert "only continue from the latest turn" in fork.json()["message"]["message"]
 
     def test_deleting_the_latest_turn_ends_the_session(self, openenv_chat):
         first = openenv_chat.send("one").json()
@@ -606,6 +632,25 @@ class TestRunApiConversation:
             f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/{first['id']}"
         )
         assert response.status_code == 200
+        assert openenv_chat.manager._sessions == {}
+
+    def test_delete_failing_on_an_ancestor_still_ends_the_session(self, openenv_chat):
+        first = openenv_chat.send("one").json()
+        second = openenv_chat.send("two", parent_id=first["id"]).json()
+        real_delete = TaskRun.delete
+
+        def delete(run):
+            if run.id == first["id"]:
+                raise OSError("disk full")
+            real_delete(run)
+
+        with (
+            patch.object(TaskRun, "delete", delete),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            openenv_chat.client.delete(
+                f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/{second['id']}"
+            )
         assert openenv_chat.manager._sessions == {}
 
     def test_bulk_delete_ends_the_session(self, openenv_chat):
@@ -642,10 +687,55 @@ class TestRunApiConversation:
         )
         response = openenv_chat.send("two", parent_id=first["id"])
         assert response.status_code == 409
-        assert response.json()["message"] == (
-            "The OpenEnv session for this conversation ended. Start a new "
-            "conversation to keep using this OpenEnv server."
+        assert response.json()["message"] == {
+            "message": "The OpenEnv session for this conversation ended. Start a "
+            "new conversation to keep using this OpenEnv server.",
+            "code": "openenv_session_ended",
+        }
+
+    def _session_status(self, openenv_chat, run_id):
+        response = openenv_chat.client.get(
+            f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/{run_id}"
+            "/openenv_session"
         )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def test_session_status_is_open_then_ended_with_the_reason(self, openenv_chat):
+        first = openenv_chat.send("one").json()
+        assert self._session_status(openenv_chat, first["id"]) == {
+            "state": "open",
+            "message": None,
+        }
+        conversations = openenv_chat.manager.conversations
+        conversations.record_end(first["id"], "after 30 minutes without a message")
+        openenv_chat.client.portal.call(conversations.release_runs, [first["id"]])
+        expected = (
+            "The OpenEnv session for this conversation ended after 30 minutes without "
+            "a message. Start a new conversation to keep using this OpenEnv server."
+        )
+        assert self._session_status(openenv_chat, first["id"]) == {
+            "state": "ended",
+            "message": expected,
+        }
+        refused = openenv_chat.send("two", parent_id=first["id"])
+        assert refused.status_code == 409
+        assert refused.json()["message"]["message"] == expected
+
+    @pytest.mark.parametrize("openenv_chat", [TurnMode.single_turn], indirect=True)
+    def test_session_status_is_none_for_a_single_turn_task(self, openenv_chat):
+        run = openenv_chat.send("one").json()
+        assert self._session_status(openenv_chat, run["id"]) == {
+            "state": "none",
+            "message": None,
+        }
+
+    def test_session_status_of_a_missing_run_is_not_found(self, openenv_chat):
+        response = openenv_chat.client.get(
+            f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/missing"
+            "/openenv_session"
+        )
+        assert response.status_code == 404
 
 
 def test_deep_update_with_empty_source():

@@ -75,6 +75,12 @@ class OpenEnvRunError(Exception):
         self.message = message
 
 
+def openenv_run_error_code(error: OpenEnvRunError) -> str:
+    """The error code an API sends with the refusal, so a client can show the message
+    as written instead of as an unexpected failure."""
+    return f"openenv_{error.kind}"
+
+
 @dataclass
 class OpenEnvRunHandle:
     context: EpisodeContext
@@ -118,6 +124,8 @@ async def openenv_for_run(
         _refuse_openenv_change(held_sessions.peek(str(parent_run.id)), openenv_server)
 
     if openenv_server is None:
+        if is_multiturn and parent_run is not None:
+            _refuse_dropping_openenv(parent_run, conversations)
         if reset_kwargs is not None:
             raise OpenEnvRunError(
                 "kwargs_without_openenv",
@@ -179,6 +187,24 @@ def _refuse_openenv_change(
     )
 
 
+def _refuse_dropping_openenv(
+    parent_run: TaskRun, conversations: ConversationSessions | None
+) -> None:
+    """A conversation that used an OpenEnv server can't continue without one, even
+    once its session is gone or from an earlier turn, where nothing is held under
+    the parent to compare against."""
+    held_sessions = conversations or shared_conversation_sessions()
+    if parent_run.openenv_episode is None and not held_sessions.holds_turn(
+        str(parent_run.id)
+    ):
+        return
+    raise OpenEnvRunError(
+        "openenv_changed",
+        "This conversation uses an OpenEnv server. Start a new conversation to run "
+        "without it.",
+    )
+
+
 def _continue_conversation(
     held_sessions: ConversationSessions, parent_run: TaskRun
 ) -> HeldSession:
@@ -186,16 +212,11 @@ def _continue_conversation(
     held = held_sessions.take(parent_id)
     if held is None:
         if held_sessions.holds_turn(parent_id):
-            raise OpenEnvRunError(
-                "fork_refused",
-                "This conversation uses an OpenEnv server, so it can only continue from the "
-                "latest turn.",
-            )
+            raise OpenEnvRunError("fork_refused", _FORK_REFUSED_MESSAGE)
         if parent_run.openenv_episode is not None:
             raise OpenEnvRunError(
                 "session_ended",
-                "The OpenEnv session for this conversation ended. Start a new "
-                "conversation to keep using this OpenEnv server.",
+                session_ended_message(held_sessions.end_reason(parent_id)),
             )
         raise OpenEnvRunError(
             "not_started_with_openenv",
@@ -203,6 +224,54 @@ def _continue_conversation(
             "to use one.",
         )
     return held
+
+
+_FORK_REFUSED_MESSAGE = (
+    "This conversation uses an OpenEnv server, so it can only continue from the "
+    "latest turn."
+)
+
+ConversationSessionState = Literal["none", "open", "ended"]
+
+
+@dataclass(frozen=True)
+class ConversationSessionStatus:
+    state: ConversationSessionState
+    """"none" when the conversation doesn't use an OpenEnv server, "open" when its
+    session can take another message, "ended" when it can't."""
+    message: str | None = None
+    """Why the conversation can't continue, for the person. Set when "ended"."""
+
+
+def conversation_session_status(
+    task: Task, run: TaskRun, conversations: ConversationSessions | None = None
+) -> ConversationSessionStatus:
+    """Whether a message sent after `run` could use the conversation's OpenEnv session,
+    so a client can say so before the person types one. A send can still be refused if
+    the session ends in between."""
+    if task.turn_mode != TurnMode.multiturn:
+        return ConversationSessionStatus("none")
+    held_sessions = conversations or shared_conversation_sessions()
+    run_id = str(run.id)
+    if held_sessions.peek(run_id) is not None:
+        return ConversationSessionStatus("open")
+    if held_sessions.holds_turn(run_id):
+        return ConversationSessionStatus("ended", _FORK_REFUSED_MESSAGE)
+    if run.openenv_episode is None:
+        return ConversationSessionStatus("none")
+    return ConversationSessionStatus(
+        "ended", session_ended_message(held_sessions.end_reason(run_id))
+    )
+
+
+def session_ended_message(reason: str | None) -> str:
+    """What the person sees when a conversation's session is gone. `reason` follows
+    "ended"; without one the message doesn't say why."""
+    ended = f"ended {reason}." if reason else "ended."
+    return (
+        f"The OpenEnv session for this conversation {ended} Start a new "
+        "conversation to keep using this OpenEnv server."
+    )
 
 
 @asynccontextmanager
@@ -213,27 +282,47 @@ async def _conversation_turn(
 ) -> AsyncIterator[OpenEnvRunHandle]:
     """Run one turn in the conversation's session. Afterwards the session is held under
     the new turn; after a failed turn it goes back under the parent, so the same turn
-    can be retried, unless the failure ended the session, this was the first turn, or
-    the turn was cancelled (possibly mid-message, so the session can't be trusted).
-    A model failure, even one a retry layer treats as run-ending (a rate limit), leaves
-    the environment's session usable, so it doesn't count as ending it."""
+    can be retried, unless the failure ended the session, this was the first turn, the
+    turn was cancelled (possibly mid-message, so the session can't be trusted), or the
+    turn called one of the environment's tools. A tool call may have changed the
+    environment, and the parent's history doesn't show it, so a retry would run against
+    a state its history doesn't explain. A model failure, even one a retry layer treats
+    as run-ending (a rate limit), leaves the environment's session usable, so it doesn't
+    count as ending it."""
     context = held.context
     manager = context.session_manager
     handle = OpenEnvRunHandle(context=context)
+    tool_calls_before = manager.tool_calls(context.episode)
     try:
         with _current_episode(context):
             yield handle
     except BaseException as e:
-        if (
-            parent_run is None
-            or not isinstance(e, Exception)
-            or _ended_openenv_session(e)
-        ):
+        lost_cause = manager.lost_cause(context.episode)
+        if parent_run is None or not isinstance(e, Exception):
+            await manager.release(context.episode)
+        elif lost_cause is not None or _ended_openenv_session(e):
+            held_sessions.record_end(
+                str(parent_run.id),
+                f"when {lost_cause}" if lost_cause else "when its last message failed",
+            )
+            await manager.release(context.episode)
+        elif manager.tool_calls(context.episode) > tool_calls_before:
+            held_sessions.record_end(
+                str(parent_run.id),
+                "when a message failed after calling the OpenEnv server's tools",
+            )
             await manager.release(context.episode)
         else:
             held_sessions.put(str(parent_run.id), held)
         raise
 
+    lost_cause = manager.lost_cause(context.episode)
+    if lost_cause is not None:
+        # A tool call ended the session during the turn. The model's answer is kept,
+        # but the conversation can't continue.
+        handle.episode = context.episode
+        await _end_conversation(held_sessions, handle, f"when {lost_cause}")
+        return
     try:
         state = await manager.read_state(context.episode)
     except OpenEnvError as e:
@@ -245,7 +334,14 @@ async def _conversation_turn(
         )
         handle.episode = context.episode
         if _ended_openenv_session(e):
-            await manager.release(context.episode)
+            lost_cause = manager.lost_cause(context.episode)
+            await _end_conversation(
+                held_sessions,
+                handle,
+                f"when {lost_cause}"
+                if lost_cause
+                else "when reading the OpenEnv server's state failed",
+            )
             return
     else:
         handle.episode = context.episode.model_copy(update={"final_state": state})
@@ -254,6 +350,15 @@ async def _conversation_turn(
         await manager.release(context.episode)
         return
     held_sessions.put(handle.run_id, held)
+
+
+async def _end_conversation(
+    held_sessions: ConversationSessions, handle: OpenEnvRunHandle, reason: str
+) -> None:
+    """Close the session after a turn that produced a run, and remember why."""
+    if handle.run_id is not None:
+        held_sessions.record_end(handle.run_id, reason)
+    await handle.context.session_manager.release(handle.context.episode)
 
 
 @contextmanager

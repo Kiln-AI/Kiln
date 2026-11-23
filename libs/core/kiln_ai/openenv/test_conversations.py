@@ -3,6 +3,7 @@ session manager is a mock: only which episodes get released matters here."""
 
 import asyncio
 import logging
+import threading
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -94,6 +95,26 @@ class TestTakeAndPut:
         finally:
             other_loop.close()
 
+    async def test_session_from_a_running_loop_is_released_there(
+        self, sessions, manager
+    ):
+        other_loop = asyncio.new_event_loop()
+        thread = threading.Thread(target=other_loop.run_forever, daemon=True)
+        thread.start()
+        try:
+            held = _held(manager, loop=other_loop)
+            sessions.put("turn-1", held)
+            assert sessions.take("turn-1") is None
+            assert not sessions.holds_turn("turn-1")
+            # Wait for the release scheduled on the other loop to run.
+            asyncio.run_coroutine_threadsafe(asyncio.sleep(0), other_loop).result(5)
+            manager.release.assert_awaited_once_with(held.context.episode)
+            manager.forget.assert_not_called()
+        finally:
+            other_loop.call_soon_threadsafe(other_loop.stop)
+            thread.join(5)
+            other_loop.close()
+
     async def test_peek_leaves_the_entry(self, sessions, manager):
         held = _held(manager)
         sessions.put("turn-1", held)
@@ -147,6 +168,34 @@ class TestRelease:
         await sessions.reap()
         assert _released(manager) == ["ep_old"]
         assert sessions.take("recent") is not None
+
+    async def test_reap_records_why_the_session_ended(self, clock, manager):
+        registry = ConversationSessions(clock=clock, idle_seconds=30 * 60)
+        try:
+            registry.put("turn-1", _held(manager))
+            clock.now += 30 * 60 + 1
+            await registry.reap()
+            assert registry.end_reason("turn-1") == (
+                "after 30 minutes without a message"
+            )
+        finally:
+            await registry.close_all()
+
+    async def test_deleting_a_turn_records_no_reason(self, sessions, manager):
+        sessions.put("turn-1", _held(manager))
+        await sessions.release_runs(["turn-1"])
+        assert sessions.end_reason("turn-1") is None
+
+    def test_end_reasons_keep_the_newest(self, monkeypatch):
+        monkeypatch.setattr("kiln_ai.openenv.conversations.MAX_END_REASONS", 2)
+        registry = ConversationSessions()
+        registry.record_end("a", "first")
+        registry.record_end("b", "second")
+        registry.record_end("a", "again")
+        registry.record_end("c", "third")
+        assert registry.end_reason("b") is None
+        assert registry.end_reason("a") == "again"
+        assert registry.end_reason("c") == "third"
 
     async def test_close_all_closes_everything(self, sessions, manager):
         sessions.put("turn-a", _held(manager, "ep_a"))

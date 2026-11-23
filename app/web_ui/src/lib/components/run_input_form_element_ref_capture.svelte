@@ -9,7 +9,6 @@
   export let path: string = ""
   export let hideHeaderAndIndent: boolean = false
   export let parentOptional: boolean = false
-  // Passed on to RunInputFormElement.
   export let on_see_all_description:
     | ((title: string, description: string) => void)
     | null = null

@@ -50,14 +50,12 @@ function title_from_key(key: string): string {
     .join(" ")
 }
 
-type Converted = { property: JsonSchemaProperty; nullable: boolean }
-
 function with_outer_text(
-  converted: Converted,
+  converted: JsonSchemaProperty,
   outer: JsonRecord,
   keep_inner_title: boolean,
-): Converted {
-  const property = { ...converted.property }
+): JsonSchemaProperty {
+  const property = { ...converted }
   if (!keep_inner_title) {
     delete property.title
   }
@@ -67,7 +65,7 @@ function with_outer_text(
   if (typeof outer.description === "string") {
     property.description = outer.description
   }
-  return { ...converted, property }
+  return property
 }
 
 function is_null_schema(node: unknown): boolean {
@@ -76,7 +74,16 @@ function is_null_schema(node: unknown): boolean {
   )
 }
 
-function convert(node: unknown, defs: JsonRecord, refs: string[]): Converted {
+/**
+ * The form property for a schema node. A nullable node (`anyOf [X, null]`) becomes
+ * X: the form can't send null, so it leaves an empty field out instead, and a
+ * required field stays required.
+ */
+function convert(
+  node: unknown,
+  defs: JsonRecord,
+  refs: string[],
+): JsonSchemaProperty {
   if (!is_record(node)) {
     throw new UnsupportedSchema()
   }
@@ -110,11 +117,7 @@ function convert(node: unknown, defs: JsonRecord, refs: string[]): Converted {
     if (non_null.length !== 1) {
       throw new UnsupportedSchema()
     }
-    const inner = convert(non_null[0], defs, refs)
-    return {
-      ...with_outer_text(inner, node, true),
-      nullable: true,
-    }
+    return with_outer_text(convert(non_null[0], defs, refs), node, true)
   }
 
   if (!is_form_type(node.type)) {
@@ -136,7 +139,7 @@ function convert(node: unknown, defs: JsonRecord, refs: string[]): Converted {
   if (node.type === "object") {
     Object.assign(property, convert_object(node, defs, refs))
   }
-  return { property, nullable: false }
+  return property
 }
 
 function convert_object(
@@ -160,7 +163,7 @@ function convert_object(
   const properties: Record<string, JsonSchemaProperty> = {}
   const required: string[] = []
   for (const [key, child] of Object.entries(node.properties)) {
-    let converted: Converted
+    let converted: JsonSchemaProperty
     try {
       converted = convert(child, defs, refs)
     } catch (e) {
@@ -170,10 +173,10 @@ function convert_object(
       throw e
     }
     properties[key] = {
-      ...converted.property,
-      title: converted.property.title ?? title_from_key(key),
+      ...converted,
+      title: converted.title ?? title_from_key(key),
     }
-    if (declared_required.includes(key) && !converted.nullable) {
+    if (declared_required.includes(key)) {
       required.push(key)
     }
   }
@@ -224,7 +227,7 @@ export function reset_schema_to_form_schema(
   }
   const defs = is_record(schema.$defs) ? schema.$defs : {}
   try {
-    const { property } = convert(schema, defs, [])
+    const property = convert(schema, defs, [])
     if (property.type !== "object") {
       return null
     }
@@ -266,6 +269,7 @@ function value_misfit(
   value: unknown,
   property: JsonSchemaProperty,
   path: string,
+  required: boolean,
 ): string | null {
   // The form can't produce null or an empty value: it leaves those fields out.
   if (value === null) {
@@ -284,10 +288,15 @@ function value_misfit(
     return `'${path}' isn't one of the options`
   }
   if (property.type === "object") {
-    if (Object.keys(value as JsonRecord).length === 0) {
+    const misfit = object_misfit(value as JsonRecord, property, `${path}.`)
+    if (misfit) {
+      return misfit
+    }
+    // The form sends `{}` for a required object left empty, and leaves out an
+    // optional one that holds nothing it would send.
+    if (!required && cleaned(value, property) === undefined) {
       return `'${path}' is empty`
     }
-    return object_misfit(value as JsonRecord, property, `${path}.`)
   }
   return null
 }
@@ -304,7 +313,12 @@ function object_misfit(
     if (!property) {
       return `unknown field '${path}'`
     }
-    const misfit = value_misfit(child, property, path)
+    const misfit = value_misfit(
+      child,
+      property,
+      path,
+      schema.required?.includes(key) ?? false,
+    )
     if (misfit) {
       return misfit
     }
@@ -334,24 +348,54 @@ export function kwargs_fit_form(
   return misfit ? { fits: false, reason: misfit } : { fits: true }
 }
 
-function cleaned(value: unknown): unknown {
+/**
+ * `value` with `{}` added for each required object field it leaves out. The
+ * server needs the key even when all of the object's own fields are optional.
+ */
+function with_required_objects(
+  value: JsonRecord,
+  schema: JsonSchemaProperty | undefined,
+): JsonRecord {
+  const result = { ...value }
+  for (const key of schema?.required ?? []) {
+    const child = schema?.properties?.[key]
+    if (child?.type === "object" && !(key in result)) {
+      result[key] = with_required_objects({}, child)
+    }
+  }
+  return result
+}
+
+function cleaned(
+  value: unknown,
+  schema: JsonSchemaProperty | undefined,
+): unknown {
   if (value === "" || value === null || value === undefined) {
     return undefined
   }
   if (is_record(value)) {
     const entries = Object.entries(value)
-      .map(([key, child]) => [key, cleaned(child)] as const)
+      .map(
+        ([key, child]) =>
+          [key, cleaned(child, schema?.properties?.[key])] as const,
+      )
       .filter(([, child]) => child !== undefined)
-    return entries.length > 0 ? Object.fromEntries(entries) : undefined
+    return entries.length > 0
+      ? with_required_objects(Object.fromEntries(entries), schema)
+      : undefined
   }
   return value
 }
 
 /**
  * The reset arguments for a form value: empty fields are left out so the
- * server uses its defaults, and so are objects left with no fields.
+ * server uses its defaults, and so are optional objects left with no fields.
+ * A required object left with no fields is sent as `{}`.
  */
-export function form_value_to_kwargs(value: unknown): Record<string, unknown> {
-  const result = cleaned(value)
-  return is_record(result) ? result : {}
+export function form_value_to_kwargs(
+  value: unknown,
+  form_schema: JsonSchemaProperty,
+): Record<string, unknown> {
+  const result = cleaned(value, form_schema)
+  return with_required_objects(is_record(result) ? result : {}, form_schema)
 }

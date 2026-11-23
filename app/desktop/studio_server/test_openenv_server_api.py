@@ -742,3 +742,14 @@ class TestRunOpenEnvServer:
             "/api/projects/p1/tasks/nope/run_openenv_server", json={"tool_ids": []}
         )
         assert r.status_code == 404
+
+    def test_takes_no_write_lock(self, app):
+        """It writes nothing, and the run page calls it on every tool change, so it
+        mustn't wait behind a run holding the git-sync write lock."""
+        path = "/api/projects/{project_id}/tasks/{task_id}/run_openenv_server"
+        (route,) = [
+            r
+            for r in app.routes
+            if getattr(r, "path", None) == path and "POST" in getattr(r, "methods", ())
+        ]
+        assert getattr(route.endpoint, "_git_sync_no_write_lock", False)

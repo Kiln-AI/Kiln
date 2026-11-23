@@ -51,9 +51,10 @@ class EpisodeContext:
 # Set while an episode's run generates (by the eval runner for a job, and by the adapter
 # for a run whose tools reach an environment), and reset with the token in a `finally`.
 # The reset is correctness, not hygiene: `AsyncJobRunner` reuses long-lived worker tasks,
-# and consecutive jobs on one worker share a context. Request handlers and other tasks
-# copy the *server's* context at creation, so they never observe another run's episode.
-# Graders read the episode from the trace, not from here.
+# and consecutive jobs on one worker share a context. Request handlers copy the
+# server's context, so they never see another run's episode. A task started during
+# generation inherits the episode, as a Kiln task tool's sub-run must. Graders read the
+# episode from the trace, not from here.
 _episode: ContextVar["EpisodeContext | None"] = ContextVar("episode", default=None)
 
 

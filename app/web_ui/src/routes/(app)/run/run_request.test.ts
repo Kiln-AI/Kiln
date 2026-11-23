@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import type { RunConfigProperties } from "$lib/types"
 import { build_run_request } from "./run_request"
+import { RUN_OPTIONS_CHANGED_WHILE_SENDING } from "$lib/utils/openenv"
 
 const AGENT_CONFIG = {
   type: "kiln_agent",
@@ -29,6 +30,7 @@ function args(
     structured_input: null,
     task_run_config_id: "rc_1",
     get_openenv_reset_kwargs: vi.fn().mockResolvedValue(kwargs),
+    current_run_config_properties: () => run_config_properties,
   }
 }
 
@@ -66,6 +68,20 @@ describe("build_run_request", () => {
     )
     await expect(build_run_request(request_args)).rejects.toThrow(
       "Network down",
+    )
+  })
+
+  it("refuses the send when the run options changed during the lookup", async () => {
+    const request_args = {
+      ...args(AGENT_CONFIG, { company: "acme" }),
+      current_run_config_properties: () =>
+        ({
+          ...AGENT_CONFIG,
+          tools_config: { tools: [] },
+        }) as unknown as RunConfigProperties,
+    }
+    await expect(build_run_request(request_args)).rejects.toThrow(
+      RUN_OPTIONS_CHANGED_WHILE_SENDING,
     )
   })
 })

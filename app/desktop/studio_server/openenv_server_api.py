@@ -17,6 +17,7 @@ from kiln_ai.datamodel.tool_id import ToolId, build_openenv_tool_id
 from kiln_ai.openenv.reset_schema_brief import reset_arguments_brief
 from kiln_ai.openenv.session_manager import OpenEnvError, shared_session_manager
 from kiln_ai.tools.openenv_reach import OpenEnvReachError, single_openenv_server_id
+from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -273,8 +274,6 @@ def connect_openenv_server_api(app: FastAPI):
             )
         except PydanticValidationError as e:
             raise HTTPException(status_code=400, detail=_friendly_error(e))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
         await _require_reachable(openenv_server)
         openenv_server.save_to_file()
         return _openenv_server_response(openenv_server)
@@ -345,8 +344,6 @@ def connect_openenv_server_api(app: FastAPI):
                 setattr(openenv_server, field, value)
         except PydanticValidationError as e:
             raise HTTPException(status_code=400, detail=_friendly_error(e))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
         if openenv_server.url != existing.url:
             await _require_reachable(openenv_server)
         openenv_server.save_to_file()
@@ -530,6 +527,7 @@ def connect_openenv_server_api(app: FastAPI):
         tags=["OpenEnv Servers"],
         openapi_extra=ALLOW_AGENT,
     )
+    @no_write_lock  # writes nothing; the run page calls it on every tool change
     async def get_run_openenv_server(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")

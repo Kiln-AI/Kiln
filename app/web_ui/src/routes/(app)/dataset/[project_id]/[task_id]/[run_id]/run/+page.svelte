@@ -60,6 +60,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import RunSidebar from "$lib/ui/run_sidebar.svelte"
   import { FORK_DISABLED_WITH_OPENENV } from "$lib/utils/openenv"
+  import { load_conversation_openenv_session } from "$lib/api/openenv_server_api"
   import {
     compute_forkable_run_ids,
     fork_target_from_assistant_block,
@@ -603,6 +604,7 @@
     if (!ok) {
       optimistic_sent_message = null
       awaiting_response = false
+      recheck_openenv_session()
       // Fork failed: release the held truncation. fork_target is still set (no
       // navigation happened), so the fork composer stays open at the same point.
       fork_send_trace_index = null
@@ -673,6 +675,55 @@
   }
 
   onDestroy(stop_pinning_transcript)
+
+  // ---- OpenEnv session ----
+  // Shown in place of the composer once the conversation's OpenEnv session is
+  // gone, so the person isn't asked for a message that will be refused. A
+  // session that ends while the page is open is still refused on send, and the
+  // composer's warning shows that.
+  let openenv_session_ended: string | null = null
+  let openenv_session_checked_for: string | null = null
+  $: openenv_session_run_id =
+    run?.id && run.id === run_id && is_multiturn && run.openenv_episode
+      ? run.id
+      : null
+  $: if (openenv_session_run_id !== openenv_session_checked_for) {
+    openenv_session_checked_for = openenv_session_run_id
+    openenv_session_ended = null
+    if (openenv_session_run_id) {
+      check_openenv_session(openenv_session_run_id)
+    }
+  }
+
+  async function check_openenv_session(req_run_id: string) {
+    const req_project_id = project_id
+    const req_task_id = task_id
+    try {
+      const status = await load_conversation_openenv_session(
+        req_project_id,
+        req_task_id,
+        req_run_id,
+      )
+      if (req_run_id !== openenv_session_checked_for) return
+      openenv_session_ended =
+        status.state === "ended" ? status.message ?? null : null
+    } catch {
+      // Without an answer the composer stays, and a send to a session that's
+      // gone is refused with the same message.
+    }
+  }
+
+  function recheck_openenv_session() {
+    if (openenv_session_run_id && !awaiting_response) {
+      check_openenv_session(openenv_session_run_id)
+    }
+  }
+
+  function on_visibility_change() {
+    if (document.visibilityState === "visible") {
+      recheck_openenv_session()
+    }
+  }
 
   // ---- Multiturn composer state ----
   let multiturn_run_config_component: RunConfigComponent
@@ -907,6 +958,8 @@
   }
 </script>
 
+<svelte:document on:visibilitychange={on_visibility_change} />
+
 <!-- Both layouts use the same capped width with the chat/input on the left and
      the Options sidebar on the right. -->
 <div class="max-w-[1400px]">
@@ -1009,6 +1062,14 @@
                       on_send_start={handle_fork_send_start}
                       on_send_settled={handle_send_settled}
                     />
+                  {:else if openenv_session_ended}
+                    <div
+                      data-testid="openenv-session-ended"
+                      class="flex flex-col items-start gap-4"
+                    >
+                      <Warning warning_message={openenv_session_ended} />
+                      <button class="btn" on:click={new_chat}>New Chat</button>
+                    </div>
                   {:else}
                     <MultiturnComposer
                       mode="append"

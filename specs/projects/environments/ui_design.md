@@ -153,7 +153,7 @@ Before the first message, the run page shows the dropdown as above. After the fi
 On the conversation page:
 
 - The sidebar shows the OpenEnv Server and how the session was reset, as read-only properties. The run stores the reset arguments, not the preset's name, since presets can be renamed or removed later. When one of the OpenEnv server's saved presets has exactly those arguments (key order aside), the row reads "Environment Preset" with the preset's name, as on the run page. Otherwise it reads "Environment Options" with a count ("1 option", "2 options"), or "None" when there are none. The name or count is a link that opens the JSON in a `SeeAllDialog`, so long arguments don't stretch the sidebar.
-- If the session has ended, sending a message shows an error `Warning` above the composer: "The OpenEnv session for this conversation ended. Start a new conversation to keep using this OpenEnv server." The conversation stays readable.
+- If the session has ended, the composer is replaced by an error `Warning` with the session-ended message (with its reason when Kiln knows one) and a New Chat button, matching the page's New Chat action. The page asks the session route when the turn loads, when the tab comes back into view, and after a failed send. A send the server refuses because the session ended in between shows the same message as an error `Warning` above the composer. The conversation stays readable.
 - Forking from an earlier turn is disabled in a conversation with a server. The Fork action's tooltip says why: "This conversation uses an OpenEnv server, so it can only continue from the latest turn."
 
 ## Run output
@@ -177,7 +177,7 @@ New strings not already given above. The mockups' "All copy" section lists every
 | Where | Text |
 |---|---|
 | Connect OpenEnv Server subtitle | Connect to a running OpenEnv server to add its tools to your project. |
-| Read the Docs link | https://docs.kiln.tech/docs/tools-and-mcp/openenv (to be written before merge) |
+| Read the Docs link | https://docs.kiln.tech/docs/evals-and-specs/openenv |
 | Kiln Seahaven callout title | Build an OpenEnv Server with Kiln Seahaven |
 | Kiln Seahaven callout description | Kiln Seahaven is an open-source framework for building realistic copies of your product's tools and data, served as an OpenEnv server. |
 | Kiln Seahaven callout button | Learn More |

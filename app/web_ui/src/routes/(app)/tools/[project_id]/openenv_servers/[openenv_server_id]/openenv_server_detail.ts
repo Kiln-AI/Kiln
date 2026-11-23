@@ -220,13 +220,32 @@ export function reset_arguments_for_form(
 }
 
 /** The Reset Arguments editor's text for a value read from the form. */
-export function reset_arguments_from_form(form_value: unknown): string {
-  return format_reset_arguments(form_value_to_kwargs(form_value) as ResetKwargs)
+export function reset_arguments_from_form(
+  form_value: unknown,
+  form_schema: JsonSchemaProperty,
+): string {
+  return format_reset_arguments(
+    form_value_to_kwargs(form_value, form_schema) as ResetKwargs,
+  )
 }
 
+/** Preset names are unique, so a removal names the preset rather than its row. */
 export function presets_without(
   presets: NamedResetKwargs[],
-  index: number,
+  name: string,
 ): NamedResetKwargs[] {
-  return presets.filter((_, i) => i !== index)
+  return presets.filter((preset) => preset.name !== name)
+}
+
+/**
+ * Runs each task after the one before it settles. Each preset save sends the
+ * whole list, so a save that started from an older list would undo a newer one.
+ */
+export function one_at_a_time(): (task: () => Promise<void>) => Promise<void> {
+  let last: Promise<void> = Promise.resolve()
+  return (task) => {
+    const run = last.then(task)
+    last = run.catch(() => undefined)
+    return run
+  }
 }

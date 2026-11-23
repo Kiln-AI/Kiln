@@ -2,13 +2,13 @@ import type { OptionGroup } from "$lib/ui/fancy_select_types"
 import type {
   OpenEnvServer,
   NamedResetKwargs,
+  RunConfigProperties,
   RunOpenEnvServer,
 } from "$lib/types"
+import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
-// TODO: publish this page on docs.kiln.tech before merging. It doesn't exist
-// yet, so the link 404s until it does.
 export const OPENENV_DOCS_URL =
-  "https://docs.kiln.tech/docs/tools-and-mcp/openenv"
+  "https://docs.kiln.tech/docs/evals-and-specs/openenv"
 export const SEAHAVEN_URL = "https://github.com/Kiln-AI/Seahaven"
 
 /**
@@ -48,16 +48,10 @@ export function openenv_server_url_error(value: unknown): string | null {
   if (!/^https?:\/\//i.test(text)) {
     return OPENENV_SERVER_URL_ERROR
   }
-  let parsed: URL
+  // With an http(s):// prefix, new URL() throws when there's no host.
   try {
-    parsed = new URL(text)
+    new URL(text)
   } catch {
-    return OPENENV_SERVER_URL_ERROR
-  }
-  if (
-    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
-    !parsed.hostname
-  ) {
     return OPENENV_SERVER_URL_ERROR
   }
   return null
@@ -311,4 +305,50 @@ export function reset_kwargs_for(
     (p) => p.name === preset_name,
   )
   return preset ? preset.reset_kwargs ?? {} : null
+}
+
+export const RUN_OPTIONS_CHANGED_WHILE_SENDING =
+  "The run options changed while the Environment Preset loaded. Send again."
+
+/**
+ * Reads the Environment Preset's reset arguments for `run_config_properties`.
+ * The lookup can wait on the OpenEnv server, and a tool change meanwhile would
+ * pair the reset arguments with another server's tools, so the send is refused
+ * when the run options changed.
+ */
+export async function reset_kwargs_for_send(
+  run_config_properties: RunConfigProperties,
+  get_openenv_reset_kwargs: () => Promise<ResetKwargs | null>,
+  current_run_config_properties: () => RunConfigProperties,
+): Promise<ResetKwargs | null> {
+  const reset_kwargs = await get_openenv_reset_kwargs()
+  if (
+    JSON.stringify(current_run_config_properties()) !==
+    JSON.stringify(run_config_properties)
+  ) {
+    throw new Error(RUN_OPTIONS_CHANGED_WHILE_SENDING)
+  }
+  return reset_kwargs
+}
+
+/**
+ * An error from a run request. The run route sends each OpenEnv refusal (no
+ * session, server unreachable, reset rejected) with an `openenv_` code. Those
+ * are expected and tell the user what to do, so their message is shown as
+ * written, without createKilnError's "Unexpected error" prefix.
+ */
+export function run_request_error(e: unknown): KilnError {
+  const error = createKilnError(e)
+  const code = error.getCode()
+  if (!code?.startsWith("openenv_")) {
+    return error
+  }
+  const body = (e as { message?: unknown }).message
+  const message =
+    body && typeof body === "object" && "message" in body
+      ? (body as { message: unknown }).message
+      : null
+  return typeof message === "string"
+    ? new KilnError(message, null, code)
+    : error
 }
