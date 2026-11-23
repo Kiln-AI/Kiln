@@ -5933,7 +5933,7 @@
   ]}
 >
   {#if notice_shown}
-    <p class="text-sm text-gray-500">{notice_shown.summary}</p>
+    <Warning warning_color="warning" warning_message={notice_shown.summary} />
   {/if}
 </Dialog>
 
