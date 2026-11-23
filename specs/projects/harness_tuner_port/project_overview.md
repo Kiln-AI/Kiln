@@ -1,6 +1,21 @@
 ---
-status: complete
+status: canceled
 ---
+
+> # CANCELED
+>
+> **This spec was canceled before it was built. It is replaced by a simpler one: [harness_tuner_switchover](../harness_tuner_switchover/project_overview.md).**
+>
+> It still has value. Built, it would do two things:
+>
+> 1. Get harness-tuner onto one shared API, with no gateway of its own.
+> 2. Block MCP clients from reading val and test data.
+>
+> But it is huge and risky. It puts scope checks through the core of Kiln's eval and data APIs, and it changes the raw API default. Harness-tuner would get a weaker fence and a much larger API than its gateway gives it today. So we chose the simpler plan: harness-tuner keeps its gateway, and moves onto Kiln's skill and shared APIs.
+>
+> Scopes for MCP callers are still wanted, as a later P2 project. The decisions reached here are its starting point: this overview, and [scope_decisions.md](scope_decisions.md).
+>
+> Only this overview and the decisions file were written. There is no functional spec.
 
 # Harness-Tuner Port: Fencing, Tools and Adoption
 
