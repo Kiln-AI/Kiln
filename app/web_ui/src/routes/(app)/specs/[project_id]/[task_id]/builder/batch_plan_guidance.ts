@@ -122,25 +122,52 @@ export type GroundingDrop = {
   scenario_index: number
   scenario: string
   drop_detail: string
+  // Absent on drops saved before the reason was kept; those read as not
+  // fitting the environment, which was the only kind then.
+  drop_reason?: string
 }
 
+// Drop reasons Kiln sets when the checking agent itself failed (it ran out of
+// calls or time, or its result was unusable), not when the scenario didn't fit.
+const CHECK_FAILED_REASONS = new Set(["limit", "invalid_output"])
+
 // On a Retry after drops: the scenarios that didn't fit, so the planner
-// doesn't plan them again in the same form. Null when nothing dropped.
+// doesn't plan them again in the same form, and the ones that couldn't be
+// checked, which it may keep. Null when nothing dropped.
 export function dropped_cases_section(drops: GroundingDrop[]): string | null {
-  if (drops.length === 0) return null
-  const rows = drops
-    .map(
-      (d) =>
-        `- Scenario: ${d.scenario.trim()}\n  Why it didn't fit: ${d.drop_detail.trim()}`,
-    )
-    .join("\n")
-  return `## Scenarios that didn't fit the environment
+  const unfit = drops.filter(
+    (d) => !CHECK_FAILED_REASONS.has(d.drop_reason ?? ""),
+  )
+  const unchecked = drops.filter((d) =>
+    CHECK_FAILED_REASONS.has(d.drop_reason ?? ""),
+  )
+  const sections: string[] = []
+  if (unfit.length > 0) {
+    const rows = unfit
+      .map(
+        (d) =>
+          `- Scenario: ${d.scenario.trim()}\n  Why it didn't fit: ${d.drop_detail.trim()}`,
+      )
+      .join("\n")
+    sections.push(`## Scenarios that didn't fit the environment
 
 These scenarios came from the last plan for this eval. Kiln checked each one against the environment and couldn't make it fit, for the reason given. Don't plan them again in the same form. Keep testing what each one tested, in a situation the starting states above can support.
 
 <dropped_scenarios>
 ${rows}
-</dropped_scenarios>`
+</dropped_scenarios>`)
+  }
+  if (unchecked.length > 0) {
+    const rows = unchecked.map((d) => `- ${d.scenario.trim()}`).join("\n")
+    sections.push(`## Scenarios that couldn't be checked
+
+These scenarios came from the last plan for this eval. Kiln's check of them stopped before finishing, for reasons unrelated to the scenario or the environment. You may plan them again as they are.
+
+<unchecked_scenarios>
+${rows}
+</unchecked_scenarios>`)
+  }
+  return sections.length > 0 ? sections.join("\n\n") : null
 }
 
 // On Replace Dropped Cases: the scenarios that fit and stay in the batch, so

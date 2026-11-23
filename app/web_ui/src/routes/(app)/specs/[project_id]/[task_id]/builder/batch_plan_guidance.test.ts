@@ -293,6 +293,51 @@ describe("dropped_cases_section", () => {
     )
   })
 
+  it("lists drops where the check itself failed apart, as fine to plan again", () => {
+    const section = dropped_cases_section([
+      {
+        scenario_index: 0,
+        scenario: "Refund a shipped order",
+        drop_detail: "No orders ship.",
+        drop_reason: "no_fit",
+      },
+      {
+        scenario_index: 1,
+        scenario: "Close an account",
+        drop_detail: "The agent ran out of tool calls.",
+        drop_reason: "limit",
+      },
+      {
+        scenario_index: 2,
+        scenario: "Rename a team",
+        drop_detail: "The model sent an empty reply.",
+        drop_reason: "invalid_output",
+      },
+    ])
+    expect(section).toContain(
+      "<dropped_scenarios>\n- Scenario: Refund a shipped order\n  Why it didn't fit: No orders ship.\n</dropped_scenarios>",
+    )
+    expect(section).toContain("## Scenarios that couldn't be checked")
+    expect(section).toContain("You may plan them again as they are.")
+    expect(section).toContain(
+      "<unchecked_scenarios>\n- Close an account\n- Rename a team\n</unchecked_scenarios>",
+    )
+    expect(section).not.toContain("ran out of tool calls")
+  })
+
+  it("leaves out the didn't-fit heading when only checks failed", () => {
+    const section = dropped_cases_section([
+      {
+        scenario_index: 1,
+        scenario: "Close an account",
+        drop_detail: "The agent ran out of tool calls.",
+        drop_reason: "limit",
+      },
+    ])
+    expect(section).not.toContain("didn't fit the environment")
+    expect(section).toContain("- Close an account")
+  })
+
   it("is null when nothing dropped", () => {
     expect(dropped_cases_section([])).toBeNull()
   })

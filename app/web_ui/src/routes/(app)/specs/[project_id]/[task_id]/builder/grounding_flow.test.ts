@@ -200,6 +200,7 @@ describe("apply_grounding_frame", () => {
       scenario_index: 2,
       scenario: "Change a plan",
       drop_detail: "Nothing like it exists.",
+      drop_reason: "no_fit",
     })
   })
 
@@ -299,6 +300,7 @@ describe("read_grounding_stream", () => {
         scenario_index: 0,
         scenario: "Refund a shipped order",
         drop_detail: "Nothing like it exists.",
+        drop_reason: "no_fit",
       },
     ])
   })

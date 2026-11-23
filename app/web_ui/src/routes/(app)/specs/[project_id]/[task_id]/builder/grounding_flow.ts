@@ -171,6 +171,7 @@ export function apply_grounding_frame(
             scenario_index: request_case.scenario_index,
             scenario: request_case.scenario,
             drop_detail: frame.drop_detail,
+            drop_reason: frame.drop_reason,
           },
         },
       }
