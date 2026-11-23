@@ -1,9 +1,13 @@
 <script lang="ts">
-  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import {
+    KilnError,
+    createKilnError,
+    server_message,
+  } from "$lib/utils/error_handlers"
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { base_url } from "$lib/api_client"
-  import { stream_sse } from "$lib/utils/sse_stream"
+  import { is_refusal, stream_sse } from "$lib/utils/sse_stream"
   import posthog from "posthog-js"
   import {
     skipped_run_configs_message,
@@ -58,6 +62,10 @@
   let eval_total_count = 0
   let eval_error_count = 0
   let skipped_run_configs: SkippedRunConfig[] = []
+  // The server declined the run before anything ran (a 4xx, such as an eval whose
+  // OpenEnv server is gone). Nothing changed, so the trigger stays "Run Eval" and
+  // the dialog offers no Re-run, which would only be refused again.
+  let refused = false
 
   function run_eval(): boolean {
     if (eval_type === "run_config" && !current_eval_config_id) {
@@ -87,6 +95,7 @@
     }
 
     eval_state = "running"
+    refused = false
     eval_complete_count = 0
     eval_total_count = 0
     eval_error_count = 0
@@ -130,8 +139,17 @@
         }
       },
       on_error: (error) => {
-        eval_state = "complete_with_errors"
-        eval_run_error = createKilnError(error)
+        if (is_refusal(error)) {
+          refused = true
+          eval_state = "not_started"
+          eval_run_error = new KilnError(
+            server_message(error) ?? "The server declined to run this eval.",
+            null,
+          )
+        } else {
+          eval_state = "complete_with_errors"
+          eval_run_error = createKilnError(error)
+        }
         on_run_complete()
       },
     })
@@ -147,10 +165,14 @@
     return false
   }
 
-  function run_dialog_buttons(eval_state: string) {
+  function run_dialog_buttons(eval_state: string, refused: boolean) {
     let buttons = []
 
-    if (eval_state === "complete" || eval_state === "complete_with_errors") {
+    if (
+      refused ||
+      eval_state === "complete" ||
+      eval_state === "complete_with_errors"
+    ) {
       buttons.push({
         label: "Close",
         isCancel: true,
@@ -213,12 +235,14 @@
 <Dialog
   bind:this={running_progress_dialog}
   title=""
-  action_buttons={run_dialog_buttons(eval_state)}
+  action_buttons={run_dialog_buttons(eval_state, refused)}
 >
   <div
     class="mt-12 mb-6 flex flex-col items-center justify-center min-h-[100px] text-center"
   >
-    {#if eval_state === "complete" && eval_complete_count == 0}
+    {#if refused}
+      <div class="font-medium">Eval Didn't Run</div>
+    {:else if eval_state === "complete" && eval_complete_count == 0}
       <div class="font-medium">No Data Needed to be Evaluated</div>
       <div class="text-gray-500 text-sm mt-2 flex flex-col gap-2">
         <div>

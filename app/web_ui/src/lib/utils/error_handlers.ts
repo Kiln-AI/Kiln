@@ -61,6 +61,24 @@ function extractMessage(e: { message: unknown }): string | null {
   return null
 }
 
+/** The server's own message from an error value, without the "Unexpected error"
+ * framing `createKilnError` adds. Null when the value carries none. */
+export function server_message(e: unknown): string | null {
+  if (e && typeof e === "object" && "message" in e) {
+    const msg = extractMessage(e as { message: unknown })
+    if (msg) return msg
+  }
+  if (
+    e &&
+    typeof e === "object" &&
+    "details" in e &&
+    typeof e.details === "string"
+  ) {
+    return e.details
+  }
+  return null
+}
+
 export function createKilnError(e: unknown): KilnError {
   if (e instanceof KilnError) {
     return e

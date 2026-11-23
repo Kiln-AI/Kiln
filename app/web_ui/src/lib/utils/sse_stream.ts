@@ -31,17 +31,30 @@ export type SseOptions = {
   subject?: string
 }
 
-/** The most useful error value the server gave us for a non-2xx response. */
+/** The most useful error value the server gave us for a non-2xx response, with its
+ * HTTP status as `status`, so a caller can tell a refusal (4xx: the server declined
+ * before anything ran) from a failure. */
 async function response_error(response: Response): Promise<unknown> {
   try {
     const body = await response.json()
     if (body && typeof body === "object") {
-      return body
+      return { ...body, status: response.status }
     }
   } catch (_) {
     // Not JSON (a proxy error page, an empty body); fall through to the status.
   }
-  return { message: `Server error: [${response.status}]` }
+  return {
+    message: `Server error: [${response.status}]`,
+    status: response.status,
+  }
+}
+
+/** Whether a stream's error is the server refusing the request up front (a 4xx), so
+ * nothing ran and running it again unchanged would be refused again. */
+export function is_refusal(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("status" in error)) return false
+  const status = (error as { status: unknown }).status
+  return typeof status === "number" && status >= 400 && status < 500
 }
 
 /** Split off every complete event in `buffer`, returning them and the remainder. */

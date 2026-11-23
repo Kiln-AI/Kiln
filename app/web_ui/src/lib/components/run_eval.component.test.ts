@@ -173,13 +173,7 @@ describe("run_eval — an up-front refusal reaches the user", () => {
     )
   })
 
-  it("KNOWN ROUGH EDGE: a refusal is headlined as a completed eval", async () => {
-    // The refusal path sets eval_state to "complete_with_errors", which is also the
-    // state a run that started and then failed some jobs lands in. So the dialog
-    // headlines "Eval Complete with Errors" and the button reads "Eval Errors", for a
-    // run that never started — the only accurate part of the screen is the message
-    // underneath. Asserted as-is to document what ships today, NOT because it is right.
-    // Reported rather than fixed: this is a test-only change.
+  it("headlines a refusal as a run that didn't happen, with no Re-run", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => refusal(400, V1_JUDGE_REFUSAL)),
@@ -188,8 +182,27 @@ describe("run_eval — an up-front refusal reaches the user", () => {
 
     await start_run(container)
 
-    expect(visible_text(container)).toContain("Eval Complete with Errors")
-    expect(visible_text(container)).toContain("Eval Errors")
+    const text = visible_text(container)
+    expect(text).toContain("Eval Didn't Run")
+    expect(text).not.toContain("Eval Complete with Errors")
+    expect(text).not.toContain("Unexpected error")
+    expect(text).not.toContain("Re-run Eval")
+    // Nothing ran, so the trigger still offers a run rather than "Eval Errors".
+    expect(text).not.toContain("Eval Errors")
+  })
+
+  it("keeps Re-run for a server failure, which may pass on a retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => refusal(500, "The server hit an error.")),
+    )
+    const { container } = render_run_eval()
+
+    await start_run(container)
+
+    const text = visible_text(container)
+    expect(text).toContain("Eval Complete with Errors")
+    expect(text).toContain("Re-run Eval")
   })
 
   it("notifies the caller that the run finished, so its data reloads", async () => {

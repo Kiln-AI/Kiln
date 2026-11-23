@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { stream_sse } from "./sse_stream"
+import { is_refusal, stream_sse } from "./sse_stream"
 import { createKilnError } from "./error_handlers"
 
 /** A Response whose body streams the given chunks, one read at a time. */
@@ -341,5 +341,33 @@ describe("stream_sse", () => {
     await settle()
 
     expect(seen_signal?.aborted).toBe(true)
+  })
+})
+
+describe("is_refusal", () => {
+  it("is true for a 4xx the stream reported", async () => {
+    mock_fetch({
+      ok: false,
+      status: 400,
+      json: async () => ({ message: "No golden set." }),
+    } as unknown as Response)
+    let error: unknown = null
+    stream_sse("/run", {
+      on_message: () => {},
+      on_error: (e) => {
+        error = e
+      },
+    })
+    await settle()
+    expect(is_refusal(error)).toBe(true)
+  })
+
+  it("is false for a 5xx, a network error or a value with no status", () => {
+    expect(is_refusal({ message: "Server error: [502]", status: 502 })).toBe(
+      false,
+    )
+    expect(is_refusal(new TypeError("Failed to fetch"))).toBe(false)
+    expect(is_refusal({ message: "x" })).toBe(false)
+    expect(is_refusal(null)).toBe(false)
   })
 })
