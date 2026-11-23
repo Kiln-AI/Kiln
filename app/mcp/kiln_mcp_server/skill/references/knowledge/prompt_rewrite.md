@@ -89,3 +89,7 @@ When the user asks for the task instruction to be changed in place, that is a pr
 | Create a new saved prompt | Task overview → Prompts → Create |
 
 **Warning:** The prompts pages require the task to be selected in the sidebar first — they do not work as direct links.
+
+## See also
+
+When and why, in the knowledge: `references/levers/prompt.md`, `references/improving_agents/techniques/add-the-missing-requirement.md`, `references/improving_agents/techniques/one-general-rule-per-edit.md`, `references/improving_agents/techniques/structure-a-long-prompt.md`, `references/improving_agents/techniques/policy-as-step-by-step-procedures.md`, `references/improving_agents/techniques/state-the-output-contract.md`, `references/improving_agents/techniques/decline-rules-paragraph.md`, `references/improving_agents/techniques/prune-one-group-at-a-time.md`, `references/improving_agents/smells/very-long-prompt.md`, `references/improving_agents/playbooks/requirement-missing-from-the-prompt.md`, `references/improving_agents/playbooks/lost-in-long-instructions.md`, `references/improving_agents/playbooks/wrong-scope-or-refusal.md`, `references/improving_agents/playbooks/change-the-surface-not-the-words.md`.

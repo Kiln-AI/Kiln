@@ -79,3 +79,7 @@ Skills **cannot be edited** after creation (body or description). To change one,
 - `http://localhost:8757/skills/{project_id}/{sid}` — skill detail page (after creation, link here to confirm)
 - `http://localhost:8757/run?run_config_id={rcid}` — Run screen pre-loaded with a config (the user can add a skill under Advanced → Skills)
 - `http://localhost:8757/optimize/{project_id}/{task_id}` — run configs list
+
+## See also
+
+When and why, in the knowledge: `references/levers/skill.md`, `references/improving_agents/techniques/long-prompt-into-a-skill.md`, `references/improving_agents/techniques/document-into-a-skill.md`, `references/improving_agents/techniques/guide-skill-for-a-tool-set.md`, `references/improving_agents/techniques/rewrite-an-inherited-skill.md`, `references/improving_agents/techniques/skill-into-the-prompt.md`, `references/improving_agents/smells/one-file-skill-with-many-topics.md`, `references/improving_agents/smells/skill-too-small-to-earn-its-place.md`, `references/improving_agents/smells/very-long-skill-description.md`, `references/improving_agents/smells/faulty-inherited-skill.md`, `references/improving_agents/playbooks/skill-is-not-read.md`.

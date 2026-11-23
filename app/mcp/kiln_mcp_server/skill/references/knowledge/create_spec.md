@@ -133,3 +133,7 @@ The underlying `spec_type` enum (kept for API compatibility) defines the kind of
 | `prompt_leakage` | Don't leak system prompt |
 
 **Reference:** [The Requirements Layer Your AI System is Missing](https://kiln.tech/blog/requirements_layer_your_ai_system_is_missing), [Many Small Evals Beat One Big Eval, Every Time](https://kiln.tech/blog/you_need_many_small_evals_for_ai_products).
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/playbooks/dealing-with-a-wrong-eval.md`, `references/improving_agents/playbooks/dealing-with-a-saturated-eval.md`, `references/improving_agents/playbooks/dealing-with-a-noisy-eval.md`, `references/improving_agents/playbooks/dealing-with-an-eval-near-zero.md`.

@@ -118,3 +118,7 @@ Present findings as a short prioritized list:
 - **Nice to have** (marginal improvement): persona refinement, tone instructions
 
 For each finding, suggest a specific fix. A complete review usually spans several groups (format, definitions, constraints, edge cases, measurement); "add output constraints" alone is rarely the whole answer. Return findings and proposed fixes to the caller — the calling mode or knowledge file decides what to do next.
+
+## See also
+
+When and why, in the knowledge: `references/levers/prompt.md`, `references/improving_agents/techniques/add-the-missing-requirement.md`, `references/improving_agents/techniques/one-general-rule-per-edit.md`, `references/improving_agents/techniques/structure-a-long-prompt.md`, `references/improving_agents/techniques/policy-as-step-by-step-procedures.md`, `references/improving_agents/techniques/state-the-output-contract.md`, `references/improving_agents/techniques/decline-rules-paragraph.md`, `references/improving_agents/techniques/prune-one-group-at-a-time.md`, `references/improving_agents/smells/very-long-prompt.md`, `references/improving_agents/playbooks/requirement-missing-from-the-prompt.md`, `references/improving_agents/playbooks/lost-in-long-instructions.md`, `references/improving_agents/playbooks/wrong-scope-or-refusal.md`, `references/improving_agents/playbooks/change-the-surface-not-the-words.md`.

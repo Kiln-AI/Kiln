@@ -81,3 +81,7 @@ The `run_comparison` / `run_calibration` endpoints behind the app's Run button a
 | Benchmark eval detail / results (usually spec-less → legacy) | `http://localhost:8757/specs/{project_id}/{task_id}/legacy/{eval_id}` |
 | Candidate run config | `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` |
 | A driven conversation leaf (tagged `sei_<eval_input_id>`) | `http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run` |
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/playbooks/dealing-with-a-noisy-eval.md`, `references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md`, `references/improving_agents/playbooks/spending-the-budget.md`.

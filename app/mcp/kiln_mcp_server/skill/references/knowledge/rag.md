@@ -74,3 +74,7 @@ Read `references/knowledge/api_docs/documents_api_list.md` and each endpoint doc
 - `call_kiln_api("GET", "/api/projects/{project_id}/documents")` — List uploaded documents
 - Read `references/knowledge/api_docs/get_api_projects_project_id_rag_configs.md`, then:
 - `call_kiln_api("GET", "/api/projects/{project_id}/rag_configs")` — List RAG configs
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/playbooks/answers-not-grounded.md`, `references/improving_agents/techniques/attach-the-knowledge-source.md`, `references/improving_agents/techniques/answer-only-from-the-source.md`, `references/improving_agents/techniques/document-into-a-skill.md`, `references/improving_agents/smells/document-behind-a-lookup-tool.md`.

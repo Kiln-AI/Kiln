@@ -103,3 +103,7 @@ For a new eval, the Eval Builder comes first (`references/knowledge/specs_and_ev
 
 - All types land in the same score keys; compare judges for the same eval via `eval_configs_score_summary` (correlation vs human ratings on the golden set). Rows with `skipped_reason` set were not scored — surface them, never average them. Deterministic types report `eval_usage: null` (no model call).
 - v2 evals **skip multi-turn dataset items** (`incompatible_input_shape`) — a benchmark's multi-turn rows need an LLM-judge or code-eval lane that reads the trace.
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/playbooks/dealing-with-a-wrong-eval.md`, `references/improving_agents/playbooks/dealing-with-a-saturated-eval.md`, `references/improving_agents/playbooks/dealing-with-a-noisy-eval.md`, `references/improving_agents/playbooks/dealing-with-an-eval-near-zero.md`.

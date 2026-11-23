@@ -130,3 +130,7 @@ When the request changes to creating project resources that are not about an imp
 | `references/knowledge/rag.md` | Document retrieval setup: to ground the agent in the user's documents |
 
 When no file covers what the user needs, read `references/knowledge/freeform_help.md` as a last resort.
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/playbooks/know-the-agent-before-you-plan.md`, `references/improving_agents/playbooks/ordering-work.md`, `references/improving_agents/playbooks/spending-the-budget.md`.

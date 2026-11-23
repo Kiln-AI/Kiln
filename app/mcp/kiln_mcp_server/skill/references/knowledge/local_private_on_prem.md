@@ -86,7 +86,7 @@ If the user really means VPC, the approach is different — they'll use the same
 
 ### Run Experiments
 
-Plan and run a set of experiments using open-weight models. Read `references/knowledge/run_an_experiment.md` for how to run the experiments, using these constraints:
+Plan and run a set of experiments using open-weight models. Read `references/improving_agents/playbooks/working-inside-restrictions.md` for planning inside the user's restrictions, and `references/improving_agents/techniques/model-swap-inside-a-class.md` for the model scan. Read `references/knowledge/run_an_experiment.md` for how to run the experiments, using these constraints:
 - Only use models they have available
 - Only use models that fit their RAM/parameter limit
 - Only use open-weight models — use `GET /api/model_info/models` with `open_weights=true`, or find the model with `search` and check `open_weights` in `GET /api/model_info/model_details`. See also `references/knowledge/model_work.md` → Open-Weight Models for size guidance
@@ -116,3 +116,7 @@ Only offer these if model-selection alone didn't work well:
 - Agent design: adding sub-agents to keep the context window focused
 - Tools: add dedicated MCP tools for harder elements. Load `references/knowledge/tools.md`
 - Fine-tuning: use Kiln's fine-tuning to tune to this task
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/playbooks/working-inside-restrictions.md`.

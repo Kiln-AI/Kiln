@@ -195,3 +195,7 @@ Tags and splits are managed automatically by the Eval Builder; don't rename or r
 | Eval configs (judge setup) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/eval_configs` |
 
 **Spec-based vs legacy eval links.** Evals live under the `http://localhost:8757/specs/` tree (the old `/evals/...` routes were retired). An eval is **legacy** when no Spec references it — which includes *every* eval created via the `create_evaluator` REST shortcut (it makes a spec-less `Eval`). Legacy evals put the literal token **`legacy`** in the `{spec_id}` slot of *all* their routes (`http://localhost:8757/specs/{project_id}/{task_id}/legacy/{eval_id}`, `.../legacy/{eval_id}/eval_configs`, …). Only evals built through the Eval Builder have a real `{spec_id}`. So: if you created the eval yourself via the API, link it with `legacy`; if it came from a Spec, use the `{spec_id}`.
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/playbooks/dealing-with-a-wrong-eval.md`, `references/improving_agents/playbooks/dealing-with-a-saturated-eval.md`, `references/improving_agents/playbooks/dealing-with-a-noisy-eval.md`, `references/improving_agents/playbooks/dealing-with-an-eval-near-zero.md`.

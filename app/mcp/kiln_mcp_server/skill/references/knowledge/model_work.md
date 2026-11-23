@@ -211,3 +211,7 @@ If the user asks "which model is best for this task?" or "what's the cheapest mo
 | View all run configs | `http://localhost:8757/optimize/{project_id}/{task_id}` |
 | Create run config (UI) | `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/create` |
 | Single run config | `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` |
+
+## See also
+
+When and why, in the knowledge: `references/levers/model.md`, `references/improving_agents/techniques/model-swap-inside-a-class.md`, `references/improving_agents/techniques/faster-provider-for-the-same-model.md`, `references/improving_agents/smells/old-model.md`, `references/improving_agents/playbooks/dealing-with-an-eval-near-zero.md`, `references/improving_agents/playbooks/cheaper-or-faster.md`, `references/improving_agents/techniques/cap-and-preview-wrapper.md`, `references/improving_agents/techniques/decision-model-for-a-classifier.md`, `references/improving_agents/techniques/long-prompt-into-a-skill.md`, `references/improving_agents/techniques/prune-one-group-at-a-time.md`, `references/improving_agents/techniques/roll-up-tool.md`, `references/improving_agents/techniques/skill-into-the-prompt.md`, `references/improving_agents/techniques/state-the-output-contract.md`, `references/improving_agents/techniques/thinking-level-ladder.md`.

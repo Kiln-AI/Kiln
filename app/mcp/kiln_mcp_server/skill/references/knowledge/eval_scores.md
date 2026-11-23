@@ -204,3 +204,7 @@ Navigate to the [Eval configs page](http://localhost:8757/specs/{project_id}/{ta
 ## Benchmark (EvalInput-backed) evals
 
 Benchmark evals (whose `test` split is EvalInput-backed) generate their responses at run time (incl. live synthetic-user drives). Reading their scores works through the same `score_summary`/`eval_results_summary` endpoints; to RUN or benchmark a candidate config against them, load `references/knowledge/benchmark_eval_inputs.md` first.
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/playbooks/dealing-with-a-noisy-eval.md`, `references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md`, `references/improving_agents/playbooks/spending-the-budget.md`, `references/improving_agents/playbooks/dealing-with-a-wrong-eval.md`, `references/improving_agents/playbooks/dealing-with-a-saturated-eval.md`, `references/improving_agents/playbooks/dealing-with-an-eval-near-zero.md`.

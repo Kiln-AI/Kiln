@@ -169,3 +169,7 @@ Kiln shows no cost estimate for this provider; the run's cost field stays empty.
 | "No logprobs found for output" | A G-Eval judge on Jev | Turn `g_eval` off or use another judge model |
 | Judge scores look random, or P(pass) barely separates human passes from fails | A legacy judge on Jev, steps dropped | Recreate it as the current LLM judge type |
 | Pass rate tracks one keyword | Literal reading of an under-specified spec | See "Signs a Jev judge is misreading the rubric" |
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/techniques/decision-model-for-a-classifier.md`.

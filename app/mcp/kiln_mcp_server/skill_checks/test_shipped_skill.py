@@ -54,8 +54,9 @@ MAINTENANCE = REPO_ROOT / ".agents" / "skills" / "knowledge-maintenance"
 MAINTENANCE_SKILL = MAINTENANCE / "SKILL.md"
 MAX_MAINTENANCE_LINES = 500
 
-# Rules whose problems do not fail the shipped-tree tests yet, each with the
-# content batch that makes it pass (skill_and_content section 9).
+# Rules whose problems do not fail the shipped-tree tests, for work that adds a
+# rule before the tree meets it. `test_no_rule_is_pending` fails on any entry,
+# so the set is empty whenever the suite passes.
 PENDING_RULES: set[str] = set()
 
 # Files allowed over the size limit, each with its reason.
@@ -69,6 +70,10 @@ def shipped_problems():
 
 def test_pending_rules_are_known_rules():
     assert PENDING_RULES <= {*TREE_RULES, *KNOWLEDGE_RULES, DOCS_INDEX_RULE}
+
+
+def test_no_rule_is_pending():
+    assert PENDING_RULES == set()
 
 
 def test_the_shipped_tree_passes_every_check(shipped_problems):
@@ -268,6 +273,227 @@ def test_run_an_experiment_opens_with_the_two_paths():
     two_paths = _sections(read_file(RUN_AN_EXPERIMENT, get_index()))["Two paths"]
     assert "Kiln Harness Tuner" in two_paths
     assert "one-off" in two_paths
+
+
+# --- the overlap groups --------------------------------------------------------
+
+_K = "references/knowledge/"
+_L = "references/levers/"
+_P = "references/improving_agents/playbooks/"
+_S = "references/improving_agents/smells/"
+_T = "references/improving_agents/techniques/"
+
+ALL_LEVERS = tuple(
+    f"{_L}{lever}.md"
+    for lever in (
+        "model",
+        "new_tool",
+        "output_mode",
+        "params",
+        "prompt",
+        "skill",
+        "tool_config",
+    )
+)
+
+# The overlap groups of skill_and_content 9.1, in its order: the knowledge
+# documents of each subject, then the Assistant files that teach it. Group 7
+# holds the playbook and the techniques it links; group 10 the techniques whose
+# levers include `tool_config` or `new_tool`, except those of groups 3, 9 and
+# 11, and the smells that apply to `tools`, except that of group 11.
+OVERLAP_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (  # 1 the order of an improvement
+        (
+            f"{_P}know-the-agent-before-you-plan.md",
+            f"{_P}ordering-work.md",
+            f"{_P}spending-the-budget.md",
+        ),
+        ("references/modes/improve_task.md",),
+    ),
+    (  # 2 measuring and judging a change
+        (
+            f"{_P}dealing-with-a-noisy-eval.md",
+            f"{_P}dealing-with-train-wins-rejected-at-val.md",
+            f"{_P}spending-the-budget.md",
+        ),
+        (f"{_K}eval_scores.md", f"{_K}benchmark_eval_inputs.md"),
+    ),
+    (  # 3 improving a prompt
+        (
+            f"{_L}prompt.md",
+            f"{_T}add-the-missing-requirement.md",
+            f"{_T}one-general-rule-per-edit.md",
+            f"{_T}structure-a-long-prompt.md",
+            f"{_T}policy-as-step-by-step-procedures.md",
+            f"{_T}state-the-output-contract.md",
+            f"{_T}decline-rules-paragraph.md",
+            f"{_T}prune-one-group-at-a-time.md",
+            f"{_S}very-long-prompt.md",
+            f"{_P}requirement-missing-from-the-prompt.md",
+            f"{_P}lost-in-long-instructions.md",
+            f"{_P}wrong-scope-or-refusal.md",
+            f"{_P}change-the-surface-not-the-words.md",
+        ),
+        (f"{_K}prompt_audit.md", f"{_K}prompt_rewrite.md"),
+    ),
+    (  # 4 model choice
+        (
+            f"{_L}model.md",
+            f"{_T}model-swap-inside-a-class.md",
+            f"{_T}faster-provider-for-the-same-model.md",
+            f"{_S}old-model.md",
+            f"{_P}dealing-with-an-eval-near-zero.md",
+        ),
+        (f"{_K}model_work.md",),
+    ),
+    (  # 5 run parameters
+        (f"{_L}params.md", f"{_T}thinking-level-ladder.md"),
+        (f"{_K}model_create_configs.md",),
+    ),
+    (  # 6 structured output mode
+        (
+            f"{_L}output_mode.md",
+            f"{_P}output-contract-not-met.md",
+            f"{_T}state-the-output-contract.md",
+        ),
+        (f"{_K}model_create_configs.md",),
+    ),
+    (  # 7 cheaper or faster as a goal
+        (
+            f"{_P}cheaper-or-faster.md",
+            f"{_T}cap-and-preview-wrapper.md",
+            f"{_T}decision-model-for-a-classifier.md",
+            f"{_T}faster-provider-for-the-same-model.md",
+            f"{_T}long-prompt-into-a-skill.md",
+            f"{_T}model-swap-inside-a-class.md",
+            f"{_T}prune-one-group-at-a-time.md",
+            f"{_T}roll-up-tool.md",
+            f"{_T}skill-into-the-prompt.md",
+            f"{_T}state-the-output-contract.md",
+            f"{_T}thinking-level-ladder.md",
+        ),
+        (f"{_K}model_work.md",),
+    ),
+    (  # 8 an eval that is itself the problem
+        (
+            f"{_P}dealing-with-a-wrong-eval.md",
+            f"{_P}dealing-with-a-saturated-eval.md",
+            f"{_P}dealing-with-a-noisy-eval.md",
+            f"{_P}dealing-with-an-eval-near-zero.md",
+        ),
+        (
+            f"{_K}specs_and_evals.md",
+            f"{_K}create_spec.md",
+            f"{_K}judge_types.md",
+            f"{_K}eval_scores.md",
+        ),
+    ),
+    (  # 9 skills
+        (
+            f"{_L}skill.md",
+            f"{_T}long-prompt-into-a-skill.md",
+            f"{_T}document-into-a-skill.md",
+            f"{_T}guide-skill-for-a-tool-set.md",
+            f"{_T}rewrite-an-inherited-skill.md",
+            f"{_T}skill-into-the-prompt.md",
+            f"{_S}one-file-skill-with-many-topics.md",
+            f"{_S}skill-too-small-to-earn-its-place.md",
+            f"{_S}very-long-skill-description.md",
+            f"{_S}faulty-inherited-skill.md",
+            f"{_P}skill-is-not-read.md",
+        ),
+        (f"{_K}adding_skills.md",),
+    ),
+    (  # 10 tools and code tools
+        (
+            f"{_L}tool_config.md",
+            f"{_L}new_tool.md",
+            f"{_P}fit-the-tool-layer-to-the-agent.md",
+            f"{_P}wrong-tool-chosen.md",
+            f"{_P}failure-at-a-tool-call.md",
+            f"{_P}malformed-tool-calls.md",
+            f"{_P}missing-context-the-agent-could-be-given.md",
+            f"{_T}cap-and-preview-wrapper.md",
+            f"{_T}consolidate-tools.md",
+            f"{_T}directive-in-the-tool-response.md",
+            f"{_T}errors-the-agent-can-act-on.md",
+            f"{_T}guard-tool-calls-at-the-boundary.md",
+            f"{_T}new-tool-description.md",
+            f"{_T}normalize-inputs-wrapper.md",
+            f"{_T}remove-or-scope-tools.md",
+            f"{_T}roll-up-tool.md",
+            f"{_S}fixed-call-chain.md",
+            f"{_S}general-query-tool-without-a-guide.md",
+            f"{_S}too-many-tools.md",
+            f"{_S}tool-results-flood-the-context.md",
+            f"{_S}tool-search.md",
+            f"{_S}tools-on-a-live-server.md",
+            f"{_S}unnecessary-tools.md",
+            f"{_S}very-long-tool-description.md",
+        ),
+        (
+            f"{_K}tools.md",
+            f"{_K}code_tools.md",
+            f"{_K}code_tool_authoring.md",
+            f"{_K}subagents.md",
+        ),
+    ),
+    (  # 11 grounding and RAG
+        (
+            f"{_P}answers-not-grounded.md",
+            f"{_T}attach-the-knowledge-source.md",
+            f"{_T}answer-only-from-the-source.md",
+            f"{_T}document-into-a-skill.md",
+            f"{_S}document-behind-a-lookup-tool.md",
+        ),
+        (f"{_K}rag.md",),
+    ),
+    (  # 12 creating a task and a run config
+        ALL_LEVERS,
+        (f"{_K}create_task.md", f"{_K}model_create_configs.md"),
+    ),
+    (  # 13 restrictions, local and private models
+        (f"{_P}working-inside-restrictions.md",),
+        (f"{_K}local_private_on_prem.md",),
+    ),
+    (  # 14 fine-tunes
+        (f"{_T}model-swap-inside-a-class.md", f"{_L}model.md"),
+        (f"{_K}fine_tuning.md",),
+    ),
+    (  # 15 a classifier on a decision model
+        (f"{_T}decision-model-for-a-classifier.md",),
+        (f"{_K}typesafe_jev.md",),
+    ),
+)
+
+SEE_ALSO_LEAD = "When and why, in the knowledge: "
+
+
+def see_also_paths() -> dict[str, tuple[str, ...]]:
+    """For each Assistant file of a group, the paths of its "See also" line:
+    the knowledge documents of its groups, in group order, each once."""
+    paths: dict[str, dict[str, None]] = {}
+    for documents, files in OVERLAP_GROUPS:
+        for file in files:
+            paths.setdefault(file, {}).update(dict.fromkeys(documents))
+    return {file: tuple(documents) for file, documents in paths.items()}
+
+
+def see_also_line(paths: tuple[str, ...]) -> str:
+    return SEE_ALSO_LEAD + ", ".join(f"`{path}`" for path in paths) + "."
+
+
+def test_the_overlap_groups_name_files_of_the_tree():
+    tree = get_index().files
+    for documents, files in OVERLAP_GROUPS:
+        assert [path for path in (*documents, *files) if path not in tree] == []
+
+
+@pytest.mark.parametrize("path", sorted(see_also_paths()))
+def test_each_overlap_file_has_its_see_also_line(path):
+    text = read_file(path, get_index())
+    assert text.count("\n## See also\n") == 1
+    assert _sections(text)["See also"].strip() == see_also_line(see_also_paths()[path])
 
 
 # --- SKILL.md ------------------------------------------------------------------

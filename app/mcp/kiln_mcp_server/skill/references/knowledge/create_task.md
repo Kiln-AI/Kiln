@@ -137,3 +137,7 @@ After the basics are set up:
 - **Run evals** once specs are created to get a baseline score
 - **Try alternate models** if quality or cost isn't right → `references/modes/improve_task.md`
 - **Add tools or RAG** if the agent needs external capabilities or knowledge
+
+## See also
+
+When and why, in the knowledge: `references/levers/model.md`, `references/levers/new_tool.md`, `references/levers/output_mode.md`, `references/levers/params.md`, `references/levers/prompt.md`, `references/levers/skill.md`, `references/levers/tool_config.md`.

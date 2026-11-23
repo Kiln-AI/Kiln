@@ -124,3 +124,7 @@ After creation, deep-link to the config: [View Config](http://localhost:8757/opt
 ## Provider Reference
 
 **See `references/knowledge/model_work.md` → Provider Reference** for the full provider table with IDs and notes.
+
+## See also
+
+When and why, in the knowledge: `references/levers/params.md`, `references/improving_agents/techniques/thinking-level-ladder.md`, `references/levers/output_mode.md`, `references/improving_agents/playbooks/output-contract-not-met.md`, `references/improving_agents/techniques/state-the-output-contract.md`, `references/levers/model.md`, `references/levers/new_tool.md`, `references/levers/prompt.md`, `references/levers/skill.md`, `references/levers/tool_config.md`.

@@ -5,7 +5,7 @@ description: |
 ---
 # Knowledge: Fine-Tuning
 
-One-file home for fine-tuning questions: **when to fine-tune** (vs. prompt engineering, model upgrade, RAG), **how to run a job**, **the three archetypes** (standard, reasoning, tool-use), **dataset/tag requirements**, and **status checking**. When the next step is evaluating the fine-tuned model against existing configs, hand off to `references/knowledge/eval_scores.md`.
+One-file home for fine-tuning questions: **when to fine-tune** (vs. prompt engineering, model upgrade, RAG), **how to run a job**, **the three archetypes** (standard, reasoning, tool-use), **dataset/tag requirements**, and **status checking**. When the next step is comparing the fine-tuned model with existing configs, follow `references/knowledge/run_an_experiment.md` ("Variants").
 
 ## Knowledge Required
 
@@ -19,12 +19,7 @@ Also read `references/modes/improve_task.md` when the user is weighing fine-tuni
 
 ## Try First (before fine-tuning)
 
-Cheaper alternatives to scope out first:
-1. **Prompt engineering** — system-prompt fixes and clearer rules / constraints, or a stronger model tier.
-2. **Model upgrade** — switching to a Frontier or Reasoning tier model often closes quality gaps without training.
-3. **RAG** — if the gap is missing factual knowledge, document retrieval iterates faster than a training run.
-
-Only recommend fine-tuning after these are explicitly tried or scoped out. The training charge is paid as soon as the job is submitted (and cancelling mid-run still typically bills partial cost), so the bar for committing to a training run should be high.
+What to try before a fine-tune, and in what order, is the knowledge's: read `references/improving_agents/playbooks/ordering-work.md` before you recommend one. The training charge is paid as soon as the job is submitted (and cancelling mid-run still typically bills partial cost), so the bar for committing to a training run should be high.
 
 ## When Fine-Tuning Is the Right Lever
 
@@ -137,7 +132,7 @@ When the user wants to try several fine-tune variants (different base models, di
 1. Confirm the dataset and split with the user (one shared dataset across all jobs).
 2. List the variants in a table — one row per intended job, columns for `provider`, `base_model_id`, varying parameters, and constants.
 3. Apply Prepare-the-Config / Let-the-User-Submit. Hand the user the deep-link and tell them which variants to launch. Do not POST a batch from chat unless the user explicitly asks for it — multiple training runs is multiple training charges.
-4. After the jobs run, hand off to `references/knowledge/eval_scores.md` for the comparison scorecard across the resulting fine-tuned models (using `kiln_fine_tune` provider run configs, one per resulting model).
+4. After the jobs run, compare the resulting fine-tuned models (`kiln_fine_tune` provider run configs, one per resulting model) as `references/knowledge/run_an_experiment.md` ("Variants") says; `references/knowledge/eval_scores.md` reads the scores.
 
 A grid of more than ~4 jobs is rarely the right answer — costs multiply linearly. Lead with 2–3 well-chosen variants and add more only if the first batch is inconclusive.
 
@@ -182,7 +177,7 @@ When `latest_status = completed`, `fine_tune_model_id` contains the provider's m
 
 To use the model in Kiln:
 1. Create a run config with `model_provider_name: kiln_fine_tune` and `model_name: {fine_tune_model_id}`.
-2. Compare it against existing base-model configs using eval scores — hand off to `references/knowledge/eval_scores.md`.
+2. Compare it with the existing base-model configs as `references/knowledge/run_an_experiment.md` ("Variants") says; `references/knowledge/eval_scores.md` reads the scores.
 
 ### Iteration loop (recurring patterns)
 
@@ -221,3 +216,7 @@ Load the relevant endpoint doc **before** each API call.
 | GET list finetunes | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_finetunes.md` |
 | PATCH update finetune | `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_finetunes_finetune_id.md` |
 | GET download dataset JSONL (self-hosted training) | `references/knowledge/api_docs/get_api_download_dataset_jsonl.md` |
+
+## See also
+
+When and why, in the knowledge: `references/improving_agents/techniques/model-swap-inside-a-class.md`, `references/levers/model.md`.
