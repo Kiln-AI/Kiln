@@ -2,16 +2,20 @@
 
 - [ ] **B1 — The PyInstaller hook bundles dotfiles that the skill index skips**
   `app/desktop/pyinstaller_hooks/hook-kiln_mcp_server.py` uses `collect_data_files("kiln_mcp_server")`, which bundles dotfiles (for example a Finder `.DS_Store` in `skill/`), while `build_index` skips them. So `test_the_bundled_data_is_exactly_the_skill_tree` would fail on a Mac checkout with a stray dotfile. Consider `excludes=["**/.*"]` (verify the glob behaviour on hidden folders) plus a test.
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B2 — Error texts 7 and 8 append a sentence to a core text with no closing full stop**
   In `app/mcp/kiln_mcp_server/api_tool/messages.py`, `request_failed` (text 7: timeout or connection failure) and `response_unusable` (text 8: response not JSON, or jq failed) append a sentence to the core `KilnApiCallTool` text, which has no closing full stop. Agents see, for example, "Request to /api/items/1 timed out after 30.0s The PATCH may have taken effect." Joining with ". " when the core text lacks end punctuation changes text the spec fixes, so it needs the owner's decision. Also relevant to the text tuning of phase 10.
 - [ ] **B3 — The wrong-method text lists MCP-blocked methods**
   `RouteIndex.match` and `messages.wrong_method` list every method of a path, including MCP-blocked ones. Once the block list lands, `DELETE /api/settings` answers "This path supports: GET, POST" while `POST /api/settings` is blocked, which invites a call that is then refused. Design decision: filter blocked methods from the list, or keep the spec's "the path's methods".
 - [ ] **B4 — `./` and `../` paths outside link targets pass the tree check**
   `tree_check.py` `check_relative`: `` `../references/nope.md` ``, `` `./references/modes/a.md` `` and prose `see ../references/nope.md` pass silently even when they name no file. Code-span extraction requires a `references/` start, and the prose lookbehinds exclude a preceding `.` or `/`. C1 bans these. Fix: flag code spans and prose matches of `(?<![\w.-])\.\.?/(?:references/|SKILL\.md\b)`; add cases to `test_relative_link_fails`; amend skill_and_content section 8. Should land before or during the content phases (7–10).
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B5 — `tree-relative` does not apply the placeholder exemption (C5)**
   `tree_check.py` `check_relative` reports `[x](<name>.md)` and CommonMark angle-bracket links such as `[x](<references/modes/a.md>)` as "not a full path from the skill root". Either exempt placeholders and unwrap angle-bracket targets, or say in skill_and_content section 8 that `tree-relative` applies to placeholders.
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B6 — A self-link satisfies `playbook-steps` and counts as an `Alternatives` link**
   `knowledge_check.py` `_links_only_to` (with `knowledge_load._link`): a same-file anchor (`#budget`) or a full-path link to the document itself resolves to that document, so it satisfies `playbook-steps` ("at least one link to a technique or playbook") and counts as a valid technique `Alternatives` link, with no real step. Fix: skip links whose `resolved == doc.path`. Check harness-tuner's behaviour at `b49f159` first.
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B7 — Owner decision: three entries of the knowledge backlog**
   In `app/mcp/knowledge_backlog.md`, "Smell: an old model" starts "Done in Kiln Harness Tuner: …", but skill_and_content section 7 says only "Model and provider information" was marked done (and dropped). Confirm whether this entry is still open in Kiln: the smell doc comes in batch 7, and the detector stays in harness-tuner. Also confirm the renames "A repeat measurement on request" (was "A repeat measurement the planner can ask for") and "A quick check for room to improve" (was "A probe for room to improve").
 - [ ] **B8 — Owner decision: "metrics only" on val and the paired statistics call**
@@ -20,10 +24,12 @@
   No endpoint and no app page adds a val split to an eval that has none (`PATCH .../evals/{eval_id}` sets a train split once, with `train_set_filter_id`); only an eval built by the eval builder gets all three splits. `train_val_test.md` tells the agent to ask the user: build the eval again, or work on train only.
 - [ ] **B10 — `test_the_knowledge_was_imported_whole` fails on the first new knowledge document**
   `IMPORTED_FILES` in `app/mcp/kiln_mcp_server/skill_checks/test_shipped_skill.py` asserts exact counts of the 74 imported files, so the first document added by procedure 4.3 of the `knowledge-maintenance` skill fails it. Assert that the imported stems are a subset of the tree (or `>=` per kind), or add the count bump to the maintenance skill.
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B11 — Content polish from the phase 8 review**
   `levers/skill.md` `api_docs` omits `post_api_projects_project_id_skills.md`, which its steps now use. `levers/output_mode.md` Limits lost "A test call with no tools attached does not show this" (from harness-tuner's "The model preflight does not show this: its test call attaches no tools"). `levers/params.md` "changes only `thinking_level`, `temperature` or `top_p`" may read as one setting per candidate.
 - [ ] **B12 — Docs-sync for the phase 8 rewrites**
   `.agents/skills/knowledge-maintenance/SKILL.md` 4.6 step 2 lists only some rewrite patterns; add the ones batch 8 used: loop inputs and outputs become "ask the user" or "report it to the user"; the noise inputs become "Kiln Harness Tuner measures it; the rule applies when running it"; "code checks" becomes "check … yourself"; reason codes become the outcome in words; leak-rule sentences name `references/knowledge/train_val_test.md`. Also `architecture.md` step 9 lists only `code_tools.md` and `judge_types.md` for the sandbox review; `levers/new_tool.md` belongs there too (the owner's doc).
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B13 — Owner decision: when the `val` memory record may be read**
   `app/mcp/kiln_mcp_server/skill/references/knowledge/memory.md` (the Orientation steps and the `val` row) allows a read of the `val` record only when confirming on val or reporting. Harness-tuner's `memory` skill also allows it for human or interactive orientation. This narrows the source beyond C11: keep it, or widen it to match.
 - [ ] **B14 — Owner decision: the exact cost or speed rule on val (relates to B8)**
@@ -32,6 +38,7 @@
   `references/modes/improve_task.md` (about 10.8k body characters against "about 8,000") and `references/knowledge/run_an_experiment.md` (about 13.5k against "about 10,000") are well over their targets; `references/knowledge/memory.md` sits at about 11,997 of a hard 12,000. Revisit in phase 10's text tuning or the owner's read.
 - [ ] **B16 — "See also" lines go stale silently (relates to B10)**
   `OVERLAP_GROUPS` in `app/mcp/kiln_mcp_server/skill_checks/test_shipped_skill.py` writes groups 7, 10 and 12 (defined by rules in skill_and_content 9.1) as fixed lists, and section 4.3 of `.agents/skills/knowledge-maintenance/SKILL.md` never mentions `OVERLAP_GROUPS` or the "See also" lines. Adding a technique with lever `new_tool`, a smell that applies to `tools`, or a new lever leaves the lines incomplete with all tests passing. Fix: build those groups from the tree (the lever files; the links of `cheaper-or-faster.md`; the `levers` and `applies_to` front matter), or add a step to section 4.3 that updates `OVERLAP_GROUPS` and the lines.
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B17 — Owner decision: the fine-tuning pointer to `ordering-work.md`**
   `references/knowledge/fine_tuning.md` ("Try First") points "what to try before a fine-tune" at `references/improving_agents/playbooks/ordering-work.md`, which never mentions fine-tuning (fine-tuning is not a lever), while the file's intro and front matter still promise "when to fine-tune (vs. prompt engineering, model upgrade, RAG)". Group 14 of skill_and_content 9.1 requires the pointer.
 - [ ] **B18 — The two lists of what Kiln covers differ**
@@ -40,27 +47,33 @@
   `references/knowledge/local_private_on_prem.md` ("Select New Default") offers to make the winner the task's default run config, while `references/knowledge/run_an_experiment.md` says the procedure never changes the default.
 - [ ] **B20 — Spec alignment: the eval playbooks of `create_spec.md` and `judge_types.md`**
   skill_and_content 9.2 gives `create_spec.md` and `judge_types.md` only the wrong-eval and saturated-eval playbooks; group 8 of 9.1, which the code follows, gives them all four eval playbooks. Align 9.2.
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B21 — Human action before merge: the emoji of the README Highlights bullet**
   Pick the emoji for the "Use Kiln from your own agent" bullet (`README.md:54`) and remove its `<!-- TODO: ... -->` comment. `.github/workflows/debug_detector.yml` excludes `*.md`, so CI will not flag it.
 - [ ] **B22 — Owner check: user-level install against the Claude Code `.mcp.json` note**
   `agent_install.md` step 2 says "Add it at user level", but "Notes for each agent" → Claude Code then offers a project-level `.mcp.json` as the by-hand alternative. Verbatim from the owner's draft; check in phase 14.
 - [ ] **B23 — The code tool descriptions name an endpoint agents are denied**
   `app/desktop/studio_server/code_tool_api.py:229-231, 278-280`: the descriptions of Create Code Tool and Test Code Tool say "Until the project's code is trusted (Add code trust)", naming `POST /api/projects/{project_id}/add_code_trust`, which is `DENY_AGENT`. Reword to tell the agent what to do (for example "until the user trusts the project's code in the Kiln app"), then regenerate the API reference and the web schema.
-- [ ] **B24 — Pre-existing bug: Delete Extraction deletes before it checks the extractor config**
+  Decision (owner, Phase 16 batch 1): pending: owner wants a documented, explicit way for an agent to get code trust approved (owner sign-off), not just a reworded description; proposal under discussion.
+- [x] **Dismissed — B24 — Pre-existing bug: Delete Extraction deletes before it checks the extractor config**
   `libs/server/kiln_server/document_api.py:1869-1886`: it calls `extraction.delete()` before it looks up the extractor config. When that config is gone it returns 404 with the dangling-reference message although the extraction was deleted, so a retry gets "Extraction not found". Look the config up first, or delete regardless and return success.
+  Decision (owner, Phase 16 batch 1): dismissed: out of scope here; the owner opened a separate task to fix it.
 - [x] **B25 — The Connect page prompt off the default address runs the URL into the next sentence**
   `app/web_ui/src/routes/(app)/settings/connect_agent/connect_agent.ts` `build_prompt`: off the default address the prompt reads "…/main/agent_install.md The Kiln MCP server is at http://localhost:6545/mcp.", with no full stop after the guide URL. It is very visible in the monospace `Output`. Needs a wording decision: `README.md` repeats `BASE_PROMPT` verbatim, and `connect_agent.test.ts` pins the two together.
   Closed: `build_prompt` puts the extra sentence after a blank line, on its own line (owner's call); `BASE_PROMPT` and the README copy are unchanged.
-- [ ] **B26 — Shared control: `Output`'s copy icon has no name, no feedback and no clipboard guard**
+- [x] **Dismissed — B26 — Shared control: `Output`'s copy icon has no name, no feedback and no clipboard guard**
   `app/web_ui/src/lib/ui/output.svelte`: the copy icon button has no accessible name, gives no "Copied" feedback, and throws an uncaught TypeError when `navigator.clipboard` is missing (outside a secure context). The Connect page relies on it. Fix as a separate shared-control change under `kiln-ui` section 4: an `aria-label`, copied feedback, and a `try`/`catch` around the clipboard call.
+  Decision (owner, Phase 16 batch 1): dismissed: out of scope for this project.
 - [x] **B27 — The Connect page says "or type /kiln", which is wrong for Codex**
   The "Setup Prompt" description on `app/web_ui/src/routes/(app)/settings/connect_agent/+page.svelte` says "Then ask it to work with Kiln, or type /kiln." Codex invokes the skill with `$kiln` (`agent_install.md`, step 5). Needs a wording decision.
   Closed: the description now reads "Paste this into your agent. Then ask it to work with Kiln.", and the info tooltip says "a Kiln skill"; the page names neither `/kiln` nor `$kiln`.
 - [ ] **B28 — Move `agent_install.md` into `docs/` (owner request)**
   `git mv` it to `docs/agent_install.md`; update the raw GitHub URL in `BASE_PROMPT` (`connect_agent.ts`) and its copy at `README.md:83`, the README link, `libs/server/kiln_server/mcp/README.md`, the tests that read the file (`app/mcp/kiln_mcp_server/test_texts.py`, `connect_agent.test.ts`), and this project's specs (`architecture.md`, `components/connect_page_and_install.md`, `functional_spec.md` 9.1, `ui_design.md`). Keep the future published URL `https://kiln.tech/agent_install.md`.
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B29 — Owner decision: `$kiln` in the server instructions**
   `SERVER_INSTRUCTIONS` (`app/mcp/kiln_mcp_server/texts.py:8`) names only `/kiln`, while `SKILL_TOOL_DESCRIPTION` now names `/kiln` and `$kiln`; functional spec 6.2 says both carry the same trigger text. Add `$kiln` to the instructions, or accept the difference.
 - [ ] **B30 — Apply review A (owner's answers): say only "no sandbox"**
   In the skill and anywhere else in this project's product text, say only "no sandbox": drop "resource sandbox" and every use of "sandbox" for the child process ("the same sandbox", "out of the sandbox"), and remove anything saying Kiln runs code in a sandbox. Files from the phase 13 packet (paths under `app/mcp/kiln_mcp_server/skill/references/`, `K/` = `knowledge/`): `K/code_tools.md` (lines ~10, 16, 29), `K/judge_types.md` (~51, 55, 60, 78), `levers/new_tool.md` (~3, 20–21); check `SKILL.md:49` and `K/code_tool_authoring.md:156–158`. Leave the third-party Pydantic "Run Python" MCP server mentions (`K/tools.md:80`, `docs/tools-and-mcp/README.md:40`), which are about a different product.
+  Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
 - [ ] **B31 — Owner's read of four files (phase 13 review C), not done**
   `SKILL.md`, `K/train_val_test.md`, `K/run_an_experiment.md` and `K/diagnose_an_agent.md` (paths as in B30), with the questions in `phase_plans/phase_13.md` section 3. The open decisions there are B8, B9, B13, B14, B15, B18 and B19.
