@@ -701,7 +701,8 @@ class TestConversation:
         properties = _openenv_server_properties(openenv_server)
         first = await _turn(multiturn_task, properties, session_manager)
         await _turn(multiturn_task, properties, session_manager, parent=first)
-        # An earlier turn: the run as the run API loads it, without its episode.
+        # Without its saved episode, only the held turns show that this
+        # conversation used OpenEnv.
         earlier = first.model_copy(update={"openenv_episode": None})
         with pytest.raises(OpenEnvRunError) as raised:
             await _turn(

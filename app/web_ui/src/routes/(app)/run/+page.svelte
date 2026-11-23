@@ -144,8 +144,8 @@
         selected_run_config_id && selected_run_config_id !== "custom"
           ? selected_run_config_id
           : null
-      // The preset lookup below can wait, and the selected task can change
-      // meanwhile: the run goes to the task the input was entered for.
+      // The preset lookup and the run can wait, and the selected task can
+      // change meanwhile: the run goes to the task the input was entered for.
       const run_project_id = project_id
       const run_task_id = task_id
       const body = await build_run_request({
@@ -200,7 +200,11 @@
           ).length,
         })
       }
-      response = data
+      // The run is saved under the task it was sent for. Its output isn't shown
+      // under another task picked while it ran.
+      if (project_id === run_project_id && task_id === run_task_id) {
+        response = data
+      }
     } catch (e) {
       run_error = createKilnError(e)
     } finally {

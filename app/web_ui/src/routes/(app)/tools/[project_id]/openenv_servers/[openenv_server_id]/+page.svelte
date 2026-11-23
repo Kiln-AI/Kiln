@@ -86,6 +86,8 @@
   ) {
     loading = true
     loading_error = null
+    presets_error = null
+    archive_error = null
     try {
       const loaded = await load_openenv_server(
         req_project_id,
@@ -161,10 +163,22 @@
         req_openenv_server_id,
         change(openenv_server.named_reset_kwargs ?? []),
       )
-      if (!is_current(req_project_id, req_openenv_server_id)) return
-      openenv_server = saved
+      if (!openenv_server || !is_current(req_project_id, req_openenv_server_id))
+        return
+      // Only the presets: an archive save may have changed the rest meanwhile.
+      openenv_server = {
+        ...openenv_server,
+        named_reset_kwargs: saved.named_reset_kwargs,
+      }
       expanded = []
     })
+  }
+
+  // A dialog opened while a preset save is pending would build its list from
+  // the one before that save, and undo it. It opens once the queue is empty.
+  async function open_preset_dialog(open: () => void) {
+    await queue_preset_save(async () => {}).catch(() => undefined)
+    open()
   }
 
   function save_presets(presets: NamedResetKwargs[]): Promise<void> {
@@ -172,11 +186,15 @@
   }
 
   async function remove_preset(name: string) {
+    const req_project_id = project_id
+    const req_openenv_server_id = openenv_server_id
     presets_error = null
     try {
       await save_presets_with((current) => presets_without(current, name))
     } catch (e) {
-      presets_error = createKilnError(e)
+      if (is_current(req_project_id, req_openenv_server_id)) {
+        presets_error = createKilnError(e)
+      }
     }
   }
 
@@ -195,8 +213,9 @@
         req_openenv_server_id,
         is_archived,
       )
-      if (is_current(req_project_id, req_openenv_server_id)) {
-        openenv_server = saved
+      if (openenv_server && is_current(req_project_id, req_openenv_server_id)) {
+        // Only the archive flag: a preset save may have changed the presets.
+        openenv_server = { ...openenv_server, is_archived: saved.is_archived }
       }
       await load_available_tools(req_project_id, true)
     } catch (e) {
@@ -209,11 +228,18 @@
   }
 
   function after_edit(saved: OpenEnvServer) {
+    // A save can finish after moving to another server's page.
+    if (!openenv_server || saved.id !== openenv_server_id) return
     const reload_server_details = reload_details_after_edit(
       openenv_server,
       saved,
     )
-    openenv_server = saved
+    openenv_server = {
+      ...openenv_server,
+      name: saved.name,
+      description: saved.description,
+      url: saved.url,
+    }
     uncache_available_tools(project_id)
     if (reload_server_details) {
       load_server_details(project_id, openenv_server_id)
@@ -338,7 +364,7 @@
           <button
             slot="actions"
             class="btn btn-mid"
-            on:click={() => preset_dialog.show_add()}
+            on:click={() => open_preset_dialog(() => preset_dialog.show_add())}
           >
             Add Environment Preset
           </button>
@@ -404,11 +430,17 @@
                         items={[
                           {
                             label: "Edit",
-                            onclick: () => preset_dialog.show_edit(index),
+                            onclick: () =>
+                              open_preset_dialog(() =>
+                                preset_dialog.show_edit(index),
+                              ),
                           },
                           {
                             label: "Clone",
-                            onclick: () => preset_dialog.show_clone(index),
+                            onclick: () =>
+                              open_preset_dialog(() =>
+                                preset_dialog.show_clone(index),
+                              ),
                           },
                           {
                             label: "Remove",

@@ -174,7 +174,7 @@ Multi-turn tasks:
 - Each turn's run saves the environment's state at the end of that turn.
 - If the session is gone for any reason, sending a message shows an error: "The OpenEnv session for this conversation ended. Start a new conversation to keep using this OpenEnv server." The history stays readable. Kiln never silently starts a new session, because the agent would be in a different state from the one in its history.
 - If a message fails before any of the environment's tools ran, the user can send it again in the same session. If one of the environment's tools already ran, the session ends, because the environment may have changed in a way the history doesn't show. Tools reached through code tools and Kiln task tools count too.
-- A later turn whose tools reach a different OpenEnv server, or none, is refused with "This conversation uses OpenEnv server X. Start a new conversation to ...". This holds after the session has ended too, because the earlier turns' saved episodes show the conversation used one.
+- A later turn whose tools reach a different OpenEnv server, or none, is refused with "This conversation uses OpenEnv server X. Start a new conversation to ...". A turn that reaches none is refused after the session has ended too, because the earlier turns' saved episodes show the conversation used one. With no held session to name the server, the message is "This conversation uses an OpenEnv server. Start a new conversation to run without it."
 - Continuing from anything but the latest turn is refused in a conversation with an environment, because its state has moved past it.
 
 ### Run records
