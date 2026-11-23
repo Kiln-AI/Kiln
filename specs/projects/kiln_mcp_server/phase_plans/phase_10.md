@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Phase 10: Content, part 4: wire the knowledge in, final checks, tune the texts

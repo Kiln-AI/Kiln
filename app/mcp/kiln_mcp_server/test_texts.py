@@ -33,6 +33,30 @@ def test_server_instructions_fit_the_agent_limits():
     assert "/kiln" in opening
 
 
+def test_the_first_paragraph_of_the_instructions_stands_alone():
+    assert SERVER_INSTRUCTIONS.index("\n\n") <= 500
+
+
+# The skill's own words for its files: "skill file" and "endpoint doc".
+WORDS_THE_SKILL_DOES_NOT_USE = ("reference file", "API reference")
+
+
+def test_texts_use_the_skill_terms():
+    texts = (
+        SERVER_INSTRUCTIONS,
+        SKILL_TOOL_DESCRIPTION,
+        PATH_DESCRIPTION,
+        CALL_KILN_API_DESCRIPTION,
+    )
+    for text in texts:
+        for word in WORDS_THE_SKILL_DOES_NOT_USE:
+            assert word not in text, word
+    for text in (SERVER_INSTRUCTIONS, SKILL_TOOL_DESCRIPTION, PATH_DESCRIPTION):
+        assert "skill file" in text
+    for text in (SERVER_INSTRUCTIONS, CALL_KILN_API_DESCRIPTION):
+        assert "endpoint doc" in text
+
+
 def test_skill_tool_description_names_the_slash_command():
     assert "/kiln" in SKILL_TOOL_DESCRIPTION
 

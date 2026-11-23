@@ -44,7 +44,9 @@ from kiln_mcp_server.skill_files import (
     read_skill,
 )
 from kiln_mcp_server.texts import (
+    CALL_KILN_API_DESCRIPTION,
     PATH_DESCRIPTION,
+    SERVER_INSTRUCTIONS,
     SKILL_TOOL_DESCRIPTION,
     WHAT_KILN_IS,
 )
@@ -142,15 +144,27 @@ def test_the_catalogue_index_exists():
     assert API_CATALOGUE_INDEX_PATH in get_index().files
 
 
-@pytest.mark.parametrize(
-    "text",
-    [SKILL_TOOL_DESCRIPTION, PATH_DESCRIPTION, HINT],
-    ids=["tool", "path", "hint"],
-)
-def test_example_paths_exist(text):
+# The texts an agent reads before the skill, and whether each must give an
+# example path.
+TEXTS_BEFORE_THE_SKILL = {
+    "tool": (SKILL_TOOL_DESCRIPTION, True),
+    "path": (PATH_DESCRIPTION, True),
+    "hint": (HINT, True),
+    "api_tool": (CALL_KILN_API_DESCRIPTION, True),
+    "instructions": (SERVER_INSTRUCTIONS, False),
+}
+
+
+@pytest.mark.parametrize("name", sorted(TEXTS_BEFORE_THE_SKILL))
+def test_example_paths_exist(name):
+    text, needs_an_example = TEXTS_BEFORE_THE_SKILL[name]
     examples = re.findall(r"references/[A-Za-z0-9_./-]+\.md", text)
-    assert examples
+    assert bool(examples) or not needs_an_example
     assert [path for path in examples if path not in get_index().files] == []
+
+
+def test_the_api_tool_names_the_catalogue_index():
+    assert f"`{API_CATALOGUE_INDEX_PATH}`" in CALL_KILN_API_DESCRIPTION
 
 
 # --- the split rule ------------------------------------------------------------
