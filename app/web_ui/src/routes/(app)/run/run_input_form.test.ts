@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, cleanup } from "@testing-library/svelte"
+import { tick } from "svelte"
 
 // The form registers its nested fields from onMount.
 vi.mock("svelte", async (importOriginal) =>
@@ -94,6 +95,29 @@ describe("run_input_form structured value", () => {
     )
     await component.set_structured_input_data(value)
     expect(component.get_structured_input_data()).toEqual(value)
+  })
+
+  it("shows a prefilled boolean enum as selected", async () => {
+    const { component, container } = render_form(
+      JSON.stringify({
+        type: "object",
+        properties: {
+          flag: { type: "boolean", enum: [true, false] },
+          always: { type: "boolean", enum: [true] },
+        },
+        required: ["flag", "always"],
+      }),
+    )
+    await component.set_structured_input_data({ flag: false, always: true })
+    await tick()
+    const closed_labels = Array.from(
+      container.querySelectorAll("span.truncate"),
+    ).map((el) => el.textContent?.trim())
+    expect(closed_labels).toEqual(["false", "true"])
+    expect(component.get_structured_input_data()).toEqual({
+      flag: false,
+      always: true,
+    })
   })
 
   it("is a no-op in plaintext mode", async () => {

@@ -80,6 +80,11 @@
   function get_select_options(
     property: SchemaModelProperty,
   ): OptionGroup[] | undefined {
+    // An enum's options are its own raw values, booleans included, matching
+    // what the field holds.
+    if (property.enum) {
+      return enum_select_options(property.enum, is_optional(property))
+    }
     if (property.type === "boolean") {
       return [
         {
@@ -99,9 +104,6 @@
           ],
         },
       ]
-    }
-    if (property.enum) {
-      return enum_select_options(property.enum, is_optional(property))
     }
     return undefined
   }
