@@ -35,7 +35,7 @@
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import type { ModelDropdownSettings } from "./model_dropdown_settings"
   import FormElement from "$lib/utils/form_element.svelte"
-  import { arrays_equal } from "$lib/utils/collections"
+  import { sets_equal } from "$lib/utils/collections"
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
   import type { SkillsSelectorSettings } from "./skills_selector_settings"
   import { generate_memorable_name } from "$lib/utils/name_generator"
@@ -426,6 +426,13 @@
       config_properties.structured_output_mode !== "unknown" &&
       config_properties.structured_output_mode !== structured_output_mode
 
+    // Compared as sets: a saved list can mix tools and skills in any order, and
+    // the two pickers here always give tools first, then skills.
+    const tools_changed = !sets_equal(
+      new Set(config_properties.tools_config?.tools ?? []),
+      new Set([...tools, ...skills]),
+    )
+
     if (
       model_changed ||
       provider_changed ||
@@ -434,10 +441,7 @@
       config_properties.top_p !== top_p ||
       (config_properties.thinking_level ?? null) !== thinking_level ||
       output_mode_mismatch ||
-      !arrays_equal(config_properties.tools_config?.tools ?? [], [
-        ...tools,
-        ...skills,
-      ]) ||
+      tools_changed ||
       !inputTransformsEqual(
         config_properties.input_transform ?? null,
         input_transform,
