@@ -1002,7 +1002,8 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-6.2 Astra Pro",
         agent_notes=(
             "Description: Pro-compute variant of GPT-6.2 Astra with extended reasoning.\n"
-            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. The first Astra Pro model in Kiln, above GPT-6.2 Astra."
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. The first Astra Pro model in Kiln, above GPT-6.2 Astra.\n"
+            "Same weights: GPT-6.2 Astra is the standard version; Astra Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task."
         ),
         tags=["current"],
         providers=[
@@ -1039,6 +1040,7 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: OpenAI's top-tier model in the GPT-6.2 generation.\n"
             "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Astra is the top tier, above GPT-6.2 Sol. Replaced GPT-6 Astra.\n"
+            "Same weights: GPT-6.2 Astra Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task.\n"
             "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
         ),
         tags=["current", "recommended"],
@@ -1099,7 +1101,8 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-6.2 Sol Pro",
         agent_notes=(
             "Description: Pro-compute variant of GPT-6.2 Sol with extended reasoning.\n"
-            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6.1 Sol Pro."
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6.1 Sol Pro.\n"
+            "Same weights: GPT-6.2 Sol is the standard version; Sol Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task."
         ),
         tags=["current"],
         providers=[
@@ -1136,6 +1139,7 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: OpenAI's balanced high-tier model in the GPT-6.2 generation.\n"
             "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A step down from GPT-6.2 Astra, above GPT-6.1 Terra. Replaced GPT-6.1 Sol.\n"
+            "Same weights: GPT-6.2 Sol Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task.\n"
             "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
         ),
         tags=["current", "recommended", "top_value"],
