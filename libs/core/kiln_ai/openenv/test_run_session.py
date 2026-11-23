@@ -33,12 +33,16 @@ from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
 from kiln_ai.openenv.run_session import (
+    ConversationSessionStatus,
     OpenEnvRunError,
+    conversation_session_status,
     openenv_for_run,
 )
 from kiln_ai.openenv.session_manager import (
     OpenEnvCapacityError,
+    OpenEnvError,
     OpenEnvRejectedError,
+    OpenEnvSessionLostError,
     OpenEnvSessionManager,
     OpenEnvTransientError,
 )
@@ -758,6 +762,10 @@ class TestConversation:
         with pytest.raises(OpenEnvRunError) as raised:
             await _turn(multiturn_task, properties, session_manager, parent=first)
         assert raised.value.kind == "session_ended"
+        assert raised.value.message.startswith(
+            "The OpenEnv session for this conversation ended when a message failed "
+            "after calling the OpenEnv server's tools."
+        )
 
     async def test_turn_that_ends_the_session_releases_it(
         self, multiturn_task, openenv_server, session_manager
@@ -777,6 +785,7 @@ class TestConversation:
         with pytest.raises(OpenEnvRunError) as raised:
             await _turn(multiturn_task, properties, session_manager, parent=first)
         assert raised.value.kind == "session_ended"
+        assert "ended when its last message failed." in raised.value.message
 
     async def test_failed_first_turn_releases_the_session(
         self, multiturn_task, openenv_server, session_manager
@@ -819,6 +828,9 @@ class TestConversation:
         assert first.openenv_episode.final_state is None
         assert session_manager._sessions == {}
         assert not session_manager.conversations.holds_turn(str(first.id))
+        assert session_manager.conversations.end_reason(str(first.id)) == (
+            "when reading the OpenEnv server's state failed"
+        )
 
     async def test_turn_without_a_run_id_releases_the_session(
         self, multiturn_task, openenv_server, session_manager
@@ -926,6 +938,58 @@ class TestLostConversationSession:
                     "turn 1 again", prior_trace=first.trace, parent_task_run=first
                 )
         assert raised.value.kind == "session_ended"
+        assert (
+            "ended when the append_note tool call failed: attached to a different loop"
+            in raised.value.message
+        )
+
+    async def test_tool_failure_mid_turn_keeps_the_answer_and_ends_the_conversation(
+        self, multiturn_task, openenv_server
+    ):
+        """A tool error the model recovers from (here, one inside a code tool) leaves
+        the turn's answer standing, but its session is gone, so later calls and the
+        next message say why."""
+        session_manager = OpenEnvSessionManager(step_timeout_s=0.3)
+        try:
+            properties = _openenv_server_properties(openenv_server, tool_name="sleep")
+            async with _conversation_turn(
+                multiturn_task, properties, session_manager, None
+            ) as handle:
+                assert handle is not None
+                tool = tool_from_id(properties.tools_config.tools[0], multiturn_task)
+                with pytest.raises(OpenEnvError):
+                    await tool.run(seconds=1)
+                with pytest.raises(
+                    OpenEnvSessionLostError,
+                    match="The OpenEnv session ended when the sleep tool call failed",
+                ):
+                    await tool.run(seconds=0)
+                run = TaskRun(
+                    input="hi", output=TaskOutput(output="ok"), parent=multiturn_task
+                )
+                handle.run_id = run.id
+            run.openenv_episode = handle.episode
+            assert run.openenv_episode is not None
+            assert run.openenv_episode.final_state is None
+            conversations = session_manager.conversations
+            assert not conversations.holds_turn(str(run.id))
+            reason = conversations.end_reason(str(run.id))
+            assert reason is not None
+            assert reason.startswith("when the sleep tool call failed: ")
+
+            status = conversation_session_status(multiturn_task, run, conversations)
+            assert status.state == "ended"
+            assert status.message is not None
+            assert status.message.startswith(
+                "The OpenEnv session for this conversation ended when the sleep tool "
+                "call failed: "
+            )
+            with pytest.raises(OpenEnvRunError) as raised:
+                await _turn(multiturn_task, properties, session_manager, parent=run)
+            assert raised.value.message == status.message
+            assert session_manager.lost_cause(run.openenv_episode) is None
+        finally:
+            await session_manager.shutdown()
 
     @pytest.mark.parametrize("switch_openenv_server", [False, True])
     def test_turn_on_another_event_loop_is_refused(
@@ -958,3 +1022,85 @@ class TestLostConversationSession:
         assert model_call.call_count == 1
         assert first.openenv_episode is not None
         assert first.openenv_episode.episode_id not in session_manager._sessions
+
+
+class TestConversationSessionStatus:
+    async def test_open_while_the_session_is_held(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager)
+        assert conversation_session_status(
+            multiturn_task, first, session_manager.conversations
+        ) == ConversationSessionStatus("open")
+
+    async def test_ended_after_the_idle_limit_says_so(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager)
+        conversations = session_manager.conversations
+        conversations.record_end(str(first.id), "after 30 minutes without a message")
+        await conversations.release_runs([str(first.id)])
+        assert conversation_session_status(
+            multiturn_task, first, conversations
+        ) == ConversationSessionStatus(
+            "ended",
+            "The OpenEnv session for this conversation ended after 30 minutes without "
+            "a message. Start a new conversation to keep using this OpenEnv server.",
+        )
+
+    async def test_ended_without_a_known_reason(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager)
+        await session_manager.conversations.release_runs([str(first.id)])
+        status = conversation_session_status(
+            multiturn_task, first, session_manager.conversations
+        )
+        assert status == ConversationSessionStatus(
+            "ended",
+            "The OpenEnv session for this conversation ended. Start a new "
+            "conversation to keep using this OpenEnv server.",
+        )
+
+    async def test_earlier_turn_of_a_live_conversation_is_ended(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager)
+        await _turn(multiturn_task, properties, session_manager, parent=first)
+        status = conversation_session_status(
+            multiturn_task, first, session_manager.conversations
+        )
+        assert status.state == "ended"
+        assert status.message == (
+            "This conversation uses an OpenEnv server, so it can only continue from "
+            "the latest turn."
+        )
+
+    async def test_none_without_an_openenv_server(
+        self, multiturn_task, session_manager
+    ):
+        run = TaskRun(input="hi", output=TaskOutput(output="ok"), parent=multiturn_task)
+        assert conversation_session_status(
+            multiturn_task, run, session_manager.conversations
+        ) == ConversationSessionStatus("none")
+
+    async def test_none_for_a_single_turn_task(
+        self, task, openenv_server, session_manager
+    ):
+        handle = await _enter(
+            task, _openenv_server_properties(openenv_server), session_manager
+        )
+        assert handle is not None
+        run = TaskRun(
+            input="hi",
+            output=TaskOutput(output="ok"),
+            parent=task,
+            openenv_episode=handle.episode,
+        )
+        assert conversation_session_status(
+            task, run, session_manager.conversations
+        ) == ConversationSessionStatus("none")

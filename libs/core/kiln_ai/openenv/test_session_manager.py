@@ -232,6 +232,18 @@ class TestFailurePaths:
             with pytest.raises(OpenEnvTransientError, match=r"within 0\.3s"):
                 await session_manager.call_tool(episode, "sleep", {"seconds": 1})
             assert session_manager._sessions == {}
+            cause = session_manager.lost_cause(episode)
+            assert cause is not None
+            assert cause.startswith("the sleep tool call failed: ")
+            assert "within 0.3s" in cause
+            with pytest.raises(
+                RuntimeError,
+                match=r"The OpenEnv session ended when the sleep tool call failed: .*"
+                r"OpenEnv tools can't be called again in this run\.",
+            ):
+                await session_manager.call_tool(episode, "read_notes", {})
+            await session_manager.release(episode)
+            assert session_manager.lost_cause(episode) is None
             with pytest.raises(RuntimeError, match="no live session"):
                 await session_manager.call_tool(episode, "read_notes", {})
         finally:

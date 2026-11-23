@@ -24,6 +24,9 @@ IDLE_SECONDS = 30 * 60
 
 REAP_INTERVAL_SECONDS = 60.0
 
+MAX_END_REASONS = 1000
+"""How many ended conversations' reasons are kept, oldest dropped first."""
+
 
 @dataclass
 class HeldSession:
@@ -51,6 +54,7 @@ class ConversationSessions:
         self._idle_seconds = idle_seconds
         self._reap_interval_seconds = reap_interval_seconds
         self._held: dict[str, HeldSession] = {}
+        self._end_reasons: dict[str, str] = {}
         self._reaper: asyncio.Task[None] | None = None
 
     def take(self, parent_run_id: str) -> HeldSession | None:
@@ -95,6 +99,19 @@ class ConversationSessions:
         self._held[latest_run_id] = held
         self._ensure_reaper()
 
+    def record_end(self, latest_run_id: str, reason: str) -> None:
+        """Remember why the conversation whose latest turn is `latest_run_id` lost its
+        session. `reason` follows "ended", e.g. "after 30 minutes without a message".
+        Kept in memory only, so a restart forgets it."""
+        self._end_reasons.pop(latest_run_id, None)
+        self._end_reasons[latest_run_id] = reason
+        if len(self._end_reasons) > MAX_END_REASONS:
+            del self._end_reasons[next(iter(self._end_reasons))]
+
+    def end_reason(self, latest_run_id: str) -> str | None:
+        """Why the conversation's session ended, when this process ended it."""
+        return self._end_reasons.get(latest_run_id)
+
     def holds_turn(self, run_id: str) -> bool:
         """True when a held conversation includes this turn."""
         return any(run_id in held.turn_run_ids for held in self._held.values())
@@ -113,6 +130,9 @@ class ConversationSessions:
             for run_id, held in self._held.items()
             if now - held.last_used > self._idle_seconds
         ]
+        minutes = round(self._idle_seconds / 60)
+        for run_id in idle:
+            self.record_end(run_id, f"after {minutes} minutes without a message")
         await self._release([self._held.pop(run_id) for run_id in idle])
 
     async def close_all(self) -> None:

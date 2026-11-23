@@ -88,6 +88,9 @@ instead of exhausting memory or writing an enormous trace."""
 
 _ERROR_PREVIEW_CHARS = 500
 
+_MAX_LOST_CAUSES = 1000
+"""How many failed sessions' causes are kept for episodes not yet released."""
+
 _CAPACITY_HINT = (
     " The environment holds max_concurrent_envs sessions at once (OpenEnv's default "
     "is 1) and Kiln runs up to 25 eval jobs at once: start the server with "
@@ -204,6 +207,9 @@ class OpenEnvSessionManager:
         self._servers: dict[str, _ServerInfo] = {}
         self._server_locks: dict[str, asyncio.Lock] = {}
         self._sessions: dict[str, _Session] = {}
+        self._lost_causes: dict[str, str] = {}
+        """Why each dropped session failed, by episode id, until the episode is
+        released."""
         self.conversations = ConversationSessions()
         """Sessions held between the turns of multi-turn conversations."""
 
@@ -311,6 +317,12 @@ class OpenEnvSessionManager:
         """Call one of the environment's tools inside a live episode."""
         session = self._sessions.get(episode.episode_id)
         if session is None:
+            cause = self._lost_causes.get(episode.episode_id)
+            if cause is not None:
+                raise OpenEnvSessionLostError(
+                    f"The OpenEnv session ended when {cause}. OpenEnv tools can't be "
+                    "called again in this run."
+                )
             raise OpenEnvSessionLostError(
                 f"Episode {episode.episode_id} has no live session; tools "
                 "can only be called during generation"
@@ -333,7 +345,9 @@ class OpenEnvSessionManager:
                     "observation",
                 )
         except BaseException as e:
-            raise await self._session_failure(session, e)
+            raise await self._session_failure(
+                session, e, f"the {tool_name} tool call failed"
+            )
         reward = data.get("reward")
         observation = data.get("observation") or {}
         error, error_code, error_details = read_observation_error(
@@ -368,12 +382,21 @@ class OpenEnvSessionManager:
             async with session.lock:
                 data = await self._request(session.ws, {"type": "state"}, "state")
         except BaseException as e:
-            raise await self._session_failure(session, e)
+            raise await self._session_failure(
+                session, e, "reading the OpenEnv server's state failed"
+            )
         return {str(k): v for k, v in data.items()}
+
+    def lost_cause(self, episode: OpenEnvEpisode) -> str | None:
+        """Why the episode's session failed and was dropped, as a clause such as "the
+        search tool call failed: [error]". None while the session is live, when it
+        ended any other way, or after the episode is released."""
+        return self._lost_causes.get(episode.episode_id)
 
     async def end_episode(self, episode: OpenEnvEpisode) -> OpenEnvEpisode:
         """Read the environment's final state and close the session. Returns the
         episode with `final_state` set: the durable record graders read."""
+        self._lost_causes.pop(episode.episode_id, None)
         session = self._sessions.pop(episode.episode_id, None)
         if session is None:
             return episode
@@ -388,6 +411,7 @@ class OpenEnvSessionManager:
     async def release(self, episode: OpenEnvEpisode) -> None:
         """Close an episode's session without reading its state, e.g. after a
         failed generation."""
+        self._lost_causes.pop(episode.episode_id, None)
         session = self._sessions.pop(episode.episode_id, None)
         if session is not None:
             await self._end_session(session.ws)
@@ -395,6 +419,7 @@ class OpenEnvSessionManager:
     def forget(self, episode: OpenEnvEpisode) -> None:
         """Drop the manager's reference to an episode's session without closing it,
         for a session opened on an event loop that can no longer be awaited on."""
+        self._lost_causes.pop(episode.episode_id, None)
         self._sessions.pop(episode.episode_id, None)
 
     async def shutdown(self) -> None:
@@ -402,6 +427,7 @@ class OpenEnvSessionManager:
         await self.conversations.close_all()
         sessions = list(self._sessions.values())
         self._sessions.clear()
+        self._lost_causes.clear()
         self._servers.clear()
         await asyncio.gather(*(self._end_session(s.ws) for s in sessions))
 
@@ -563,7 +589,7 @@ class OpenEnvSessionManager:
             await self._close_quietly(ws)
 
     async def _session_failure(
-        self, session: _Session, error: BaseException
+        self, session: _Session, error: BaseException, failure: str
     ) -> BaseException:
         """Drop the session unless the environment rejected the message, and return
         the error to raise. Any other `Exception` becomes `OpenEnvSessionLostError`, so
@@ -574,6 +600,10 @@ class OpenEnvSessionManager:
             # one: OpenEnv responses carry no request id. The session is dropped so
             # nothing reads from it again.
             self._sessions.pop(session.episode_id, None)
+            if isinstance(error, Exception):
+                self._record_lost_cause(
+                    session.episode_id, f"{failure}: {_preview(str(error))}"
+                )
             await self._close_quietly(session.ws)
         if isinstance(error, Exception) and not isinstance(error, OpenEnvError):
             lost = OpenEnvSessionLostError(
@@ -582,6 +612,11 @@ class OpenEnvSessionManager:
             lost.__cause__ = error
             return lost
         return error
+
+    def _record_lost_cause(self, episode_id: str, cause: str) -> None:
+        self._lost_causes[episode_id] = cause
+        if len(self._lost_causes) > _MAX_LOST_CAUSES:
+            del self._lost_causes[next(iter(self._lost_causes))]
 
     async def _close_quietly(self, ws: ClientConnection) -> None:
         try:

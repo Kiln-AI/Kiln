@@ -693,6 +693,50 @@ class TestRunApiConversation:
             "code": "openenv_session_ended",
         }
 
+    def _session_status(self, openenv_chat, run_id):
+        response = openenv_chat.client.get(
+            f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/{run_id}"
+            "/openenv_session"
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def test_session_status_is_open_then_ended_with_the_reason(self, openenv_chat):
+        first = openenv_chat.send("one").json()
+        assert self._session_status(openenv_chat, first["id"]) == {
+            "state": "open",
+            "message": None,
+        }
+        conversations = openenv_chat.manager.conversations
+        conversations.record_end(first["id"], "after 30 minutes without a message")
+        openenv_chat.client.portal.call(conversations.release_runs, [first["id"]])
+        expected = (
+            "The OpenEnv session for this conversation ended after 30 minutes without "
+            "a message. Start a new conversation to keep using this OpenEnv server."
+        )
+        assert self._session_status(openenv_chat, first["id"]) == {
+            "state": "ended",
+            "message": expected,
+        }
+        refused = openenv_chat.send("two", parent_id=first["id"])
+        assert refused.status_code == 409
+        assert refused.json()["message"]["message"] == expected
+
+    @pytest.mark.parametrize("openenv_chat", [TurnMode.single_turn], indirect=True)
+    def test_session_status_is_none_for_a_single_turn_task(self, openenv_chat):
+        run = openenv_chat.send("one").json()
+        assert self._session_status(openenv_chat, run["id"]) == {
+            "state": "none",
+            "message": None,
+        }
+
+    def test_session_status_of_a_missing_run_is_not_found(self, openenv_chat):
+        response = openenv_chat.client.get(
+            f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/missing"
+            "/openenv_session"
+        )
+        assert response.status_code == 404
+
 
 def test_deep_update_with_empty_source():
     source = {}

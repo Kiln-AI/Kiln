@@ -19,8 +19,10 @@ from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.openenv.run_session import (
+    ConversationSessionState,
     OpenEnvRunError,
     OpenEnvRunErrorKind,
+    conversation_session_status,
     openenv_run_error_code,
 )
 from kiln_ai.openenv.session_manager import shared_conversation_sessions
@@ -448,6 +450,17 @@ class CreateTaskRunRequest(BaseModel):
     )
 
 
+class ConversationOpenEnvSession(BaseModel):
+    state: ConversationSessionState = Field(
+        description='"none" when the conversation uses no OpenEnv server, "open" when '
+        'it can take another message, "ended" when its session is gone.'
+    )
+    message: str | None = Field(
+        default=None,
+        description='Why the conversation can\'t continue. Set when "ended".',
+    )
+
+
 def run_from_id(project_id: str, task_id: str, run_id: str) -> TaskRun:
     _, run = task_and_run_from_id(project_id, task_id, run_id)
     return run
@@ -487,6 +500,32 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> TaskRun:
         return run_from_id(project_id, task_id, run_id)
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/openenv_session",
+        summary="Get Conversation OpenEnv Session",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_conversation_openenv_session(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str,
+            Path(description="The latest turn of the multi-turn conversation."),
+        ],
+    ) -> ConversationOpenEnvSession:
+        """Whether a message sent after this turn can use the conversation's OpenEnv
+        session. Sessions live in this process, so after a restart every
+        conversation that used one reports "ended"."""
+        task, run = task_and_run_from_id(project_id, task_id, run_id)
+        status = conversation_session_status(task, run)
+        return ConversationOpenEnvSession(state=status.state, message=status.message)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain",

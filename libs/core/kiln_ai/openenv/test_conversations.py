@@ -169,6 +169,34 @@ class TestRelease:
         assert _released(manager) == ["ep_old"]
         assert sessions.take("recent") is not None
 
+    async def test_reap_records_why_the_session_ended(self, clock, manager):
+        registry = ConversationSessions(clock=clock, idle_seconds=30 * 60)
+        try:
+            registry.put("turn-1", _held(manager))
+            clock.now += 30 * 60 + 1
+            await registry.reap()
+            assert registry.end_reason("turn-1") == (
+                "after 30 minutes without a message"
+            )
+        finally:
+            await registry.close_all()
+
+    async def test_deleting_a_turn_records_no_reason(self, sessions, manager):
+        sessions.put("turn-1", _held(manager))
+        await sessions.release_runs(["turn-1"])
+        assert sessions.end_reason("turn-1") is None
+
+    def test_end_reasons_keep_the_newest(self, monkeypatch):
+        monkeypatch.setattr("kiln_ai.openenv.conversations.MAX_END_REASONS", 2)
+        registry = ConversationSessions()
+        registry.record_end("a", "first")
+        registry.record_end("b", "second")
+        registry.record_end("a", "again")
+        registry.record_end("c", "third")
+        assert registry.end_reason("b") is None
+        assert registry.end_reason("a") == "again"
+        assert registry.end_reason("c") == "third"
+
     async def test_close_all_closes_everything(self, sessions, manager):
         sessions.put("turn-a", _held(manager, "ep_a"))
         sessions.put("turn-b", _held(manager, "ep_b"))

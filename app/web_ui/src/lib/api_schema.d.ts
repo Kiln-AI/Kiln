@@ -303,6 +303,28 @@ export interface paths {
         patch: operations["update_run_api_projects__project_id__tasks__task_id__runs__run_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/openenv_session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Conversation OpenEnv Session
+         * @description Whether a message sent after this turn can use the conversation's OpenEnv
+         *     session. Sessions live in this process, so after a restart every
+         *     conversation that used one reports "ended".
+         */
+        get: operations["get_conversation_openenv_session_api_projects__project_id__tasks__task_id__runs__run_id__openenv_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain": {
         parameters: {
             query?: never;
@@ -5958,6 +5980,20 @@ export interface components {
              * @enum {string}
              */
             mode: "must_contain" | "must_not_contain";
+        };
+        /** ConversationOpenEnvSession */
+        ConversationOpenEnvSession: {
+            /**
+             * State
+             * @description "none" when the conversation uses no OpenEnv server, "open" when it can take another message, "ended" when its session is gone.
+             * @enum {string}
+             */
+            state: "none" | "open" | "ended";
+            /**
+             * Message
+             * @description Why the conversation can't continue. Set when "ended".
+             */
+            message?: string | null;
         };
         /** CorrelationResult */
         CorrelationResult: {
@@ -15939,6 +15975,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_conversation_openenv_session_api_projects__project_id__tasks__task_id__runs__run_id__openenv_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The latest turn of the multi-turn conversation. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOpenEnvSession"];
                 };
             };
             /** @description Validation Error */
