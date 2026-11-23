@@ -20,9 +20,9 @@ The order follows [architecture.md](architecture.md) section 6. Each phase names
 - [x] Phase 10: Content, part 4: wire the knowledge into the Assistant's files, turn on every remaining check, and tune the server and tool texts. Batches 13b and 14. (skill_and_content section 9; mcp_server_and_api_tool section 2.4)
 - [x] Phase 11: The Settings callout, the Connect page, `agent_install.md`, the README section, and the rename of the `kiln_mcp` help text. ([connect_page_and_install](components/connect_page_and_install.md); [ui_design](ui_design.md))
 - [x] Phase 12: Probe the real API through the MCP for unclear errors and missing route descriptions; fix them at the endpoint. (architecture section 10; functional spec section 11)
-- [ ] Phase 13: Reviews by people: the sandbox wording, the knowledge's public-source claims and case studies, and the owner's read of `SKILL.md`, `train_val_test.md` and the two new guides. Apply their changes. (architecture section 6, step 9)
-- [ ] Phase 14: Manual sanity check with real agents, and the fixes it leads to. Decide whether phase 15 is needed. (functional spec section 16)
-- [ ] Phase 15 (optional): a "load the endpoint doc first" check that keeps the server stateless. Only if phase 14 shows agents calling endpoints wrongly because they skipped the docs. (functional spec section 5.9)
+- [x] Phase 13: Reviews by people: the sandbox wording, the knowledge's public-source claims and case studies, and the owner's read of `SKILL.md`, `train_val_test.md` and the two new guides. Apply their changes. (architecture section 6, step 9)
+- [x] Phase 14: Manual sanity check with real agents, and the fixes it leads to. Decide whether phase 15 is needed. (functional spec section 16)
+- [x] Phase 15 (optional): a "load the endpoint doc first" check that keeps the server stateless. Only if phase 14 shows agents calling endpoints wrongly because they skipped the docs. (functional spec section 5.9) Not needed: owner decision after phase 14.
 - [ ] **Phase 16: Backlog.** Review open backlog items with the user, then close or dismiss each through the standard phase flow.
 
 ## Notes
