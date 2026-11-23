@@ -1000,6 +1000,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_2_astra_pro,
         friendly_name="GPT-6.2 Astra Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.2 Astra with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. The first Astra Pro model in Kiln, above GPT-6.2 Astra."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1031,6 +1036,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_2_astra,
         friendly_name="GPT-6.2 Astra",
+        agent_notes=(
+            "Description: OpenAI's top-tier model in the GPT-6.2 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Astra is the top tier, above GPT-6.2 Sol. Replaced GPT-6 Astra.\n"
+            "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
+        ),
+        tags=["current", "recommended"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1086,6 +1097,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_2_sol_pro,
         friendly_name="GPT-6.2 Sol Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.2 Sol with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6.1 Sol Pro."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1117,6 +1133,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_2_sol,
         friendly_name="GPT-6.2 Sol",
+        agent_notes=(
+            "Description: OpenAI's balanced high-tier model in the GPT-6.2 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A step down from GPT-6.2 Astra, above GPT-6.1 Terra. Replaced GPT-6.1 Sol.\n"
+            "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
+        ),
+        tags=["current", "recommended", "top_value"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1174,9 +1196,10 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-6.1 Sol Pro",
         agent_notes=(
             "Description: Pro-compute variant of GPT-6.1 Sol with extended reasoning.\n"
-            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6 Sol Pro."
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6 Sol Pro.\n"
+            "Superseded by: GPT-6.2 Sol Pro, the Pro variant at the Sol level in the GPT-6.2 generation."
         ),
-        tags=["current", "top_writing"],
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1215,9 +1238,10 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: OpenAI's balanced high-tier model in the GPT-6.1 generation.\n"
             "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A step down from GPT-6 Astra, much stronger than GPT-6.1 Terra. Replaced GPT-6 Sol.\n"
+            "Superseded by: GPT-6.2 Sol, the Sol-level model of the GPT-6.2 generation.\n"
             "Strengths: Steady quality in multi-turn tool use; near GPT-6 Astra on reasoning."
         ),
-        tags=["current", "recommended", "top_writing"],
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1377,9 +1401,10 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: OpenAI's most capable model, the top of the GPT-6 lineup.\n"
             "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Astra is the top tier, above GPT-6.1 Sol.\n"
+            "Superseded by: GPT-6.2 Astra, the Astra-level model of the GPT-6.2 generation.\n"
             "Strengths: Leads on hard reasoning and computer use among OpenAI models."
         ),
-        tags=["current", "recommended", "top_writing"],
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
