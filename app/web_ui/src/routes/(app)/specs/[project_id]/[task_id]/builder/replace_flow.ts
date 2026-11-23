@@ -5,6 +5,7 @@
 
 import type { GroundingDrop } from "./batch_plan_guidance"
 import type { SyntheticUserCaseWire } from "./builder_draft"
+import { throw_if_aborted, unless_aborted } from "./plan_flow"
 
 // A dropped plan row and the new scenario planned for it.
 export type Replacement = { row: number; scenario: string }
@@ -72,6 +73,53 @@ export function place_replacement_cases(
       drop_detail: SIMULATED_USER_MISSING_DETAIL,
     }))
   return { cases: by_row(placed), missing }
+}
+
+// Replace's paid first half: a plan with one new scenario per drop, then a
+// simulated user for each. Every request gets the same signal and runs only
+// while it hasn't aborted, so a Back during any step stops the rest. Null when
+// a request failed (it reports why itself); an abort throws an AbortError.
+export async function plan_and_generate_replacements(args: {
+  prompts: string[]
+  drops: GroundingDrop[]
+  signal: AbortSignal
+  guidance: (signal: AbortSignal) => Promise<string>
+  request_plan: (
+    guidance: string,
+    count: number,
+    signal: AbortSignal,
+  ) => Promise<{ prompts: string[] } | null>
+  generate: (
+    scenarios: string[],
+    signal: AbortSignal,
+  ) => Promise<SyntheticUserCaseWire[] | null>
+  on_generating: () => void
+}): Promise<{
+  merged: ReturnType<typeof plan_replacements>
+  placed: ReturnType<typeof place_replacement_cases>
+} | null> {
+  const { signal, drops } = args
+  throw_if_aborted(signal)
+  const guidance = await unless_aborted(signal, args.guidance(signal))
+  const planned = await unless_aborted(
+    signal,
+    args.request_plan(guidance, drops.length, signal),
+  )
+  if (!planned) return null
+  const merged = plan_replacements(args.prompts, drops, planned.prompts)
+  args.on_generating()
+  const generated = await unless_aborted(
+    signal,
+    args.generate(
+      merged.replacements.map((r) => r.scenario),
+      signal,
+    ),
+  )
+  if (generated === null) return null
+  return {
+    merged,
+    placed: place_replacement_cases(generated, merged.replacements),
+  }
 }
 
 // A merged case list: the kept cases, less any on a replaced row, plus the

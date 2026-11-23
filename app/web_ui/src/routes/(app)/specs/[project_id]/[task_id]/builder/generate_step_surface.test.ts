@@ -257,15 +257,15 @@ describe("single entrance to the drive", () => {
     expect(submit).toContain("on_drive_multi_turn()")
     expect(submit).toContain("on_drive_single_turn()")
     // Each arm's drive function is named only by its own definition, that
-    // submit's call and, on multi-turn, the dropped-cases screen's Continue,
-    // Retry and Replace Dropped Cases, which carry on a drive the dialog
-    // already started. Any other mention is a second entrance — a run the
-    // user was never shown the lanes or the cost of.
-    expect(mentions("on_drive_multi_turn")).toBe(5)
+    // submit's call and, on multi-turn, the dropped-cases screen's Continue
+    // and Replace Dropped Cases, which carry on a drive the dialog already
+    // started. Any other mention is a second entrance — a run the user was
+    // never shown the lanes or the cost of.
+    expect(mentions("on_drive_multi_turn")).toBe(4)
     expect(
       function_body("function on_continue_with_grounded_cases() {"),
     ).toContain("on_drive_multi_turn()")
-    expect(function_body("async function on_retry_grounding() {")).toContain(
+    expect(function_body("function on_retry_grounding() {")).not.toContain(
       "on_drive_multi_turn()",
     )
     expect(
@@ -1311,15 +1311,11 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     expect(contains("Checking Cases Against Your Environment")).toBe(true)
   })
 
-  it("plans again with the drops and the same steer on Retry", () => {
-    const retry = normalize(
-      function_body("async function on_retry_grounding() {"),
-    )
-    expect(retry).toContain("pending_retry_drops = grounding_stop.drops")
-    expect(retry).toContain("pending_plan_steer = landed_plan_steer")
-    expect(retry.indexOf("on_plan_batch()")).toBeLessThan(
-      retry.indexOf("on_drive_multi_turn()"),
-    )
+  it("opens Refine Plan with the drops and the same steer on Retry", () => {
+    const retry = normalize(function_body("function on_retry_grounding() {"))
+    expect(retry).toContain("drops: grounding_stop.drops")
+    expect(retry).toContain("plan_steer = landed_plan_steer")
+    expect(retry).toContain("open_new_plan_dialog()")
   })
 
   // The dropped cases guide only the plan their Retry starts. A failed Retry
@@ -1339,8 +1335,10 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       expect(function_body("function sync_step_from_history(")).toContain(clear)
     })
 
-    it("are cleared by Refine Plan", () => {
-      expect(function_body("function submit_new_plan() {")).toContain(clear)
+    it("are cleared by Refine Plan unless it opened from Retry", () => {
+      expect(function_body("function submit_new_plan() {")).toContain(
+        "pending_retry_drops = retry_from_grounding?.drops ?? []",
+      )
     })
 
     it("survive the error screen's Retry of a failed plan", () => {
@@ -1388,17 +1386,17 @@ describe("grounding a build's cases in its OpenEnv server", () => {
 
     it("plans one scenario per drop, with the drops and the kept scenarios", () => {
       expect(replace).toContain(
-        "await multi_turn_plan_guidance({ drops: stop.drops, kept_scenarios: kept_scenarios(plan.prompts, stop.drops), })",
+        "multi_turn_plan_guidance( { drops: stop.drops, kept_scenarios: kept_scenarios(plan.prompts, stop.drops), }, signal, )",
       )
-      expect(replace).toContain("stop.drops.length, null, )")
+      expect(replace).toContain(
+        "request_batch_plan(guidance, count, null, signal)",
+      )
     })
 
     it("generates and grounds only the replacements, in that order", () => {
-      const generating = replace.indexOf(
-        "request_generated_cases( merged.replacements.map((r) => r.scenario), )",
-      )
+      const generating = replace.indexOf("generate: request_generated_cases,")
       const grounding = replace.indexOf(
-        "await ground_planned_cases( placed.cases, merged.prompts, stop.target_run_config_id, stop.judge_choice, stop.synthetic_user_guide, )",
+        "await ground_planned_cases( placed.cases, merged.prompts, stop.target_run_config_id, stop.judge_choice, stop.synthetic_user_guide, signal, )",
       )
       expect(generating).toBeGreaterThan(0)
       expect(grounding).toBeGreaterThan(generating)
@@ -1435,7 +1433,7 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       expect(replace).toContain(
         "if (!settled) { const back = interrupted_replacement({ kept: stop.grounded, drops: stop.drops, committed, error: failure, })",
       )
-      expect(replace.match(/take_failure\(\) return/g)).toHaveLength(3)
+      expect(replace.match(/take_failure\(\) return/g)).toHaveLength(2)
       expect(replace).toContain(
         "const take_failure = () => { failure = generation_error generation_error = null }",
       )

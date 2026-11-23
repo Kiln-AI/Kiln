@@ -51,10 +51,15 @@ Layout, top to bottom:
   and under it the reason in muted text. The reason is the grounding agent's `drop_detail`, as
   written. No reason codes on screen.
 - Buttons, right-aligned, primary last:
-  - **Cancel**: back to the plan, discarding this batch's cases.
-  - **Retry**: plans the batch again with the dropped scenarios and their reasons added to the
-    planner guidance, then runs the whole flow again (simulated users, checking, conversations).
-    The Refine Plan steer, if any, is kept.
+  - **Cancel**: back to the plan, discarding this batch's simulated users and checked cases. It
+    asks first, in a confirm that counts the simulated users and the cases that fit, and says the
+    next run writes and checks them again.
+  - **Retry**: opens the Refine Plan dialog, with the plan's steer filled in. Its warning names
+    what a new plan discards, including the cases that fit, and says every item in the new plan
+    gets a new simulated user and is checked against the OpenEnv server again. Submitting plans
+    the batch again with the dropped scenarios and their reasons added to the planner guidance,
+    then stops on the new plan for approval. Nothing is generated, checked or driven until the
+    user approves it. Closing the dialog leaves this screen as it was.
   - **Continue With 17** (primary): drives and reviews the 17 cases that fit.
 - When every case dropped: the same screen without Continue, and the line reads "None of the 20
   cases could be made to fit."

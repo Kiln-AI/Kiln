@@ -80,8 +80,7 @@
     kept_scenarios,
     merge_cases,
     merge_drops,
-    place_replacement_cases,
-    plan_replacements,
+    plan_and_generate_replacements,
     type CommittedReplacement,
   } from "./replace_flow"
   import {
@@ -188,8 +187,12 @@
     drive_lanes_unchanged,
     drive_stop_banner,
     driven_data_confirm,
+    cancel_grounding_confirm,
     first_preflight_failure,
+    load_plan_openenv_context,
     new_plan_confirm,
+    retry_grounding_confirm,
+    throw_if_aborted,
     plan_drive,
     resolved_selected_count,
     is_partial_stop,
@@ -1260,6 +1263,11 @@
   // leaving the step to edit the spec). The error screen's Retry keeps them,
   // since it re-tries the same plan.
   let pending_retry_drops: GroundingDrop[] = []
+  // Set while the Refine Plan dialog is open from the dropped-cases screen's
+  // Retry: the drops its plan carries, and how many cases fit, for the
+  // dialog's warning. Any close clears it.
+  let retry_from_grounding: { drops: GroundingDrop[]; fit: number } | null =
+    null
   // The steer the plan on screen was drafted under. pending_plan_steer is
   // spent when a plan lands, and a Retry re-plans with the same steer. Rides
   // the draft.
@@ -1414,19 +1422,25 @@
   // Retry after drops, the scenarios that didn't fit; the user's steer last.
   // A plan for Replace Dropped Cases names its own drops and the scenarios
   // staying in the batch, under the steer the plan on screen was drafted with.
+  // Throws an AbortError once the signal aborts, before the plan is requested.
   async function multi_turn_plan_guidance(
     replacing: { drops: GroundingDrop[]; kept_scenarios: string[] } | null,
+    signal: AbortSignal,
   ): Promise<string> {
-    const tool_ids = await target_run_config_tool_ids()
-    const openenv_server_id =
-      tool_ids === null ? null : await ensure_openenv_server(tool_ids)
+    const { openenv_server_id, reset_arguments_brief: brief } =
+      await load_plan_openenv_context(
+        {
+          tool_ids: target_run_config_tool_ids,
+          openenv_server: ensure_openenv_server,
+          reset_arguments_brief: ensure_reset_arguments_brief,
+        },
+        signal,
+      )
     const sections =
       openenv_server_id === null
         ? []
         : [
-            reset_arguments_section(
-              await ensure_reset_arguments_brief(openenv_server_id),
-            ),
+            reset_arguments_section(brief),
             synthetic_user_guide_section(synthetic_user_guide),
             dropped_cases_section(replacing?.drops ?? pending_retry_drops),
             kept_scenarios_section(replacing?.kept_scenarios ?? []),
@@ -2077,6 +2091,9 @@
   // in batch_plan_guidance), then pause on the approval screen. Nothing is
   // driven until the user approves.
   async function on_plan_batch() {
+    // One signal for the whole plan, lookups included: a Back before the
+    // planner is reached must stop it from being reached.
+    const signal = new_copilot_abort_signal()
     generation_loading = true
     generation_error = null
     batch_plan = null
@@ -2133,12 +2150,13 @@
           console.warn("Could not pick a grounding sample:", e)
           grounding_sample = null
         }
+        throw_if_aborted(signal)
       }
       // The arm's base guidance carries the balance policy; the user's steer
       // (when they typed one) is appended to it, never replaces it — see
       // compose_plan_guidance.
       const guidance = is_multi_turn
-        ? await multi_turn_plan_guidance(null)
+        ? await multi_turn_plan_guidance(null, signal)
         : compose_plan_guidance(
             single_turn_plan_guidance(spec_text()),
             [],
@@ -2151,6 +2169,7 @@
         // data-guide param (multi-turn plans scenarios, not inputs — no
         // guide there).
         is_multi_turn ? null : single_turn_data_guide(),
+        signal,
       )
       if (!planned) return
       batch_plan = planned
@@ -2183,13 +2202,14 @@
     guidance: string,
     count: number,
     data_guide: string | null,
+    signal: AbortSignal,
   ): Promise<BatchPlan | null> {
     const { data, error } = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
       {
         params: { path: { project_id, task_id } },
         body: { guidance, count, data_guide },
-        signal: new_copilot_abort_signal(),
+        signal,
       },
     )
     if (error || !data) {
@@ -2298,13 +2318,22 @@
   // warning rides inside the dialog (above its submit) rather than a native
   // confirm, so the same click that accepts the loss also chooses the size
   // and steer of what replaces it.
-  $: new_plan_warning = new_plan_confirm({
-    has_driven_results,
-    survivors: trace_claims.length,
-    include_review_progress: drive_stop === null,
-    plan_edited: batch_plan_edited,
-    plan_noun,
-  })
+  $: new_plan_warning = retry_from_grounding
+    ? retry_grounding_confirm({
+        has_driven_results,
+        survivors: trace_claims.length,
+        include_review_progress: drive_stop === null,
+        plan_edited: batch_plan_edited,
+        fit: retry_from_grounding.fit,
+        plan_noun,
+      })
+    : new_plan_confirm({
+        has_driven_results,
+        survivors: trace_claims.length,
+        include_review_progress: drive_stop === null,
+        plan_edited: batch_plan_edited,
+        plan_noun,
+      })
 
   function open_new_plan_dialog() {
     staged_batch_size = { ...batch_size }
@@ -2317,6 +2346,7 @@
   // A submitted one has already moved to pending_plan_steer, which this
   // restores verbatim.
   function discard_plan_steer_draft() {
+    retry_from_grounding = null
     plan_steer = pending_plan_steer
     staged_batch_size = { ...batch_size }
     use_data_guide_draft = use_data_guide
@@ -2331,7 +2361,8 @@
     // Off plus Refine Plan re-plans without the guide; the mint follows the
     // plan, since both send the same value.
     use_data_guide = use_data_guide_draft
-    pending_retry_drops = []
+    pending_retry_drops = retry_from_grounding?.drops ?? []
+    retry_from_grounding = null
     new_plan_dialog?.close()
     void on_plan_batch()
   }
@@ -2415,7 +2446,10 @@
       return cached
     }
     generation_phase = "generating_cases"
-    const cases = await request_generated_cases(approved_prompts)
+    const cases = await request_generated_cases(
+      approved_prompts,
+      new_copilot_abort_signal(),
+    )
     if (cases === null) return null
     cached_su_cases = {
       prompts_json: JSON.stringify(approved_prompts),
@@ -2432,6 +2466,7 @@
   // generation_error.
   async function request_generated_cases(
     case_prompts: string[],
+    signal: AbortSignal,
   ): Promise<SyntheticUserCaseWire[] | null> {
     const cases_resp = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
@@ -2441,7 +2476,7 @@
           target_specification: spec_text(),
           case_prompts,
         },
-        signal: new_copilot_abort_signal(),
+        signal,
       },
     )
     if (cases_resp.error || !cases_resp.data) {
@@ -2474,6 +2509,7 @@
     target_run_config_id: string,
     judge_model: GroundingModel,
     synthetic_user_guide: string,
+    signal: AbortSignal,
   ): Promise<GroundingOutcome | null> {
     const request_cases = grounding_request_cases(cases, approved_prompts)
     grounding_total = request_cases.length
@@ -2497,7 +2533,7 @@
           Accept: "text/event-stream",
         },
         body: JSON.stringify(body),
-        signal: new_copilot_abort_signal(),
+        signal,
       },
     )
     if (!response.ok || !response.body) {
@@ -2543,19 +2579,18 @@
     void on_drive_multi_turn()
   }
 
-  // Retry: plan the batch again with the dropped scenarios and their reasons
-  // in the guidance and the same steer as the plan on screen, then run the
-  // whole flow again on the new plan.
-  async function on_retry_grounding() {
+  // Retry: the Refine Plan dialog, warning that the cases that fit go too,
+  // with the steer of the plan on screen filled in. Its submit plans again
+  // with the dropped scenarios and their reasons in the guidance, and the new
+  // plan waits for approval like any other.
+  function on_retry_grounding() {
     if (!grounding_stop) return
-    pending_retry_drops = grounding_stop.drops
-    pending_plan_steer = landed_plan_steer
-    plan_steer = landed_plan_steer
-    grounding_stop = null
-    await on_plan_batch()
-    if (batch_plan !== null && !generation_error) {
-      await on_drive_multi_turn()
+    retry_from_grounding = {
+      drops: grounding_stop.drops,
+      fit: grounding_stop.grounded.length,
     }
+    plan_steer = landed_plan_steer
+    open_new_plan_dialog()
   }
 
   // Replace Dropped Cases: plan one new scenario per dropped case, then
@@ -2569,6 +2604,9 @@
     const stop = grounding_stop
     const plan = batch_plan
     if (!stop || !plan || generation_loading) return
+    // One signal for every request below, so a Back during any of them, the
+    // lookups before the plan included, stops the rest.
+    const signal = new_copilot_abort_signal()
     const spec = spec_text()
     generation_loading = true
     generation_error = null
@@ -2587,32 +2625,30 @@
       generation_error = null
     }
     try {
-      const planned = await request_batch_plan(
-        await multi_turn_plan_guidance({
-          drops: stop.drops,
-          kept_scenarios: kept_scenarios(plan.prompts, stop.drops),
-        }),
-        stop.drops.length,
-        null,
-      )
-      if (!planned) {
+      const replacements = await plan_and_generate_replacements({
+        prompts: plan.prompts,
+        drops: stop.drops,
+        signal,
+        guidance: (signal) =>
+          multi_turn_plan_guidance(
+            {
+              drops: stop.drops,
+              kept_scenarios: kept_scenarios(plan.prompts, stop.drops),
+            },
+            signal,
+          ),
+        request_plan: (guidance, count, signal) =>
+          request_batch_plan(guidance, count, null, signal),
+        generate: request_generated_cases,
+        on_generating: () => {
+          generation_phase = "generating_cases"
+        },
+      })
+      if (replacements === null) {
         take_failure()
         return
       }
-      const merged = plan_replacements(
-        plan.prompts,
-        stop.drops,
-        planned.prompts,
-      )
-      generation_phase = "generating_cases"
-      const generated = await request_generated_cases(
-        merged.replacements.map((r) => r.scenario),
-      )
-      if (generated === null) {
-        take_failure()
-        return
-      }
-      const placed = place_replacement_cases(generated, merged.replacements)
+      const { merged, placed } = replacements
       const replaced_rows = new Set(merged.replacements.map((r) => r.row))
 
       // The merged plan is committed once its new simulated users exist, so a
@@ -2651,6 +2687,7 @@
               stop.target_run_config_id,
               stop.judge_choice,
               stop.synthetic_user_guide,
+              signal,
             )
       if (outcome === null) {
         take_failure()
@@ -2717,11 +2754,18 @@
         }
       }
     }
-    if (ready_to_drive) void on_drive_multi_turn()
+    if (ready_to_drive && !signal.aborted) void on_drive_multi_turn()
   }
 
-  // Cancel: back to the plan, discarding this batch's cases.
+  // Cancel: back to the plan, discarding this batch's cases once the user
+  // confirms; the next run writes and checks them again.
   function on_cancel_grounding() {
+    if (!grounding_stop) return
+    const msg = cancel_grounding_confirm(
+      grounding_stop.total,
+      grounding_stop.grounded.length,
+    )
+    if (!confirm(msg)) return
     grounding_stop = null
     cached_su_cases = null
     cached_grounded_cases = null
@@ -2894,6 +2938,7 @@
             target_run_config_id,
             grounding_model,
             grounding_key.synthetic_user_guide,
+            new_copilot_abort_signal(),
           )
           if (outcome === null) return
           if (outcome.drops.length > 0) {

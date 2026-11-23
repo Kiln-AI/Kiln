@@ -1,6 +1,7 @@
 // Step 4 plan-flow state logic, extracted pure so the stop screen and the
 // preparing-review gate are unit-testable: the stop banner's wording, the
-// three-tier destructive-action confirms, and the gate's resolved counting.
+// three-tier destructive-action confirms, the gate's resolved counting, and
+// the abort checks between a plan's lookups.
 
 import type { ClaimsBuildState } from "./claim_evidence"
 
@@ -488,6 +489,111 @@ export function new_plan_confirm(state: {
   return state.plan_edited
     ? `Are you sure you want to discard the current ${plan_noun}, including the ones you removed? This cannot be undone.`
     : `Are you sure you want to discard the current ${plan_noun}? This cannot be undone.`
+}
+
+const GROUNDING_RECHECK =
+  "Every item in the new plan gets a new simulated user and is checked against your OpenEnv server again."
+
+function fit_count(fit: number): string {
+  return fit === 1 ? "the 1 that fits" : `the ${fit} that fit`
+}
+
+// The Refine Plan dialog's warning when it opens from the dropped-cases
+// screen's Retry: new_plan_confirm's tiers, plus the cases that fit the
+// OpenEnv server, which the new plan discards and checks again.
+export function retry_grounding_confirm(state: {
+  has_driven_results: boolean
+  survivors: number
+  include_review_progress: boolean
+  plan_edited: boolean
+  fit: number
+  plan_noun?: string
+}): string {
+  const plan_noun = state.plan_noun ?? "items"
+  const fit =
+    state.fit > 0 ? `${fit_count(state.fit)} your OpenEnv server` : null
+  if (state.has_driven_results) {
+    const progress_clause = state.include_review_progress
+      ? " and your review progress"
+      : ""
+    return `You have ${state.survivors} completed eval input${
+      state.survivors === 1 ? "" : "s"
+    }${progress_clause}. A new batch plan will discard them${
+      fit ? `, along with ${fit}` : ""
+    }. ${GROUNDING_RECHECK} This cannot be undone.`
+  }
+  const including = [
+    state.plan_edited ? "the ones you removed" : null,
+    fit,
+  ].filter((part): part is string => part !== null)
+  return `Are you sure you want to discard the current ${plan_noun}${
+    including.length > 0 ? `, including ${including.join(" and ")}` : ""
+  }? ${GROUNDING_RECHECK} This cannot be undone.`
+}
+
+// The dropped-cases screen's Cancel discards the simulated users written for
+// the plan and the record of which fit the OpenEnv server; the next run pays
+// for both again.
+export function cancel_grounding_confirm(total: number, fit: number): string {
+  const users = `${total} simulated user${total === 1 ? "" : "s"}`
+  return `Are you sure you want to go back to the plan? The ${users} written for it will be discarded${
+    fit > 0 ? `, including ${fit_count(fit)} your OpenEnv server` : ""
+  }. The next run writes and checks them again. This cannot be undone.`
+}
+
+// ── Abortable plan requests ──────────────────────────────────────────────
+
+// Resolves to the work's value, or throws an AbortError when the signal
+// aborted while it ran: a request with no signal of its own still can't let
+// the flow that awaited it carry on after the user left.
+export async function unless_aborted<T>(
+  signal: AbortSignal,
+  work: Promise<T>,
+): Promise<T> {
+  const value = await work
+  throw_if_aborted(signal)
+  return value
+}
+
+export function throw_if_aborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError")
+}
+
+// What a multi-turn plan's guidance reads about the build's OpenEnv server:
+// its id (null on a build without one) and its reset arguments brief.
+export type PlanOpenEnvContext = {
+  openenv_server_id: string | null
+  reset_arguments_brief: string | null
+}
+
+// Looks up the target run config's tools, the OpenEnv server they reach and
+// that server's reset arguments brief, in that order. None of the three
+// lookups takes a signal, so each is checked against it as it settles; an
+// abort throws an AbortError before the next one starts.
+export async function load_plan_openenv_context(
+  load: {
+    tool_ids: () => Promise<string[] | null>
+    openenv_server: (tool_ids: string[]) => Promise<string | null>
+    reset_arguments_brief: (openenv_server_id: string) => Promise<string | null>
+  },
+  signal: AbortSignal,
+): Promise<PlanOpenEnvContext> {
+  throw_if_aborted(signal)
+  const tool_ids = await unless_aborted(signal, load.tool_ids())
+  const openenv_server_id =
+    tool_ids === null
+      ? null
+      : await unless_aborted(signal, load.openenv_server(tool_ids))
+  if (openenv_server_id === null) {
+    return { openenv_server_id: null, reset_arguments_brief: null }
+  }
+  return {
+    openenv_server_id,
+    reset_arguments_brief: await unless_aborted(
+      signal,
+      load.reset_arguments_brief(openenv_server_id),
+    ),
+  }
 }
 
 // What the drive is about to spend, shown on the button that spends it. The

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { GroundingDrop } from "./batch_plan_guidance"
 import type { SyntheticUserCaseWire } from "./builder_draft"
 import {
@@ -9,6 +9,7 @@ import {
   merge_cases,
   merge_drops,
   place_replacement_cases,
+  plan_and_generate_replacements,
   plan_replacements,
 } from "./replace_flow"
 
@@ -234,5 +235,115 @@ describe("interrupted_replacement", () => {
     expect(result.drops[0].drop_detail).toBe(
       "Kiln stopped before checking this case against your OpenEnv server.",
     )
+  })
+})
+
+describe("plan_and_generate_replacements", () => {
+  const drops = [drop(1), drop(3)]
+
+  function fakes() {
+    return {
+      guidance: vi.fn(async (_signal: AbortSignal) => "guidance"),
+      request_plan: vi.fn(
+        async (
+          _guidance: string,
+          count: number,
+          _signal: AbortSignal,
+        ): Promise<{ prompts: string[] } | null> => ({
+          prompts: Array.from({ length: count }, (_, i) => `New ${i}`),
+        }),
+      ),
+      generate: vi.fn(
+        async (
+          scenarios: string[],
+          _signal: AbortSignal,
+        ): Promise<SyntheticUserCaseWire[] | null> =>
+          scenarios.map((s, i) => generated(s, i)),
+      ),
+      on_generating: vi.fn(),
+    }
+  }
+
+  function run(load: ReturnType<typeof fakes>, signal: AbortSignal) {
+    return plan_and_generate_replacements({
+      prompts: PLAN,
+      drops,
+      signal,
+      ...load,
+    })
+  }
+
+  async function error_name(work: Promise<unknown>): Promise<string> {
+    try {
+      await work
+    } catch (e) {
+      return (e as DOMException).name
+    }
+    return "resolved"
+  }
+
+  it("plans one scenario per drop and places the new cases on their rows", async () => {
+    const load = fakes()
+    const signal = new AbortController().signal
+    const result = await run(load, signal)
+    expect(load.request_plan).toHaveBeenCalledWith("guidance", 2, signal)
+    expect(load.generate).toHaveBeenCalledWith(["New 0", "New 1"], signal)
+    expect(load.on_generating).toHaveBeenCalledOnce()
+    expect(result?.merged.prompts).toEqual([PLAN[0], "New 0", PLAN[2], "New 1"])
+    expect(result?.placed.cases.map((c) => c.scenario_index)).toEqual([1, 3])
+  })
+
+  it("gives every request the same signal", async () => {
+    const load = fakes()
+    const signal = new AbortController().signal
+    await run(load, signal)
+    expect(load.guidance.mock.calls[0][0]).toBe(signal)
+    expect(load.request_plan.mock.calls[0][2]).toBe(signal)
+    expect(load.generate.mock.calls[0][1]).toBe(signal)
+  })
+
+  it("returns null without generating when the plan fails", async () => {
+    const load = fakes()
+    load.request_plan.mockResolvedValue(null)
+    expect(await run(load, new AbortController().signal)).toBeNull()
+    expect(load.generate).not.toHaveBeenCalled()
+  })
+
+  it("returns null when generating fails", async () => {
+    const load = fakes()
+    load.generate.mockResolvedValue(null)
+    expect(await run(load, new AbortController().signal)).toBeNull()
+  })
+
+  it("requests no plan when aborted during the lookups before it", async () => {
+    const load = fakes()
+    const controller = new AbortController()
+    load.guidance.mockImplementation(async () => {
+      controller.abort()
+      return "guidance"
+    })
+    expect(await error_name(run(load, controller.signal))).toBe("AbortError")
+    expect(load.request_plan).not.toHaveBeenCalled()
+  })
+
+  it("generates nothing when aborted while the plan was out", async () => {
+    const load = fakes()
+    const controller = new AbortController()
+    load.request_plan.mockImplementation(async (_g, count) => {
+      controller.abort()
+      return { prompts: Array.from({ length: count }, (_, i) => `New ${i}`) }
+    })
+    expect(await error_name(run(load, controller.signal))).toBe("AbortError")
+    expect(load.generate).not.toHaveBeenCalled()
+  })
+
+  it("throws when aborted while the simulated users were written", async () => {
+    const load = fakes()
+    const controller = new AbortController()
+    load.generate.mockImplementation(async (scenarios) => {
+      controller.abort()
+      return scenarios.map((s, i) => generated(s, i))
+    })
+    expect(await error_name(run(load, controller.signal))).toBe("AbortError")
   })
 })

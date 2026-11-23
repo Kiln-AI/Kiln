@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
+  cancel_grounding_confirm,
   clamp_turns_per_case,
   compact_batch_slots,
   dominant_failure_message,
@@ -11,8 +12,11 @@ import {
   is_claims_resolved,
   is_partial_stop,
   judge_thinking_level_refused,
+  load_plan_openenv_context,
   missing_slot_indices,
   new_plan_confirm,
+  retry_grounding_confirm,
+  unless_aborted,
   pick_target_run_config,
   plan_drive,
   resolved_selected_count,
@@ -1157,5 +1161,208 @@ describe("judge_thinking_level_refused", () => {
   it("never refuses the model's default", () => {
     expect(judge_thinking_level_refused(null, offers)).toBe(false)
     expect(judge_thinking_level_refused(null, {})).toBe(false)
+  })
+})
+
+describe("retry_grounding_confirm", () => {
+  const base = {
+    has_driven_results: false,
+    survivors: 0,
+    include_review_progress: false,
+    plan_edited: false,
+  }
+  const RECHECK =
+    "Every item in the new plan gets a new simulated user and is checked against your OpenEnv server again."
+
+  it("names the cases that fit and that the new plan is checked again", () => {
+    expect(retry_grounding_confirm({ ...base, fit: 7 })).toBe(
+      `Are you sure you want to discard the current items, including the 7 that fit your OpenEnv server? ${RECHECK} This cannot be undone.`,
+    )
+  })
+
+  it("reads in the singular for one case that fits", () => {
+    expect(retry_grounding_confirm({ ...base, fit: 1 })).toContain(
+      "including the 1 that fits your OpenEnv server?",
+    )
+  })
+
+  it("leaves out the fit clause when nothing fit", () => {
+    expect(retry_grounding_confirm({ ...base, fit: 0 })).toBe(
+      `Are you sure you want to discard the current items? ${RECHECK} This cannot be undone.`,
+    )
+  })
+
+  it("adds the removed rows on an edited plan", () => {
+    expect(
+      retry_grounding_confirm({ ...base, plan_edited: true, fit: 2 }),
+    ).toBe(
+      `Are you sure you want to discard the current items, including the ones you removed and the 2 that fit your OpenEnv server? ${RECHECK} This cannot be undone.`,
+    )
+  })
+
+  it("leads with driven results when there are any", () => {
+    expect(
+      retry_grounding_confirm({
+        ...base,
+        has_driven_results: true,
+        survivors: 4,
+        include_review_progress: true,
+        plan_edited: true,
+        fit: 3,
+      }),
+    ).toBe(
+      `You have 4 completed eval inputs and your review progress. A new batch plan will discard them, along with the 3 that fit your OpenEnv server. ${RECHECK} This cannot be undone.`,
+    )
+  })
+})
+
+describe("cancel_grounding_confirm", () => {
+  it("names the simulated users and the ones that fit", () => {
+    expect(cancel_grounding_confirm(10, 7)).toBe(
+      "Are you sure you want to go back to the plan? The 10 simulated users written for it will be discarded, including the 7 that fit your OpenEnv server. The next run writes and checks them again. This cannot be undone.",
+    )
+  })
+
+  it("reads in the singular and drops the fit clause when nothing fit", () => {
+    expect(cancel_grounding_confirm(1, 0)).toBe(
+      "Are you sure you want to go back to the plan? The 1 simulated user written for it will be discarded. The next run writes and checks them again. This cannot be undone.",
+    )
+  })
+})
+
+// A promise the test settles by hand, so it can abort between two lookups.
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
+async function abort_error_of(work: Promise<unknown>): Promise<string> {
+  try {
+    await work
+  } catch (e) {
+    return (e as DOMException).name
+  }
+  return "resolved"
+}
+
+describe("unless_aborted", () => {
+  it("passes the value through while the signal is live", async () => {
+    const controller = new AbortController()
+    expect(await unless_aborted(controller.signal, Promise.resolve(3))).toBe(3)
+  })
+
+  it("throws an AbortError when the signal aborted while it ran", async () => {
+    const controller = new AbortController()
+    const work = deferred<number>()
+    const result = abort_error_of(
+      unless_aborted(controller.signal, work.promise),
+    )
+    controller.abort()
+    work.resolve(3)
+    expect(await result).toBe("AbortError")
+  })
+})
+
+describe("load_plan_openenv_context", () => {
+  function fakes() {
+    return {
+      tool_ids: vi.fn(async (): Promise<string[] | null> => ["openenv::a"]),
+      openenv_server: vi.fn(
+        async (_tool_ids: string[]): Promise<string | null> => "server_1",
+      ),
+      reset_arguments_brief: vi.fn(
+        async (_id: string): Promise<string | null> => "brief",
+      ),
+    }
+  }
+
+  it("looks up the tools, the server and its brief in turn", async () => {
+    const load = fakes()
+    const context = await load_plan_openenv_context(
+      load,
+      new AbortController().signal,
+    )
+    expect(context).toEqual({
+      openenv_server_id: "server_1",
+      reset_arguments_brief: "brief",
+    })
+    expect(load.openenv_server).toHaveBeenCalledWith(["openenv::a"])
+    expect(load.reset_arguments_brief).toHaveBeenCalledWith("server_1")
+  })
+
+  it("stops at a run config it can't resolve", async () => {
+    const load = fakes()
+    load.tool_ids.mockResolvedValue(null)
+    expect(
+      await load_plan_openenv_context(load, new AbortController().signal),
+    ).toEqual({ openenv_server_id: null, reset_arguments_brief: null })
+    expect(load.openenv_server).not.toHaveBeenCalled()
+  })
+
+  it("reads no brief on a build without a server", async () => {
+    const load = fakes()
+    load.openenv_server.mockResolvedValue(null)
+    expect(
+      await load_plan_openenv_context(load, new AbortController().signal),
+    ).toEqual({ openenv_server_id: null, reset_arguments_brief: null })
+    expect(load.reset_arguments_brief).not.toHaveBeenCalled()
+  })
+
+  it("starts nothing on a signal that already aborted", async () => {
+    const load = fakes()
+    const controller = new AbortController()
+    controller.abort()
+    expect(
+      await abort_error_of(load_plan_openenv_context(load, controller.signal)),
+    ).toBe("AbortError")
+    expect(load.tool_ids).not.toHaveBeenCalled()
+  })
+
+  it("stops before the server lookup when aborted during the tools", async () => {
+    const load = fakes()
+    const controller = new AbortController()
+    const tools = deferred<string[] | null>()
+    load.tool_ids.mockReturnValue(tools.promise)
+    const result = abort_error_of(
+      load_plan_openenv_context(load, controller.signal),
+    )
+    controller.abort()
+    tools.resolve(["openenv::a"])
+    expect(await result).toBe("AbortError")
+    expect(load.openenv_server).not.toHaveBeenCalled()
+  })
+
+  it("stops before the brief when aborted during the server lookup", async () => {
+    const load = fakes()
+    const controller = new AbortController()
+    const server = deferred<string | null>()
+    load.openenv_server.mockReturnValue(server.promise)
+    const result = abort_error_of(
+      load_plan_openenv_context(load, controller.signal),
+    )
+    await vi.waitFor(() => expect(load.openenv_server).toHaveBeenCalled())
+    controller.abort()
+    server.resolve("server_1")
+    expect(await result).toBe("AbortError")
+    expect(load.reset_arguments_brief).not.toHaveBeenCalled()
+  })
+
+  it("throws when aborted while the brief loads", async () => {
+    const load = fakes()
+    const controller = new AbortController()
+    const brief = deferred<string | null>()
+    load.reset_arguments_brief.mockReturnValue(brief.promise)
+    const result = abort_error_of(
+      load_plan_openenv_context(load, controller.signal),
+    )
+    await vi.waitFor(() =>
+      expect(load.reset_arguments_brief).toHaveBeenCalled(),
+    )
+    controller.abort()
+    brief.resolve("brief")
+    expect(await result).toBe("AbortError")
   })
 })
