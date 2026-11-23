@@ -23,7 +23,7 @@ Kiln paths are from `app/mcp/kiln_mcp_server/skill/`. RX = `references/knowledge
 
 ## Status
 
-Draft. Items 1 to 4, 6 and 7 can start once the owner has answered the questions at the end. Item 5 needs the owner's pass over its content list first. Phase 17 needs approval, but this phase does not wait for it: the two phases share no file. Item 8 is the only overlap: both phases change section 9 of `skill_and_content.md`, in different rows.
+Draft. Items 1 to 4, 6 and 7 can start once the owner has answered the questions at the end. The owner set item 5's file and its content list on 2026-11-23; its val parts wait on question 9. Phase 17 needs approval, but this phase does not wait for it: the two phases share no file. Item 8 is the only overlap: both phases change section 9 of `skill_and_content.md`, in different rows.
 
 ## Steps
 
@@ -127,7 +127,7 @@ A search at `7af37d1` for "Kiln Harness Tuner" outside the knowledge trees and `
 
 (decision 9; `HS-M1` to `HS-M23`, the `ht_skills_maps/` rows named below)
 
-**Proposed, pending the owner's confirmation:** reshape RX into the guide rather than add a second file. Then one file owns the method (C12), and the links to it stay: about 30 mentions in 19 skill files, plus the tests. Rename it to `one_off_experimentation_guide.md` only if the owner prefers (question 6). A rename updates every link, `SKILL.md` part 7, the tests and the spec.
+**Decided (owner, 2026-11-23):** RX is reshaped into the guide rather than a second file being added, and it keeps the name `references/knowledge/run_an_experiment.md`. One file owns the method (C12), and the links to it stay: about 30 mentions in 19 skill files, plus the tests.
 
 - **First line:**
   > If you are Kiln Harness Tuner, follow your system prompt. It has similar concepts, but better enforcement.
@@ -139,7 +139,7 @@ A search at `7af37d1` for "Kiln Harness Tuner" outside the knowledge trees and `
 - **Body:** the by-hand procedure stays (before you start, the hypothesis, cost, build, measure on train, confirm on val, keep or discard, record and report, variants). Items 2 and 3 apply to it, and each included row below is added in the part that the table names.
 - **Size.** RX is about 13.5k characters (backlog B15, accepted). With the included rows it may come near the hard limit of 30,000 body characters (`test_no_file_over_body_limit`). The rule is to split a hand-written file, never to list it. If it goes over, the split is proposed to the owner first.
 
-**Content list: the shared method rules carried as key lessons.** Every row is "include" by default; the owner adjusts the column. HT paths are under `src/kiln_harness_tuner/agent_files/skills/`.
+**Content list: the shared method rules carried as key lessons.** The "Include / leave out" column is the owner's (2026-11-23). "Include, short form" carries the rule with the parts the cell names left out. If question 9 finds that the follow-up project fences all of val, the val parts of M1, M4, M6 and M21 say "confirming on val needs Kiln Harness Tuner" instead. HT paths are under `src/kiln_harness_tuner/agent_files/skills/`.
 
 How to read the table:
 - **"#":** `M` numbers are the `HS-M` items of `ht_skills.md`, and `S` rows are smaller rules from the maps.
@@ -148,32 +148,33 @@ How to read the table:
 | # | Rule | HT source | Audit | Part of the guide | Include / leave out |
 |---|---|---|---|---|---|
 | M1 | The exact cost/speed rule (item 3) | `kiln-harness-tuner-batch-selection/SKILL.md` 117–130; `-promote` 67–84; `-experiment-analysis` 171–185 | `HS-M1`; `map_batch_selection B10`; `map_analysis_promote_build A14`, `P05` | Confirm on val | include |
-| M4 | The keep rule on val: the headline mean win rate against the baseline; the priority-weighted gate with the magnitude rule; cost and latency as a Pareto position; "nothing significant anywhere → headline and cost Pareto decide". Replaces "the target eval is clearly better on val" (RX 190) | `-promote` 47–57 | `HS-M4`; `P02`, `P03` | Confirm on val | include |
+| M4 | The keep rule on val: the headline mean win rate against the baseline; the priority-weighted gate with the magnitude rule; cost and latency as a Pareto position; "nothing significant anywhere → headline and cost Pareto decide". Replaces "the target eval is clearly better on val" (RX 190) | `-promote` 47–57 | `HS-M4`; `P02`, `P03` | Confirm on val | include, short form: the headline mean win rate against the baseline, plus no eval clearly down; leave out the priority-weighted gate |
 | M5 | The lean-target default: measure the target and only the couplings you have a stated reason to fear; guarding defaults to the confirmation on val; a model swap measures every eval. Replaces RX 144, which contradicts `dealing-with-a-saturated-eval.md` 33–37 | `-batch-selection` 796–813 | `HS-M5`; `B45` | Measure on train | include |
 | M6 | The integrity checks at keep: a prompt that quotes a judge, spec or eval text verbatim, or names an eval, is blocked; the signs to weigh (output length moved more than 2×, top-level JSON keys changed, a new kind of write action, a paraphrased judge criterion); an "Integrity:" line for each flag | `-promote` 181–200 | `HS-M6`; `P14` | Confirm on val (before the keep rule) | include |
 | M7 | The leak and judge-copy definitions: no case-by-case rule and no wording aimed at a grader; naming a tool or skill is fine; a copy is a run of 8 or more words, or the eval's name; text the baseline's prompt or the task's instructions already carry is exempt; the parent is not exempt | `-batch-selection` 367–379, 388–401; `-experiment-build` 189–233 | `HS-M7`; `B21`, `B22`, `E17`, `E18` | TVT, which owns the leak rules (C12); the guide names its path | include |
-| M8 | Costing: estimate all six cost lanes; live calls to a server someone else operates need its operator's agreement for each batch, and writes need their own; provider quotas and keys; budget one replicate or say there is no error bar; judging is paid again on every re-score; a cloned run config misses trace reuse; the human gate (above the limit, or more than 100 judged items, or any quota raise) | `experiment-costing/SKILL.md` 8–9, 89–94, 116–136, 204–206, 243–246 | `HS-M8`; `map_other C01`, `C09`–`C12`, `C17`, `C21` | Cost before you spend | include |
+| M8 | Costing: estimate all six cost lanes; live calls to a server someone else operates need its operator's agreement for each batch, and writes need their own; provider quotas and keys; budget one replicate or say there is no error bar; judging is paid again on every re-score; a cloned run config misses trace reuse; the human gate (above the limit, or more than 100 judged items, or any quota raise) | `experiment-costing/SKILL.md` 8–9, 89–94, 116–136, 204–206, 243–246 | `HS-M8`; `map_other C01`, `C09`–`C12`, `C17`, `C21` | Cost before you spend | include, short form: keep the third-party operator's agreement rule, the human gate and "judging is paid again on every re-score"; leave out the six-lane detail |
 | M9 | What a quick check is: fork one change and name it `PROBE <id>: <what>`, so nobody forks or measures it; at most 6 train runs, default 3; keep the parent's model, provider, thinking level and sampling; for a parameter or mode question, run the parent on the same items; 2 of 3 is yes, 0 of 3 no, 1 of 3 unclear; it answers no speed or cost question; one that needs an hour is an experiment | `kiln-harness-tuner-probe/SKILL.md` 41–84, 103–105; `-batch-selection` 998–1000 | `HS-M9`; `map_other Q02`–`Q06`, `Q08`; `B52` | A new short part, "A quick check" (about 14 knowledge files use the term) | include |
 | M10 | The power call: a well-powered null (decent n, a narrow CI around zero) is a real "did not work"; a wide CI that straddles zero is "cannot tell" | `-experiment-analysis` 199–202 | `HS-M10`; `A17` | Measure on train (Refuted) | include |
-| M11 | How a playbook step's outcome sets what comes next: the smells of the present baseline first, and a smell that blocks other work before the rest; steps in order, each with a condition; Landed → the next step only if the issue is still open; Refuted → the next step; Capped → run again; Inconclusive → the step stays open and the next can run in parallel; an idea of your own is marked "not in the knowledge" | `kiln-harness-tuner-knowledge/references/planner.md` 13–42 | `HS-M11`; `map_other N03`–`N05`, `N07` | Keep or discard ("Next"). `HS-M11` suggests `improving_agents/index.md`, which is Phase 17's file | include |
+| M11 | How a playbook step's outcome sets what comes next: the smells of the present baseline first, and a smell that blocks other work before the rest; steps in order, each with a condition; Landed → the next step only if the issue is still open; Refuted → the next step; Capped → run again; Inconclusive → the step stays open and the next can run in parallel; an idea of your own is marked "not in the knowledge" | `kiln-harness-tuner-knowledge/references/planner.md` 13–42 | `HS-M11`; `map_other N03`–`N05`, `N07` | Keep or discard ("Next"). `HS-M11` suggests `improving_agents/index.md`, which is Phase 17's file | move to the "How to read" section of `references/improving_agents/index.md` (Phase 17) |
 | M12 | The expected outputs are the user's policy: an expected output that applies a rule the task's instructions do not state is a config failure, not eval data; call it eval data only on a contradiction | `-batch-selection` 445–462; `-experiment-analysis` 355–360 | `HS-M12`; `B27`, `A28` | Measure on train (reading failing items) | include |
-| M15 | Build hygiene: a rule replaces text, and prompts and skills do not grow by default; when a tool takes over a step, delete the prompt rule; each rule names its source; a rule stated by pointing at one item is a hack; check every text the model sees about the changed artifact; on a detach, rename or replace, update every mention; provenance `origin: "agent"`, a merge's `derived_from_ids` (the baseline plus every ingredient), and a prompt's `derived_from_ids` (the parent's prompt id without `id::`) | `-experiment-build` 96–117, 175–185, 261–265 | `HS-M15`; `E08`, `E09`, `E14`–`E16`, `E19`; `KT-B16` | Build the candidate | include |
-| M16 | Merging: write the combined config by hand, not by diff; same-layer scrutiny (the same nouns with opposite modality is a conflict); never combine two candidates of one head-to-head group, and sequence fixes that exclude each other; a reopened issue is rebuilt, never replayed; measure the ingredients' target evals first; a merge need not land every ingredient, so mark each one | `-experiment-build/references/merging.md` 10–59; `-batch-selection` 718–732 | `HS-M16`; `G01`–`G07`, `B41` | Variants ("Two candidates at once") | include |
-| M17 | Reading results: the delta is sign-normalised and the absolutes are not, so on `lower_is_better` a falling pair is a win; fold replicate rows to the per-input mean before pairing; magnitude matters on the train verdict too ("two up slightly while one collapses" fails); a judge may read the config; a dangling reference makes the result measure breakage | `-experiment-analysis` 34–47, 95–102, 213–217, 235–242, 362–368; `-promote` 90–100 | `HS-M17`; `A03`, `A10`, `A19`, `A22`, `A29`, `P07` | Measure on train | include |
+| M15 | Build hygiene: a rule replaces text, and prompts and skills do not grow by default; when a tool takes over a step, delete the prompt rule; each rule names its source; a rule stated by pointing at one item is a hack; check every text the model sees about the changed artifact; on a detach, rename or replace, update every mention; provenance `origin: "agent"`, a merge's `derived_from_ids` (the baseline plus every ingredient), and a prompt's `derived_from_ids` (the parent's prompt id without `id::`) | `-experiment-build` 96–117, 175–185, 261–265 | `HS-M15`; `E08`, `E09`, `E14`–`E16`, `E19`; `KT-B16` | Build the candidate | include, short form: keep the writing rules; leave out the provenance and `derived_from_ids` mechanics, which the levers already cover |
+| M16 | Merging: write the combined config by hand, not by diff; same-layer scrutiny (the same nouns with opposite modality is a conflict); never combine two candidates of one head-to-head group, and sequence fixes that exclude each other; a reopened issue is rebuilt, never replayed; measure the ingredients' target evals first; a merge need not land every ingredient, so mark each one | `-experiment-build/references/merging.md` 10–59; `-batch-selection` 718–732 | `HS-M16`; `G01`–`G07`, `B41` | Variants ("Two candidates at once") | leave out, but keep one line: "combine by hand; never combine two candidates of one head-to-head group" |
+| M17 | Reading results: the delta is sign-normalised and the absolutes are not, so on `lower_is_better` a falling pair is a win; fold replicate rows to the per-input mean before pairing; magnitude matters on the train verdict too ("two up slightly while one collapses" fails); a judge may read the config; a dangling reference makes the result measure breakage | `-experiment-analysis` 34–47, 95–102, 213–217, 235–242, 362–368; `-promote` 90–100 | `HS-M17`; `A03`, `A10`, `A19`, `A22`, `A29`, `P07` | Measure on train | include, short form: leave out replicate folding |
 | M18 | Speed and cost results, and report wording: a speed or cost survivor is "lost k of n baseline passes (no loss rate above X% at 95%)", never "quality held"; a swap needs at least 24 baseline passes; a fix of a baseline failure is at noise level; a kept candidate is "no clear loss", never "no loss"; source every claim; no inferred composition and no unsourced quantifiers; report failures, holes and abandoned work honestly | `-batch-selection` 158–169; `-experiment-analysis` 187–197; `kiln-harness-tuner-report/SKILL.md` 238–252, 271–284, 320–322 | `HS-M18`; `B15`, `A15`, `X02`, `X04`, `X06` | Record and report | include |
-| M19 | The detectability moves: predict a larger effect and say why, or pick a target whose eval can carry it, or grow the eval ("judgment, never a formula"); with no baseline rows, give a conditional fraction; never carry a magnitude over from another task; the floor of 6 wins for p < .05, and room 0 → plan the eval as a guard | `-batch-selection` 668–716 | `HS-M19`; `B37`, `B38`, `B40` | The hypothesis (replaces "fix the measurement first", RX 82–85). The by-hand floor depends on Phase 17 question 6 | include |
+| M19 | The detectability moves: predict a larger effect and say why, or pick a target whose eval can carry it, or grow the eval ("judgment, never a formula"); with no baseline rows, give a conditional fraction; never carry a magnitude over from another task; the floor of 6 wins for p < .05, and room 0 → plan the eval as a guard | `-batch-selection` 668–716 | `HS-M19`; `B37`, `B38`, `B40` | The hypothesis (replaces "fix the measurement first", RX 82–85). The by-hand floor depends on Phase 17 question 6 | include, short form: keep "never carry a magnitude over from another task" and the floor of 6 wins for p < .05; leave out the planning moves |
 | M21 | On val, read only the coverage and the error classes of a job, never its per-item errors: they name val items one by one | `-promote` 149–157 | `HS-M21`; `P12` | Confirm on val | include |
 | M22 | No fine-tuning and no prompt optimizer as a lever, unless what the user asked names one (Kiln has a prompt optimization API) | `-batch-selection` 59–63 | `HS-M22`; `B05` | Before you start | include |
-| S1 | A candidate that only partly engages its mechanism ships with the counts | `-experiment-build` 118–140 | `E10` | Build the candidate | include |
-| S2 | A spending cap for each candidate, with its reason, not only one overall limit | `-batch-selection` 879–900 | `B48` | Cost before you spend | include |
+| S1 | A candidate that only partly engages its mechanism ships with the counts | `-experiment-build` 118–140 | `E10` | Build the candidate | leave out |
+| S2 | A spending cap for each candidate, with its reason, not only one overall limit | `-batch-selection` 879–900 | `B48` | Cost before you spend | leave out |
 | S3 | The cheapest candidate is a quick check, not a question to the user | `-batch-selection` 647–653 | `B35` | The hypothesis | include |
-| S4 | Guard evals matter more when the goal is speed or cost | `-batch-selection` 156–157 | `B14` | Confirm on val | include |
+| S4 | Guard evals matter more when the goal is speed or cost | `-batch-selection` 156–157 | `B14` | Confirm on val | fold into M1 |
 | S5 | Never patch a missing cost with an estimate; give the spend label | `-experiment-analysis` 104–123 | `A11` | Record and report | include |
 
 **Related rules that stay outside the guide.**
+- **Playbook-step flow** (M11): the owner moved it to the "How to read" section of `references/improving_agents/index.md`, which is Phase 17's file. This phase does not edit it; Phase 17 carries it.
 - **Memory rules** (`HS-M20`, `HS-L2`) are item 1.
 - **Lanes and the val-record read** (`HS-M2`, `HS-M3`): cut (decision 5), and B13 is item 7.
-- **Project files** (`HS-M13`): the follow-up project removes MCP read access to val and test. Until then, `working_with_project_files.md` could say that the tree holds val and test items, and that reading them counts as reading val or test data. Question 7.
+- **Project files** (`HS-M13`): the follow-up project removes MCP read access to val and test. Until then, `working_with_project_files.md` could say that the tree holds val and test items, and that reading them counts as reading val or test data. Question 6.
 - **Skill bundles and code trust for HT** (`HS-M14`, `HS-M23`): the switchover project (SR18, SR6 e).
 - **Small `kiln-task-setup` and API items** (`HS-L2`): `turn_mode` is frozen; `call_kiln_api` is hidden from the UI pickers; "No other resource paths exist" in `adding_skills.md`; the HTML-body tell at `SKILL.md` 37. These are not experiment method. A backlog entry for each, if the owner wants them.
 
@@ -181,14 +182,14 @@ How to read the table:
 
 `references/knowledge/local_private_on_prem.md` ("Select New Default", line 96) says: "If the user has a new winner, offer to make it their new default run config." RX 217–218 and HT (`map_analysis_promote_build P21`, `E23`) say that the procedure never changes the task's default run config.
 
-The decision line (Phase 16 batch 2) says "approved; do in the Phase 16 batch as proposed", but `backlog.md` does not record the proposal. Proposed text, for the owner to confirm as the approved one (question 8):
+The decision line (Phase 16 batch 2) says "approved; do in the Phase 16 batch as proposed", but `backlog.md` does not record the proposal. Proposed text, for the owner to confirm as the approved one (question 7):
 > If the user has a new winner, tell them it can become the task's default run config, and that they can set it. Do not change the default yourself.
 
 ### 7. B13: when the `val` memory record may be read
 
 Proposed: **close as superseded.** Lanes are cut (decision 5), and the owner's follow-up project removes MCP read access to val and test, so the question of when an MCP agent may read val data goes away.
 
-One gap, for the owner to confirm (question 9): the `val` memory record is read through the Memory endpoints, not the eval endpoints. If the follow-up does not fence it, MEM's present rule stays: read it when you confirm on val and when you report, never while you design or build a change. HT's role prompts keep HT's rules (switchover SR6 f).
+One gap, for the owner to confirm (question 8): the `val` memory record is read through the Memory endpoints, not the eval endpoints. If the follow-up does not fence it, MEM's present rule stays: read it when you confirm on val and when you report, never while you design or build a change. HT's role prompts keep HT's rules (switchover SR6 f).
 
 ### 8. Spec and docs
 
@@ -200,7 +201,7 @@ One gap, for the owner to confirm (question 9): the `val` memory record is read 
   Section 4.5 and row 8 are Phase 17's.
 - `GLUE_FILE_PARTS` in `skill_checks/test_shipped_skill.py` follows any change to the parts of RX.
 - Run the `docs-sync` skill for the paths and the wording this phase changes.
-- `backlog.md`: close B13 (if question 9 agrees) and B19, each with a `Closed:` line.
+- `backlog.md`: close B13 (if question 8 agrees) and B19, each with a `Closed:` line.
 
 ## Tests
 
@@ -218,8 +219,9 @@ One gap, for the owner to confirm (question 9): the `val` memory record is read 
 3. **`OPEN: ` answers.** When the user answers an HT `OPEN: ` question in an MCP chat, how does HT learn the answer? For example, a writable `constraint` that cites the `OPEN: ` record's id, or nothing until the switchover.
 4. **One-off records.** May a one-off ever write an `experiment` record? Or are its lasting results only `lesson`, `dead_end` and `issue` records?
 5. **B14.** Confirm that porting the exact cost/speed rule (item 3) replaces the Phase 16 batch 3 decision on B14 ("keep as is").
-6. **The guide's file.** Reshape RX in place (proposed), and keep its name or rename it to `one_off_experimentation_guide.md`?
-7. **Project files** (`HS-M13`). Add the sentence now, or leave it to the follow-up project?
-8. **B19.** Is the proposed text of item 6 the proposal you approved?
-9. **B13.** Close it as superseded? Does the follow-up project also fence the `val` memory record?
-10. **The content list.** Adjust the "Include / leave out" column of item 5.
+6. **Project files** (`HS-M13`). Add the sentence now, or leave it to the follow-up project?
+7. **B19.** Is the proposed text of item 6 the proposal you approved?
+8. **B13.** Close it as superseded? Does the follow-up project also fence the `val` memory record?
+9. **What the val fence covers.** Does the follow-up project's removal of MCP read access to val and test cover all of val, summary metrics included, or only val rows? If all of val, the val parts of M1, M4, M6 and M21 in item 5 say "confirming on val needs Kiln Harness Tuner" instead.
+
+Answered on 2026-11-23 ([harness_tuner_alignment_decisions.md](../harness_tuner_alignment_decisions.md) section 10): the guide's file (RX reshaped in place, name kept) and the content list of item 5.

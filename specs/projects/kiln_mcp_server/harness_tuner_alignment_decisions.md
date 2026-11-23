@@ -4,7 +4,7 @@ status: complete
 
 # Harness Tuner alignment: owner decisions
 
-Recorded 2026-11-23 in two rounds (sections 1–7 first; sections 8 and 9 the same day), on branch `claude/kiln-mcp-server-impl` at `7af37d1`, after the three Harness Tuner alignment audits in `research/harness_tuner_alignment_audit/` (`knowledge_tree.md`, `ht_skills.md` with `ht_skills_maps/`, `contract.md`). The audits compare Kiln Harness Tuner (HT) at `b49f159` with Kiln at `25157f3`.
+Recorded 2026-11-23 in three rounds (sections 1–7 first; sections 8 and 9, then section 10, the same day), on branch `claude/kiln-mcp-server-impl` at `7af37d1`, after the three Harness Tuner alignment audits in `research/harness_tuner_alignment_audit/` (`knowledge_tree.md`, `ht_skills.md` with `ht_skills_maps/`, `contract.md`). The audits compare Kiln Harness Tuner (HT) at `b49f159` with Kiln at `25157f3`.
 
 These decisions override the audits where the two differ. An audit "Fix" line that adds a branch, a lane, or a write step for a code-owned record is overridden by the decisions below.
 
@@ -69,11 +69,34 @@ The owner's words:
 
 > Let's make a new doc for MCP clients integrating most of these? Something like 'on_off_experimetnation_guide.md' or something like that. It heavily pushes user to harness tuner for advanced optimization (saying it enforces the loop and these principals in code, and is much more robust), but carries the key lessons for more one-off ideas from MCP. It also says 'if you are harness tuner, follow your system prompt. It has similar concepts, but better enforcement.'
 
-The manager's proposal to the owner, pending the owner's confirmation:
+The manager's proposal to the owner, confirmed by the owner in section 10:
 - Make this guide by reshaping `references/knowledge/run_an_experiment.md`, rather than by adding a second file. Then one file owns the method (C12), and the 25 or so existing links to it stay.
 - Rename it to `one_off_experimentation_guide.md` only if the owner prefers.
 
 *Where it goes:* Phase 18 ([phase_plans/phase_18.md](phase_plans/phase_18.md)), item 5. The table of shared method rules, with each rule's HT source and audit id, becomes the guide's content list. Each row is marked "include" by default, for the owner to adjust. The exact cost/speed rule (M1) is one of the rows. Including it removes the "applies when running Kiln Harness Tuner" branch from the file, which replaces the Phase 16 batch 3 decision on B14 ("keep as is").
+
+## 10. The one-off experimentation guide: its file and its content (2026-11-23, third round)
+
+The owner approved the manager's recommendations:
+- **The file.** Reshape `references/knowledge/run_an_experiment.md` into the guide, and keep that name. There is no rename to `one_off_experimentation_guide.md`. This confirms the proposal in section 9.
+- **The content list.** The "Include / leave out" column of the table in Phase 18 item 5 is set as below. The row ids are the table's: `M` rows are `HS-M` items of `ht_skills.md`, and `S` rows are smaller rules from `ht_skills_maps/`.
+
+| Decision | Rows |
+|---|---|
+| Include | M1, M5, M6, M7, M9, M10, M12, M18, M21, M22, S3, S5 |
+| Include, short form | M4: the headline mean win rate against the baseline, plus no eval clearly down; leave out the priority-weighted gate |
+| | M8: keep the third-party operator's agreement rule, the human gate and "judging is paid again on every re-score"; leave out the six-lane detail |
+| | M15: keep the writing rules; leave out the provenance and `derived_from_ids` mechanics, which the levers already cover |
+| | M17: leave out replicate folding |
+| | M19: keep "never carry a magnitude over from another task" and the floor of 6 wins for p < .05; leave out the planning moves |
+| Fold into M1 | S4 |
+| Move to the "How to read" section of `references/improving_agents/index.md` (Phase 17) | M11 |
+| Leave out | M16, keeping one line: "combine by hand; never combine two candidates of one head-to-head group" |
+| | S1, S2 |
+
+One question stays open, and Phase 18 asks it (question 9): does the follow-up project's removal of MCP read access to val and test cover all of val, summary metrics included, or only val rows? If all of val, the val parts of M1, M4, M6 and M21 say "confirming on val needs Kiln Harness Tuner" instead.
+
+*Where it goes:* Phase 18 ([phase_plans/phase_18.md](phase_plans/phase_18.md)), item 5 and its questions. M11 goes to Phase 17 ([phase_8_revisit.md](phase_8_revisit.md)), whose files Phase 18 does not edit.
 
 ## Related
 
