@@ -21,6 +21,7 @@
 - [ ] **B7 — Owner decision: three entries of the knowledge backlog**
   In `app/mcp/knowledge_backlog.md`, "Smell: an old model" starts "Done in Kiln Harness Tuner: …", but skill_and_content section 7 says only "Model and provider information" was marked done (and dropped). Confirm whether this entry is still open in Kiln: the smell doc comes in batch 7, and the detector stays in harness-tuner. Also confirm the renames "A repeat measurement on request" (was "A repeat measurement the planner can ask for") and "A quick check for room to improve" (was "A probe for room to improve").
   Decision (owner, Phase 16 batch 2): (1) drop the 'Smell: an old model' entry from `app/mcp/knowledge_backlog.md` (the smell doc is already in the skill as `smells/old-model.md`). (2) Keep the rename 'A repeat measurement on request', and keep Kiln Harness Tuner as an example in the entry, since Harness Tuner consumes this skill, e.g. 'Example: the Kiln Harness Tuner planner may request a repeat measurement to analyze noise.' (3) Ditto for 'A quick check for room to improve': keep the rename and add a Harness Tuner example in the same style. Edits go through the knowledge-maintenance skill's backlog procedure.
+  Moved to Phase 17 (revert and revisit phase 8).
 - [x] **B8 — Owner decision: "metrics only" on val and the paired statistics call**
   `app/mcp/kiln_mcp_server/skill/references/knowledge/train_val_test.md` counts "whether it is significant" as a val summary number, but significance by hand needs per-item val scores sent to `post_api_statistics`, which the same file forbids; its statistics row says "On train" only, while skill_and_content 4.5 and 9.3 (row 8) say the paired statistics call is used on val. The file also omits harness-tuner's sanctioned zero-number val→train channels (the rejection reason, the regressed-issue flag), which step D1 of `playbooks/dealing-with-train-wins-rejected-at-val.md` relies on. For the owner's phase-13 read of the file.
   Decision (owner, Phase 16 batch 3): resolved by tracking: a knowledge-backlog entry for Mike to review `train_val_test.md` (sign off or improve), and API enforcement of the policy in the fencing spec. Not changed now.
@@ -34,12 +35,15 @@
 - [ ] **B11 — Content polish from the phase 8 review**
   `levers/skill.md` `api_docs` omits `post_api_projects_project_id_skills.md`, which its steps now use. `levers/output_mode.md` Limits lost "A test call with no tools attached does not show this" (from harness-tuner's "The model preflight does not show this: its test call attaches no tools"). `levers/params.md` "changes only `thinking_level`, `temperature` or `top_p`" may read as one setting per candidate.
   Decision (owner, Phase 16 batch 2): approved; do in the Phase 16 batch as proposed.
+  Moved to Phase 17 (revert and revisit phase 8).
 - [ ] **B12 — Docs-sync for the phase 8 rewrites**
   `.agents/skills/knowledge-maintenance/SKILL.md` 4.6 step 2 lists only some rewrite patterns; add the ones batch 8 used: loop inputs and outputs become "ask the user" or "report it to the user"; the noise inputs become "Kiln Harness Tuner measures it; the rule applies when running it"; "code checks" becomes "check … yourself"; reason codes become the outcome in words; leak-rule sentences name `references/knowledge/train_val_test.md`. Also `architecture.md` step 9 lists only `code_tools.md` and `judge_types.md` for the sandbox review; `levers/new_tool.md` belongs there too (the owner's doc).
   Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
+  Moved to Phase 17 (revert and revisit phase 8).
 - [ ] **B13 — Owner decision: when the `val` memory record may be read**
   `app/mcp/kiln_mcp_server/skill/references/knowledge/memory.md` (the Orientation steps and the `val` row) allows a read of the `val` record only when confirming on val or reporting. Harness-tuner's `memory` skill also allows it for human or interactive orientation. This narrows the source beyond C11: keep it, or widen it to match.
   Decision (owner, Phase 16 batch 3): pending: owner asked for more explanation.
+  Moved to Phase 18.
 - [x] **B14 — Owner decision: the exact cost or speed rule on val (relates to B8)**
   `references/knowledge/run_an_experiment.md` ("Confirm on val") keeps a plain-words rule (clearly cheaper or faster, no worse on quality) and says that Kiln Harness Tuner's exact rule applies when running it. Port the exact rule instead? It is: a paired sign test on the same items, median ratio below 1, no significant p90 regression; no eval down significantly, pooled net item change ≥ 0 with weights p0=4, p1=3, p2=2, p3=1, none=1, and no single eval down more than max(1, round(0.10 × items)) net items.
   Decision (owner, Phase 16 batch 3): keep as is.
@@ -58,6 +62,7 @@
 - [ ] **B19 — Owner decision: offering a new default run config**
   `references/knowledge/local_private_on_prem.md` ("Select New Default") offers to make the winner the task's default run config, while `references/knowledge/run_an_experiment.md` says the procedure never changes the default.
   Decision (owner, Phase 16 batch 2): approved; do in the Phase 16 batch as proposed.
+  Moved to Phase 18.
 - [x] **B20 — Spec alignment: the eval playbooks of `create_spec.md` and `judge_types.md`**
   skill_and_content 9.2 gives `create_spec.md` and `judge_types.md` only the wrong-eval and saturated-eval playbooks; group 8 of 9.1, which the code follows, gives them all four eval playbooks. Align 9.2.
   Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
