@@ -28,6 +28,7 @@
 | Request and response models for desktop endpoints | `app/desktop/studio_server/api_models/` |
 | Logic shared by several handlers, or a handler over ~50 lines | a service module that takes plain arguments and raises domain errors, e.g. `studio_server/services/<domain>.py` (create the folder if needed), or `kiln_ai` if it isn't app-specific. `studio_server/utils/` holds older helpers that raise `HTTPException`; don't extend that pattern. |
 | Background or long-running work | a `JobWorker` in `studio_server/jobs/` |
+| A change to the Kiln MCP server (the one a coding agent connects to, at `/mcp` in the app) | `app/mcp/kiln_mcp_server/`, mounted by `connect_kiln_mcp_server` in `app/desktop/studio_server/kiln_mcp_mount.py` |
 | Git-sync behaviour | `app/desktop/git_sync/` |
 | App-scoped objects (registries, clients, caches, locks) | created in `lifespan` or inside `connect_*_api(app)` (`git_sync_api.connect_git_sync_api` creates its `OAuthFlowManager` this way), never at module level |
 
@@ -41,7 +42,7 @@
 | `app/desktop/dev_server.py` (`__main__`) → `app/desktop/dev_app.py` | `set_dev_env_vars()` at import of both modules, `setup_resource_limits()`, then uvicorn with reload on `app.desktop.dev_app:dev_app` (`make_app()` at import of `dev_app`). |
 | `desktop_server.make_app` (used by both above) | `setup_litellm_logging()`, the remote model-list refresh, all routers, `GitSyncMiddleware`. Its `lifespan` sets strict mode, starts and stops background git syncs, and closes the job event bus. |
 | `kiln_server` script (`kiln_server.server:main`) | Writes host/port CLI args to `os.environ`, then runs uvicorn on `kiln_server.server:app`. No lifespan, strict mode or litellm logging. |
-| `kiln_mcp` script (`kiln_server.mcp.mcp:main`) | `logging.basicConfig` at the CLI's log level, then serves a project's tools over MCP. No strict mode or litellm logging. |
+| Kiln project tools MCP server: `kiln_mcp` script (`kiln_server.mcp.mcp:main`) | `logging.basicConfig` at the CLI's log level, then serves a project's tools over MCP. No strict mode or litellm logging. |
 | `app/web_ui/src/lib/openapi_schema.sh` | Imports `desktop_server.make_app` and dumps `make_app().openapi()` with `KILN_SKIP_REMOTE_MODEL_LIST=true` to avoid the network refresh. |
 
 Process-wide setup belongs in one bootstrap function that each entry point calls (rules.md B4); per-app setup belongs in `lifespan`. The entry points above don't agree yet, so when you add startup work, add it to `lifespan` (per-app) or next to the existing setup in each entry point that needs it, and say which in your summary.

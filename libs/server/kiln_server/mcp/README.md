@@ -1,8 +1,10 @@
-# Kiln MCP Server [Beta]
+# Kiln project tools MCP server [Beta]
 
 > If you're looking for our MCP client to integrate third party MCP servers into the Kiln app, see https://docs.kiln.tech/docs/tools-and-mcp
 
-This MCP server allows you to call Kiln tools, such as a Kiln Search Tool, from any MCP client.
+> To connect a coding agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see agent_install.md at the repo root. This server is not the way to do that.
+
+The Kiln project tools MCP server (the `kiln_mcp` command) lets you call one Kiln project's tools, such as a Kiln Search Tool, from any MCP client.
 
 **Beta** This is a beta intended for local usage. It isn't designed for production workloads.
 
@@ -44,17 +46,21 @@ Add Kiln to your `mcp.json` file, and your MCP client will launch the server ove
 ### kiln_mcp Command Options
 
 ```
-usage: kiln_mcp [-h] [--tool-ids TOOL_IDS] [--transport {stdio,sse,streamable-http}] [--host HOST] [--port PORT] [--mount-path MOUNT_PATH] [--log-level LOG_LEVEL]
+usage: kiln_mcp [-h] [--tool-ids TOOL_IDS] [--list-tools] [--transport {stdio,sse,streamable-http}] [--host HOST] [--port PORT] [--mount-path MOUNT_PATH]
+                [--log-level LOG_LEVEL]
                 project
 
-Run the Kiln MCP server for a project.
+Run the Kiln project tools MCP server: it serves one project's tools (such as search tools) to other apps. It does not connect a coding agent to the Kiln app; for that,
+use the MCP server built into the Kiln app.
 
 positional arguments:
   project               Path to the project.kiln file
 
 options:
   -h, --help            show this help message and exit
-  --tool-ids TOOL_IDS   Comma-separated list of tool IDs to expose. Defaults to all project tools.
+  --tool-ids TOOL_IDS   Comma-separated list of tool IDs to expose. Defaults to all project tools. Use the --list-tools flag to list all available tool IDs for a
+                        project.
+  --list-tools          List all available tool IDs.
   --transport {stdio,sse,streamable-http}
                         Transport mechanism for the MCP server.
   --host HOST           Host for network transports.

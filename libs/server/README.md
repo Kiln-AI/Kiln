@@ -61,8 +61,8 @@ app = FastAPI()
 connect_project_api(app)
 ```
 
-## Kiln MCP Server
+## Kiln project tools MCP server
 
-Also included in this package is a MCP server for serving Kiln tools.
+Also included in this package is the Kiln project tools MCP server (the `kiln_mcp` command). It serves one Kiln project's tools to other apps. It is not the way to connect a coding agent to the Kiln app: the app has its own built-in MCP server for that.
 
 See [it's README](./kiln_server/mcp/README.md) for details.

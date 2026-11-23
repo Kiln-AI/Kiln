@@ -369,3 +369,23 @@ class TestParseToolIds:
 
     def test_parse_tool_ids_splits_values(self) -> None:
         assert mcp._parse_tool_ids("a,b , c") == ["a", "b", "c"]
+
+
+def test_create_server_keeps_protocol_name() -> None:
+    # Clients may show or log serverInfo.name, so the docs rename leaves it alone.
+    server = create_fastmcp_server(
+        [],
+        project_name="Demo Project",
+        host="127.0.0.1",
+        port=8000,
+        log_level="info",
+        transport="stdio",
+        mount_path=None,
+    )
+    assert server.name.startswith("Kiln MCP Server")
+
+
+def test_help_text_names_the_project_tools_server() -> None:
+    description = mcp.build_argument_parser().description
+    assert description is not None
+    assert description.startswith("Run the Kiln project tools MCP server")

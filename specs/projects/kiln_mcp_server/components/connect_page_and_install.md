@@ -61,7 +61,7 @@ Sibling screen: the Edit Task form (`settings/edit_task/[project_id]/[task_id]/`
 | Prompt text | `<p class="text-base font-medium">` | `Callout` title | |
 | Copy (prompt) | DaisyUI `btn btn-sm btn-primary` via `copy_button.svelte` | `popup_blocked_fallback.svelte` | The one primary button on the screen |
 | "Then ask your agent…" line | `<p class="text-sm text-gray-500">` | form help text | |
-| "Set up manually" | `Collapse` (closed, default `small`) | "Advanced" collapses | |
+| "Set up manually" | `Collapse` (closed, default `small`, `outlined`) | "Advanced" collapses | `outlined` (an existing prop): on the default `bg-base-200` fill the grey `btn btn-sm` Copy button has almost no contrast with the surface |
 | MCP URL row | plain text + DaisyUI `btn btn-sm` via `copy_button.svelte` | | `Output` considered: its copy button is icon-only with no "Copied" state and no label prop; the UI design asks for a labelled Copy with feedback |
 | Vertical rhythm | one container `flex flex-col gap-6 max-w-2xl`; children carry no margins | Edit Task (24 between fields) | |
 
@@ -131,7 +131,7 @@ State: three constants set once in the instance script, `origin = app_origin()`,
       </div>
     </CalloutCard>
     <p class="text-sm text-gray-500">Then ask your agent to work with Kiln, or type /kiln.</p>
-    <Collapse title="Set up manually">
+    <Collapse title="Set up manually" outlined>
       <div class="flex flex-row items-center gap-3">
         <div class="flex-grow min-w-0 text-sm">
           <span class="text-gray-500">MCP server URL:</span>

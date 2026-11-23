@@ -18,6 +18,11 @@ def test_what_kiln_is_is_the_shared_opening():
     )
 
 
+def test_the_install_guide_stub_skill_opens_with_what_kiln_is():
+    guide = Path(__file__).resolve().parents[3] / "agent_install.md"
+    assert f"description: {WHAT_KILN_IS}." in guide.read_text(encoding="utf-8")
+
+
 def test_server_instructions_start_with_what_kiln_is():
     assert SERVER_INSTRUCTIONS.startswith(WHAT_KILN_IS)
 
