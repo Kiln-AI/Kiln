@@ -148,6 +148,10 @@
   }
 
   const queue_preset_save = one_at_a_time()
+  // Preset saves not yet finished. While any is pending, Add, Edit, Clone and
+  // Remove are unavailable: a dialog opened now would build its list from the
+  // one before that save, and undo it on Save.
+  let pending_preset_saves = 0
 
   // `change` builds the new list from the latest saved one when the save starts.
   function save_presets_with(
@@ -155,6 +159,7 @@
   ): Promise<void> {
     const req_project_id = project_id
     const req_openenv_server_id = openenv_server_id
+    pending_preset_saves++
     return queue_preset_save(async () => {
       if (!openenv_server || !is_current(req_project_id, req_openenv_server_id))
         return
@@ -171,14 +176,7 @@
         named_reset_kwargs: saved.named_reset_kwargs,
       }
       expanded = []
-    })
-  }
-
-  // A dialog opened while a preset save is pending would build its list from
-  // the one before that save, and undo it. It opens once the queue is empty.
-  async function open_preset_dialog(open: () => void) {
-    await queue_preset_save(async () => {}).catch(() => undefined)
-    open()
+    }).finally(() => pending_preset_saves--)
   }
 
   function save_presets(presets: NamedResetKwargs[]): Promise<void> {
@@ -364,7 +362,8 @@
           <button
             slot="actions"
             class="btn btn-mid"
-            on:click={() => open_preset_dialog(() => preset_dialog.show_add())}
+            disabled={pending_preset_saves > 0}
+            on:click={() => preset_dialog.show_add()}
           >
             Add Environment Preset
           </button>
@@ -426,28 +425,31 @@
                     </td>
                     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
                     <td class="p-0 align-top" on:click|stopPropagation>
-                      <TableActionMenu
-                        items={[
-                          {
-                            label: "Edit",
-                            onclick: () =>
-                              open_preset_dialog(() =>
-                                preset_dialog.show_edit(index),
-                              ),
-                          },
-                          {
-                            label: "Clone",
-                            onclick: () =>
-                              open_preset_dialog(() =>
-                                preset_dialog.show_clone(index),
-                              ),
-                          },
-                          {
-                            label: "Remove",
-                            onclick: () => remove_preset(preset.name),
-                          },
-                        ]}
-                      />
+                      {#if pending_preset_saves > 0}
+                        <!-- The menu has no disabled state; its actions return
+                             when the save finishes. -->
+                        <div class="flex h-8 w-8 items-center justify-center">
+                          <span class="loading loading-spinner loading-xs"
+                          ></span>
+                        </div>
+                      {:else}
+                        <TableActionMenu
+                          items={[
+                            {
+                              label: "Edit",
+                              onclick: () => preset_dialog.show_edit(index),
+                            },
+                            {
+                              label: "Clone",
+                              onclick: () => preset_dialog.show_clone(index),
+                            },
+                            {
+                              label: "Remove",
+                              onclick: () => remove_preset(preset.name),
+                            },
+                          ]}
+                        />
+                      {/if}
                     </td>
                   </tr>
                 {/each}
@@ -502,20 +504,24 @@
         {/if}
       </div>
 
-      <EnvironmentPresetDialog
-        bind:this={preset_dialog}
-        {presets}
-        {form_schema}
-        {form_schema_loading}
-        save={save_presets}
-      />
-      <OpenEnvServerEditDialog
-        bind:this={edit_dialog}
-        {project_id}
-        {openenv_server_id}
-        {openenv_server}
-        after_save={after_edit}
-      />
+      <!-- Moving to another server rebuilds the dialogs, closing an open one,
+           so an edit made on one server is never saved to another. -->
+      {#key `${project_id}/${openenv_server_id}`}
+        <EnvironmentPresetDialog
+          bind:this={preset_dialog}
+          {presets}
+          {form_schema}
+          {form_schema_loading}
+          save={save_presets}
+        />
+        <OpenEnvServerEditDialog
+          bind:this={edit_dialog}
+          {project_id}
+          {openenv_server_id}
+          {openenv_server}
+          after_save={after_edit}
+        />
+      {/key}
     {/if}
   </AppPage>
 </div>
