@@ -298,7 +298,7 @@ describe("ToolsSelector context scoping on the write path", () => {
   })
 
   it("names an offline OpenEnv's tools by tool name in the label", async () => {
-    // The OpenEnv has no option, so without this the label read "None".
+    // An offline OpenEnv has no option, so the label comes from the tool id.
     const task_id = "task_offline_openenv_label"
     seed_persisted_tools(task_id, [
       "mcp::remote::demo::search",

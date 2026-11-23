@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { RUN_OPTIONS_CHANGED_WHILE_SENDING } from "$lib/utils/openenv"
 
 const postMock = vi.fn()
 vi.mock("$lib/api_client", () => ({
@@ -376,6 +377,36 @@ describe("send_multiturn", () => {
         on_success: vi.fn(),
       })
       expect("openenv_reset_kwargs" in posted_body()).toBe(false)
+    })
+
+    it("refuses the send when the run options changed during the lookup", async () => {
+      const mock = makeRunConfig()
+      const before =
+        mock.run_options_as_run_config_properties() as RunConfigProperties
+      mock.run_options_as_run_config_properties
+        .mockReturnValueOnce(before)
+        .mockReturnValue({
+          ...before,
+          tools_config: { tools: ["kiln_tool::openenv::other::search"] },
+        })
+      const run_config = {
+        ...asRunConfigController(mock),
+        get_openenv_reset_kwargs: vi
+          .fn()
+          .mockResolvedValue({ company: "acme" }),
+      }
+      await expect(
+        send_multiturn({
+          project_id: "p",
+          task_id: "t",
+          parent_task_run_id: null,
+          allow_root_turn: true,
+          run_config_component: run_config,
+          input_form: asInputFormController(makeInputForm("hi")),
+          on_success: vi.fn(),
+        }),
+      ).rejects.toThrow(RUN_OPTIONS_CHANGED_WHILE_SENDING)
+      expect(postMock).not.toHaveBeenCalled()
     })
 
     it("never sends them on a later turn", async () => {

@@ -2,6 +2,7 @@ import type { OptionGroup } from "$lib/ui/fancy_select_types"
 import type {
   OpenEnvServer,
   NamedResetKwargs,
+  RunConfigProperties,
   RunOpenEnvServer,
 } from "$lib/types"
 
@@ -252,4 +253,28 @@ export function reset_kwargs_for(
     (p) => p.name === preset_name,
   )
   return preset ? preset.reset_kwargs ?? {} : null
+}
+
+export const RUN_OPTIONS_CHANGED_WHILE_SENDING =
+  "The run options changed while the Environment Preset loaded. Send again."
+
+/**
+ * Reads the Environment Preset's reset arguments for `run_config_properties`.
+ * The lookup can wait on the OpenEnv server, and a tool change meanwhile would
+ * pair the reset arguments with another server's tools, so the send is refused
+ * when the run options changed.
+ */
+export async function reset_kwargs_for_send(
+  run_config_properties: RunConfigProperties,
+  get_openenv_reset_kwargs: () => Promise<ResetKwargs | null>,
+  current_run_config_properties: () => RunConfigProperties,
+): Promise<ResetKwargs | null> {
+  const reset_kwargs = await get_openenv_reset_kwargs()
+  if (
+    JSON.stringify(current_run_config_properties()) !==
+    JSON.stringify(run_config_properties)
+  ) {
+    throw new Error(RUN_OPTIONS_CHANGED_WHILE_SENDING)
+  }
+  return reset_kwargs
 }
