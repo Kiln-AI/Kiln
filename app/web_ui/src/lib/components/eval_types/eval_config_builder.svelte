@@ -613,6 +613,7 @@
             bind:judge_instructions={llm_judge_instructions}
             bind:default_reference_keys={llm_server_reference_keys}
             bind:default_prompt_unavailable={llm_default_prompt_unavailable}
+            show_judge_guidance_variable={!!evaluator?.openenv_server_id}
           />
         {:else}
           <JudgeConfigFields

@@ -839,31 +839,28 @@ describe("builder route page ([eval_config_type])", () => {
     expect(container.textContent).not.toContain("Read the Docs")
   })
 
-  describe("judge guidance hint", () => {
-    const hint = "{{ reference_data.judge_guidance }}"
+  describe("judge guidance variable", () => {
+    function judge_form_flag(container: HTMLElement): string | null {
+      return (
+        container
+          .querySelector("[data-testid='llm-judge-form-stub']")
+          ?.getAttribute("data-show-judge-guidance") ?? null
+      )
+    }
 
-    it("tells an LLM judge on an OpenEnv eval where the guidance is", async () => {
+    it("has the LLM judge form list the guidance on an OpenEnv eval", async () => {
       const { container } = await renderBuilderRoutePage("llm_judge", "spec1", {
         openenv_server_id: "server1",
       })
-      expect(container.textContent).toContain(
+      expect(judge_form_flag(container)).toBe("true")
+      expect(container.textContent).not.toContain(
         "This eval's cases were checked against your OpenEnv server.",
       )
-      expect(container.textContent).toContain(hint)
     })
 
-    it("is hidden on an eval without an OpenEnv server", async () => {
+    it("is off on an eval without an OpenEnv server", async () => {
       const { container } = await renderBuilderRoutePage("llm_judge")
-      expect(container.textContent).not.toContain(hint)
-    })
-
-    it("is hidden for judge types without a prompt", async () => {
-      const { container } = await renderBuilderRoutePage(
-        "exact_match",
-        "spec1",
-        { openenv_server_id: "server1" },
-      )
-      expect(container.textContent).not.toContain(hint)
+      expect(judge_form_flag(container)).toBe("false")
     })
   })
 })

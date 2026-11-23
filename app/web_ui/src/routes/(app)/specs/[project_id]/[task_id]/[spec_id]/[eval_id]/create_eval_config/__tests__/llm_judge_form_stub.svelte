@@ -54,6 +54,7 @@
     _initial_default_reference_keys ?? []
   export let default_prompt_unavailable: boolean =
     _initial_default_prompt_unavailable ?? false
+  export let show_judge_guidance_variable: boolean = false
 
   // Force-push initial values via reactive assignment so bind: propagates
   // them to the parent. In Svelte 4, bind: sends the parent's initial
@@ -78,4 +79,9 @@
   }
 </script>
 
-<div data-testid="llm-judge-form-stub">LLM Judge Form Stub</div>
+<div
+  data-testid="llm-judge-form-stub"
+  data-show-judge-guidance={String(show_judge_guidance_variable)}
+>
+  LLM Judge Form Stub
+</div>

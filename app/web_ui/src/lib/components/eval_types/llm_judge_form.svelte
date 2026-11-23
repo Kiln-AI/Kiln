@@ -32,6 +32,9 @@
   // the UI off the fetched default can never drift from the backend logic.
   export let judge_instructions: string[] = []
   let show_instructions_ui = false
+  // An eval the Eval Builder grounded in an OpenEnv server carries judge
+  // guidance on every case, so the variables list names it.
+  export let show_judge_guidance_variable: boolean = false
 
   // FormList keys its rows by item value, so a plain string[] breaks the
   // moment two rows are empty (duplicate keys). Wrap each step in an object
@@ -289,6 +292,7 @@
         bind:judge_prompt
         bind:system_prompt
         {prompt_fetch_error}
+        {show_judge_guidance_variable}
         show_judge_instructions_variable={true}
       />
     </div>
@@ -298,6 +302,7 @@
         bind:judge_prompt
         bind:system_prompt
         {prompt_fetch_error}
+        {show_judge_guidance_variable}
       />
     </Collapse>
   {/if}

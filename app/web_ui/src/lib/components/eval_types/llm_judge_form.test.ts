@@ -336,6 +336,32 @@ describe("LlmJudgeForm", () => {
     })
   })
 
+  describe("judge guidance variable", () => {
+    const variable = "{{ reference_data.judge_guidance }}"
+
+    it("lists the judge guidance among the prompt variables when asked", () => {
+      setModels([noLogprobsProvider])
+      const { container } = render(LlmJudgeForm, {
+        props: {
+          task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
+          show_judge_guidance_variable: true,
+        },
+      })
+      expect(container.textContent).toContain(variable)
+      expect(container.textContent).toContain("The case's judge guidance")
+    })
+
+    it("leaves it out by default", () => {
+      setModels([noLogprobsProvider])
+      const { container } = render(LlmJudgeForm, {
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
+      })
+      expect(container.textContent).not.toContain(variable)
+    })
+  })
+
   describe("Advanced: Judge Prompt section", () => {
     afterEach(() => {
       mockGetDefaultLlmJudgePrompt.mockResolvedValue({

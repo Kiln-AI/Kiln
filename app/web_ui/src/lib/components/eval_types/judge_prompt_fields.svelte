@@ -8,6 +8,9 @@
   // Whether the template uses the {{ judge_instructions }} variable (evals
   // whose steps come from the Evaluation Instructions field above).
   export let show_judge_instructions_variable: boolean = false
+  // Whether each case carries judge guidance (an eval grounded in an OpenEnv
+  // server).
+  export let show_judge_guidance_variable: boolean = false
 </script>
 
 <div class="flex flex-col gap-2">
@@ -48,6 +51,14 @@
       <li>
         <span class="font-mono font-bold">{"{{ judge_instructions }}"}</span> The
         evaluation instructions above, as numbered steps.
+      </li>
+    {/if}
+    {#if show_judge_guidance_variable}
+      <li>
+        <span class="font-mono font-bold"
+          >{"{{ reference_data.judge_guidance }}"}</span
+        > The case's judge guidance: the facts of the OpenEnv server the agent worked
+        in and the correct answer, found when the case was checked against it.
       </li>
     {/if}
     {#if SHOW_REFERENCE_DATA_UI}
