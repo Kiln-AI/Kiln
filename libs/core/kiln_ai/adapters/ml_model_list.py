@@ -253,6 +253,7 @@ class ModelName(str, Enum):
     grok_4 = "grok_4"
     qwen_3p5_flash = "qwen_3p5_flash"
     qwen_3p5_9b = "qwen_3p5_9b"
+    qwen_3p5_4b = "qwen_3p5_4b"
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
@@ -9340,6 +9341,27 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 4B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_4b,
+        friendly_name="Qwen 3.5 4B",
+        agent_notes=(
+            "Description: Qwen's small 4B dense open-weight model in the 3.5 generation.\n"
+            "Lineup: Qwen 3.5 open sizes run 0.8B < 2B < 4B < 9B < 27B, then larger MoE models. A step down from Qwen 3.5 9B."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.5-4B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                # Featherless returns the thinking text inline, ending in </think>.
+                reasoning_capable=True,
+                parser=ModelParserID.r1_thinking,
             ),
         ],
     ),
