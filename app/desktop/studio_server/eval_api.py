@@ -526,7 +526,7 @@ async def run_v2_eval_test(
             return TestV2EvalResponse(
                 skipped_reason=SkippedReason.code_eval_not_trusted.value,
                 skipped_detail=not_trusted_message(
-                    "Project not trusted for code eval execution."
+                    "Project not trusted for code eval execution.", project_id
                 ),
             )
         # The author is iterating on this code right now, so show them what
@@ -2703,7 +2703,7 @@ def connect_evals_api(app: FastAPI):
                 raise HTTPException(
                     status_code=403,
                     detail=not_trusted_message(
-                        "Project not trusted to add code evals."
+                        "Project not trusted to add code evals.", project_id
                     ),
                 )
 

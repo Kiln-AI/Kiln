@@ -12,7 +12,7 @@ The largest item is B23: granting code trust leaves the MCP surface. The agent r
 
 ## Status
 
-This batch is done: B1, B2, B4, B5, B6, B10, B16, B17, B18, B20, B21, B22, B23, B28, B29 and B30 are closed. Phase 16 stays open: B7, B11, B12, B13 and B19 wait on the owner's re-alignment with Kiln Harness Tuner, and B32 and B33 were found in this batch's review.
+This batch is done: B1, B2, B4, B5, B6, B10, B16, B17, B18, B20, B21, B22, B23, B28, B29 and B30 are closed, and so are B32 and B33, found in this batch's review. Phase 16 stays open: B7, B11, B12, B13 and B19 wait on the owner's re-alignment with Kiln Harness Tuner.
 
 ## Steps
 

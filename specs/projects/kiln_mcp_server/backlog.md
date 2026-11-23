@@ -95,7 +95,9 @@
   `SKILL.md`, `K/train_val_test.md`, `K/run_an_experiment.md` and `K/diagnose_an_agent.md` (paths as in B30), with the questions in `phase_plans/phase_13.md` section 3. The open decisions there are B8, B9, B13, B14, B15, B18 and B19.
   Decision (owner, Phase 16 batch 3): resolved by tracking: a knowledge-backlog entry for the manual review.
   Closed: tracked in `app/mcp/knowledge_backlog.md` (entry "A manual review of four files against the port rules").
-- [ ] **B32 — The code-eval "not trusted" texts carry a literal `{project_id}`**
+- [x] **B32 — The code-eval "not trusted" texts carry a literal `{project_id}`**
   `app/desktop/studio_server/services/code_trust.py:5-15`, used at `eval_api.py:528` (the test pane's `skipped_detail`) and `:2705` (the 403 on save). The handlers have the real id; for an agent the link is unusable as given, and in the app `eval_test_run_pane.svelte` renders `skipped_detail` with links, so a user may get a dead link to `.../trust_code/{project_id}.` (with the full stop inside the link). Fix: `not_trusted_message(lead, project_id)` formats both constants with the id; update the two expected strings in `test_eval_api.py`. The route and field descriptions in `code_tool_api.py` are schema descriptions, where the placeholder is right.
-- [ ] **B33 — Trust page: the trusted state keeps the question as its subtitle**
+  Closed: `not_trusted_message(lead, project_id)` fills the trust-page link and the `GET .../add_code_trust` path with the handler's project id. The text now reads "…at http://localhost:8757/settings/trust_code/{id} in the Kiln app. Confirm with GET /api/projects/{id}/add_code_trust, then retry.", so a space follows the URL and the app's link takes no full stop. The two expected strings in `test_eval_api.py` are updated, and `services/test_code_trust.py` tests the function. `NOT_TRUSTED_DESCRIPTION` in `code_tool_api.py` keeps the placeholder.
+- [x] **B33 — Trust page: the trusted state keeps the question as its subtitle**
   On `/settings/trust_code/{project_id}`, in the trusted state (after a grant, or when already trusted) the subtitle still asks `Trust the code in Project "X"?` above the success check. Owner to decide whether the trusted state gets its own subtitle, for example `Code in Project "X" is trusted.`
+  Closed: owner decision — keep the subtitle above the success state as is.
