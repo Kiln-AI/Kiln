@@ -144,8 +144,8 @@
     {:else}
       <Callout
         testid="connect-agent-callout"
-        title="Connect Kiln to Claude, Codex, OpenCode and more"
-        description="Use Kiln from your own coding agent."
+        title="Connect to Claude, Codex, and more"
+        description="Use Kiln from your own agent."
         button_label="Connect"
         button_href="/settings/connect_agent"
       >

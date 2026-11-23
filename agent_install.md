@@ -111,5 +111,5 @@ Most agents load MCP servers and skills only when a session starts. If you do no
 ## Problems
 
 - The `kiln_skill` tool is missing after a restart: Kiln is probably not running. Ask the user to start the Kiln app, then repeat step 1.
-- The connection is refused: compare your URL with the one the Kiln app shows under Settings, Connect Your Agent, Set up manually.
+- The connection is refused: compare your URL with the one the Kiln app shows under Settings, Connect Your Agent, Set Up Manually.
 - Kiln runs on another machine: `localhost` does not reach it, so ask the user for the URL. Files that Kiln saves for you are on Kiln's machine, not yours.

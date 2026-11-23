@@ -15,7 +15,6 @@ Web paths are under `app/web_ui/src/routes/(app)/settings/`.
 | `+page.svelte`, `page.test.ts` | Connect callout in the `{:else}` of the update callout (section 2); tests 8.1 |
 | `connect_agent/+page.svelte` | New page (3.4). No `+page.ts`: no params, no load |
 | `connect_agent/connect_agent.ts` | New: constants and pure functions (3.3) |
-| `connect_agent/copy_button.svelte` | New, private to this route (3.2) |
 | `connect_agent/connect_agent.test.ts`, `connect_agent/page.test.ts` | New (8.2, 8.3) |
 | `/agent_install.md` (repo root) | New; full draft in 4.3 |
 | `/README.md` | New section and one Highlights bullet (section 5) |
@@ -33,8 +32,8 @@ Use `Callout` (`lib/ui/callout.svelte`), the component "Update Available" uses. 
 {:else}
   <Callout
     testid="connect-agent-callout"
-    title="Connect Kiln to Claude, Codex, OpenCode and more"
-    description="Use Kiln from your own coding agent."
+    title="Connect to Claude, Codex, and more"
+    description="Use Kiln from your own agent."
     button_label="Connect"
     button_href="/settings/connect_agent"
   >
@@ -46,34 +45,29 @@ Use `Callout` (`lib/ui/callout.svelte`), the component "Update Available" uses. 
 - **Rule.** One callout at a time. The Connect callout shows whenever `has_update` is not true: no update, check loading, check failed, `update_result` null. It is not dismissible and keeps no state.
 - **Known effect.** If the update check ends while Settings is open and finds an update, the update callout replaces this one. The check starts in `routes/(app)/+layout.svelte`, so it has normally ended before the user opens Settings. Accepted.
 - **Icon and button.** `TerminalIcon`, already imported by this page; no new icon file. `Callout` renders `<a class="btn btn-primary btn-sm">`: the only primary button on Settings in either state. No row is added to `sections`.
+- **Promotion only.** The blue `CalloutCard` treatment is for this promotion on Settings. The Connect page itself does not use it: there the prompt is core content, not a promotion.
 
 ## 3. The page `/settings/connect_agent`
 
 ### 3.1 Component plan (`.agents/skills/kiln-ui/SKILL.md`, section 2)
 
-Sibling screen: the Edit Task form (`settings/edit_task/[project_id]/[task_id]/`), a reference screen with the same `Settings` breadcrumb. Width follows `settings/check_for_update` (`max-w-2xl`).
+Sibling screen: the Edit Task form (`settings/edit_task/[project_id]/[task_id]/`), a reference screen with the same `Settings` breadcrumb and the same width (`max-w-[900px]`). The page reads like one of its fields: a `FormElement` label and description over the content. Read-only content is `Output`, as on the Saved Prompt page.
 
 | Element | House control used | Sibling it matches | Justification if custom |
 |---|---|---|---|
 | Title, subtitle, breadcrumb | `AppPage` | Edit Task header | |
-| Prompt box | `CalloutCard`, no icon slot | Settings callout | |
-| Lead-in line in the box | `<p class="text-sm text-gray-500">` | `Callout` description | |
-| Prompt text | `<p class="text-base font-medium">` | `Callout` title | |
-| Copy (prompt) | DaisyUI `btn btn-sm btn-primary` via `copy_button.svelte` | `popup_blocked_fallback.svelte` | The one primary button on the screen |
-| "Then ask your agent…" line | `<p class="text-sm text-gray-500">` | form help text | |
-| "Set up manually" | `Collapse` (closed, default `small`, `outlined`) | "Advanced" collapses | `outlined` (an existing prop): on the default `bg-base-200` fill the grey `btn btn-sm` Copy button has almost no contrast with the surface |
-| MCP URL row | plain text + DaisyUI `btn btn-sm` via `copy_button.svelte` | | `Output` considered: its copy button is icon-only with no "Copied" state and no label prop; the UI design asks for a labelled Copy with feedback |
-| Vertical rhythm | one container `flex flex-col gap-6 max-w-2xl`; children carry no margins | Edit Task (24 between fields) | |
+| "Setup Prompt" label, description, info tooltip | `FormElement inputType="header_only"` | Edit Task field labels; New Code Tool "Python Function" | |
+| Prompt text and its copy button | `Output` (default) | Saved Prompt page "Prompt" | |
+| "Set Up Manually" | `Collapse` (closed, default fill) | "Advanced Options" on forms | |
+| "MCP Server URL" label, description, info tooltip | `FormElement inputType="header_only"` | Edit Task field labels | |
+| URL text and its copy button | `Output show_border` | "Preview Data Guide" (an `Output` inside a default `Collapse`) | |
+| Vertical rhythm | one container `max-w-[900px] flex flex-col gap-6`; label to content is `FormElement`'s own spacing; children carry no margins | Edit Task (24 between fields) | |
 
-Rules that bite: no `<input>` or `<label>` in the route (so the read-only input of `popup_blocked_fallback.svelte` is not copied); no hand-drawn box; no `aria-expanded` or `{#if open}`; both Copy buttons are `btn-sm`; no font or size prop on a shared control. Expected gate result: 0 FAIL, 0 WARN.
+Rules that bite: no `<input>` or `<label>` in the route; no hand-drawn box and no `CalloutCard` (the prompt is content, not a promotion); no bold text for the prompt or URL (`Output` sets their type and carries the copy button); no `aria-expanded` or `{#if open}`; no font or size prop on a shared control. There is no primary button on the page. Expected gate result: 0 FAIL, 0 WARN.
 
-### 3.2 Copy button: reuse the existing pattern in a route-local component
+### 3.2 Copy: `Output`'s copy button
 
-Decision: no `lib/ui/copy_button.svelte`. Add `connect_agent/copy_button.svelte`, which holds the "Copied" pattern of `lib/git_sync/popup_blocked_fallback.svelte` (label swap for 1500 ms, timer cleared on destroy, silent `try/catch`). Reasons: the page needs the behaviour twice, each with its own state and timer, so inline code would duplicate it; a shared control is a separate change under the `kiln-ui` skill (own commit, decision, owner review), and the four existing copy sites differ (icon-only, ghost, 1500 or 2000 ms), so it would also need a migration decision; the UI design says the page needs no new shared component.
-
-Props: `text: string` (written to the clipboard), `what: string` (`"prompt"` or `"MCP server URL"`; names the thing for assistive tech), `primary: boolean = false`, `testid: string | null = null`. Markup: one `<button type="button" class="btn btn-sm w-20 flex-shrink-0">` (plus `btn-primary` when `primary`) with `data-testid={testid}`, `aria-label` `` `Copy ${what}` `` (`` `Copied ${what}` `` while copied) and the label `Copy` or `Copied`; then `<span class="sr-only" aria-live="polite">`, which holds `` `Copied ${what}` `` while copied and is empty otherwise.
-
-`copy()`: (1) in a `try`, `await navigator.clipboard.writeText(text)`; (2) `copied = true`; (3) clear any running timer, then start one that sets `copied = false` after 1500 ms; (4) in `catch`, do nothing. `onDestroy` clears the timer. `w-20` fixes the width so the label swap does not move the text beside it.
+The prompt and the URL each render in an `Output`, whose icon button copies `raw_output`. No route-local copy button. `Output` gives no "Copied" feedback and its button has no accessible name; both are owned by the shared control and are not changed here.
 
 ### 3.3 `connect_agent.ts`
 
@@ -111,49 +105,44 @@ Install Kiln's app, skill, and MCP following the guide here: https://raw.githubu
 
 ### 3.4 `+page.svelte`
 
-State: three constants set once in the instance script, `origin = app_origin()`, `url = mcp_url(origin)`, `prompt = build_prompt(origin)`. Nothing is reactive; there is no store, `onMount`, loading state or error state. The script also calls `agentInfo.set({ name: "Connect Your Agent", description: "Shows the prompt and the MCP server URL for connecting a coding agent (Claude Code, Codex, OpenCode) to Kiln's MCP server." })`. Imports: `AppPage`, `CalloutCard`, `Collapse`, `./copy_button.svelte`, `./connect_agent`.
+State: three constants set once in the instance script, `origin = app_origin()`, `url = mcp_url(origin)`, `prompt = build_prompt(origin)`. Nothing is reactive; there is no store, `onMount`, loading state or error state. The script also calls `agentInfo.set({ name: "Connect Your Agent", description: "Shows the prompt and the MCP server URL for connecting an agent (Claude Code, Codex, OpenCode or another) to Kiln's MCP server." })`. Imports: `AppPage`, `Collapse`, `FormElement`, `Output`, `./connect_agent`.
 
 ```
 <AppPage
   title="Connect Your Agent"
-  subtitle="Use Kiln from Claude Code, Codex, OpenCode and other coding agents."
+  subtitle="Use Kiln from Claude Code, Codex and other agents."
   breadcrumbs={[{ label: "Settings", href: "/settings" }]}
 >
-  <div class="flex flex-col gap-6 max-w-2xl">
-    <CalloutCard testid="connect-agent-prompt-card">
-      <div class="flex flex-col gap-3">
-        <p class="text-sm text-gray-500">Paste this in your agent to get started:</p>
-        <div class="flex flex-col sm:flex-row sm:items-end gap-3">
-          <p class="flex-grow min-w-0 text-base font-medium break-words select-all"
-            translate="no" data-testid="connect-agent-prompt">{prompt}</p>
-          <CopyButton text={prompt} what="prompt" primary testid="connect-agent-copy-prompt" />
-        </div>
-      </div>
-    </CalloutCard>
-    <p class="text-sm text-gray-500">Then ask your agent to work with Kiln, or type /kiln.</p>
-    <Collapse title="Set up manually" outlined>
-      <div class="flex flex-row items-center gap-3">
-        <div class="flex-grow min-w-0 text-sm">
-          <span class="text-gray-500">MCP server URL:</span>
-          <span class="break-words select-all" translate="no" data-testid="connect-agent-mcp-url">{url}</span>
-        </div>
-        <CopyButton text={url} what="MCP server URL" testid="connect-agent-copy-url" />
+  <div class="max-w-[900px] flex flex-col gap-6">
+    <div>
+      <FormElement inputType="header_only" id="connect_agent_prompt" label="Setup Prompt"
+        description="Paste this into your agent. Then ask it to work with Kiln, or type /kiln."
+        info_description="Your agent follows Kiln's install guide: it checks that Kiln is running, adds the Kiln MCP server to its settings and creates a /kiln skill."
+        value="" />
+      <div data-testid="connect-agent-prompt"><Output raw_output={prompt} /></div>
+    </div>
+    <Collapse title="Set Up Manually">
+      <div>
+        <FormElement inputType="header_only" id="connect_agent_mcp_url" label="MCP Server URL"
+          description="Add this to your agent as an HTTP MCP server."
+          info_description="Use the HTTP transport (also called streamable HTTP), with no authentication. If your agent has a tool timeout, set it to 30 minutes: some Kiln calls take minutes."
+          value="" />
+        <div data-testid="connect-agent-mcp-url"><Output raw_output={url} show_border /></div>
       </div>
     </Collapse>
   </div>
 </AppPage>
 ```
 
-Below the `sm` breakpoint the prompt row stacks, so the Copy button sits under the text and stays visible. The manual section holds only the URL and its Copy button (UI design).
+`Output` wraps long text, so the prompt and URL stay readable and the copy icon stays visible at any width. The manual section holds only the URL (UI design).
 
 ### 3.5 Static build, accessibility, edge cases
 
 - **Static build.** `routes/+layout.ts` sets `prerender = true` and `ssr = false`; the adapter is `adapter-static`. The route has no parameters, so the build writes `settings/connect_agent.html` and the desktop web host (`HTMLStaticFiles`) serves it at `/settings/connect_agent`. No config change. With `ssr = false` no component code runs at build time; the `window` read still stays inside `app_origin()` because `connect_agent.test.ts` imports the module without a DOM.
 - **Why runtime.** The compiled app's `base_url` is always port 8757, so it cannot show a port set with `KILN_LOCAL_API_PORT`.
-- **Buttons.** Both Copy controls are real buttons with distinct accessible names ("Copy prompt", "Copy MCP server URL"); the visible label is the start of the name. The `aria-live="polite"` span announces the result.
-- **Text.** The prompt and URL are plain selectable text; `select-all` selects the whole string on one click; `translate="no"` stops browser translation from changing what the user reads against what is copied.
-- **Clipboard failure.** `navigator.clipboard` is missing outside a secure context (Kiln opened over plain HTTP on a non-loopback host, for example with `KILN_LOCAL_API_HOST=0.0.0.0`). The button stays "Copy" and the user selects the text. No error is shown (UI design: no error state). This is a known limit, accepted: the Copy buttons need a secure context. The page still shows the origin the user opened, which is the right address for that user.
-- **Owned by shared controls, not changed here.** `Collapse` works from the keyboard through its checkbox, which has no accessible name today.
+- **Text.** The prompt and URL are plain selectable text in `Output`, which sets `translate="no"`, so browser translation does not change what the user reads against what is copied.
+- **Clipboard failure.** `navigator.clipboard` is missing outside a secure context (Kiln opened over plain HTTP on a non-loopback host, for example with `KILN_LOCAL_API_HOST=0.0.0.0`). The copy icon then does nothing and the user selects the text. No error is shown (UI design: no error state). This is a known limit, accepted. The page still shows the origin the user opened, which is the right address for that user.
+- **Owned by shared controls, not changed here.** `Collapse` works from the keyboard through its checkbox, which has no accessible name today. `Output`'s copy button has no accessible name and no "Copied" feedback.
 
 ## 4. `agent_install.md`
 
@@ -291,7 +280,7 @@ Most agents load MCP servers and skills only when a session starts. If you do no
 ## Problems
 
 - The `kiln_skill` tool is missing after a restart: Kiln is probably not running. Ask the user to start the Kiln app, then repeat step 1.
-- The connection is refused: compare your URL with the one the Kiln app shows under Settings, Connect Your Agent, Set up manually.
+- The connection is refused: compare your URL with the one the Kiln app shows under Settings, Connect Your Agent, Set Up Manually.
 - Kiln runs on another machine: `localhost` does not reach it, so ask the user for the URL. Files that Kiln saves for you are on Kiln's machine, not yours.
 `````
 
@@ -386,7 +375,7 @@ Until page 1 exists, the Connect page has no docs link at all (owner decision): 
 
 ### 8.1 `settings/page.test.ts` (add; existing cases stay unchanged)
 
-- No update (`default_update_state`): `connect-agent-callout` present, `update-available-callout` absent. Its text contains the title and "Use Kiln from your own coding agent."; its `a` has `href="/settings/connect_agent"` and text "Connect".
+- No update (`default_update_state`): `connect-agent-callout` present, `update-available-callout` absent. Its text contains the title "Connect to Claude, Codex, and more" and "Use Kiln from your own agent."; its `a` has `href="/settings/connect_agent"` and text "Connect".
 - `has_update: true`: `connect-agent-callout` absent, `update-available-callout` present.
 - `update_result: null` with `update_loading: true`: `connect-agent-callout` present. The callout precedes the first `h2`.
 
@@ -402,15 +391,14 @@ Until page 1 exists, the Connect page has no docs link at all (owner decision): 
 
 ### 8.3 `connect_agent/page.test.ts` (jsdom)
 
-Setup: `vi.mock("./connect_agent", …)` with `importOriginal`, replacing only `app_origin` with a function that returns a test variable; `navigator.clipboard.writeText` is a `vi.fn()`; fake timers.
+Setup: `vi.mock("./connect_agent", …)` with `importOriginal`, replacing only `app_origin` with a function that returns a test variable; `navigator.clipboard.writeText` is a `vi.fn()`.
 
 - Default address: `connect-agent-prompt` text equals `BASE_PROMPT`; `connect-agent-mcp-url` text is `http://localhost:8757/mcp`.
 - Origin `http://127.0.0.1:8757`: the prompt equals `BASE_PROMPT` (no extra sentence); the URL is `http://127.0.0.1:8757/mcp` (the real origin).
 - Origin `http://localhost:9000`: the prompt ends with " The Kiln MCP server is at http://localhost:9000/mcp."; the URL is `http://localhost:9000/mcp`.
-- Header: title "Connect Your Agent"; the subtitle; no "Read the Docs" link; a breadcrumb link "Settings" to `/settings`. The lead-in and the "Then ask your agent to work with Kiln, or type /kiln." line are present.
-- Copy prompt: click `connect-agent-copy-prompt`; `writeText` is called once with the full prompt (with the extra sentence on the other address); the label is "Copied"; after 1500 ms it is "Copy".
-- Copy URL: the same for `connect-agent-copy-url` with the MCP URL. A click on one button does not change the other's label. Clipboard rejects, and `navigator.clipboard` undefined: no throw; the label stays "Copy".
-- "Set up manually" is closed by default: the collapse checkbox is not checked. Exactly one element has class `btn-primary`. The accessible names are "Copy prompt" and "Copy MCP server URL". Unmount while a timer runs: no error.
+- Header: title "Connect Your Agent"; the subtitle; no "Read the Docs" link; a breadcrumb link "Settings" to `/settings`. The "Setup Prompt" label and its description are present.
+- "Set Up Manually" is closed by default: the collapse checkbox is not checked; the "MCP Server URL" label, its description and `connect-agent-mcp-url` are inside the collapse. No element has class `btn-primary`.
+- Copy: clicking the copy button inside `connect-agent-prompt` calls `writeText` once with the full prompt (with the extra sentence on the other address); the one inside `connect-agent-mcp-url` calls it with the MCP URL.
 
 ### 8.4 Other checks
 
@@ -425,4 +413,4 @@ To verify during implementation:
 - **The `--help` block.** Paste the real output of `kiln_mcp --help` into the README after the change (section 6).
 - **The page under `vite dev`.** Check by hand that the prompt and the URL name the API port, not the Vite port (3.3).
 
-Owner decisions are in [architecture.md](../architecture.md) section 11. Item 3 there concerns this component: whether the app release waits for the docs page, so that the interim README link never ships. Follow-ups outside this repo or this project are in architecture section 8: the docs pages and their slugs, `kiln.tech/agent_install.md` and then the switch of 4.1, a shared `copy_button` in `lib/ui/` with the four existing copy sites moved to it, and an icon of its own for the callout (`TerminalIcon` is also the icon of the "Application Logs" row).
+Owner decisions are in [architecture.md](../architecture.md) section 11. Item 3 there concerns this component: whether the app release waits for the docs page, so that the interim README link never ships. Follow-ups outside this repo or this project are in architecture section 8: the docs pages and their slugs, `kiln.tech/agent_install.md` and then the switch of 4.1, and an icon of its own for the callout (`TerminalIcon` is also the icon of the "Application Logs" row).

@@ -10,8 +10,8 @@ The only UI in this project is the "Connect your agent" page and the way into it
 
 For now, the only way in is a highlighted callout at the top of the Settings page, in our usual callout style (the same `Callout` component the "Update Available" notice uses there).
 
-- Title: **Connect Kiln to Claude, Codex, OpenCode and more**
-- Description: one line, for example "Use Kiln from your own coding agent."
+- Title: **Connect to Claude, Codex, and more**
+- Description: **Use Kiln from your own agent.**
 - Button: **Connect**, which opens `/settings/connect_agent`.
 - Only one callout shows at a time. When the "Update Available" callout is showing, this one is hidden. Otherwise it is always shown; it is not dismissible in V1.
 
@@ -22,31 +22,31 @@ There is no row for it in the settings sections, and no other entry point in V1.
 A standard `AppPage`, with a breadcrumb back to Settings.
 
 - **Title:** Connect Your Agent
-- **Subtitle:** Use Kiln from Claude Code, Codex, OpenCode and other coding agents.
+- **Subtitle:** Use Kiln from Claude Code, Codex and other agents.
 - **Docs link:** none for now. When the docs page for this feature is live, a "Read the Docs" link goes in the usual `AppPage` location under the subtitle.
 
-Content, top to bottom:
+Content, top to bottom. The page reads like a field of the Edit Task form: a form label and description over the content, read-only text in the app's `Output` block (grey, with its copy icon). The blue highlight is the Settings promotion; it is not used on this page.
 
 ```
+Setup Prompt                                                  (i)
+Paste this into your agent. Then ask it to work with Kiln, or type /kiln.
 ┌─────────────────────────────────────────────────────────────┐
-│ Paste this in your agent to get started:                    │
-│                                                             │
-│   Install Kiln's app, skill, and MCP following the guide    │
-│   here: https://kiln.tech/agent_install.md                  │
-│                                                  [ Copy ]   │
+│ Install Kiln's app, skill, and MCP following the guide   ⧉  │
+│ here: https://raw.githubusercontent.com/.../agent_install.md │
 └─────────────────────────────────────────────────────────────┘
 
-Then ask your agent to work with Kiln, or type /kiln.
-
-▸ Set up manually
-    MCP server URL:  http://localhost:8757/mcp     [ Copy ]
+▸ Set Up Manually
+    MCP Server URL                                            (i)
+    Add this to your agent as an HTTP MCP server.
+    ┌─────────────────────────────────────────────────────────┐
+    │ http://localhost:8757/mcp                            ⧉  │
+    └─────────────────────────────────────────────────────────┘
 ```
 
-1. **The prompt box.** The main thing on the page. It shows the prompt as plain, selectable text, with a Copy button. Copy gives the usual "copied" feedback.
-2. **One line of "what next":** "Then ask your agent to work with Kiln, or type /kiln."
-3. **Set up manually.** Collapsed by default. It holds only the MCP server URL with its own Copy button, for people who want to configure an agent by hand.
+1. **Setup Prompt.** The main thing on the page. A form label ("Setup Prompt") with one line of description that also says what to do next, and an info tooltip that says what the agent will do (check Kiln is running, add the MCP server, create a /kiln skill). The prompt itself is plain, selectable text in an `Output`, copied with its copy icon.
+2. **Set Up Manually.** A collapse, closed by default. It holds only the MCP server URL: a form label, one line of description, an info tooltip with the transport, authentication and timeout, and the URL in an `Output` with its copy icon. Plain text, not bold.
 
-No status indicators, no per-agent tabs or commands, and no list of connected agents.
+No status indicators, no per-agent tabs or commands, no list of connected agents and no primary button.
 
 ## States
 
@@ -56,4 +56,4 @@ No status indicators, no per-agent tabs or commands, and no list of connected ag
 
 ## Responsive behavior
 
-The page is a single narrow column, like the other settings pages. The prompt text wraps; the Copy button stays visible at any width.
+The page is a single column as wide as the Edit Task form. The prompt and URL wrap; their copy icons stay visible at any width.

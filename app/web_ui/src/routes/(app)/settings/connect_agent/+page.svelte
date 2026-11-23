@@ -1,15 +1,15 @@
 <script lang="ts">
   import AppPage from "../../app_page.svelte"
-  import CalloutCard from "$lib/ui/callout_card.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import Output from "$lib/ui/output.svelte"
   import { agentInfo } from "$lib/agent"
-  import CopyButton from "./copy_button.svelte"
   import { app_origin, build_prompt, mcp_url } from "./connect_agent"
 
   agentInfo.set({
     name: "Connect Your Agent",
     description:
-      "Shows the prompt and the MCP server URL for connecting a coding agent (Claude Code, Codex, OpenCode) to Kiln's MCP server.",
+      "Shows the prompt and the MCP server URL for connecting an agent (Claude Code, Codex, OpenCode or another) to Kiln's MCP server.",
   })
 
   const origin = app_origin()
@@ -19,51 +19,36 @@
 
 <AppPage
   title="Connect Your Agent"
-  subtitle="Use Kiln from Claude Code, Codex, OpenCode and other coding agents."
+  subtitle="Use Kiln from Claude Code, Codex and other agents."
   breadcrumbs={[{ label: "Settings", href: "/settings" }]}
 >
-  <div class="flex flex-col gap-6 max-w-2xl">
-    <CalloutCard testid="connect-agent-prompt-card">
-      <div class="flex flex-col gap-3">
-        <p class="text-sm text-gray-500">
-          Paste this in your agent to get started:
-        </p>
-        <div class="flex flex-col sm:flex-row sm:items-end gap-3">
-          <p
-            class="flex-grow min-w-0 text-base font-medium break-words select-all"
-            translate="no"
-            data-testid="connect-agent-prompt"
-          >
-            {prompt}
-          </p>
-          <CopyButton
-            text={prompt}
-            what="prompt"
-            primary
-            testid="connect-agent-copy-prompt"
-          />
-        </div>
+  <div class="max-w-[900px] flex flex-col gap-6">
+    <div>
+      <FormElement
+        inputType="header_only"
+        id="connect_agent_prompt"
+        label="Setup Prompt"
+        description="Paste this into your agent. Then ask it to work with Kiln, or type /kiln."
+        info_description="Your agent follows Kiln's install guide: it checks that Kiln is running, adds the Kiln MCP server to its settings and creates a /kiln skill."
+        value=""
+      />
+      <div data-testid="connect-agent-prompt">
+        <Output raw_output={prompt} />
       </div>
-    </CalloutCard>
-    <p class="text-sm text-gray-500">
-      Then ask your agent to work with Kiln, or type /kiln.
-    </p>
-    <!-- Outlined: on the default grey fill, the grey Copy button inside would read as part of the surface. -->
-    <Collapse title="Set up manually" outlined>
-      <div class="flex flex-row items-center gap-3">
-        <div class="flex-grow min-w-0 text-sm">
-          <span class="text-gray-500">MCP server URL:</span>
-          <span
-            class="break-words select-all"
-            translate="no"
-            data-testid="connect-agent-mcp-url">{url}</span
-          >
-        </div>
-        <CopyButton
-          text={url}
-          what="MCP server URL"
-          testid="connect-agent-copy-url"
+    </div>
+    <Collapse title="Set Up Manually">
+      <div>
+        <FormElement
+          inputType="header_only"
+          id="connect_agent_mcp_url"
+          label="MCP Server URL"
+          description="Add this to your agent as an HTTP MCP server."
+          info_description="Use the HTTP transport (also called streamable HTTP), with no authentication. If your agent has a tool timeout, set it to 30 minutes: some Kiln calls take minutes."
+          value=""
         />
+        <div data-testid="connect-agent-mcp-url">
+          <Output raw_output={url} show_border />
+        </div>
       </div>
     </Collapse>
   </div>

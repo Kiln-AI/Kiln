@@ -175,7 +175,7 @@ The components depend on each other in this order; the implementation plan follo
 - The knowledge file `using_harness_tuner`: how a coding agent runs the Kiln Harness Tuner CLI in place of running experiments itself. It is the first new entry of the knowledge backlog. Until it exists, the skill recommends Harness Tuner and gives no CLI steps.
 - Tooling to read the noise of an eval. This project adds none, and no guidance of its own on noise.
 - Model info: a short cache for the availability check; a hint field for a search that finds nothing under the default filters; a person reads the models.dev terms of use for a desktop app that fetches the file.
-- Web UI: a shared `copy_button` in `lib/ui/`, and an icon of its own for the Connect callout.
+- Web UI: an icon of its own for the Connect callout.
 - Spec two: fencing, and everything harness-tuner needs.
 
 ## 9. Shared files

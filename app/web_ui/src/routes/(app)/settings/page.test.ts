@@ -110,12 +110,8 @@ describe("Settings +page.svelte — Connect callout", () => {
     const { getByTestId, queryByTestId } = render(Page)
     expect(queryByTestId("update-available-callout")).toBeNull()
     const callout = getByTestId("connect-agent-callout")
-    expect(callout.textContent).toContain(
-      "Connect Kiln to Claude, Codex, OpenCode and more",
-    )
-    expect(callout.textContent).toContain(
-      "Use Kiln from your own coding agent.",
-    )
+    expect(callout.textContent).toContain("Connect to Claude, Codex, and more")
+    expect(callout.textContent).toContain("Use Kiln from your own agent.")
     const link = callout.querySelector("a")
     expect(link?.getAttribute("href")).toBe("/settings/connect_agent")
     expect(link?.textContent?.trim()).toBe("Connect")
