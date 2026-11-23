@@ -247,7 +247,13 @@ def test_import_project_duplicate_same_path(client):
         )
 
     assert response.status_code == 409
-    assert response.json()["message"] == "This project is already imported."
+    assert response.json() == {
+        "message": {
+            "code": "project_already_imported",
+            "message": "This project is already imported.",
+            "project_id": "dup-id",
+        }
+    }
 
 
 def test_import_project_duplicate_different_path(client):
@@ -270,7 +276,9 @@ def test_import_project_duplicate_different_path(client):
         )
 
     assert response.status_code == 409
-    assert "remove project" in response.json()["message"]
+    assert response.json() == {
+        "message": 'You already have a project with this ID. You must remove project "Existing" before adding this.'
+    }
 
 
 def test_import_project_duplicate_remove_conflicting_id_success(client):
