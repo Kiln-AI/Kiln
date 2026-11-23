@@ -75,6 +75,12 @@ class OpenEnvRunError(Exception):
         self.message = message
 
 
+def openenv_run_error_code(error: OpenEnvRunError) -> str:
+    """The error code an API sends with the refusal, so a client can show the message
+    as written instead of as an unexpected failure."""
+    return f"openenv_{error.kind}"
+
+
 @dataclass
 class OpenEnvRunHandle:
     context: EpisodeContext

@@ -21,6 +21,7 @@ from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.openenv.run_session import (
     OpenEnvRunError,
     OpenEnvRunErrorKind,
+    openenv_run_error_code,
 )
 from kiln_ai.openenv.session_manager import shared_conversation_sessions
 from kiln_ai.utils.dataset_import import (
@@ -852,7 +853,8 @@ def connect_run_api(app: FastAPI):
             )
         except OpenEnvRunError as e:
             raise HTTPException(
-                status_code=_OPENENV_RUN_ERROR_STATUS[e.kind], detail=e.message
+                status_code=_OPENENV_RUN_ERROR_STATUS[e.kind],
+                detail={"message": e.message, "code": openenv_run_error_code(e)},
             ) from e
 
         # The conversation may have been cascade-deleted while the model was

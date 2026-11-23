@@ -452,7 +452,9 @@ def test_run_task_maps_openenv_errors(client, task_run_setup, kind, status):
         client, task_run_setup, {}, AsyncMock(side_effect=error)
     )
     assert response.status_code == status
-    assert response.json() == {"message": f"OpenEnv Acme: {kind}"}
+    assert response.json() == {
+        "message": {"message": f"OpenEnv Acme: {kind}", "code": f"openenv_{kind}"}
+    }
 
 
 def _model_reply(content=None, note=None):
@@ -621,7 +623,8 @@ class TestRunApiConversation:
         openenv_chat.send("two", parent_id=first.json()["id"])
         fork = openenv_chat.send("fork", parent_id=first.json()["id"])
         assert fork.status_code == 409
-        assert "only continue from the latest turn" in fork.json()["message"]
+        assert fork.json()["message"]["code"] == "openenv_fork_refused"
+        assert "only continue from the latest turn" in fork.json()["message"]["message"]
 
     def test_deleting_the_latest_turn_ends_the_session(self, openenv_chat):
         first = openenv_chat.send("one").json()
@@ -684,10 +687,11 @@ class TestRunApiConversation:
         )
         response = openenv_chat.send("two", parent_id=first["id"])
         assert response.status_code == 409
-        assert response.json()["message"] == (
-            "The OpenEnv session for this conversation ended. Start a new "
-            "conversation to keep using this OpenEnv server."
-        )
+        assert response.json()["message"] == {
+            "message": "The OpenEnv session for this conversation ended. Start a "
+            "new conversation to keep using this OpenEnv server.",
+            "code": "openenv_session_ended",
+        }
 
 
 def test_deep_update_with_empty_source():

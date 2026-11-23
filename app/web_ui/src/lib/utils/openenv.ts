@@ -5,6 +5,7 @@ import type {
   RunConfigProperties,
   RunOpenEnvServer,
 } from "$lib/types"
+import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
 // TODO: publish this page on docs.kiln.tech before merging. It doesn't exist
 // yet, so the link 404s until it does.
@@ -277,4 +278,26 @@ export async function reset_kwargs_for_send(
     throw new Error(RUN_OPTIONS_CHANGED_WHILE_SENDING)
   }
   return reset_kwargs
+}
+
+/**
+ * An error from a run request. The run route sends each OpenEnv refusal (no
+ * session, server unreachable, reset rejected) with an `openenv_` code. Those
+ * are expected and tell the user what to do, so their message is shown as
+ * written, without createKilnError's "Unexpected error" prefix.
+ */
+export function run_request_error(e: unknown): KilnError {
+  const error = createKilnError(e)
+  const code = error.getCode()
+  if (!code?.startsWith("openenv_")) {
+    return error
+  }
+  const body = (e as { message?: unknown }).message
+  const message =
+    body && typeof body === "object" && "message" in body
+      ? (body as { message: unknown }).message
+      : null
+  return typeof message === "string"
+    ? new KilnError(message, null, code)
+    : error
 }

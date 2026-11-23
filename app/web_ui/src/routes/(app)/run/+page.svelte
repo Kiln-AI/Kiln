@@ -2,7 +2,7 @@
   import AppPage from "../app_page.svelte"
   import { agentInfo } from "$lib/agent"
   import { current_task, current_project, ui_state } from "$lib/stores"
-  import { createKilnError } from "$lib/utils/error_handlers"
+  import { run_request_error } from "$lib/utils/openenv"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import Run from "./run.svelte"
@@ -206,7 +206,7 @@
         response = data
       }
     } catch (e) {
-      run_error = createKilnError(e)
+      run_error = run_request_error(e)
     } finally {
       submitting = false
       await tick() // ensure {#if !submitting && response} has rendered
