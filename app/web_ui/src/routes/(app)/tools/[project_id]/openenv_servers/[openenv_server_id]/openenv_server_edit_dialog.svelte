@@ -32,17 +32,23 @@
   let url = ""
   let error: KilnError | null = null
   let submitting = false
+  // Counts show() calls. The dialog can close and reopen while a save is still
+  // waiting on the server, and that save mustn't close or change the new edit.
+  let edit_session = 0
 
   export function show() {
+    edit_session++
     name = openenv_server.name
     description = openenv_server.description ?? ""
     url = openenv_server.url ?? ""
     error = null
+    submitting = false
     open = true
     dialog.show()
   }
 
   async function submit() {
+    const session = edit_session
     error = null
     try {
       const saved = await update_openenv_server(project_id, openenv_server_id, {
@@ -50,12 +56,18 @@
         description: description || null,
         url: url.trim(),
       })
-      dialog.close()
+      if (session === edit_session) {
+        dialog.close()
+      }
       after_save(saved)
     } catch (e) {
-      error = openenv_server_error(e)
+      if (session === edit_session) {
+        error = openenv_server_error(e)
+      }
     } finally {
-      submitting = false
+      if (session === edit_session) {
+        submitting = false
+      }
     }
   }
 </script>

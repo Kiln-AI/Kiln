@@ -320,6 +320,15 @@ describe("kwargs_fit_form", () => {
     })
   })
 
+  it("doesn't fit an optional object that holds only an empty required object", () => {
+    expect(
+      kwargs_fit_form(
+        { cfg: {}, extra: { inner: {} } },
+        REQUIRED_OBJECT_FORM_SCHEMA,
+      ),
+    ).toEqual({ fits: false, reason: "'extra' is empty" })
+  })
+
   it("fits an empty required object", () => {
     expect(
       kwargs_fit_form(

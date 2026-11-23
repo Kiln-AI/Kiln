@@ -288,12 +288,15 @@ function value_misfit(
     return `'${path}' isn't one of the options`
   }
   if (property.type === "object") {
+    const misfit = object_misfit(value as JsonRecord, property, `${path}.`)
+    if (misfit) {
+      return misfit
+    }
     // The form sends `{}` for a required object left empty, and leaves out an
-    // optional one.
-    if (Object.keys(value as JsonRecord).length === 0 && !required) {
+    // optional one that holds nothing it would send.
+    if (!required && cleaned(value, property) === undefined) {
       return `'${path}' is empty`
     }
-    return object_misfit(value as JsonRecord, property, `${path}.`)
   }
   return null
 }

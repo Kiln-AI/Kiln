@@ -229,9 +229,23 @@ export function reset_arguments_from_form(
   )
 }
 
+/** Preset names are unique, so a removal names the preset rather than its row. */
 export function presets_without(
   presets: NamedResetKwargs[],
-  index: number,
+  name: string,
 ): NamedResetKwargs[] {
-  return presets.filter((_, i) => i !== index)
+  return presets.filter((preset) => preset.name !== name)
+}
+
+/**
+ * Runs each task after the one before it settles. Each preset save sends the
+ * whole list, so a save that started from an older list would undo a newer one.
+ */
+export function one_at_a_time(): (task: () => Promise<void>) => Promise<void> {
+  let last: Promise<void> = Promise.resolve()
+  return (task) => {
+    const run = last.then(task)
+    last = run.catch(() => undefined)
+    return run
+  }
 }

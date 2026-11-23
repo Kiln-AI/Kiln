@@ -69,7 +69,7 @@ function open_dialog() {
     },
   })
   component.show()
-  return { container, after_save }
+  return { component, container, after_save }
 }
 
 async function set_url(container: HTMLElement, value: string) {
@@ -111,6 +111,28 @@ describe("OpenEnvServerEditDialog", () => {
       description: null,
       url: "http://127.0.0.1:8000",
     })
+  })
+
+  it("keeps a save that finishes after a reopen out of the new edit", async () => {
+    let answer: (value: unknown) => void = () => {}
+    mock_patch.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    const { component, container, after_save } = open_dialog()
+    await waitFor(() =>
+      expect(
+        container.querySelector("#openenv_server_edit_url"),
+      ).not.toBeNull(),
+    )
+    await submit(container)
+    await waitFor(() => expect(mock_patch).toHaveBeenCalledOnce())
+    component.show()
+    const saved = { ...ACME, name: "Acme 2" }
+    answer({ data: saved, error: undefined })
+    await waitFor(() => expect(after_save).toHaveBeenCalledWith(saved))
+    expect(container.querySelector("dialog")?.hasAttribute("open")).toBe(true)
+    expect(
+      container.querySelector<HTMLButtonElement>('button[type="submit"]')
+        ?.disabled,
+    ).toBe(false)
   })
 
   it("won't submit a URL without http:// or https://", async () => {
