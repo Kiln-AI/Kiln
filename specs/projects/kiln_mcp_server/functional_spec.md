@@ -278,7 +278,7 @@ The skill needs model information in many places: choosing a model, prices, find
 
 ### 9.1 `agent_install.md`
 
-One guide, written for an agent to follow. It is published at `https://kiln.tech/agent_install.md`; until then the prompt points at the file on GitHub. The file lives in this repo.
+One guide, written for an agent to follow. It is published at `https://kiln.tech/agent_install.md`; until then the prompt points at the file on GitHub. The file lives in this repo, at `docs/agent_install.md`.
 
 It tells the agent to:
 

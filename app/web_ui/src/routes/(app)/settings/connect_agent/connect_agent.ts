@@ -2,12 +2,12 @@ import { dev } from "$app/environment"
 import { base_url } from "$lib/api_client"
 
 const DEFAULT_PORT = "8757"
-// The address that agent_install.md and the Kiln skill are written with.
+// The address that docs/agent_install.md and the Kiln skill are written with.
 export const DEFAULT_ORIGIN = `http://localhost:${DEFAULT_PORT}`
 export const MCP_PATH = "/mcp"
 // README.md repeats BASE_PROMPT verbatim; connect_agent.test.ts fails while the two differ.
 export const AGENT_INSTALL_GUIDE_URL =
-  "https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md"
+  "https://raw.githubusercontent.com/Kiln-AI/Kiln/main/docs/agent_install.md"
 export const BASE_PROMPT = `Install Kiln's app, skill, and MCP following the guide here: ${AGENT_INSTALL_GUIDE_URL}`
 
 const LOOPBACK_HOSTNAMES = ["localhost", "127.0.0.1", "[::1]"]

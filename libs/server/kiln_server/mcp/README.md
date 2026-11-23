@@ -2,7 +2,7 @@
 
 > If you're looking for our MCP client to integrate third party MCP servers into the Kiln app, see https://docs.kiln.tech/docs/tools-and-mcp
 
-> To connect your own agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see agent_install.md at the repo root. This server is not the way to do that.
+> To connect your own agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see docs/agent_install.md in the repo. This server is not the way to do that.
 
 The Kiln project tools MCP server (the `kiln_mcp` command) lets you call one Kiln project's tools, such as a Kiln Search Tool, from any MCP client.
 

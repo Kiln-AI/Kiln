@@ -16,7 +16,7 @@ Web paths are under `app/web_ui/src/routes/(app)/settings/`.
 | `connect_agent/+page.svelte` | New page (3.4). No `+page.ts`: no params, no load |
 | `connect_agent/connect_agent.ts` | New: constants and pure functions (3.3) |
 | `connect_agent/connect_agent.test.ts`, `connect_agent/page.test.ts` | New (8.2, 8.3) |
-| `/agent_install.md` (repo root) | New; full draft in 4.3 |
+| `/docs/agent_install.md` | New; full draft in 4.3 |
 | `/README.md` | New section and one Highlights bullet (section 5) |
 | `libs/server/kiln_server/mcp/{__init__.py,mcp.py,runtime.py,tool_selection.py,mcp_server_tool_utils.py,README.md}`, `libs/server/README.md`, `.agents/skills/kiln-conventions/references/server_desktop.md` | Text rename (section 6) |
 
@@ -79,7 +79,7 @@ export const DEFAULT_ORIGIN = "http://localhost:8757"
 export const MCP_PATH = "/mcp"
 // The one place the guide URL is set. Later: "https://kiln.tech/agent_install.md" (4.1).
 export const AGENT_INSTALL_GUIDE_URL =
-  "https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md"
+  "https://raw.githubusercontent.com/Kiln-AI/Kiln/main/docs/agent_install.md"
 export const BASE_PROMPT =
   `Install Kiln's app, skill, and MCP following the guide here: ${AGENT_INSTALL_GUIDE_URL}`
 
@@ -99,8 +99,8 @@ The address rule is the one of architecture section 3, item 11; this is its page
 The two exact strings today (the second for origin `http://localhost:9000`). After the switch in 4.1 both read `… here: https://kiln.tech/agent_install.md`.
 
 ```
-Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md
-Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md
+Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/docs/agent_install.md
+Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/docs/agent_install.md
 
 The Kiln MCP server is at http://localhost:9000/mcp.
 ```
@@ -150,8 +150,8 @@ State: three constants set once in the instance script, `origin = app_origin()`,
 
 ### 4.1 Location and URL
 
-- File: `/agent_install.md` at the repo root, beside `README.md`. Not inside `app/mcp/`, and never served by `kiln_skill`: it is for an agent that does not have the MCP yet.
-- URL now: `https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md` (plain text). URL later: `https://kiln.tech/agent_install.md`.
+- File: `/docs/agent_install.md`, in the repo's `docs/` folder. Not inside `app/mcp/`, and never served by `kiln_skill`: it is for an agent that does not have the MCP yet.
+- URL now: `https://raw.githubusercontent.com/Kiln-AI/Kiln/main/docs/agent_install.md` (plain text). URL later: `https://kiln.tech/agent_install.md`.
 - The switch is one commit: change `AGENT_INSTALL_GUIDE_URL` in `connect_agent.ts` and the prompt line in `README.md`. A test (8.2) fails while the two differ. The guide does not contain its own URL, so it does not change. The docs page (section 7) is updated in its own repo.
 - `kiln.tech` should answer that URL with a redirect to the raw GitHub file, or with a copy made at deploy time, so no second file is maintained by hand. Someone with access to the website sets this up; it is a follow-up outside this repo (architecture section 8).
 
@@ -244,7 +244,7 @@ Most agents load MCP servers and skills only when a session starts. If you do no
 ### Claude Code
 
 - MCP server: run `claude mcp add --transport http --scope user kiln http://localhost:8757/mcp`, then check with `claude mcp list`. No timeout setting is needed.
-- Or by hand, in a project's `.mcp.json`: `{"mcpServers": {"kiln": {"type": "http", "url": "http://localhost:8757/mcp"}}}`. The `"type": "http"` field is required.
+- Or by hand, at user level in `~/.claude.json`: add `"kiln": {"type": "http", "url": "http://localhost:8757/mcp"}` to its top-level `mcpServers` object (create the object if it is missing; keep the other keys). The `"type": "http"` field is required.
 - Skill: `~/.claude/skills/kiln/SKILL.md`.
 
 ### Codex
@@ -319,13 +319,13 @@ Kiln has a built-in MCP server. Connect Claude Code, Codex, OpenCode or another 
 Paste this into your agent:
 
 ```
-Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md
+Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/docs/agent_install.md
 ```
 
-Then ask your agent to work with Kiln, or type `/kiln`. The same prompt is in the app under Settings, Connect Your Agent. To set up an agent by hand, see [agent_install.md](agent_install.md).
+Then ask your agent to work with Kiln, or type `/kiln`. The same prompt is in the app under Settings, Connect Your Agent. To set up an agent by hand, see [docs/agent_install.md](docs/agent_install.md).
 ````
 
-Also one bullet under "Highlights → Iterate, optimize, and collaborate", after the AI Assistant bullet, in that list's style (a person picks the emoji): `[**Use Kiln from your own agent**](#use-kiln-from-your-own-agent) - Connect Claude Code, Codex or OpenCode to Kiln over MCP.` When the docs page is live, add it to the `## Docs` list.
+Also one bullet under "Highlights → Iterate, optimize, and collaborate", after the AI Assistant bullet, in that list's style, with the emoji 🔌: `[**Use Kiln from your own agent**](#use-kiln-from-your-own-agent) - Connect Claude Code, Codex or OpenCode to Kiln over MCP.` When the docs page is live, add it to the `## Docs` list.
 
 ## 6. Rename of the existing `kiln_mcp` texts (this repo)
 
@@ -349,7 +349,7 @@ Under `libs/server/kiln_server/mcp/`:
 | `tool_selection.py:1`, module docstring | `"""Select the Kiln tools that the Kiln project tools MCP server exposes."""` |
 | `mcp_server_tool_utils.py:1`, module docstring | `"""Prepare Kiln tools for the Kiln project tools MCP server."""` |
 | `README.md:1`, title | `# Kiln project tools MCP server [Beta]` |
-| `README.md:3`, after the existing note | A second note: `> To connect your own agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see agent_install.md at the repo root. This server is not the way to do that.` |
+| `README.md:3`, after the existing note | A second note: `> To connect your own agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see docs/agent_install.md in the repo. This server is not the way to do that.` |
 | `README.md:5` | ``The Kiln project tools MCP server (the `kiln_mcp` command) lets you call one Kiln project's tools, such as a Kiln Search Tool, from any MCP client.`` |
 | `README.md:46-66`, the fenced `--help` block | Replace with the real output of `kiln_mcp --help` after the change. The block is stale today: it lacks `--list-tools` |
 

@@ -103,6 +103,7 @@ from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
     agent_policy_require_approval,
+    with_mcp_deny,
 )
 from kiln_server.utils.spec_utils import (
     eval_pass_fail_output_score,
@@ -120,6 +121,7 @@ from pydantic import (
 )
 
 from app.desktop.studio_server.code_tool_api import ToolCallLogEntryResponse
+from app.desktop.studio_server.services.code_trust import not_trusted_message
 
 from .correlation_calculator import (
     CorrelationCalculator,
@@ -523,7 +525,9 @@ async def run_v2_eval_test(
         if not has_add_code_trust(str(project.path)):
             return TestV2EvalResponse(
                 skipped_reason=SkippedReason.code_eval_not_trusted.value,
-                skipped_detail="Project not trusted for code eval execution.",
+                skipped_detail=not_trusted_message(
+                    "Project not trusted for code eval execution."
+                ),
             )
         # The author is iterating on this code right now, so show them what
         # it called -- nested LLM calls in particular are real spend.
@@ -2698,7 +2702,9 @@ def connect_evals_api(app: FastAPI):
             if not has_add_code_trust(str(project.path)):
                 raise HTTPException(
                     status_code=403,
-                    detail="Project not trusted to add code evals. Grant code trust and retry.",
+                    detail=not_trusted_message(
+                        "Project not trusted to add code evals."
+                    ),
                 )
 
         validate_provenance_or_400(
@@ -3545,7 +3551,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/add_code_trust",
         summary="Add code trust for a project",
         tags=["Evals"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def add_code_trust_endpoint(
         project_id: Annotated[
@@ -3569,6 +3575,8 @@ def connect_evals_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> CodeTrustResponse:
-        """Check whether the project's code is trusted for this app session."""
+        """Check whether the project's code is trusted for this app session.
+        Only the user can grant trust, in the Kiln app at
+        http://localhost:8757/settings/trust_code/{project_id}."""
         project = project_from_id(project_id)
         return CodeTrustResponse(trusted=has_add_code_trust(str(project.path)))

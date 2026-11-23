@@ -123,7 +123,16 @@ unless it is the first case or it disagrees with the others.
    document (section 5). A playbook change needs the owners.
 4. A playbook is a new problem or a new goal. If the problem has a
    playbook, the change goes in that playbook, not in a new one.
-5. Finish (section 9). `build` adds the document's row to its index file.
+5. A technique with the lever `tool_config` or `new_tool`, a smell that
+   applies to `tools`, a new lever, or a technique that
+   `references/improving_agents/playbooks/cheaper-or-faster.md` links joins an
+   overlap group of `test_shipped_skill.py` (`OVERLAP_GROUPS`).
+   `test_each_overlap_file_has_its_see_also_line` then fails for each file of
+   `references/knowledge/` that teaches the subject. Replace the `## See also`
+   line of each such file with the line that the test expects. A document of
+   another subject joins no group by itself: add it to its group in
+   `OVERLAP_GROUPS` when it belongs there, then update the lines the same way.
+6. Finish (section 9). `build` adds the document's row to its index file.
 
 Reason: a template has every required part, in order, so a check cannot
 fail on a missing heading. A test holds each template to the schema.

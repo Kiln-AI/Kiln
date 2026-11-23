@@ -146,14 +146,14 @@ Read each endpoint doc before the first call.
 
 | Step | Call |
 |---|---|
-| Read the trust state; grant trust | `references/knowledge/api_docs/get_api_projects_project_id_add_code_trust.md`; `references/knowledge/api_docs/post_api_projects_project_id_add_code_trust.md` |
+| Read the trust state (the user grants trust at `http://localhost:8757/settings/trust_code/{project_id}`) | `references/knowledge/api_docs/get_api_projects_project_id_add_code_trust.md` |
 | Read a code tool to clone | `references/knowledge/api_docs/get_api_projects_project_id_code_tools_code_tool_id.md` |
 | Read the schema of a tool to wrap | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_tools_tool_id_definition.md`: `function_name`, `description`, `parameters` |
 | Dry run (nothing is saved) | `references/knowledge/api_docs/post_api_projects_project_id_test_code_tool.md`: the create fields plus `params` (the arguments); the answer has `result`, `error`, `traceback`, `not_trusted`, `tool_call_log` |
 | Create | `references/knowledge/api_docs/post_api_projects_project_id_code_tools.md`: `name`, `tool_function_name`, `tool_description`, `parameters_schema`, `code`, `timeout_seconds`, `tool_allowlist`, `provenance` |
 | Put it on the new run config | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md`, with `kiln_tool::code::<new_id>` in `tools_config.tools` |
 
-Trust comes first: ask the user before you grant it, as
+Trust comes first, and only the user grants it, as
 `references/knowledge/code_tools.md` says. An untrusted create or dry run
 answers `not_trusted: true` and saves or runs nothing: check the field.
 

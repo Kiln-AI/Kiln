@@ -4,7 +4,7 @@ status: complete
 
 # UI Design: Kiln MCP Server
 
-The only UI in this project is the "Connect your agent" page and the way into it. Follow the app's existing patterns; nothing here needs a new component.
+The UI in this project is the "Connect your agent" page and the way into it, and the "Trust Code" page that an agent links to. Follow the app's existing patterns; the trust page reuses the question of the existing code-trust dialogs.
 
 ## Entry point: a callout on Settings
 
@@ -32,7 +32,7 @@ Setup Prompt                                                  (i)
 Paste this into your agent. Then ask it to work with Kiln.
 ┌─────────────────────────────────────────────────────────────┐
 │ Install Kiln's app, skill, and MCP following the guide   ⧉  │
-│ here: https://raw.githubusercontent.com/.../agent_install.md │
+│ here: …/Kiln-AI/Kiln/main/docs/agent_install.md             │
 └─────────────────────────────────────────────────────────────┘
 
 ▸ Set Up Manually
@@ -57,3 +57,27 @@ No status indicators, no per-agent tabs or commands, no list of connected agents
 ## Responsive behavior
 
 The page is a single column as wide as the Edit Task form. The prompt and URL wrap; their copy icons stay visible at any width.
+
+## The page: `/settings/trust_code/{project_id}`
+
+Only the user grants code trust. The agent gives the user this link (the skill, the code-tool route descriptions and their `not_trusted` field name it); no page of the app links to it. A standard `AppPage` with a breadcrumb back to Settings.
+
+- **Title:** Trust Code
+- **Subtitle:** `Trust the code in Project "<project name>"?`
+
+Content sits in one column of at most 512px (`max-w-lg`):
+
+```
+Trust Code
+Trust the code in Project "Support Ticket Triage"?
+
+(!)  This project wants to run Python code on your machine.
+     Only proceed if you trust the code and this project.
+     Never paste code from a stranger or the internet.
+
+                                    [ I Trust This Code ]
+```
+
+- **Question.** The body of the code-trust dialogs (`CodeTrustQuestion`), then the grant button, right-aligned, in the warning colour of the dialogs' button. A failed grant shows an error `Warning` above the button, and the question stays.
+- **Success.** A success `Warning`: "Return to your agent and tell it code trust was granted." The same state shows when the project is already trusted.
+- **Loading and error.** A spinner while the project and the trust state load; an error `Warning` when either fails (for example, an unknown project).

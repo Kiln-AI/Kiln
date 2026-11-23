@@ -10,6 +10,7 @@ from kiln_mcp_server import skill_files
 from PyInstaller import HOMEPATH
 from PyInstaller.building.build_main import discover_hook_directories
 from PyInstaller.depend.analysis import HOOK_PRIORITY_USER_HOOKS, PyiModuleGraph
+from PyInstaller.utils.hooks import collect_data_files
 
 HOOKS_DIR = Path(__file__).parent / "pyinstaller_hooks"
 NLTK_HOOK = HOOKS_DIR / "rthooks" / "pyi_rth_nltk_data_path.py"
@@ -114,3 +115,25 @@ def test_the_bundled_data_is_exactly_the_skill_tree():
             relative = dest_path.relative_to("kiln_mcp_server/skill")
             bundled.add((relative / Path(source).name).as_posix())
     assert bundled == set(skill_files.get_index().files)
+
+
+def test_the_bundled_data_skips_hidden_names(tmp_path, monkeypatch):
+    package = tmp_path / "hidden_names_pkg"
+    for relative in (
+        "__init__.py",
+        "skill/SKILL.md",
+        "skill/.DS_Store",
+        "skill/.hidden/a.md",
+        "skill/references/.x",
+        ".top",
+    ):
+        (package / relative).parent.mkdir(parents=True, exist_ok=True)
+        (package / relative).touch()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    excludes = runpy.run_path(str(MCP_HOOK))["DATA_EXCLUDES"]
+
+    datas = collect_data_files("hidden_names_pkg", excludes=excludes)
+
+    assert [Path(source).relative_to(package).as_posix() for source, _ in datas] == [
+        "skill/SKILL.md"
+    ]

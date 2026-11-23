@@ -362,7 +362,7 @@ async def test_an_event_stream_is_summarised(call):
         (
             httpx.ConnectTimeout("slow"),
             "PATCH",
-            "Request to /api/items/1 timed out after 30.0s The PATCH may have taken "
+            "Request to /api/items/1 timed out after 30.0s. The PATCH may have taken "
             "effect. Check the state before you repeat it.",
         ),
         (
@@ -373,7 +373,7 @@ async def test_an_event_stream_is_summarised(call):
         (
             httpx.ConnectError("refused"),
             "PATCH",
-            "Could not connect to server for /api/items/1 The PATCH may have taken "
+            "Could not connect to server for /api/items/1. The PATCH may have taken "
             "effect. Check the state before you repeat it.",
         ),
     ],

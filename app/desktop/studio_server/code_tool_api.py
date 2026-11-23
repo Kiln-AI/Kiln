@@ -33,6 +33,11 @@ from pydantic import (
     ValidationError as PydanticValidationError,
 )
 
+from app.desktop.studio_server.services.code_trust import (
+    CODE_TRUST_CHECK,
+    CODE_TRUST_PAGE,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,6 +82,15 @@ class CodeToolResponse(BaseModel):
     provenance: KilnArtifactProvenance | None = None
 
 
+NOT_TRUSTED_DESCRIPTION = (
+    "True when the project's code is not trusted, so nothing ran and nothing was "
+    f"saved. Only the user can grant code trust, in the Kiln app at {CODE_TRUST_PAGE}. "
+    "Explain what the code will run and that it runs with no sandbox, give the "
+    "user that link, and ask them to tell you when they have approved. Then "
+    f"confirm with {CODE_TRUST_CHECK} and call again."
+)
+
+
 class CodeToolCreateResponse(BaseModel):
     id: str | None = None
     name: str | None = None
@@ -91,7 +105,7 @@ class CodeToolCreateResponse(BaseModel):
     created_at: datetime | None = None
     created_by: str | None = None
     provenance: KilnArtifactProvenance | None = None
-    not_trusted: bool = False
+    not_trusted: bool = Field(default=False, description=NOT_TRUSTED_DESCRIPTION)
 
 
 class CodeToolUpdateRequest(BaseModel):
@@ -118,7 +132,8 @@ class TestCodeToolRequest(BaseModel):
 
 
 class ToolCallLogEntryResponse(BaseModel):
-    """One nested tool call a sandboxed run made, as reported to a test pane."""
+    """One nested tool call that a code tool or code eval made during a test run,
+    as reported to a test pane."""
 
     tool_name: str
     arguments: dict[str, Any]
@@ -147,7 +162,7 @@ class TestCodeToolResponse(BaseModel):
     result: str | None = None
     error: str | None = None
     traceback: str | None = None
-    not_trusted: bool = False
+    not_trusted: bool = Field(default=False, description=NOT_TRUSTED_DESCRIPTION)
     stdout: str = ""
     stderr: str = ""
     tool_call_log: list[ToolCallLogEntryResponse] = Field(default_factory=list)
@@ -227,8 +242,12 @@ def connect_code_tool_api(app: FastAPI):
         request: CodeToolCreateRequest,
     ) -> CodeToolCreateResponse:
         """Create a code tool: Python code the project's agents can call as a tool.
-        Until the project's code is trusted (Add code trust), it saves nothing and
-        returns not_trusted."""
+        While the project's code is not trusted, it saves nothing and returns
+        `not_trusted: true`. Only the user can grant code trust: explain what the
+        code will run and that it runs with no sandbox, give them the link
+        http://localhost:8757/settings/trust_code/{project_id}, and ask them to
+        tell you when they have approved. Then confirm with
+        GET /api/projects/{project_id}/add_code_trust and create the tool."""
         project = project_from_id(project_id)
 
         if not has_add_code_trust(str(project.path)):
@@ -275,9 +294,14 @@ def connect_code_tool_api(app: FastAPI):
         ],
         request: TestCodeToolRequest,
     ) -> TestCodeToolResponse:
-        """Run a code tool's code once on test arguments, without saving the tool.
-        Returns its output or error, or not_trusted until the project's code is
-        trusted (Add code trust)."""
+        """Run a code tool's code once on test arguments without saving it, and
+        return its output or error. While the project's code is not trusted,
+        it runs nothing and returns `not_trusted: true`. Only the user can grant
+        code trust: explain what the code will run and that it runs with no
+        sandbox, give them the link
+        http://localhost:8757/settings/trust_code/{project_id}, and ask them to
+        tell you when they have approved. Then confirm with
+        GET /api/projects/{project_id}/add_code_trust and run the test."""
         project = project_from_id(project_id)
 
         try:

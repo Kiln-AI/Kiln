@@ -6,7 +6,7 @@ api_docs:
   - references/knowledge/api_docs/get_api_projects_project_id_code_tools.md
   - references/knowledge/api_docs/get_api_projects_project_id_code_tools_code_tool_id.md
   - references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_tools_tool_id_definition.md
-  - references/knowledge/api_docs/post_api_projects_project_id_add_code_trust.md
+  - references/knowledge/api_docs/get_api_projects_project_id_add_code_trust.md
   - references/knowledge/api_docs/post_api_projects_project_id_test_code_tool.md
   - references/knowledge/api_docs/post_api_projects_project_id_code_tools.md
   - references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md
@@ -18,7 +18,7 @@ api_docs:
 ## What it is
 
 A code tool is a Python function that the subject model can call. Kiln runs
-it with no resource sandbox (`references/knowledge/code_tools.md`). It can
+it with no sandbox (`references/knowledge/code_tools.md`). It can
 call other tools through its `tool_allowlist`. The
 model sees its `tool_function_name`, its `tool_description` and the
 descriptions in its `parameters_schema`.
@@ -39,9 +39,11 @@ them. You add code tools beside them.
 
 ## How to change it
 
-1. Trust is granted once per project and app session, with
-   `references/knowledge/api_docs/post_api_projects_project_id_add_code_trust.md`.
-   Ask the user first: the code runs on the machine where Kiln runs. An
+1. Read the trust state with
+   `references/knowledge/api_docs/get_api_projects_project_id_add_code_trust.md`.
+   Trust is granted once per project and app session, and only the user can
+   grant it. The code runs on the machine where Kiln runs, with no sandbox.
+   `references/knowledge/code_tools.md` says how to ask the user. An
    untrusted create or dry run answers `not_trusted: true` and does nothing.
 2. Read the source:
    `references/knowledge/api_docs/get_api_projects_project_id_code_tools_code_tool_id.md`

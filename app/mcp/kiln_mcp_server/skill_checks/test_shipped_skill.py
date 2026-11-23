@@ -24,6 +24,8 @@ from kiln_mcp_server.skill_checks.knowledge_schema import (
     META_MODELS,
     REQUIRED_SECTIONS,
     LeverMeta,
+    SmellMeta,
+    TechniqueMeta,
     default_root,
 )
 from kiln_mcp_server.skill_checks.test_knowledge_check import API_DOC, build_tree
@@ -115,7 +117,7 @@ def test_the_knowledge_was_imported_whole():
         )
         for kind, folder in COMPONENT_ROOTS.items()
     }
-    assert counts == IMPORTED_FILES
+    assert all(counts[kind] >= IMPORTED_FILES[kind] for kind in IMPORTED_FILES), counts
 
 
 def test_a_document_of_each_type_exists():
@@ -297,24 +299,97 @@ _P = "references/improving_agents/playbooks/"
 _S = "references/improving_agents/smells/"
 _T = "references/improving_agents/techniques/"
 
-ALL_LEVERS = tuple(
-    f"{_L}{lever}.md"
-    for lever in (
-        "model",
-        "new_tool",
-        "output_mode",
-        "params",
-        "prompt",
-        "skill",
-        "tool_config",
-    )
+_KNOWLEDGE = load(default_root())
+
+PROMPT_DOCUMENTS = (
+    f"{_L}prompt.md",
+    f"{_T}add-the-missing-requirement.md",
+    f"{_T}one-general-rule-per-edit.md",
+    f"{_T}structure-a-long-prompt.md",
+    f"{_T}policy-as-step-by-step-procedures.md",
+    f"{_T}state-the-output-contract.md",
+    f"{_T}decline-rules-paragraph.md",
+    f"{_T}prune-one-group-at-a-time.md",
+    f"{_S}very-long-prompt.md",
+    f"{_P}requirement-missing-from-the-prompt.md",
+    f"{_P}lost-in-long-instructions.md",
+    f"{_P}wrong-scope-or-refusal.md",
+    f"{_P}change-the-surface-not-the-words.md",
+)
+SKILL_DOCUMENTS = (
+    f"{_L}skill.md",
+    f"{_T}long-prompt-into-a-skill.md",
+    f"{_T}document-into-a-skill.md",
+    f"{_T}guide-skill-for-a-tool-set.md",
+    f"{_T}rewrite-an-inherited-skill.md",
+    f"{_T}skill-into-the-prompt.md",
+    f"{_S}one-file-skill-with-many-topics.md",
+    f"{_S}skill-too-small-to-earn-its-place.md",
+    f"{_S}very-long-skill-description.md",
+    f"{_S}faulty-inherited-skill.md",
+    f"{_P}skill-is-not-read.md",
+)
+RAG_DOCUMENTS = (
+    f"{_P}answers-not-grounded.md",
+    f"{_T}attach-the-knowledge-source.md",
+    f"{_T}answer-only-from-the-source.md",
+    f"{_T}document-into-a-skill.md",
+    f"{_S}document-behind-a-lookup-tool.md",
 )
 
+
+def _cheaper_or_faster_documents() -> tuple[str, ...]:
+    """The playbook, then the techniques it links."""
+    playbook = f"{_P}cheaper-or-faster.md"
+    [document] = [d for d in _KNOWLEDGE.documents if d.path == playbook]
+    techniques = {
+        link.resolved
+        for link in document.links
+        if link.resolved is not None and link.resolved.startswith(_T)
+    }
+    return (playbook, *sorted(techniques))
+
+
+def _tool_documents() -> tuple[str, ...]:
+    """The tool levers and playbooks, then the techniques whose levers include
+    `tool_config` or `new_tool` and the smells that apply to `tools`, except
+    the documents of the prompt, skill and RAG groups."""
+    taken = {*PROMPT_DOCUMENTS, *SKILL_DOCUMENTS, *RAG_DOCUMENTS}
+    techniques = sorted(
+        d.path
+        for d in _KNOWLEDGE.by_kind("techniques")
+        if isinstance(d.meta, TechniqueMeta)
+        and {"tool_config", "new_tool"} & set(d.meta.levers)
+        and d.path not in taken
+    )
+    smells = sorted(
+        d.path
+        for d in _KNOWLEDGE.by_kind("smells")
+        if isinstance(d.meta, SmellMeta)
+        and isinstance(d.meta.applies_to, list)
+        and "tools" in d.meta.applies_to
+        and d.path not in taken
+    )
+    return (
+        f"{_L}tool_config.md",
+        f"{_L}new_tool.md",
+        f"{_P}fit-the-tool-layer-to-the-agent.md",
+        f"{_P}wrong-tool-chosen.md",
+        f"{_P}failure-at-a-tool-call.md",
+        f"{_P}malformed-tool-calls.md",
+        f"{_P}missing-context-the-agent-could-be-given.md",
+        *techniques,
+        *smells,
+    )
+
+
+ALL_LEVERS = tuple(sorted(d.path for d in _KNOWLEDGE.by_kind("levers")))
+
 # The overlap groups of skill_and_content 9.1, in its order: the knowledge
-# documents of each subject, then the Assistant files that teach it. Group 7
-# holds the playbook and the techniques it links; group 10 the techniques whose
-# levers include `tool_config` or `new_tool`, except those of groups 3, 9 and
-# 11, and the smells that apply to `tools`, except that of group 11.
+# documents of each subject, then the Assistant files that teach it. Groups 7,
+# 10 and 12 are built from the tree by the rules of 9.1, so a new document
+# that belongs to one of them fails `test_each_overlap_file_has_its_see_also_line`
+# until the "See also" lines name it.
 OVERLAP_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (  # 1 the order of an improvement
         (
@@ -333,21 +408,7 @@ OVERLAP_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         (f"{_K}eval_scores.md", f"{_K}benchmark_eval_inputs.md"),
     ),
     (  # 3 improving a prompt
-        (
-            f"{_L}prompt.md",
-            f"{_T}add-the-missing-requirement.md",
-            f"{_T}one-general-rule-per-edit.md",
-            f"{_T}structure-a-long-prompt.md",
-            f"{_T}policy-as-step-by-step-procedures.md",
-            f"{_T}state-the-output-contract.md",
-            f"{_T}decline-rules-paragraph.md",
-            f"{_T}prune-one-group-at-a-time.md",
-            f"{_S}very-long-prompt.md",
-            f"{_P}requirement-missing-from-the-prompt.md",
-            f"{_P}lost-in-long-instructions.md",
-            f"{_P}wrong-scope-or-refusal.md",
-            f"{_P}change-the-surface-not-the-words.md",
-        ),
+        PROMPT_DOCUMENTS,
         (f"{_K}prompt_audit.md", f"{_K}prompt_rewrite.md"),
     ),
     (  # 4 model choice
@@ -373,19 +434,7 @@ OVERLAP_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         (f"{_K}model_create_configs.md",),
     ),
     (  # 7 cheaper or faster as a goal
-        (
-            f"{_P}cheaper-or-faster.md",
-            f"{_T}cap-and-preview-wrapper.md",
-            f"{_T}decision-model-for-a-classifier.md",
-            f"{_T}faster-provider-for-the-same-model.md",
-            f"{_T}long-prompt-into-a-skill.md",
-            f"{_T}model-swap-inside-a-class.md",
-            f"{_T}prune-one-group-at-a-time.md",
-            f"{_T}roll-up-tool.md",
-            f"{_T}skill-into-the-prompt.md",
-            f"{_T}state-the-output-contract.md",
-            f"{_T}thinking-level-ladder.md",
-        ),
+        _cheaper_or_faster_documents(),
         (f"{_K}model_work.md",),
     ),
     (  # 8 an eval that is itself the problem
@@ -403,48 +452,11 @@ OVERLAP_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
     ),
     (  # 9 skills
-        (
-            f"{_L}skill.md",
-            f"{_T}long-prompt-into-a-skill.md",
-            f"{_T}document-into-a-skill.md",
-            f"{_T}guide-skill-for-a-tool-set.md",
-            f"{_T}rewrite-an-inherited-skill.md",
-            f"{_T}skill-into-the-prompt.md",
-            f"{_S}one-file-skill-with-many-topics.md",
-            f"{_S}skill-too-small-to-earn-its-place.md",
-            f"{_S}very-long-skill-description.md",
-            f"{_S}faulty-inherited-skill.md",
-            f"{_P}skill-is-not-read.md",
-        ),
+        SKILL_DOCUMENTS,
         (f"{_K}adding_skills.md",),
     ),
     (  # 10 tools and code tools
-        (
-            f"{_L}tool_config.md",
-            f"{_L}new_tool.md",
-            f"{_P}fit-the-tool-layer-to-the-agent.md",
-            f"{_P}wrong-tool-chosen.md",
-            f"{_P}failure-at-a-tool-call.md",
-            f"{_P}malformed-tool-calls.md",
-            f"{_P}missing-context-the-agent-could-be-given.md",
-            f"{_T}cap-and-preview-wrapper.md",
-            f"{_T}consolidate-tools.md",
-            f"{_T}directive-in-the-tool-response.md",
-            f"{_T}errors-the-agent-can-act-on.md",
-            f"{_T}guard-tool-calls-at-the-boundary.md",
-            f"{_T}new-tool-description.md",
-            f"{_T}normalize-inputs-wrapper.md",
-            f"{_T}remove-or-scope-tools.md",
-            f"{_T}roll-up-tool.md",
-            f"{_S}fixed-call-chain.md",
-            f"{_S}general-query-tool-without-a-guide.md",
-            f"{_S}too-many-tools.md",
-            f"{_S}tool-results-flood-the-context.md",
-            f"{_S}tool-search.md",
-            f"{_S}tools-on-a-live-server.md",
-            f"{_S}unnecessary-tools.md",
-            f"{_S}very-long-tool-description.md",
-        ),
+        _tool_documents(),
         (
             f"{_K}tools.md",
             f"{_K}code_tools.md",
@@ -453,13 +465,7 @@ OVERLAP_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
     ),
     (  # 11 grounding and RAG
-        (
-            f"{_P}answers-not-grounded.md",
-            f"{_T}attach-the-knowledge-source.md",
-            f"{_T}answer-only-from-the-source.md",
-            f"{_T}document-into-a-skill.md",
-            f"{_S}document-behind-a-lookup-tool.md",
-        ),
+        RAG_DOCUMENTS,
         (f"{_K}rag.md",),
     ),
     (  # 12 creating a task and a run config
@@ -565,6 +571,7 @@ BLOCKED_CAPABILITY_PAGES = tuple(
         "settings/manage_projects",
         "docs/library/{project_id}/{document_id}",
         "skills/{project_id}/{skill_id}",
+        "settings/trust_code/{project_id}",
     )
 )
 

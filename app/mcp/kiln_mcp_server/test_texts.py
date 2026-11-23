@@ -2,11 +2,13 @@ import ast
 from pathlib import Path
 
 from kiln_mcp_server import texts
+from kiln_mcp_server.skill_files import ROOT_FILE, get_index, read_file
 from kiln_mcp_server.texts import (
     CALL_KILN_API_DESCRIPTION,
     PATH_DESCRIPTION,
     SERVER_INSTRUCTIONS,
     SKILL_TOOL_DESCRIPTION,
+    WHAT_KILN_COVERS,
     WHAT_KILN_IS,
 )
 
@@ -19,12 +21,21 @@ def test_what_kiln_is_is_the_shared_opening():
 
 
 def test_the_install_guide_stub_skill_opens_with_what_kiln_is():
-    guide = Path(__file__).resolve().parents[3] / "agent_install.md"
+    guide = Path(__file__).resolve().parents[3] / "docs" / "agent_install.md"
     assert f"description: {WHAT_KILN_IS}." in guide.read_text(encoding="utf-8")
 
 
 def test_server_instructions_start_with_what_kiln_is():
-    assert SERVER_INSTRUCTIONS.startswith(WHAT_KILN_IS)
+    assert SERVER_INSTRUCTIONS.startswith(f"{WHAT_KILN_IS}: {WHAT_KILN_COVERS}.")
+
+
+def test_skill_md_names_what_kiln_covers_in_its_description_and_opening():
+    skill_md = read_file(ROOT_FILE, get_index())
+    description = next(
+        line for line in skill_md.split("\n") if line.startswith("description: ")
+    )
+    assert f"- {WHAT_KILN_COVERS} -" in description
+    assert f"{WHAT_KILN_IS}: {WHAT_KILN_COVERS}." in skill_md.split("---", 2)[2]
 
 
 def test_skill_tool_description_holds_what_kiln_is_as_a_sentence():
@@ -36,6 +47,7 @@ def test_server_instructions_fit_the_agent_limits():
     opening = SERVER_INSTRUCTIONS[:500]
     assert "kiln_skill" in opening
     assert "/kiln" in opening
+    assert "$kiln" in opening
 
 
 def test_the_first_paragraph_of_the_instructions_stands_alone():

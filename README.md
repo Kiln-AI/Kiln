@@ -51,7 +51,7 @@ Kiln is a workbench for the full AI development loop: evals, optimization, promp
 - 🖥️ [**Intuitive app**](https://kiln.tech/download) - Easy-to-use apps for Mac, Windows, and Linux. One-click install.
 - 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) - Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes.
 - 💬 [**AI Assistant**](https://docs.kiln.tech) - Your AI data-science partner. Kiln Assistant proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
-- <!-- TODO: a person picks this bullet's emoji --> [**Use Kiln from your own agent**](#use-kiln-from-your-own-agent) - Connect Claude Code, Codex or OpenCode to Kiln over MCP.
+- 🔌 [**Use Kiln from your own agent**](#use-kiln-from-your-own-agent) - Connect Claude Code, Codex or OpenCode to Kiln over MCP.
 - 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) - The app syncs to Git automatically — even for teammates who don't know what Git is.
 
 ### Build & ship agents
@@ -80,10 +80,10 @@ Kiln has a built-in MCP server. Connect Claude Code, Codex, OpenCode or another 
 Paste this into your agent:
 
 ```
-Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md
+Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/docs/agent_install.md
 ```
 
-Then ask your agent to work with Kiln, or type `/kiln` (`$kiln` in Codex). The same prompt is in the app under Settings, Connect Your Agent. To set up an agent by hand, see [agent_install.md](agent_install.md).
+Then ask your agent to work with Kiln, or type `/kiln` (`$kiln` in Codex). The same prompt is in the app under Settings, Connect Your Agent. To set up an agent by hand, see [docs/agent_install.md](docs/agent_install.md).
 
 ## Demo
 

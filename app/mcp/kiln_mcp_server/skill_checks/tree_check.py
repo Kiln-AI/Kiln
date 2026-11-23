@@ -208,6 +208,11 @@ _BARE_PATH = re.compile(r"(?<![\w./-])references/[A-Za-z0-9_\-./]+")
 _ROOT_ANCHORED_PATH = re.compile(
     r"(?<![\w.-])/(?:references/[A-Za-z0-9_\-./]*|SKILL\.md\b)"
 )
+# `./references/...`, `../references/...`, `./SKILL.md` and the like, outside a
+# link target.
+_DOT_RELATIVE_PATH = re.compile(
+    r"(?<![\w.-])\.\.?/(?:references/[A-Za-z0-9_\-./]*|SKILL\.md\b)"
+)
 _PROSE_FILE_NAME = re.compile(r"(?<![\w./-])[A-Za-z0-9_.-]+\.md(?![\w/-])")
 _SCHEME = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*:|//)")
 _PLACEHOLDER_CHARS = frozenset("*<>{}")
@@ -275,6 +280,13 @@ def _is_placeholder(path: str) -> bool:
     return bool(_PLACEHOLDER_CHARS & set(path)) or path.endswith("X.md")
 
 
+def _unwrap_angle_brackets(target: str) -> str:
+    """A CommonMark link destination written as `<...>`, without the brackets."""
+    if len(target) > 1 and target.startswith("<") and target.endswith(">"):
+        return target[1:-1]
+    return target
+
+
 def _normalise(raw: str) -> tuple[str, bool]:
     path = raw.split("#", 1)[0].rstrip(".,;:)")
     is_folder = path.endswith("/")
@@ -312,7 +324,7 @@ def _scan(text: str, file: str, folders: frozenset[str]) -> _Scan:
     for number, line in enumerate(lines, start=1):
         rest = line
         for match in _LINK_TARGET.finditer(line):
-            target = match.group(1)
+            target = _unwrap_angle_brackets(match.group(1))
             link_targets.append((number, target))
             rest = _blank(rest, match.start(), match.end())
             if _is_skill_path(target):
@@ -439,6 +451,8 @@ class _TreeChecker:
             if _SCHEME.match(target) or target.startswith("#"):
                 continue
             path = target.split("#", 1)[0]
+            if _is_placeholder(path):
+                continue
             partial = path.endswith(".md") and not _is_skill_path(path)
             if "./" in target or partial or _is_root_anchored(path):
                 found.append((number, target))
@@ -446,12 +460,13 @@ class _TreeChecker:
             (number, span)
             for number, span in scan.code_spans
             if _is_root_anchored(span.split("#", 1)[0])
+            or _DOT_RELATIVE_PATH.match(span)
         )
         for number, line in scan.prose:
-            found.extend(
-                (number, m.group(0).rstrip(".,;:"))
-                for m in _ROOT_ANCHORED_PATH.finditer(line)
-            )
+            for pattern in (_ROOT_ANCHORED_PATH, _DOT_RELATIVE_PATH):
+                found.extend(
+                    (number, m.group(0).rstrip(".,;:")) for m in pattern.finditer(line)
+                )
         for number, written in sorted(found):
             self.problem(
                 "tree-relative",

@@ -1,11 +1,11 @@
 ---
 name: kiln
-description: Kiln is an app for building, evaluating and optimizing AI agents. This skill says how to work with the user's running Kiln app through its API - projects, tasks, prompts, run configs, models, evals, synthetic data, fine-tuning, tools and RAG - and how to make an agent better. Use when the user asks for /kiln or wants to work with Kiln.
+description: Kiln is an app for building, evaluating and optimizing AI agents. This skill says how to work with the user's running Kiln app through its API - projects, tasks, prompts, run configs, models, evals, synthetic data, fine-tuning, tools, skills and RAG - and how to make an agent better. Use when the user asks for /kiln or wants to work with Kiln.
 ---
 
 # Kiln
 
-Kiln is an app for building, evaluating and optimizing AI agents: tasks and their prompts, run configs and models, evals and judges, synthetic data, fine-tuning, tools, skills and RAG. The user runs Kiln on their own computer, and you reach it through the `call_kiln_api` tool, which calls Kiln's REST API. The rules in this file apply while you do Kiln work; they do not change how you handle anything else.
+Kiln is an app for building, evaluating and optimizing AI agents: projects, tasks, prompts, run configs, models, evals, synthetic data, fine-tuning, tools, skills and RAG. The user runs Kiln on their own computer, and you reach it through the `call_kiln_api` tool, which calls Kiln's REST API. The rules in this file apply while you do Kiln work; they do not change how you handle anything else.
 
 ## Reading skill files
 
@@ -46,7 +46,12 @@ Read the mode that fits the user's request before other skill files. A mode name
 
 Ask the user before an operation that is destructive or that cannot be undone, unless they asked for exactly that operation: a DELETE, an overwrite of the user's prompt text or task instruction, and anything that removes data. When the user's message asks for a change ("update X", "apply this rewrite"), the ask is the consent: make the change and report it.
 
-Always ask first, even when the user asked for the result, before an operation that runs code on the machine where Kiln runs: granting a project code trust (for a code tool or a code eval) and adding a local MCP server. Say what will run and that it has no sandbox. A knowledge file can name other operations to ask about first; follow it.
+Two operations let code run on the machine where Kiln runs, with no sandbox. Always involve the user first, even when they asked for the result:
+
+- **Code trust** (for a code tool or a code eval). Only the user can grant it. Read the state with `GET /api/projects/{project_id}/add_code_trust`. When the project is not trusted, tell the user what the code will run and that it runs with no sandbox, give them the link `http://localhost:8757/settings/trust_code/{project_id}`, and ask them to tell you when they have approved. Then read the state again, and go on only when it is trusted. Trust lasts until Kiln restarts.
+- **Adding a local MCP server.** Say what will run and that it runs with no sandbox, and add it only when the user agrees.
+
+A knowledge file can name other operations to ask about first; follow it.
 
 Everything else that has an endpoint, do it and report the result; do not hand the user a plan to click through.
 
@@ -117,6 +122,7 @@ Some capabilities have no endpoint here, on purpose: they hold credentials, open
 | Open a project's folder | `http://localhost:8757/settings/manage_projects` |
 | Open a document's folder, or download the original document | `http://localhost:8757/docs/library/{project_id}/{document_id}` |
 | Open a skill's folder | `http://localhost:8757/skills/{project_id}/{skill_id}` |
+| Grant code trust to a project, for a code tool or a code eval ("Working with the user" says how to ask) | `http://localhost:8757/settings/trust_code/{project_id}` |
 
 Two errors mean the user must connect something first:
 

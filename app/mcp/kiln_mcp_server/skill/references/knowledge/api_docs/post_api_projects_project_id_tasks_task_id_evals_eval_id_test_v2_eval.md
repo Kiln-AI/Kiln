@@ -193,7 +193,8 @@ Shared fields for llm_judge: model, provider, g_eval.
 
 ### ToolCallLogEntryResponse
 
-One nested tool call a sandboxed run made, as reported to a test pane.
+One nested tool call that a code tool or code eval made during a test run,
+as reported to a test pane.
 
 |Field|Type|Required|Description|
 |-|-|-|-|

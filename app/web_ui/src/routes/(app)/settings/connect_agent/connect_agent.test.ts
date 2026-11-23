@@ -22,7 +22,7 @@ function read_repo_file(name: string): string {
   return readFileSync(path.join(REPO_ROOT, name), "utf-8")
 }
 
-// The stub skill of agent_install.md step 3. A change here is a deliberate change to the stub.
+// The stub skill of docs/agent_install.md step 3. A change here is a deliberate change to the stub.
 const STUB_SKILL = `---
 name: kiln
 description: Kiln is an app for building, evaluating and optimizing AI agents. Use when the user asks for /kiln or wants to work with Kiln.
@@ -114,7 +114,7 @@ describe("repo files that repeat the prompt and the stub skill", () => {
   })
 
   it("agent_install.md holds the stub skill and the details an agent needs", () => {
-    const guide = read_repo_file("agent_install.md")
+    const guide = read_repo_file("docs/agent_install.md")
     expect(guide).toContain(STUB_SKILL)
     expect(guide).toContain("http://localhost:8757/mcp")
     expect(guide).toContain("http://localhost:8757/ping")
@@ -131,7 +131,7 @@ describe("repo files that repeat the prompt and the stub skill", () => {
   })
 
   it("agent_install.md stays short and does not name its own URL", () => {
-    const guide = read_repo_file("agent_install.md")
+    const guide = read_repo_file("docs/agent_install.md")
     expect(guide.trimEnd().split("\n").length).toBeLessThanOrEqual(130)
     expect(guide).not.toContain(AGENT_INSTALL_GUIDE_URL)
   })

@@ -1163,7 +1163,11 @@ async def test_create_eval_config_code_eval_untrusted_403(
         )
 
     assert response.status_code == 403
-    assert "not trusted" in response.json()["message"].lower()
+    assert response.json()["message"] == (
+        "Project not trusted to add code evals. Only the user can grant code "
+        "trust, at http://localhost:8757/settings/trust_code/{project_id}. "
+        "Confirm with GET /api/projects/{project_id}/add_code_trust, then retry."
+    )
     # Nothing should have been persisted.
     assert len(mock_v2_eval.configs()) == 0
 
@@ -7112,7 +7116,11 @@ class TestTestV2Eval:
         body = response.json()
         assert body["scores"] == {}
         assert body["skipped_reason"] == "code_eval_not_trusted"
-        assert body["skipped_detail"] == "Project not trusted for code eval execution."
+        assert body["skipped_detail"] == (
+            "Project not trusted for code eval execution. Only the user can grant "
+            "code trust, at http://localhost:8757/settings/trust_code/{project_id}. "
+            "Confirm with GET /api/projects/{project_id}/add_code_trust, then retry."
+        )
 
     def test_code_eval_trusted_execution(self, client, mock_v2_eval):
         payload = {

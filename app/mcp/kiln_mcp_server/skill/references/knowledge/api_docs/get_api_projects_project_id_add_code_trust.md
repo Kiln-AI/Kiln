@@ -5,6 +5,8 @@
 **Tags:** Evals
 
 Check whether the project's code is trusted for this app session.
+Only the user can grant trust, in the Kiln app at
+http://localhost:8757/settings/trust_code/{project_id}.
 
 ## Request
 

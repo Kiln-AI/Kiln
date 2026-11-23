@@ -73,7 +73,7 @@ Most agents load MCP servers and skills only when a session starts. If you do no
 ### Claude Code
 
 - MCP server: run `claude mcp add --transport http --scope user kiln http://localhost:8757/mcp`, then check with `claude mcp list`. No timeout setting is needed.
-- Or by hand, in a project's `.mcp.json`: `{"mcpServers": {"kiln": {"type": "http", "url": "http://localhost:8757/mcp"}}}`. The `"type": "http"` field is required.
+- Or by hand, at user level in `~/.claude.json`: add `"kiln": {"type": "http", "url": "http://localhost:8757/mcp"}` to its top-level `mcpServers` object (create the object if it is missing; keep the other keys). The `"type": "http"` field is required.
 - Skill: `~/.claude/skills/kiln/SKILL.md`.
 
 ### Codex

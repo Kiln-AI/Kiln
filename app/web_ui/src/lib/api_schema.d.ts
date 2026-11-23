@@ -3040,6 +3040,8 @@ export interface paths {
         /**
          * Check code trust for a project
          * @description Check whether the project's code is trusted for this app session.
+         *     Only the user can grant trust, in the Kiln app at
+         *     http://localhost:8757/settings/trust_code/{project_id}.
          */
         get: operations["check_add_code_trust_endpoint_api_projects__project_id__add_code_trust_get"];
         put?: never;
@@ -3501,8 +3503,12 @@ export interface paths {
         /**
          * Create Code Tool
          * @description Create a code tool: Python code the project's agents can call as a tool.
-         *     Until the project's code is trusted (Add code trust), it saves nothing and
-         *     returns not_trusted.
+         *     While the project's code is not trusted, it saves nothing and returns
+         *     `not_trusted: true`. Only the user can grant code trust: explain what the
+         *     code will run and that it runs with no sandbox, give them the link
+         *     http://localhost:8757/settings/trust_code/{project_id}, and ask them to
+         *     tell you when they have approved. Then confirm with
+         *     GET /api/projects/{project_id}/add_code_trust and create the tool.
          */
         post: operations["create_code_tool_api_projects__project_id__code_tools_post"];
         delete?: never;
@@ -3522,9 +3528,14 @@ export interface paths {
         put?: never;
         /**
          * Test Code Tool
-         * @description Run a code tool's code once on test arguments, without saving the tool.
-         *     Returns its output or error, or not_trusted until the project's code is
-         *     trusted (Add code trust).
+         * @description Run a code tool's code once on test arguments without saving it, and
+         *     return its output or error. While the project's code is not trusted,
+         *     it runs nothing and returns `not_trusted: true`. Only the user can grant
+         *     code trust: explain what the code will run and that it runs with no
+         *     sandbox, give them the link
+         *     http://localhost:8757/settings/trust_code/{project_id}, and ask them to
+         *     tell you when they have approved. Then confirm with
+         *     GET /api/projects/{project_id}/add_code_trust and run the test.
          */
         post: operations["test_code_tool_api_projects__project_id__test_code_tool_post"];
         delete?: never;
@@ -6299,6 +6310,7 @@ export interface components {
             provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /**
              * Not Trusted
+             * @description True when the project's code is not trusted, so nothing ran and nothing was saved. Only the user can grant code trust, in the Kiln app at http://localhost:8757/settings/trust_code/{project_id}. Explain what the code will run and that it runs with no sandbox, give the user that link, and ask them to tell you when they have approved. Then confirm with GET /api/projects/{project_id}/add_code_trust and call again.
              * @default false
              */
             not_trusted: boolean;
@@ -14938,6 +14950,7 @@ export interface components {
             traceback?: string | null;
             /**
              * Not Trusted
+             * @description True when the project's code is not trusted, so nothing ran and nothing was saved. Only the user can grant code trust, in the Kiln app at http://localhost:8757/settings/trust_code/{project_id}. Explain what the code will run and that it runs with no sandbox, give the user that link, and ask them to tell you when they have approved. Then confirm with GET /api/projects/{project_id}/add_code_trust and call again.
              * @default false
              */
             not_trusted: boolean;
@@ -15121,7 +15134,8 @@ export interface components {
         };
         /**
          * ToolCallLogEntryResponse
-         * @description One nested tool call a sandboxed run made, as reported to a test pane.
+         * @description One nested tool call that a code tool or code eval made during a test run,
+         *     as reported to a test pane.
          */
         ToolCallLogEntryResponse: {
             /** Tool Name */

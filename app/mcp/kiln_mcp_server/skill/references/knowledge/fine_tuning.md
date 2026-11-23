@@ -21,6 +21,8 @@ Also read `references/modes/improve_task.md` when the user is weighing fine-tuni
 
 What to try before a fine-tune, and in what order, is the knowledge's: read `references/improving_agents/playbooks/ordering-work.md` before you recommend one. The training charge is paid as soon as the job is submitted (and cancelling mid-run still typically bills partial cost), so the bar for committing to a training run should be high.
 
+Start a fine-tune only with the user's sign-off, after you explain its downsides and the other options are exhausted. The downsides: a fine-tuned model is much harder to host and scale; it is harder to move to a new model (the fine-tune must be done again); its experiments are expensive and slow; and it can overfit (better on the evals, worse in other areas). It is mostly for expert users.
+
 ## When Fine-Tuning Is the Right Lever
 
 Fine-tuning is warranted when:

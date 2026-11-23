@@ -142,6 +142,11 @@ def test_wrong_case_path_fails(tmp_path):
         "Read `/references/knowledge/rag.md`.",
         "Read `/SKILL.md`.",
         "Read /references/knowledge/rag.md first.",
+        "Read `../references/nope.md`.",
+        "Read `./references/modes/learn.md`.",
+        "Read `./SKILL.md`.",
+        "Then see ../references/nope.md for more.",
+        "Then see ./references/knowledge/rag.md.",
     ],
 )
 def test_relative_link_fails(tmp_path, link):
@@ -234,10 +239,20 @@ def test_catalogue_names_are_paths():
         "Read references/levers/*.md.",
         "Read `references/knowledge/<file>.md`.",
         "Read `references/knowledge/X.md`.",
+        "Read [the guide](<name>.md).",
+        "Read [the guide](references/knowledge/{name}.md).",
     ],
 )
 def test_placeholder_is_skipped(tmp_path, line):
     assert problems_of(tmp_path, {"SKILL.md": with_line(SKILL_MD, line)}) == []
+
+
+def test_an_angle_bracket_link_target_is_a_reference(tmp_path):
+    line = "[RAG](<references/knowledge/rag.md>) and [gone](<references/knowledge/nope.md>)."
+    problems = problems_of(tmp_path, {"SKILL.md": with_line(SKILL_MD, line)})
+    assert [p.message for p in problems] == [
+        "line 12: `references/knowledge/nope.md` is not a file or folder of the skill"
+    ]
 
 
 def test_ignored_refs_are_skipped(tmp_path):

@@ -13,7 +13,7 @@ One catalogue per area of the Kiln API. A catalogue lists the endpoints of its a
 | `references/knowledge/api_docs/memory_api_list.md` | Memory | 6 | The Kiln assistant's durable memory for a project (save, list, get, update, delete, summary). |
 | `references/knowledge/api_docs/run_configs_api_list.md` | Run Configs | 7 | Manage run configurations for tasks and evals. |
 | `references/knowledge/api_docs/documents_api_list.md` | Documents | 39 | Manage documents, extraction, chunking, embedding, vector stores, and RAG configurations. |
-| `references/knowledge/api_docs/evals_api_list.md` | Evals | 24 | Create and run evaluations for tasks. |
+| `references/knowledge/api_docs/evals_api_list.md` | Evals | 23 | Create and run evaluations for tasks. |
 | `references/knowledge/api_docs/eval_inputs_api_list.md` | Eval Inputs | 5 | Author and manage eval input datasets for tasks. |
 | `references/knowledge/api_docs/statistics_api_list.md` | Statistics | 1 | Confidence intervals and significance tests on eval metrics. |
 | `references/knowledge/api_docs/synthetic_data_api_list.md` | Synthetic Data | 15 | Generate synthetic data for evals and fine-tuning. |

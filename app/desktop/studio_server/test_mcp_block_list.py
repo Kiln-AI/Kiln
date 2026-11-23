@@ -45,6 +45,7 @@ EXPECTED_MCP_BLOCKED: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/provider/disconnect_api_key"),
         ("POST", "/api/provider/openai_compatible"),
         ("DELETE", "/api/provider/openai_compatible"),
+        ("POST", "/api/projects/{project_id}/add_code_trust"),
     }
 )
 
@@ -52,7 +53,6 @@ EXPECTED_MCP_BLOCKED: frozenset[tuple[str, str]] = frozenset(
 # call.
 EXPECTED_MCP_ALLOWED: tuple[tuple[str, str], ...] = (
     ("GET", "/api/projects/{project_id}/add_code_trust"),
-    ("POST", "/api/projects/{project_id}/add_code_trust"),
     ("POST", "/api/projects/{project_id}/connect_local_mcp"),
     ("PATCH", "/api/projects/{project_id}/edit_local_mcp/{tool_server_id}"),
     ("GET", "/api/settings"),

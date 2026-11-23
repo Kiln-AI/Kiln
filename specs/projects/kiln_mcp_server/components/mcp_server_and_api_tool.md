@@ -133,13 +133,15 @@ Verified for this shape on the real desktop app [V]: the routes end `…, Route 
 
 `serverInfo` is `kiln` plus the app version.
 
-`texts.py` is the one module for the texts that an agent sees before it has read the skill. It has no import and holds five constants: `WHAT_KILN_IS`, `SERVER_INSTRUCTIONS`, `CALL_KILN_API_DESCRIPTION` (4.1), and `SKILL_TOOL_DESCRIPTION` and `PATH_DESCRIPTION` (their texts are in the skill doc, 2.2). `server.py`, `api_tool/tool.py` and `skill_tool.py` import from it. Error texts are not here: they stay in `api_tool/messages.py` and `skill_files.py`.
+`texts.py` is the one module for the texts that an agent sees before it has read the skill. It has no import and holds six constants: `WHAT_KILN_IS`, `WHAT_KILN_COVERS`, `SERVER_INSTRUCTIONS`, `CALL_KILN_API_DESCRIPTION` (4.1), and `SKILL_TOOL_DESCRIPTION` and `PATH_DESCRIPTION` (their texts are in the skill doc, 2.2). `server.py`, `api_tool/tool.py` and `skill_tool.py` import from it. Error texts are not here: they stay in `api_tool/messages.py` and `skill_files.py`.
 
 ```
 WHAT_KILN_IS = "Kiln is an app for building, evaluating and optimizing AI agents"
 ```
 
 `WHAT_KILN_IS` is the shared opening. `SERVER_INSTRUCTIONS` starts with it, and `SKILL_TOOL_DESCRIPTION` contains it followed by a full stop; both are built from the constant, and `test_texts.py` ties them (section 10). It is also the first sentence of the stub skill's description (functional spec 9.2).
+
+`WHAT_KILN_COVERS` is the one list of what Kiln covers: "projects, tasks, prompts, run configs, models, evals, synthetic data, fine-tuning, tools, skills and RAG". `SERVER_INSTRUCTIONS` opens with `WHAT_KILN_IS: WHAT_KILN_COVERS.`, and the skill's `SKILL.md` names the same list in its `description` and its first line; `test_texts.py` ties the three. The first paragraph names `$kiln` (Codex) beside `/kiln`, as `SKILL_TOOL_DESCRIPTION` does.
 
 The draft of `SERVER_INSTRUCTIONS` is below. Batch 14 of the content phase (skill doc, section 9) tunes the wording of all five texts. The first paragraph is 396 characters and stands alone; the whole text is about 1,100.
 
@@ -278,8 +280,8 @@ Every error is returned as `CallToolResult(content=[TextContent(type="text", tex
 | 4 | MCP block tag | `The endpoint {M} {T} is not available to agents over MCP. Do not retry it and do not look for another way to call it. If the user needs this, ask them to do it in the Kiln app.` |
 | 5 | Body over the limit (spec 5.6) | ``Body too long. Length {len(body_json)} on limit {body_limit}. Either narrow your request (a `jq_filter`, paging or filter parameters), save it to a file with `save_to_tmpfile`, or call again passing a `body_limit` higher than {len(body_json)}.`` |
 | 6 | Bad `body_limit` | `body_limit must be a positive integer. Got: {body_limit}.` |
-| 7 | Timeout, or no connection | The core text (`Request to {P} timed out after 900.0s`, or `30.0s` for connect; `Could not connect to server for {P}`). For a method other than GET, append ` The {M} may have taken effect. Check the state before you repeat it.` |
-| 8 | Response not JSON, or jq failed | The core text. For a method other than GET, append ` The {M} request itself completed with status {status_code}. Do not repeat it.` |
+| 7 | Timeout, or no connection | The core text (`Request to {P} timed out after 900.0s`, or `30.0s` for connect; `Could not connect to server for {P}`). For a method other than GET, end the core text with a full stop when it has no closing `.`, `!` or `?`, then append ` The {M} may have taken effect. Check the state before you repeat it.` |
+| 8 | Response not JSON, or jq failed | The core text. For a method other than GET, end the core text as in row 7, then append ` The {M} request itself completed with status {status_code}. Do not repeat it.` |
 | 9 | The temp file could not be written | `Could not save the response to a temporary file: {reason}. The request completed with status {status_code}.` then ` Call again without save_to_tmpfile.` for GET, or ` Do not repeat the {M}.` for another method |
 | 10 | Unexpected exception | `Unexpected error in call_kiln_api: {ExceptionType}: {message}` |
 | — | An argument has the wrong type or is missing | The SDK's text: `Error executing tool call_kiln_api: N validation error(s) for call_kiln_apiArguments …`. Not under our control. Accepted: exact texts would need untyped arguments and our own validation. |
@@ -385,7 +387,7 @@ class RouteIndex:
 
 ### 6.3 Final block list
 
-29 operations. Everything else is allowed, including `add_code_trust` (GET and POST), `connect_local_mcp`, `edit_local_mcp`, `GET /api/settings`, `GET /api/settings/{item_id}`, the Assistant chat-history routes, `GET /api/download_dataset_jsonl` and `…/download_extraction/{extraction_id}`. The list started from the 66 endpoints that the Kiln Assistant is denied today (functional spec 5.5). The ruling and the reason for each of them, and for the two blocked endpoints that the Assistant may call, are in [research/mcp_block_list_review.md](../research/mcp_block_list_review.md).
+30 operations. Everything else is allowed, including `GET .../add_code_trust`, `connect_local_mcp`, `edit_local_mcp`, `GET /api/settings`, `GET /api/settings/{item_id}`, the Assistant chat-history routes, `GET /api/download_dataset_jsonl` and `…/download_extraction/{extraction_id}`. The list started from the 66 endpoints that the Kiln Assistant is denied today (functional spec 5.5). The ruling and the reason for each of them, and for the two blocked endpoints that the Assistant may call, are in [research/mcp_block_list_review.md](../research/mcp_block_list_review.md).
 
 | # | Method | Path | Group | Route file |
 |---|---|---|---|---|
@@ -415,12 +417,14 @@ class RouteIndex:
 | 26 | POST | `/api/provider/connect_api_key` | provider key | `app/desktop/studio_server/provider_api.py` |
 | 27 | POST | `/api/provider/disconnect_api_key` | provider key | same |
 | 28–29 | POST, DELETE | `/api/provider/openai_compatible` | provider key | same |
+| 30 | POST | `/api/projects/{project_id}/add_code_trust` | code trust (only the user grants it) | `app/desktop/studio_server/eval_api.py` |
 
 Decisions in this table:
 
 - All 14 routes under `/api/git_sync/` are blocked, row 12 included. Row 12 is a read-only GET that returns booleans for the tokens; it is blocked so that the rule is one simple rule. `DELETE /api/delete_project/{project_id}`, in the same file, is not blocked.
 - Rows 28 and 29 are blocked with the other provider-key endpoints: the POST takes an `api_key` and the DELETE removes a stored one.
 - `download_extraction` stays allowed, as text.
+- Row 30 is the owner's later ruling: code trust lets Python run on the Kiln machine with no sandbox, so only the user grants it, on the app page `/settings/trust_code/{project_id}`. That page shows the trust question and, on success, tells the user to return to the agent. No page of the app links to it; the skill, the code-tool route descriptions and their `not_trusted` field give the agent the link. `GET .../add_code_trust` stays allowed, so the agent can confirm the grant.
 - Rows 21–24 are the four `open_folder` call sites in the source [S]. `POST /api/provider/ollama/connect` and `…/docker_model_runner/connect` take a URL, not a key, and stay allowed.
 
 The skill must agree with this table (functional spec 7.3). For each capability here that a user might ask for, the skill says "ask the user to do this in the app" and gives the app page; the table of capabilities and pages is in the skill doc, section 4.4, and is built from these rows.
@@ -472,7 +476,7 @@ No test reaches the network. The package's tests never import `app.desktop`.
 | `test_server.py` | `serverInfo` is `kiln` plus the given version; `instructions` equals `SERVER_INSTRUCTIONS`; `tools/list` has `kiln_skill` (step 1), and exactly `call_kiln_api` and `kiln_skill` (step 2); the `call_kiln_api` schema equals a snapshot and has no `outputSchema` (step 2); `prompts/list` and `resources/list` are empty; a build with `skill_files.get_index` patched to raise fails with that `RuntimeError` (the start check); building a server adds no root log handler and keeps the root level; two servers in one process both run; `POST` works, and `GET`, `DELETE`, `PUT` → 405 with `Allow: POST`; `Host: evil.com` → 421 and `Origin: http://evil.com` → 403 on a loopback build, both 200 on a `0.0.0.0` build; `McpEndpoint._git_sync_no_write_lock` is true |
 | `libs/server/…/agent_checks/test_policy.py` | the shape of `DENY_MCP`; `with_mcp_deny` keeps the agent policy and does not change its input; `is_mcp_denied` for `None`, no key, and deny; the output of `dump_annotations` is the same with and without the key |
 | `app/desktop/studio_server/test_kiln_mcp_mount.py` | On `make_app()`: the routes end with `/mcp` then the web host mount; `/mcp` is not in `openapi()`; `initialize` and `tools/list` through `TestClient`; `GET /mcp` → 405; the default `TestClient` host → 421; `GitSyncMiddleware._resolve_endpoint` returns an object with the marker for `/mcp`; `server_config()` sets `timeout_graceful_shutdown`. Host and port: `make_app(host="0.0.0.0", port=9000)` builds a server without the Host check, and bare `make_app()` builds one for the `Config` host and port; `server_config(9000, "127.0.0.1")` passes both through; `connect_kiln_mcp_server` works with `Config.shared` patched to raise (it reads no config); the store of the built server uses the folder of the `kiln_mcp_tmp_root` fixture. **End to end**, one test (step 2): pick a free port, start `ThreadedServer(server_config(port, "127.0.0.1"))` (no environment variable is needed: host and port are passed through), connect with the SDK's `streamablehttp_client`, call `kiln_skill`, call `call_kiln_api` for `GET /ping` and `GET /api/projects`, call a blocked endpoint, and check that the server stops within 5 s |
-| `app/desktop/studio_server/test_mcp_block_list.py` | `EXPECTED_MCP_BLOCKED` (the 29 rows of 6.3 as `(method, path)`) equals the set read from `make_app().routes` with `is_mcp_denied`. This fails when a block is added or lost, and when a blocked route is renamed or removed. For each row, `RouteIndex.match` on the template with each `{param}` replaced by `x` returns that entry (no earlier route shadows it). Each row carries `x-mcp-policy` in `app.openapi()`. `add_code_trust`, `connect_local_mcp`, `edit_local_mcp` and `GET /api/settings` are not blocked |
+| `app/desktop/studio_server/test_mcp_block_list.py` | `EXPECTED_MCP_BLOCKED` (the 30 rows of 6.3 as `(method, path)`) equals the set read from `make_app().routes` with `is_mcp_denied`. This fails when a block is added or lost, and when a blocked route is renamed or removed. For each row, `RouteIndex.match` on the template with each `{param}` replaced by `x` returns that entry (no earlier route shadows it). Each row carries `x-mcp-policy` in `app.openapi()`. `GET .../add_code_trust`, `connect_local_mcp`, `edit_local_mcp` and `GET /api/settings` are not blocked |
 | `app/desktop/test_pyinstaller_hooks.py` (existing file; step 1) | `app/mcp/__init__.py` does not exist; the hook file exists. One data test, the only one for bundling in this project: the files that `collect_data_files("kiln_mcp_server")` returns under `kiln_mcp_server/skill/` are exactly the keys of `skill_files.get_index().files` (same relative paths, none missing, none extra). It holds for the placeholder tree of step 1 and for the full tree later |
 
 **`TestClient` notes.** Use `TestClient(app, base_url="http://localhost:8757")` inside a `with` block. The default host `testserver` gets 421, and without the lifespan the request raises `RuntimeError: Task group is not initialized` [V]. Send `Content-Type: application/json` and `Accept: application/json, text/event-stream`. The answer is an SSE body: read the JSON-RPC message from its `data:` line. In stateless mode `tools/call` works without a prior `initialize` [V].

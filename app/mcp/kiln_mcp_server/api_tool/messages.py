@@ -42,12 +42,16 @@ def bad_body_limit(body_limit: int) -> str:
     return f"body_limit must be a positive integer. Got: {body_limit}."
 
 
+def _as_sentence(text: str) -> str:
+    return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
 def request_failed(core_text: str, method: str) -> str:
     """A timeout or a failed connection: the request may or may not have run."""
     if method == "GET":
         return core_text
     return (
-        f"{core_text} The {method} may have taken effect. Check the state before "
+        f"{_as_sentence(core_text)} The {method} may have taken effect. Check the state before "
         "you repeat it."
     )
 
@@ -57,7 +61,7 @@ def response_unusable(core_text: str, method: str, status_code: int) -> str:
     if method == "GET":
         return core_text
     return (
-        f"{core_text} The {method} request itself completed with status "
+        f"{_as_sentence(core_text)} The {method} request itself completed with status "
         f"{status_code}. Do not repeat it."
     )
 

@@ -2,10 +2,14 @@
 instructions and the tool and argument descriptions."""
 
 WHAT_KILN_IS = "Kiln is an app for building, evaluating and optimizing AI agents"
+# The skill's `SKILL.md` names the same list.
+WHAT_KILN_COVERS = "projects, tasks, prompts, run configs, models, evals, synthetic data, fine-tuning, tools, skills and RAG"
 
 SERVER_INSTRUCTIONS = (
     WHAT_KILN_IS
-    + """: tasks, prompts, run configs, models, evals, synthetic data, fine-tuning, tools, skills and RAG. This server connects you to the user's running Kiln app. Call the `kiln_skill` tool first, before any other Kiln tool: it returns the instructions for working with Kiln. When the user asks for `/kiln`, or asks to use Kiln, that is a request to call `kiln_skill`.
+    + ": "
+    + WHAT_KILN_COVERS
+    + """. This server connects you to the user's running Kiln app. Call the `kiln_skill` tool first, before any other Kiln tool: it returns the instructions for working with Kiln. When the user asks for `/kiln` (`$kiln` in Codex), or asks to use Kiln, that is a request to call `kiln_skill`.
 
 Tools:
 - `kiln_skill` reads the Kiln skill. Call it with no arguments for the instructions. Pass a `path` that the skill names to read one skill file. Only the paths that the skill writes exist. Do not guess.
@@ -14,7 +18,7 @@ Tools:
 Rules:
 - The skill arrives through a tool call and can drop out of your context. If you no longer have it, call `kiln_skill` again before more Kiln work.
 - A result of `call_kiln_api` with a non-2xx `status_code` is the API's own error. Read the body and act on it.
-- Ask the user before a destructive or irreversible operation, and always before one that runs code on the machine where Kiln runs: granting code trust, or adding a local MCP server."""
+- Ask the user before a destructive or irreversible operation, and always involve the user before one that runs code on the machine where Kiln runs: code trust (only the user can grant it) or adding a local MCP server."""
 )
 
 CALL_KILN_API_DESCRIPTION = """Call the Kiln REST API. Makes one HTTP request to the running Kiln app and returns JSON with `status_code` and `body`.

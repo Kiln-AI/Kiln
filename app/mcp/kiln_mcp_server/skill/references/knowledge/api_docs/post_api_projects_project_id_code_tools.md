@@ -5,8 +5,12 @@
 **Tags:** Code Tools
 
 Create a code tool: Python code the project's agents can call as a tool.
-Until the project's code is trusted (Add code trust), it saves nothing and
-returns not_trusted.
+While the project's code is not trusted, it saves nothing and returns
+`not_trusted: true`. Only the user can grant code trust: explain what the
+code will run and that it runs with no sandbox, give them the link
+http://localhost:8757/settings/trust_code/{project_id}, and ask them to
+tell you when they have approved. Then confirm with
+GET /api/projects/{project_id}/add_code_trust and create the tool.
 
 ## Request
 
@@ -53,7 +57,7 @@ Successful Response
 |created_at|one of: string or null||
 |created_by|one of: string or null||
 |provenance|one of: KilnArtifactProvenance or null||
-|not_trusted|boolean||
+|not_trusted|boolean|True when the project's code is not trusted, so nothing ran and nothing was saved. Only the user can grant code trust, in the Kiln app at http://localhost:8757/settings/trust_code/{project_id}. Explain what the code will run and that it runs with no sandbox, give the user that link, and ask them to tell you when they have approved. Then confirm with GET /api/projects/{project_id}/add_code_trust and call again.|
 
 ### 422 Validation Error
 

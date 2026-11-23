@@ -755,6 +755,36 @@ def test_a_playbook_with_no_step_link_is_reported(tree):
     _only(tree, "playbook-steps")
 
 
+@pytest.mark.parametrize("self_link", ["#budget", f"{PLAYBOOKS}/p-one.md#budget"])
+def test_a_self_link_is_not_a_playbook_step(tree, self_link):
+    tree.edit(
+        f"{PLAYBOOKS}/p-one.md",
+        "\n## What not to do yet",
+        f"\n2. [Budget]({self_link}), when the budget is small.\n\n## What not to do yet",
+    )
+    assert tree.problems() == []
+    tree.edit(
+        f"{PLAYBOOKS}/p-one.md",
+        f"1. [One technique]({TECHNIQUES}/t-one.md), when the test says so.\n",
+        "",
+    )
+    problems = tree.problems()
+    assert any(
+        p.rule == "playbook-steps" and "at least one" in p.message for p in problems
+    ), problems
+
+
+@pytest.mark.parametrize("self_link", ["#remedies", f"{SMELLS}/s-one.md#remedies"])
+def test_a_self_link_in_remedies_is_not_reported(tree, self_link):
+    tree.edit(
+        f"{SMELLS}/s-one.md",
+        f"- [One playbook]({PLAYBOOKS}/p-one.md), when it fits.",
+        f"- [One playbook]({PLAYBOOKS}/p-one.md), when it fits.\n"
+        f"- [The list above]({self_link}), when the first one fails.",
+    )
+    assert tree.problems() == []
+
+
 def test_smell_remedies_is_reported(tree):
     tree.edit(f"{SMELLS}/s-one.md", f"{PLAYBOOKS}/p-one.md", f"{LEVERS}/prompt.md")
     _only(tree, "smell-remedies")

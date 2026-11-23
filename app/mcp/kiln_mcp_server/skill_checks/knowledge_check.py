@@ -298,7 +298,8 @@ def _links_only_to(
     at_least_one: bool,
 ) -> Iterable[Problem]:
     """Each link in section `heading` of each `kind` document names a
-    component of `kinds`. A link that does not resolve is the rule `link`."""
+    component of `kinds`. A link that does not resolve is the rule `link`. A
+    link to the document itself (an anchor, or its own path) is not counted."""
     folders = " or ".join(f"{COMPONENT_ROOTS[k]}/" for k in kinds)
     for doc in ctx.kb.by_kind(kind):
         section = doc.section(heading)
@@ -307,6 +308,8 @@ def _links_only_to(
         good = 0
         for link in section.links:
             if not link.external and link.resolved is None:
+                continue
+            if link.resolved == doc.path:
                 continue
             if ctx.component(link, *kinds) is None:
                 yield Problem(
