@@ -46,7 +46,7 @@ The "Row" column is the row number in section 6.3 of the component doc.
 | POST `/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval` | Test a judge config | Allow | Normal work for an agent |
 | POST `/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft` | Test a judge config before the eval exists | Allow | Same |
 | GET `/api/projects/{project_id}/add_code_trust` | Read whether the project is trusted to run new code | Allow | Read only |
-| POST `/api/projects/{project_id}/add_code_trust` | Grant that trust | Allow | Owner's ruling. A coding agent can write and test code tools, and needs this to do it. The skill tells the agent to ask the user before it grants code trust |
+| POST `/api/projects/{project_id}/add_code_trust` | Grant that trust | Allow | Owner's ruling. The user's own agent can write and test code tools, and needs this to do it. The skill tells the agent to ask the user before it grants code trust |
 
 ### 1.3 Providers, models and settings
 

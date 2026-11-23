@@ -167,9 +167,9 @@ Decisions in the guide (4.3):
 ### 4.3 Full draft
 
 `````
-# Install Kiln for a coding agent
+# Install Kiln for your agent
 
-This guide is for a coding agent to follow. If you are a person, give this file's URL to your coding agent and ask it to follow the guide.
+This guide is for an agent such as Claude Code or Codex to follow. If you are a person, give this file's URL to your agent and ask it to follow the guide.
 
 Kiln is a desktop app for building, evaluating and optimizing AI agents. Its built-in MCP server lets you, the agent, use Kiln. Do steps 1 to 4 in order, then report to the user (step 5).
 
@@ -310,9 +310,9 @@ Left out of the guide on purpose: `codex mcp add` and `opencode mcp add` (unveri
 A new section after `## App Quickstart` and before `## Demo`:
 
 ````
-## Use Kiln from your coding agent
+## Use Kiln from your own agent
 
-Kiln has a built-in MCP server. Connect Claude Code, Codex, OpenCode or another coding agent, and it can work in Kiln for you: create tasks, run evals, compare models and improve your agents. It is free, and it starts with the Kiln app.
+Kiln has a built-in MCP server. Connect Claude Code, Codex, OpenCode or another agent you already use, and it can work in Kiln for you: create tasks, run evals, compare models and improve the agents you build in Kiln. It is free, and it starts with the Kiln app.
 
 Paste this into your agent:
 
@@ -323,7 +323,7 @@ Install Kiln's app, skill, and MCP following the guide here: https://raw.githubu
 Then ask your agent to work with Kiln, or type `/kiln`. The same prompt is in the app under Settings, Connect Your Agent. To set up an agent by hand, see [agent_install.md](agent_install.md).
 ````
 
-Also one bullet under "Highlights → Iterate, optimize, and collaborate", after the AI Assistant bullet, in that list's style (a person picks the emoji): `[**Use your own coding agent**](#use-kiln-from-your-coding-agent) - Connect Claude Code, Codex or OpenCode to Kiln over MCP.` When the docs page is live, add it to the `## Docs` list.
+Also one bullet under "Highlights → Iterate, optimize, and collaborate", after the AI Assistant bullet, in that list's style (a person picks the emoji): `[**Use Kiln from your own agent**](#use-kiln-from-your-own-agent) - Connect Claude Code, Codex or OpenCode to Kiln over MCP.` When the docs page is live, add it to the `## Docs` list.
 
 ## 6. Rename of the existing `kiln_mcp` texts (this repo)
 
@@ -340,14 +340,14 @@ Under `libs/server/kiln_server/mcp/`:
 | Place | New text |
 |---|---|
 | `mcp.py:1`, module docstring | `"""CLI entry point for the Kiln project tools MCP server (kiln_mcp)."""` |
-| `mcp.py:30-32`, the argparse `description` (the string is on line 31); this is the `--help` text | `"Run the Kiln project tools MCP server: it serves one project's tools (such as search tools) to other apps. It does not connect a coding agent to the Kiln app; for that, use the MCP server built into the Kiln app."` |
+| `mcp.py:30-32`, the argparse `description` (the string is on line 31); this is the `--help` text | `"Run the Kiln project tools MCP server: it serves one project's tools (such as search tools) to other apps. It does not connect your own agent, such as Claude Code or Codex, to the Kiln app; for that, use the MCP server built into the Kiln app."` |
 | `runtime.py:1`, module docstring | `"""Runtime helpers for the Kiln project tools MCP server."""` |
 | `runtime.py:30` and `:34` | no change (rule above) |
 | `__init__.py:1`, module docstring | `"""The Kiln project tools MCP server: exposes one project's tools over MCP."""` |
 | `tool_selection.py:1`, module docstring | `"""Select the Kiln tools that the Kiln project tools MCP server exposes."""` |
 | `mcp_server_tool_utils.py:1`, module docstring | `"""Prepare Kiln tools for the Kiln project tools MCP server."""` |
 | `README.md:1`, title | `# Kiln project tools MCP server [Beta]` |
-| `README.md:3`, after the existing note | A second note: `> To connect a coding agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see agent_install.md at the repo root. This server is not the way to do that.` |
+| `README.md:3`, after the existing note | A second note: `> To connect your own agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see agent_install.md at the repo root. This server is not the way to do that.` |
 | `README.md:5` | ``The Kiln project tools MCP server (the `kiln_mcp` command) lets you call one Kiln project's tools, such as a Kiln Search Tool, from any MCP client.`` |
 | `README.md:46-66`, the fenced `--help` block | Replace with the real output of `kiln_mcp --help` after the change. The block is stale today: it lacks `--list-tools` |
 
@@ -356,16 +356,16 @@ Elsewhere:
 | Place | New text |
 |---|---|
 | `libs/server/README.md:64`, heading | `## Kiln project tools MCP server` |
-| `libs/server/README.md:66`, sentence (line 68, the link to the README, stays) | ``Also included in this package is the Kiln project tools MCP server (the `kiln_mcp` command). It serves one Kiln project's tools to other apps. It is not the way to connect a coding agent to the Kiln app: the app has its own built-in MCP server for that.`` |
+| `libs/server/README.md:66`, sentence (line 68, the link to the README, stays) | ``Also included in this package is the Kiln project tools MCP server (the `kiln_mcp` command). It serves one Kiln project's tools to other apps. It is not the way to connect your own agent, such as Claude Code or Codex, to the Kiln app: the app has its own built-in MCP server for that.`` |
 | `.agents/skills/kiln-conventions/references/server_desktop.md:44`, the `kiln_mcp` row of the "Startup" table | First cell: ``Kiln project tools MCP server: `kiln_mcp` script (`kiln_server.mcp.mcp:main`)``. The second cell stays |
-| The same file, table "Where things go" | A new row: ``A change to the Kiln MCP server (the one a coding agent connects to, at `/mcp` in the app)`` goes in ``app/mcp/kiln_mcp_server/``, mounted by `connect_kiln_mcp_server` in `app/desktop/studio_server/kiln_mcp_mount.py` |
+| The same file, table "Where things go" | A new row: ``A change to the Kiln MCP server (the one a user's own agent, such as Claude Code or Codex, connects to, at `/mcp` in the app)`` goes in ``app/mcp/kiln_mcp_server/``, mounted by `connect_kiln_mcp_server` in `app/desktop/studio_server/kiln_mcp_mount.py` |
 
 `README.md:17` ("via this MCP server") needs no change. No test asserts the old strings today (checked with a search of the repo); the Python tests for `kiln_mcp` must still pass.
 
 ## 7. Docs repo follow-up (`Kiln-AI/docs`, outside this repo)
 
 1. **New page "Connect Your Agent"**, intended URL `https://docs.kiln.tech/docs/connect-your-agent`. Content: what it is; the one prompt; what the agent sets up (MCP server `kiln`, stub skill); `/kiln` (`$kiln` in Codex); manual setup (the URL, and a link to the guide's per-agent notes); a non-default address; Kiln must be running, and the offline message; `save_to_tmpfile` files are on Kiln's machine (functional spec 5.7); no authentication, loopback by default; free, with some functions needing Kiln Pro.
-2. **New page "Kiln and MCP: which is which"** (functional spec 12), intended URL `https://docs.kiln.tech/docs/kiln-and-mcp`. Four entries, each with its purpose and a link: Kiln MCP server; Kiln project tools MCP server (`kiln_mcp`), with "not the way to connect a coding agent"; remote and local MCP tool servers; an MCP tool as a task.
+2. **New page "Kiln and MCP: which is which"** (functional spec 12), intended URL `https://docs.kiln.tech/docs/kiln-and-mcp`. Four entries, each with its purpose and a link: Kiln MCP server; Kiln project tools MCP server (`kiln_mcp`), with "not the way to connect your own agent"; remote and local MCP tool servers; an MCP tool as a task.
 3. Existing page `tools-and-mcp`: a note at the top that links to page 2. Any page that documents `kiln_mcp`: rename to "Kiln project tools MCP server".
 4. When page 1 is live, in this repo: add a "Read the Docs" link to the Connect page (`AppPage` `sub_subtitle` and `sub_subtitle_link`) with its URL, and add it to the README `## Docs` list.
 
@@ -386,7 +386,7 @@ Until page 1 exists, the Connect page has no docs link at all (owner decision): 
 - `build_prompt`: the default origin gives exactly `BASE_PROMPT`, and so does `http://127.0.0.1:8757`; `http://localhost:9000` gives `BASE_PROMPT + " The Kiln MCP server is at http://localhost:9000/mcp."`; `BASE_PROMPT` starts with "Install Kiln's app, skill, and MCP following the guide here: " and ends with `AGENT_INSTALL_GUIDE_URL`.
 - `app_origin(true)` is `base_url`; `app_origin(false)` is the stubbed origin (`vi.stubGlobal("window", { location: { origin: "http://localhost:9000" } })`, as `lib/agent.test.ts` does).
 - Repo files, read with `node:fs` from the repo root (seven folders above the test file):
-  - `README.md` has a line equal to `BASE_PROMPT` and the heading `## Use Kiln from your coding agent`.
+  - `README.md` has a line equal to `BASE_PROMPT` and the heading `## Use Kiln from your own agent`.
   - `agent_install.md` contains the exact stub text of functional spec 9.2 (pinned in the test), `http://localhost:8757/mcp`, `http://localhost:8757/ping`, `https://kiln.tech/download` and the four headings `### Claude Code`, `### Codex`, `### OpenCode`, `### Any other agent`; it has at most 130 lines; it does not contain `AGENT_INSTALL_GUIDE_URL`.
 
 ### 8.3 `connect_agent/page.test.ts` (jsdom)

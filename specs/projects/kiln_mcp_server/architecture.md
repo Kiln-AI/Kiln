@@ -159,7 +159,7 @@ The components depend on each other in this order; the implementation plan follo
 
 - **Agent tool timeouts.** The SDK sends progress only when the client asks for it. An agent with a short default timeout and no progress support can give up on a long call. The install guide sets longer timeouts for the agents known to need it; the sanity check confirms it.
 - **The progress interval is a design value.** It is 2 seconds. The real agents cannot be run in this environment, so the value is confirmed in the manual sanity phase (step 10), which also checks that each agent sends a progress token.
-- **The content edit is large.** Two sources written for other readers (a dedicated assistant, and fenced loop agents) become one skill for a general coding agent. It is its own phase, done in batches, each verified by a check. The merge of the two sources follows one rule, so that the edit does not drift into a redesign: the knowledge's method is ported unchanged (section 11, item 1).
+- **The content edit is large.** Two sources written for other readers (a dedicated assistant, and fenced loop agents) become one skill for the user's own agent, such as Claude Code or Codex. It is its own phase, done in batches, each verified by a check. The merge of the two sources follows one rule, so that the edit does not drift into a redesign: the knowledge's method is ported unchanged (section 11, item 1).
 - **Drift while two knowledge copies exist.** Harness-tuner keeps its copy until spec two is adopted. The port records the harness-tuner commit it was made from, and later fixes are ported by hand from the diff since that commit (skill component doc, section 9).
 - **Packaging.** The skill tree must be bundled explicitly, and `app/mcp/` must stay a plain folder. Both are covered by tests, but a full packaged build is only verified on a real build.
 
@@ -172,7 +172,7 @@ The components depend on each other in this order; the implementation plan follo
 - A refresh of the copied help articles (8 public pages have no copy yet). It needs the docs repo.
 - Harness-tuner adopts the model info endpoints and drops its copies of the model info code and of the knowledge.
 - The harness-tuner skills with general knowledge that this port leaves out (`kiln-task-setup`, `experiment-costing`, the skill-authoring guide). Each is a separate decision.
-- The knowledge file `using_harness_tuner`: how a coding agent runs the Kiln Harness Tuner CLI in place of running experiments itself. It is the first new entry of the knowledge backlog. Until it exists, the skill recommends Harness Tuner and gives no CLI steps.
+- The knowledge file `using_harness_tuner`: how the user's own agent, connected to Kiln with the skill, runs the Kiln Harness Tuner CLI in place of running experiments itself. It is the first new entry of the knowledge backlog. Until it exists, the skill recommends Harness Tuner and gives no CLI steps.
 - Tooling to read the noise of an eval. This project adds none, and no guidance of its own on noise.
 - Model info: a short cache for the availability check; a hint field for a search that finds nothing under the default filters; a person reads the models.dev terms of use for a desktop app that fetches the file.
 - Web UI: an icon of its own for the Connect callout.

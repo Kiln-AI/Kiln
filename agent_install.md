@@ -1,6 +1,6 @@
-# Install Kiln for a coding agent
+# Install Kiln for your agent
 
-This guide is for a coding agent to follow. If you are a person, give this file's URL to your coding agent and ask it to follow the guide.
+This guide is for an agent such as Claude Code or Codex to follow. If you are a person, give this file's URL to your agent and ask it to follow the guide.
 
 Kiln is a desktop app for building, evaluating and optimizing AI agents. Its built-in MCP server lets you, the agent, use Kiln. Do steps 1 to 4 in order, then report to the user (step 5).
 

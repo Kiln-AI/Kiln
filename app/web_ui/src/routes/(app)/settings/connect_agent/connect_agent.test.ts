@@ -107,10 +107,10 @@ describe("app_origin", () => {
 })
 
 describe("repo files that repeat the prompt and the stub skill", () => {
-  it("README.md carries the same prompt in its coding agent section", () => {
+  it("README.md carries the same prompt in its own-agent section", () => {
     const lines = read_repo_file("README.md").split("\n")
     expect(lines).toContain(BASE_PROMPT)
-    expect(lines).toContain("## Use Kiln from your coding agent")
+    expect(lines).toContain("## Use Kiln from your own agent")
   })
 
   it("agent_install.md holds the stub skill and the details an agent needs", () => {

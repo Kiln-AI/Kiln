@@ -41,7 +41,7 @@
 - [ ] **B20 — Spec alignment: the eval playbooks of `create_spec.md` and `judge_types.md`**
   skill_and_content 9.2 gives `create_spec.md` and `judge_types.md` only the wrong-eval and saturated-eval playbooks; group 8 of 9.1, which the code follows, gives them all four eval playbooks. Align 9.2.
 - [ ] **B21 — Human action before merge: the emoji of the README Highlights bullet**
-  Pick the emoji for the "Use your own coding agent" bullet (`README.md:54`) and remove its `<!-- TODO: ... -->` comment. `.github/workflows/debug_detector.yml` excludes `*.md`, so CI will not flag it.
+  Pick the emoji for the "Use Kiln from your own agent" bullet (`README.md:54`) and remove its `<!-- TODO: ... -->` comment. `.github/workflows/debug_detector.yml` excludes `*.md`, so CI will not flag it.
 - [ ] **B22 — Owner check: user-level install against the Claude Code `.mcp.json` note**
   `agent_install.md` step 2 says "Add it at user level", but "Notes for each agent" → Claude Code then offers a project-level `.mcp.json` as the by-hand alternative. Verbatim from the owner's draft; check in phase 14.
 - [ ] **B23 — The code tool descriptions name an endpoint agents are denied**

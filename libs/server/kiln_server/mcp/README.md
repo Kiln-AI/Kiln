@@ -2,7 +2,7 @@
 
 > If you're looking for our MCP client to integrate third party MCP servers into the Kiln app, see https://docs.kiln.tech/docs/tools-and-mcp
 
-> To connect a coding agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see agent_install.md at the repo root. This server is not the way to do that.
+> To connect your own agent (Claude Code, Codex, OpenCode) to the Kiln app, use the MCP server built into the app: see agent_install.md at the repo root. This server is not the way to do that.
 
 The Kiln project tools MCP server (the `kiln_mcp` command) lets you call one Kiln project's tools, such as a Kiln Search Tool, from any MCP client.
 
@@ -50,8 +50,8 @@ usage: kiln_mcp [-h] [--tool-ids TOOL_IDS] [--list-tools] [--transport {stdio,ss
                 [--log-level LOG_LEVEL]
                 project
 
-Run the Kiln project tools MCP server: it serves one project's tools (such as search tools) to other apps. It does not connect a coding agent to the Kiln app; for that,
-use the MCP server built into the Kiln app.
+Run the Kiln project tools MCP server: it serves one project's tools (such as search tools) to other apps. It does not connect your own agent, such as Claude
+Code or Codex, to the Kiln app; for that, use the MCP server built into the Kiln app.
 
 positional arguments:
   project               Path to the project.kiln file

@@ -656,5 +656,6 @@ edit saves a few tokens, but it breaks the cache and can cost 10x more.
 - Depends on: None
 - Source: owner
 
-A knowledge file, `references/knowledge/using_harness_tuner.md`: how a coding agent with the skill
-runs the Kiln Harness Tuner CLI in place of running the experiments itself.
+A knowledge file, `references/knowledge/using_harness_tuner.md`: how the user's own agent,
+connected to Kiln with the skill, runs the Kiln Harness Tuner CLI in place of running the
+experiments itself.

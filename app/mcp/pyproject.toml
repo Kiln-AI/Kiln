@@ -1,7 +1,7 @@
 [project]
 name = "kiln-mcp-server"
 version = "1.2.1"
-description = "The Kiln MCP server: connects coding agents to the Kiln app"
+description = "The Kiln MCP server: connects agents such as Claude Code and Codex to the Kiln app"
 requires-python = ">=3.10"
 dependencies = [
     "kiln-ai",

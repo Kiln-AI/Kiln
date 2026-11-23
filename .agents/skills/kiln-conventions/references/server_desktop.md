@@ -28,7 +28,7 @@
 | Request and response models for desktop endpoints | `app/desktop/studio_server/api_models/` |
 | Logic shared by several handlers, or a handler over ~50 lines | a service module that takes plain arguments and raises domain errors, e.g. `studio_server/services/<domain>.py` (create the folder if needed), or `kiln_ai` if it isn't app-specific. `studio_server/utils/` holds older helpers that raise `HTTPException`; don't extend that pattern. |
 | Background or long-running work | a `JobWorker` in `studio_server/jobs/` |
-| A change to the Kiln MCP server (the one a coding agent connects to, at `/mcp` in the app) | `app/mcp/kiln_mcp_server/`, mounted by `connect_kiln_mcp_server` in `app/desktop/studio_server/kiln_mcp_mount.py` |
+| A change to the Kiln MCP server (the one a user's own agent, such as Claude Code or Codex, connects to, at `/mcp` in the app) | `app/mcp/kiln_mcp_server/`, mounted by `connect_kiln_mcp_server` in `app/desktop/studio_server/kiln_mcp_mount.py` |
 | Git-sync behaviour | `app/desktop/git_sync/` |
 | App-scoped objects (registries, clients, caches, locks) | created in `lifespan` or inside `connect_*_api(app)` (`git_sync_api.connect_git_sync_api` creates its `OAuthFlowManager` this way), never at module level |
 

@@ -8,7 +8,7 @@ description: Add to, change and audit the knowledge of the Kiln skill (its lever
 ## 1. What this is
 
 The knowledge is part of the Kiln skill, the skill that the Kiln MCP server
-serves to coding agents (`app/mcp/kiln_mcp_server/skill/`). It holds what is
+serves to users' own agents (`app/mcp/kiln_mcp_server/skill/`). It holds what is
 known about how to improve an agent built in Kiln. Any agent connected to the
 Kiln MCP reads it, when a user asks it to improve a task.
 

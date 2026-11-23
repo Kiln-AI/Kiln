@@ -132,7 +132,7 @@ A guard against a response so large that it floods the agent's context.
 
 ### 5.7 `save_to_tmpfile` (MCP only)
 
-For coding agents, which have shell tools.
+For agents that have shell tools of their own, such as Claude Code and Codex.
 
 - When `true`, the response body is written to a temporary file and the result is `status_code`, `body_path` and the size in bytes, with no `body`. The agent can then use `jq`, `grep` and so on.
 - `jq_filter` runs first; the filtered result is what is saved.
@@ -159,7 +159,7 @@ The Kiln Assistant's service refuses a `call_kiln_api` call until the model has 
 
 ## 6. `kiln_skill`
 
-Based on how coding agents expose skills natively ([research](research/skill_tool_conventions/summary.md)). No native skill tool takes a file path: they return the skill's instructions and the model reads further files with its file tool. Our tool does both jobs, because the files are not on the agent's disk.
+Based on how agents such as Claude Code, Codex and OpenCode expose skills natively ([research](research/skill_tool_conventions/summary.md)). No native skill tool takes a file path: they return the skill's instructions and the model reads further files with its file tool. Our tool does both jobs, because the files are not on the agent's disk.
 
 ### 6.1 Contract
 
@@ -214,7 +214,7 @@ references/
 
 ### 7.3 Adapting the content
 
-The Assistant's skill was written for a dedicated assistant inside the Kiln app; the knowledge was written for harness-tuner's loop agents. Both are edited for a user's own coding agent. This is real content work and is its own phase in the plan.
+The Assistant's skill was written for a dedicated assistant inside the Kiln app; the knowledge was written for harness-tuner's loop agents. Both are edited for a user's own agent, such as Claude Code or Codex. This is real content work and is its own phase in the plan.
 
 - **Identity.** The skill does not take over the agent. It no longer says "you are Kiln Assistant", and its rules (always be in a mode, how to greet, what to do at session start) apply only while the agent is doing Kiln work.
 - **Loaded on demand.** The Assistant has `SKILL.md` in context at all times. Here it arrives through a tool call, and can drop out when the agent's context is compacted. Text that assumes it is always present is rewritten.
@@ -228,7 +228,7 @@ The Assistant's skill was written for a dedicated assistant inside the Kiln app;
 
 ### 7.4 New guide: working with a project's files directly
 
-A coding agent can often see the Kiln project's files on disk. The Assistant never could, so its skill says nothing about it. A new knowledge file covers it:
+The user's own agent can often see the Kiln project's files on disk. The Assistant never could, so its skill says nothing about it. A new knowledge file covers it:
 
 - **Reading files directly is fine.** If reading, grepping or listing the files is faster than the API, do that.
 - **Writes always go through the API.** The API runs the validation checks and the necessary side effects. Writing a file directly can invalidate the whole Kiln project.
@@ -310,7 +310,7 @@ It gives agents a `/kiln` command and the offline message. It is not kept in syn
 
 ### 9.3 README
 
-The repo README and the docs get a short "Use Kiln from your coding agent" section with the same prompt.
+The repo README and the docs get a short "Use Kiln from your own agent" section with the same prompt.
 
 ## 10. Connect page
 
@@ -348,8 +348,8 @@ The same phase adds missing descriptions to API routes. Most rows in the generat
 
 Kiln has several MCP features. The docs name each one and say what it is for:
 
-- **Kiln MCP server** (this spec): connect a coding agent to the Kiln app. Agents list it as `kiln`.
-- **Kiln project tools MCP server** (the existing `kiln_mcp` command in `libs/server/kiln_server/mcp`): serves one project's tools to other apps. It is not the way to connect a coding agent to Kiln. The command name stays; its docs and `--help` text are renamed and say what it is and is not.
+- **Kiln MCP server** (this spec): connect a user's own agent, such as Claude Code or Codex, to the Kiln app. Agents list it as `kiln`.
+- **Kiln project tools MCP server** (the existing `kiln_mcp` command in `libs/server/kiln_server/mcp`): serves one project's tools to other apps. It is not the way to connect your own agent to Kiln. The command name stays; its docs and `--help` text are renamed and say what it is and is not.
 - **Remote and local MCP tool servers:** give the agents you build in Kiln tools from an MCP server.
 - **An MCP tool as a task:** run a remote agent over MCP as a Kiln task.
 
