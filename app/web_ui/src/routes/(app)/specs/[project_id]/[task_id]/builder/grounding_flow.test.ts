@@ -479,19 +479,15 @@ describe("dropped_notice_drops", () => {
 
 describe("dropped_notice", () => {
   it("counts several drops against the plan", () => {
-    expect(dropped_notice(2, 20)).toEqual({
-      title: "Some Conversations Were Dropped",
-      summary:
-        "2 of 20 planned conversations were dropped when Kiln checked them against your OpenEnv server. Continue reviewing the conversations that fit, or refine the plan and generate again.",
-    })
+    expect(dropped_notice(2, 20)).toBe(
+      "2 of 20 planned conversations were dropped when Kiln checked them against your OpenEnv server. Continue with the ones that fit, or refine the plan and generate again.",
+    )
   })
 
   it("reads in the singular for one drop", () => {
-    expect(dropped_notice(1, 20)).toEqual({
-      title: "A Conversation Was Dropped",
-      summary:
-        "1 of 20 planned conversations was dropped when Kiln checked it against your OpenEnv server. Continue reviewing the conversations that fit, or refine the plan and generate again.",
-    })
+    expect(dropped_notice(1, 20)).toBe(
+      "1 of 20 planned conversations was dropped when Kiln checked it against your OpenEnv server. Continue with the ones that fit, or refine the plan and generate again.",
+    )
   })
 })
 

@@ -42,6 +42,19 @@ describe("Step 5 entry screen", () => {
     )
   })
 
+  it("with drops, shows the warning and offers Continue and Refine Plan", () => {
+    const normalized = normalize(intro_source)
+    expect(normalized).toContain(
+      '<Warning warning_color="warning" warning_message={drops_warning} />',
+    )
+    expect(normalized).toContain(
+      '{ label: "Continue", onClick: on_start, is_primary: true }',
+    )
+    expect(normalized).toContain(
+      '{ label: "Refine Plan", onClick: on_refine_plan, is_primary: false }',
+    )
+  })
+
   it("offers one primary action, labelled Start", () => {
     const normalized = normalize(intro_source)
     expect(normalized).toContain('label: "Start"')
@@ -52,8 +65,10 @@ describe("Step 5 entry screen", () => {
     // The intro is shown once per arrival and then hands over to the grading
     // surface. If this inverts, the reviewer never reaches the claims.
     const normalized = normalize(page_source)
-    expect(normalized).toContain("{#if !review_intro_dismissed} <ReviewIntro")
-    expect(normalized).toContain("on_start={() => (review_intro_dismissed =")
+    expect(normalized).toContain(
+      "{#if !review_intro_dismissed || drops_warning} <ReviewIntro",
+    )
+    expect(normalized).toContain("on_start={start_review}")
   })
 
   it("does not persist the dismissal", () => {

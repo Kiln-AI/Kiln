@@ -250,23 +250,15 @@ export function dropped_notice_drops(
   return cache.drops.length > 0 ? cache.drops : null
 }
 
-// The review's notice, when some planned conversations dropped and the rest
-// were driven. planned is the plan's size.
-export function dropped_notice(
-  dropped: number,
-  planned: number,
-): { title: string; summary: string } {
+// The review start screen's warning, when some planned conversations dropped
+// and the rest were driven. planned is the plan's size.
+export function dropped_notice(dropped: number, planned: number): string {
   const one = dropped === 1
-  return {
-    title: one
-      ? "A Conversation Was Dropped"
-      : "Some Conversations Were Dropped",
-    summary: `${dropped} of ${planned} planned conversations ${
-      one ? "was" : "were"
-    } dropped when Kiln checked ${
-      one ? "it" : "them"
-    } against your OpenEnv server. Continue reviewing the conversations that fit, or refine the plan and generate again.`,
-  }
+  return `${dropped} of ${planned} planned conversations ${
+    one ? "was" : "were"
+  } dropped when Kiln checked ${
+    one ? "it" : "them"
+  } against your OpenEnv server. Continue with the ones that fit, or refine the plan and generate again.`
 }
 
 // Step 4's message when every planned conversation dropped, so nothing was

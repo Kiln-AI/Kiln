@@ -1356,8 +1356,8 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     ).toBe(true)
   })
 
-  describe("the review's dropped-conversations notice", () => {
-    it("opens over the review for the set the batch was driven from", () => {
+  describe("the review's dropped-conversations warning", () => {
+    it("shows on the review start screen for the set the batch was driven from", () => {
       const due = normalize(region("$: notice_drops =", "    : null"))
       expect(due).toContain('current_step === "review"')
       expect(due).toContain(
@@ -1366,32 +1366,29 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       expect(
         contains("dropped_notice(notice_drops.length, driven_plan_size)"),
       ).toBe(true)
+      expect(
+        contains("{#if !review_intro_dismissed || drops_warning} <ReviewIntro"),
+      ).toBe(true)
+      expect(contains("{drops_warning} on_start={start_review}")).toBe(true)
     })
 
-    it("is marked seen on every close, on the drafted grounded set", () => {
-      expect(contains("on:close={mark_dropped_notice_seen}")).toBe(true)
+    it("is marked seen on Continue and on Refine Plan, on the drafted grounded set", () => {
       expect(
         normalize(function_body("function mark_dropped_notice_seen() {")),
       ).toContain(
         "cached_grounded_cases = { ...cached_grounded_cases, drops_notice_seen: true, }",
       )
-    })
-
-    it("offers Refine Plan, back on the plan, and Continue", () => {
+      expect(normalize(function_body("function start_review() {"))).toContain(
+        "mark_dropped_notice_seen()",
+      )
       const refine = normalize(
         function_body("function refine_plan_from_notice() {"),
       )
+      expect(refine).toContain("mark_dropped_notice_seen()")
       expect(refine.indexOf("history.back()")).toBeLessThan(
         refine.indexOf("open_refine_plan_after_drops(drops)"),
       )
-      expect(
-        contains(
-          'label: "Refine Plan", action: () => { refine_plan_from_notice() return true }, },',
-        ),
-      ).toBe(true)
-      expect(
-        contains('label: "Continue", isPrimary: true, action: () => true,'),
-      ).toBe(true)
+      expect(contains("on_refine_plan={refine_plan_from_notice}")).toBe(true)
     })
   })
 

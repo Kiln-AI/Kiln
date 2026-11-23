@@ -43,18 +43,18 @@ are driven.
 A dropped case doesn't stop the build. The cases that fit are driven, and the review says what was
 dropped. Drive failures later in the pipeline keep today's screen.
 
-### Notice over the review
+### Warning on the review's start screen
 
-Shown once, over the first Step 5 screen, when the review opens after a drive whose grounding
-dropped some cases. A `Dialog`, laid out like the Improve Judge dialog:
+Shown on Step 5's start screen ("Align the Judge", the shared `Intro`) when the review opens after
+a drive whose grounding dropped some cases, once per grounded set.
 
-- Title: "Some Conversations Were Dropped" ("A Conversation Was Dropped" for one).
-- One paragraph: "2 of 20 planned conversations were dropped when Kiln checked them against your
-  OpenEnv server. Continue reviewing the conversations that fit, or refine the plan and generate
-  again." (Singular: "1 of 20 planned conversations was dropped when Kiln checked it…")
-- A count only, for v1: the dropped scenarios and their reasons aren't listed. Refine Plan still
-  hands them to the planner.
-- Buttons: **Refine Plan** (grey) and **Continue** (primary).
+- Under the Intro's description, a `Warning` (warning color): "2 of 20 planned conversations were
+  dropped when Kiln checked them against your OpenEnv server. Continue with the ones that fit, or
+  refine the plan and generate again." (Singular: "1 of 20 planned conversations was dropped when
+  Kiln checked it…") A count only, for v1: the dropped scenarios and their reasons aren't listed.
+  Refine Plan still hands them to the planner.
+- The primary button reads **Continue** instead of Start, and **Refine Plan** is added under it as
+  the secondary. Without drops the screen is unchanged: one **Start** button.
   - **Refine Plan** goes back to the plan screen and opens the Refine Plan dialog there, with the
     plan's steer filled in. Its warning reads "Refining the plan discards your 18 generated
     conversations and any review progress. Every item in the new plan gets a new simulated user
@@ -62,9 +62,9 @@ dropped some cases. A `Dialog`, laid out like the Improve Judge dialog:
     batch again with the dropped scenarios and their reasons added to the planner guidance, then
     stops on the new plan for approval. Closing the dialog leaves the plan and its results, with
     Continue back to the review.
-  - **Continue** closes the dialog and leaves the review as it is.
-- Any close (either button, Esc, the X) marks the notice seen. It doesn't show again for the same
-  grounded cases, including after a reload or a re-drive that reuses them.
+  - **Continue** starts the review as Start does.
+- Either button marks the warning seen. It doesn't show again for the same grounded cases,
+  including after a reload or a re-drive that reuses them.
 
 ### Every case dropped
 

@@ -2544,28 +2544,18 @@
     open_new_plan_dialog()
   }
 
-  // The review's notice of dropped conversations, once per grounded set. Any
-  // close marks it seen, on the draft too, so a reload or a re-drive of the
-  // same set doesn't bring it back.
-  let dropped_notice_dialog: Dialog | null = null
+  // The review start screen's warning of dropped conversations, once per
+  // grounded set. Continue or Refine Plan marks it seen, on the draft too, so
+  // a reload or a re-drive of the same set doesn't bring it back.
   $: notice_drops =
     current_step === "review" &&
     trace_claims.length > 0 &&
     !review_results_stale
       ? dropped_notice_drops(cached_grounded_cases, driven_prompts_json)
       : null
-  // What the open notice shows, kept as it was when it opened so the dialog
-  // doesn't empty while it closes.
-  let notice_shown:
-    | (ReturnType<typeof dropped_notice> & { drops: GroundingDrop[] })
-    | null = null
-  $: if (notice_drops && dropped_notice_dialog) {
-    notice_shown = {
-      drops: notice_drops,
-      ...dropped_notice(notice_drops.length, driven_plan_size),
-    }
-    dropped_notice_dialog.show()
-  }
+  $: drops_warning = notice_drops
+    ? dropped_notice(notice_drops.length, driven_plan_size)
+    : null
 
   function mark_dropped_notice_seen() {
     if (cached_grounded_cases && !cached_grounded_cases.drops_notice_seen) {
@@ -2576,11 +2566,18 @@
     }
   }
 
-  // The notice's Refine Plan: back to the plan the review was pushed over,
-  // then the Refine Plan dialog over it. A cancelled dialog leaves the plan
-  // and its results as they were, with Continue back to the review.
+  function start_review() {
+    mark_dropped_notice_seen()
+    review_intro_dismissed = true
+  }
+
+  // Refine Plan from the review start screen: back to the plan the review was
+  // pushed over, then the Refine Plan dialog over it. A cancelled dialog
+  // leaves the plan and its results as they were, with Continue back to the
+  // review.
   function refine_plan_from_notice() {
-    const drops = notice_shown?.drops ?? []
+    const drops = notice_drops ?? []
+    mark_dropped_notice_seen()
     history.back()
     open_refine_plan_after_drops(drops)
   }
@@ -5801,10 +5798,12 @@
             <!-- Keyed per round: a new round replaces the subset and resets
                  every grade, so the review component restarts on the new
                  selection instead of pointing at a stale index. -->
-            {#if !review_intro_dismissed}
+            {#if !review_intro_dismissed || drops_warning}
               <ReviewIntro
                 {judged_noun}
-                on_start={() => (review_intro_dismissed = true)}
+                {drops_warning}
+                on_start={start_review}
+                on_refine_plan={refine_plan_from_notice}
               />
             {:else}
               {#key calibration_rounds_completed}
@@ -5908,33 +5907,6 @@
       {/if}
     </KilnProBatchForm>
   </FormContainer>
-</Dialog>
-
-<!-- Shown once over the review when grounding dropped some planned
-     conversations and the rest were driven. Closing it any way marks it seen
-     for this grounded set. -->
-<Dialog
-  bind:this={dropped_notice_dialog}
-  title={notice_shown?.title ?? ""}
-  on:close={mark_dropped_notice_seen}
-  action_buttons={[
-    {
-      label: "Refine Plan",
-      action: () => {
-        refine_plan_from_notice()
-        return true
-      },
-    },
-    {
-      label: "Continue",
-      isPrimary: true,
-      action: () => true,
-    },
-  ]}
->
-  {#if notice_shown}
-    <Warning warning_color="warning" warning_message={notice_shown.summary} />
-  {/if}
 </Dialog>
 
 <!-- Generation Settings: the drive's single entrance. Every run passes

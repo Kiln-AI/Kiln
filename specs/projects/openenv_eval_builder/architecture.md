@@ -439,8 +439,8 @@ prints "None." under its heading.
 - Two case caches (`builder_draft.ts`). `cached_su_cases` holds kiln_server's generated simulated
   users, keyed on the plan and spec only, as before this project. `cached_grounded_cases` holds the
   same cases after grounding, keyed on plan, spec, OpenEnv server id and judge model, with the
-  drops (`drops`, and their count in `grounding_dropped`) and whether the review's notice of them
-  was closed (`drops_notice_seen`). Drafts without the last two restore with no drops
+  drops (`drops`, and their count in `grounding_dropped`) and whether the review's warning of them
+  was acted on (`drops_notice_seen`). Drafts without the last two restore with no drops
   (`restore_cached_grounded_cases`). A grounding failure or a changed judge or server re-grounds the
   cached generated cases without calling `generate_cases` again.
 - `on_drive_multi_turn` runs `grounding_cases` after `generating_cases` when the run config's
@@ -451,12 +451,13 @@ prints "None." under its heading.
   driven at once; the drive counts the drops as planned-for, not failed, so no stop screen
   follows. When none fit, `grounding_all_dropped` holds the drops and Step 4 shows them instead
   of driving (`ui_design.md`).
-- The review's notice reads `dropped_notice_drops(cached_grounded_cases, driven_prompts_json)`
-  (`grounding_flow.ts`): the drops of the grounded set the batch was driven from, until the notice
-  is closed. Closing marks `drops_notice_seen` on the cache, which rides the draft. Its Refine Plan
-  goes back to Step 4 and opens the Refine Plan dialog with `refine_from_drops` set; the dialog's
-  warning is `refine_after_drops_confirm` (`plan_flow.ts`), and its submit moves the drops into
-  `pending_retry_drops` before `on_plan_batch()`.
+- The review's start screen (`review_intro.svelte`) shows the warning from
+  `dropped_notice_drops(cached_grounded_cases, driven_prompts_json)` (`grounding_flow.ts`): the
+  drops of the grounded set the batch was driven from, until the warning is acted on. Its
+  Continue (`start_review`) and Refine Plan both mark `drops_notice_seen` on the cache, which
+  rides the draft. Refine Plan goes back to Step 4 and opens the Refine Plan dialog with
+  `refine_from_drops` set; the dialog's warning is `refine_after_drops_confirm` (`plan_flow.ts`),
+  and its submit moves the drops into `pending_retry_drops` before `on_plan_batch()`.
 
 ### Driving each case in its episode
 
