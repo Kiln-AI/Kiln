@@ -190,9 +190,8 @@
   let prior_selected_run_config_id: string | null = null
   let run_config_just_loaded = false
   // The saved run config this component deselected because the options stopped
-  // matching it. While "custom" is selected, options that match it again select
-  // it again. Every other change of the selection clears it, so a user who
-  // picks "Custom" stays on it even when the options match a saved config.
+  // matching it; options that match it again select it again. Every other
+  // change of the selection clears it, so a user who picks "Custom" stays there.
   let run_config_left_by_edit_id: string | null = null
 
   // Set every run option from a config's properties. `run_config_just_loaded`
@@ -335,7 +334,6 @@
     // deselect the run config if they have changed any run options to not match the selected run config
     await reset_to_custom_options_if_needed()
 
-    // select it again if they have changed the run options back
     reselect_run_config_left_by_edit_if_needed()
   }
 
@@ -445,6 +443,11 @@
     }
     if (run_options_match(config_properties)) {
       selected_run_config_id = run_config_left_by_edit_id
+      // The options already match. Marking the selection as seen keeps
+      // update_current_run_options_for_selected_run_config from applying the
+      // config again, which would rewrite a number field while the user types.
+      prior_selected_run_config_id = run_config_left_by_edit_id
+      run_config_left_by_edit_id = null
     }
   }
 
@@ -473,8 +476,8 @@
       config_properties.model_name === current_model_name &&
       config_properties.model_provider_name === current_provider_name &&
       config_properties.prompt_id === prompt_method &&
-      config_properties.temperature === temperature &&
-      config_properties.top_p === top_p &&
+      config_properties.temperature === typed_number(temperature) &&
+      config_properties.top_p === typed_number(top_p) &&
       (config_properties.thinking_level ?? null) === thinking_level &&
       output_mode_matches &&
       tools_match &&
@@ -483,6 +486,15 @@
         input_transform,
       )
     )
+  }
+
+  // Temperature and Top P are edited in text inputs, so after an edit they hold
+  // the typed text and not a number.
+  function typed_number(value: number | string): number {
+    if (typeof value !== "string") {
+      return value
+    }
+    return value.trim() === "" ? NaN : Number(value)
   }
 
   // Helper function to convert run options to server run_config_properties format

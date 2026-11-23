@@ -14,7 +14,13 @@ import {
   beforeEach,
   afterEach,
 } from "vitest"
-import { render, cleanup, screen, waitFor } from "@testing-library/svelte"
+import {
+  render,
+  cleanup,
+  screen,
+  waitFor,
+  fireEvent,
+} from "@testing-library/svelte"
 import { tick } from "svelte"
 import {
   available_models,
@@ -43,9 +49,9 @@ vi.mock("$lib/api_client", () => ({
   base_url: "http://localhost:0",
 }))
 
-// The advanced panel is not what these tests are about, and its input-transform
-// modal pulls a large dialog subtree into jsdom.
-vi.mock("./advanced_run_options.svelte", async () => {
+// The input-transform picker is not what these tests are about, and its modal
+// pulls a large dialog subtree into jsdom.
+vi.mock("./input_transform_selector.svelte", async () => {
   const { default: Stub } = await import("./__tests__/empty_stub.svelte")
   return { default: Stub }
 })
@@ -80,6 +86,7 @@ const MODELS = [
     provider_id: "openai",
     models: [
       { id: "gpt_5_4_mini", name: "GPT 5.4 Mini" },
+      { id: "gpt_5_4", name: "GPT 5.4" },
       {
         id: "fine_tune_model",
         name: "Fine Tune",
@@ -147,6 +154,11 @@ const MIXED_ORDER = saved_config("mixed_order", [
 ])
 // Same options as TOOLS_FIRST, and after it in the task's list.
 const TWIN = saved_config("twin", [TOOL_A, TOOL_B, SKILL_A])
+const ZERO_TEMPERATURE = saved_config("zero_temperature", [TOOL_A])
+ZERO_TEMPERATURE.run_config_properties = {
+  ...ZERO_TEMPERATURE.run_config_properties,
+  temperature: 0,
+} as TaskRunConfig["run_config_properties"]
 const FINE_TUNE_CONFIG = saved_config(
   FINE_TUNE_CONFIG_ID,
   [],
@@ -178,6 +190,7 @@ beforeEach(() => {
       TOOLS_FIRST,
       MIXED_ORDER,
       TWIN,
+      ZERO_TEMPERATURE,
       FINE_TUNE_CONFIG,
       MCP_CONFIG,
     ],
@@ -198,6 +211,13 @@ async function settle() {
 
 function shown(test_id: string): string {
   return screen.getByTestId(test_id).textContent ?? ""
+}
+
+// What the user does in one of the advanced panel's text fields.
+async function type_in(field_id: string, text: string) {
+  const input = document.getElementById(field_id) as HTMLInputElement
+  await fireEvent.input(input, { target: { value: text } })
+  await settle()
 }
 
 async function render_with_selection(run_config_id: string) {
@@ -259,6 +279,54 @@ describe("RunConfigComponent returning to a saved run config", () => {
     expect(shown("selected_run_config_id")).toBe("custom")
 
     await component.$set({ tools: [TOOL_A, TOOL_B] })
+    await settle()
+    expect(shown("selected_run_config_id")).toBe("tools_first")
+  })
+
+  it.each(["temperature", "top_p"])(
+    "selects the config again when the user types a new %s and types the old one back",
+    async (field_id) => {
+      await render_with_selection("tools_first")
+      await type_in(field_id, "0.5")
+      expect(shown("selected_run_config_id")).toBe("custom")
+
+      await type_in(field_id, "1")
+      expect(shown("selected_run_config_id")).toBe("tools_first")
+    },
+  )
+
+  it("keeps the config selected when the user types the same temperature again", async () => {
+    await render_with_selection("tools_first")
+    await type_in("temperature", "1.0")
+    expect(shown("selected_run_config_id")).toBe("tools_first")
+  })
+
+  it("leaves the typed text alone when it selects the config again", async () => {
+    // The user is on the way from 1.5 to 1.7: "1." equals the saved 1.
+    await render_with_selection("tools_first")
+    await type_in("temperature", "1.5")
+    await type_in("temperature", "1.")
+    expect(shown("selected_run_config_id")).toBe("tools_first")
+    const input = document.getElementById("temperature") as HTMLInputElement
+    expect(input.value).toBe("1.")
+
+    await type_in("temperature", "1.7")
+    expect(shown("selected_run_config_id")).toBe("custom")
+  })
+
+  it("changes to custom when the user empties the temperature of a config that saved 0", async () => {
+    await render_with_selection("zero_temperature")
+    await type_in("temperature", "")
+    expect(shown("selected_run_config_id")).toBe("custom")
+  })
+
+  it("selects the config again when the user picks another model and picks the old one back", async () => {
+    const component = await render_with_selection("tools_first")
+    await component.$set({ model: "openai/gpt_5_4" })
+    await settle()
+    expect(shown("selected_run_config_id")).toBe("custom")
+
+    await component.$set({ model: "openai/gpt_5_4_mini" })
     await settle()
     expect(shown("selected_run_config_id")).toBe("tools_first")
   })
