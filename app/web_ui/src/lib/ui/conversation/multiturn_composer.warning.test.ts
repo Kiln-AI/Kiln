@@ -74,3 +74,32 @@ describe("MultiturnComposer warning_error_statuses", () => {
     ).toContain(SESSION_ENDED)
   })
 })
+
+describe("MultiturnComposer OpenEnv refusals", () => {
+  it("shows the refusal without the Unexpected error prefix", async () => {
+    send_multiturn.mockResolvedValue({
+      ok: false,
+      error: {
+        message: { message: SESSION_ENDED, code: "openenv_session_ended" },
+      },
+      status: 409,
+    })
+    const { container, getByRole } = render(MultiturnComposer, {
+      props: {
+        project_id: "p1",
+        task_id: "t1",
+        parent_task_run_id: "leaf-42",
+        on_success: vi.fn(),
+        warning_error_statuses: [409],
+      },
+    })
+    await fireEvent.click(getByRole("button", { name: /Send/ }))
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-testid="multiturn-composer-warning"]')
+          ?.textContent,
+      ).toContain(SESSION_ENDED),
+    )
+    expect(container.textContent).not.toContain("Unexpected error")
+  })
+})

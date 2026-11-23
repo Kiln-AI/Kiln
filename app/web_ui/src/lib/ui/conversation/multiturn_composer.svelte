@@ -11,6 +11,7 @@
     type RunConfigController,
   } from "$lib/services/multiturn_send"
   import type { TaskRun } from "$lib/types"
+  import { run_request_error } from "$lib/utils/openenv"
 
   export let mode: "append" | "fork" = "append"
   export let project_id: string
@@ -165,9 +166,9 @@
         result.status !== undefined &&
         warning_error_statuses.includes(result.status)
       ) {
-        warning_error = createKilnError(result.error)
+        warning_error = run_request_error(result.error)
       } else {
-        run_error = createKilnError(result.error)
+        run_error = run_request_error(result.error)
       }
     } catch (e) {
       // on_success threw (e.g. goto/load_run failed), or the run options
