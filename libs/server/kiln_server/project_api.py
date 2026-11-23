@@ -51,9 +51,9 @@ def duplicate_project_detail(
 ) -> str | dict[str, str]:
     """Build the 409 detail for an import that hits an existing project ID.
 
-    A path that is already registered gets a code and the registered project's
-    ID, so a client can open that project instead of offering to remove it.
-    A different path with the same ID gets the plain message.
+    Returns a dict with `code`, `message` and `project_id` when the path is
+    already registered, and the plain message when a different path has the
+    same ID.
     """
     if error.same_path:
         return {
