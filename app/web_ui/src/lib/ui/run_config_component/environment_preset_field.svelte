@@ -9,6 +9,7 @@
     environment_preset_groups,
     reset_kwargs_for,
     selected_preset_after_change,
+    RUN_OPTIONS_CHANGED_WHILE_SENDING,
     type EnvironmentPresetFieldState,
     type ResetKwargs,
   } from "$lib/utils/openenv"
@@ -119,14 +120,20 @@
    * OpenEnv server, reach more than one, or it has no presets. Waits for a pending
    * lookup, so a Run clicked right after a tool change uses the new tools.
    * A failed lookup is tried once more, and its error thrown if it fails again.
+   * Throws when the task or tools change while it waits, since the arguments
+   * would then belong to another selection than the one being sent.
    */
   export async function get_openenv_reset_kwargs(): Promise<ResetKwargs | null> {
     clearTimeout(debounce_timer)
     start_scheduled_lookup()
+    const request = latest_request
     await in_flight
     if (failed_lookup) {
       in_flight = failed_lookup.retry()
       await in_flight
+    }
+    if (request !== latest_request) {
+      throw new Error(RUN_OPTIONS_CHANGED_WHILE_SENDING)
     }
     if (failed_lookup) {
       throw failed_lookup.error
