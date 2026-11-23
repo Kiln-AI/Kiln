@@ -140,3 +140,12 @@ def scripted_model() -> Iterator[ScriptedModel]:
         ),
     ):
         yield model
+
+
+@pytest.fixture
+def few_tool_rounds() -> Iterator[None]:
+    """The adapter's cap on tool rounds in one run, lowered to 3."""
+    with patch(
+        "kiln_ai.adapters.model_adapters.litellm_adapter.MAX_TOOL_CALLS_PER_TURN", 3
+    ):
+        yield

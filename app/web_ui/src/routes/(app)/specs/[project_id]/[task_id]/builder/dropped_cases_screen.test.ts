@@ -44,12 +44,32 @@ function squash(text: string | null | undefined): string {
 }
 
 describe("DroppedCasesScreen", () => {
-  it("says how many cases didn't fit, under the title", () => {
+  it("says how many cases were dropped, under the title", () => {
     const { getByText } = render_screen(20)
-    expect(getByText("Some Cases Don't Fit Your Environment")).toBeTruthy()
+    expect(getByText("Some Cases Were Dropped")).toBeTruthy()
     expect(
       getByText(
-        "Kiln checked each case against your OpenEnv server. 2 of 20 couldn't be made to fit.",
+        "Kiln checked each case against your OpenEnv server. 2 of 20 were dropped. Each row says why.",
+      ),
+    ).toBeTruthy()
+  })
+
+  it("counts a single dropped case in the singular", () => {
+    const { getByText } = render_screen(20, DROPS.slice(0, 1))
+    expect(getByText("Some Cases Were Dropped")).toBeTruthy()
+    expect(
+      getByText(
+        "Kiln checked each case against your OpenEnv server. 1 of 20 was dropped. Each row says why.",
+      ),
+    ).toBeTruthy()
+  })
+
+  it("says the only case was dropped when there was one", () => {
+    const { getByText } = render_screen(1, DROPS.slice(0, 1))
+    expect(getByText("All Cases Were Dropped")).toBeTruthy()
+    expect(
+      getByText(
+        "Kiln checked each case against your OpenEnv server. The case was dropped. Each row says why.",
       ),
     ).toBeTruthy()
   })
@@ -84,11 +104,12 @@ describe("DroppedCasesScreen", () => {
     expect(handlers.on_continue).toHaveBeenCalledOnce()
   })
 
-  it("drops Continue and Replace and leads with Retry when nothing fits", () => {
+  it("drops Continue and Replace and leads with Retry when every case dropped", () => {
     const { buttons, getByText } = render_screen(2)
+    expect(getByText("All Cases Were Dropped")).toBeTruthy()
     expect(
       getByText(
-        "Kiln checked each case against your OpenEnv server. None of the 2 cases could be made to fit.",
+        "Kiln checked each case against your OpenEnv server. All 2 cases were dropped. Each row says why.",
       ),
     ).toBeTruthy()
     expect(buttons.map((b) => squash(b.textContent))).toEqual([

@@ -1,11 +1,14 @@
 """ground_cases, with ground_case stubbed so the tests control when and how each case ends."""
 
 import asyncio
+import json
 from typing import Any
 from unittest.mock import patch
 
+import litellm
 import pytest
 
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.openenv import OpenEnvReset
 from kiln_ai.eval_grounding.batch import (
@@ -22,6 +25,7 @@ from kiln_ai.eval_grounding.models import (
     GroundingCase,
     GroundingOutcome,
 )
+from kiln_ai.eval_grounding.test_agent import MISBEHAVIOURS, result, start
 from kiln_ai.utils.usage import Usage
 
 EVAL_CONTEXT = EvalContext(specification="spec", target_task_prompt="prompt")
@@ -58,7 +62,7 @@ def dropped() -> GroundingOutcome:
 
 @pytest.fixture
 def batch(openenv_server, session_manager):
-    def run(cases: list[GroundingCase], **overrides: Any):
+    def run(cases: list[GroundingCase], retry_delay_s: float = 0, **overrides: Any):
         return ground_cases(
             cases,
             eval_context=EVAL_CONTEXT,
@@ -67,6 +71,7 @@ def batch(openenv_server, session_manager):
             model_name="gpt-4",
             model_provider=ModelProviderName.openai,
             target_tools=[],
+            retry_delay_s=retry_delay_s,
             **overrides,
         )
 
@@ -240,3 +245,134 @@ async def test_closing_early_cancels_the_rest(batch):
 async def test_concurrency_must_be_positive(batch):
     with pytest.raises(ValueError, match="at least 1"):
         await anext(batch([case(0)], concurrency=0))
+
+
+def provider_error(error: Exception) -> KilnRunError:
+    """`error` as Kiln's adapter raises it."""
+    return KilnRunError("failed", partial_trace=None, original=error)
+
+
+def timeout() -> KilnRunError:
+    return provider_error(litellm.Timeout("timed out", "gpt-4", "openai"))
+
+
+class TestRetries:
+    async def test_a_transient_error_retries_the_case(self, batch):
+        attempts: dict[str, int] = {}
+
+        async def fake_ground_case(grounding_case: GroundingCase, **kwargs: Any):
+            attempts[grounding_case.scenario] = (
+                attempts.get(grounding_case.scenario, 0) + 1
+            )
+            if grounding_case.scenario == "scenario 0" and attempts["scenario 0"] < 3:
+                raise timeout()
+            return grounded(10)
+
+        with patch(
+            "kiln_ai.eval_grounding.batch.ground_case", side_effect=fake_ground_case
+        ):
+            events = [e async for e in batch([case(0), case(1)])]
+
+        assert attempts == {"scenario 0": 3, "scenario 1": 1}
+        finished = events[-1]
+        assert isinstance(finished, GroundingFinished)
+        assert (finished.grounded, finished.dropped) == (2, 0)
+        assert not finished.usage_complete
+        outcomes = {
+            e.case_index: e.outcome for e in events if isinstance(e, CaseGrounded)
+        }
+        assert not outcomes[0].usage_complete
+        assert outcomes[1].usage_complete
+
+    async def test_a_transient_error_that_persists_fails_the_batch(self, batch):
+        attempts = 0
+
+        async def fake_ground_case(grounding_case: GroundingCase, **kwargs: Any):
+            nonlocal attempts
+            attempts += 1
+            raise timeout()
+
+        with patch(
+            "kiln_ai.eval_grounding.batch.ground_case", side_effect=fake_ground_case
+        ):
+            with pytest.raises(GroundingCaseError) as raised:
+                async for _ in batch([case(0)], max_retries=2):
+                    pass
+
+        assert attempts == 3
+        assert raised.value.case_index == 0
+        assert isinstance(raised.value.error, KilnRunError)
+        assert isinstance(raised.value.error.original, litellm.Timeout)
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            provider_error(litellm.AuthenticationError("bad key", "openai", "gpt-4")),
+            RuntimeError("the environment went away"),
+        ],
+    )
+    async def test_other_errors_fail_the_batch_at_once(self, batch, error):
+        attempts = 0
+
+        async def fake_ground_case(grounding_case: GroundingCase, **kwargs: Any):
+            nonlocal attempts
+            attempts += 1
+            raise error
+
+        with patch(
+            "kiln_ai.eval_grounding.batch.ground_case", side_effect=fake_ground_case
+        ):
+            with pytest.raises(GroundingCaseError) as raised:
+                async for _ in batch([case(0)]):
+                    pass
+
+        assert attempts == 1
+        assert raised.value.error is error
+
+    async def test_a_retry_starts_over_in_a_fresh_episode(
+        self, batch, scripted_model, server_is_free
+    ):
+        """On the one-session server, the retry's reset only succeeds once the failed
+        attempt has released its episode."""
+
+        async def fail():
+            raise litellm.Timeout("timed out", "gpt-4", "openai")
+
+        scripted_model.script(
+            model_reply(None, start("a")),
+            fail,
+            model_reply(None, start("b")),
+            model_reply(json.dumps(result(), ensure_ascii=False)),
+        )
+        events = [e async for e in batch([case(0)])]
+
+        grounded_case = events[0]
+        assert isinstance(grounded_case, CaseGrounded)
+        assert grounded_case.outcome.status == "grounded"
+        assert grounded_case.outcome.openenv_reset is not None
+        assert grounded_case.outcome.openenv_reset.reset_kwargs == {"fixture_id": "b"}
+        assert [c.tool for c in grounded_case.outcome.call_log] == ["start_episode"]
+        assert not grounded_case.outcome.usage_complete
+        await server_is_free()
+
+
+@pytest.mark.parametrize("misbehaviour", list(MISBEHAVIOURS))
+async def test_a_misbehaving_model_drops_only_its_case(
+    batch, scripted_model, server_is_free, few_tool_rounds, misbehaviour
+):
+    reason, _detail, replies = MISBEHAVIOURS[misbehaviour]
+    scripted_model.script(
+        model_reply(None, start()),
+        *replies,
+        model_reply(None, start()),
+        model_reply(json.dumps(result(), ensure_ascii=False)),
+    )
+    events = [e async for e in batch([case(0), case(1)], concurrency=1)]
+
+    outcomes = {e.case_index: e.outcome for e in events if isinstance(e, CaseGrounded)}
+    assert outcomes[0].drop_reason == reason
+    assert outcomes[1].status == "grounded"
+    finished = events[-1]
+    assert isinstance(finished, GroundingFinished)
+    assert (finished.grounded, finished.dropped) == (1, 1)
+    await server_is_free()

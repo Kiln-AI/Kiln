@@ -1,9 +1,9 @@
 <script lang="ts">
-  // The screen after grounding when some planned cases couldn't be made to
-  // fit the OpenEnv server. It names each one with the grounding agent's own
-  // reason and offers the ways on: drive the cases that fit, plan the batch
-  // again with these reasons in hand, plan new cases for only these rows, or
-  // go back to the plan.
+  // The screen after grounding when some planned cases were dropped, because
+  // they couldn't be made to fit the OpenEnv server or the grounding agent
+  // failed on them. It names each one with its reason and offers the ways on:
+  // drive the cases that fit, plan the batch again with these reasons in hand,
+  // plan new cases for only these rows, or go back to the plan.
   import SettingsHeader from "$lib/ui/settings_header.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
@@ -23,15 +23,20 @@
   let see_all_dialog: SeeAllDialog
 
   $: fit_count = Math.max(0, total - drops.length)
-  $: summary =
-    fit_count === 0
-      ? `Kiln checked each case against your OpenEnv server. None of the ${total} cases could be made to fit.`
-      : `Kiln checked each case against your OpenEnv server. ${drops.length} of ${total} couldn't be made to fit.`
+  $: dropped_summary =
+    fit_count > 0
+      ? `${drops.length} of ${total} ${drops.length === 1 ? "was" : "were"} dropped.`
+      : total === 1
+        ? "The case was dropped."
+        : `All ${total} cases were dropped.`
+  $: summary = `Kiln checked each case against your OpenEnv server. ${dropped_summary} Each row says why.`
 </script>
 
 <div class="flex flex-col gap-6">
   <SettingsHeader
-    title="Some Cases Don't Fit Your Environment"
+    title={fit_count === 0
+      ? "All Cases Were Dropped"
+      : "Some Cases Were Dropped"}
     subtitle={summary}
   />
   <div class="rounded-lg border">

@@ -11,11 +11,17 @@ from typing import Any
 from pydantic import JsonValue, ValidationError
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.errors import KilnRunError, StructuredOutputParseError
+from kiln_ai.adapters.errors import (
+    EMPTY_RESPONSE_ERROR_MESSAGE,
+    KilnRunError,
+    StructuredOutputParseError,
+)
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
+from kiln_ai.adapters.model_adapters.adapter_stream import CONTENT_FILTER_ERROR_MESSAGE
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
+from kiln_ai.adapters.model_adapters.litellm_adapter import MAX_TOOL_CALLS_PER_TURN
 from kiln_ai.adapters.retry_classification import unwrap_kiln_run_error
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.openenv import OpenEnvServer, OpenEnvTool
@@ -96,7 +102,9 @@ async def ground_case(
     `server_tools` are the OpenEnv server's tools, which the agent gets; `target_tools`
     are what the agent under test can call, which the agent is told about. Errors that
     are not the case's fault (the environment failing, the model provider failing) are
-    raised. The case's episode is released on every exit, cancellation included."""
+    raised, unless a `submit_result` call already recorded the result, which is kept.
+    An adapter error the model caused (an empty reply, too many tool rounds) drops the
+    case. The case's episode is released on every exit, cancellation included."""
     session = GroundingSession(openenv_server, session_manager, server_tools, limits)
     submit_tool = (
         _SubmitResultTool(session) if answer_style == "submit_result" else None
@@ -225,6 +233,18 @@ class _GroundingRun:
         self.usage_complete = True
 
     async def ground(self, message: str) -> GroundingOutcome:
+        try:
+            return await self._ground(message)
+        except _ModelMisbehaved as e:
+            return GroundingOutcome.dropped(
+                e.reason,
+                e.detail,
+                call_log=self._session.call_log,
+                usage=self.usage,
+                usage_complete=self.usage_complete,
+            )
+
+    async def _ground(self, message: str) -> GroundingOutcome:
         reply = await self._invoke(message, prior_trace=None)
         if reply is None:
             return self._stopped_outcome()
@@ -273,7 +293,9 @@ class _GroundingRun:
         self, input: str, *, prior_trace: list[ChatCompletionMessageParam] | None
     ) -> _Reply | None:
         """One adapter call, cut short when the session stops. Returns None for the hard
-        stop after a limit, and raises an environment failure."""
+        stop after a limit. Raises `_ModelMisbehaved` when the model's own behaviour
+        ended the call, and re-raises environment and provider failures, unless a
+        `submit_result` call already recorded the result, which is kept."""
         invoke = asyncio.ensure_future(
             self._adapter.invoke_returning_run_output(input, prior_trace=prior_trace)
         )
@@ -296,6 +318,9 @@ class _GroundingRun:
             task_run, run_output = invoke.result()
         except KilnRunError as e:
             cause = unwrap_kiln_run_error(e)
+            if self._submit_tool is not None and self._submit_tool.result is not None:
+                self.usage_complete = False
+                return _Reply(output=None, trace=None, error=None)
             if isinstance(cause, OpenEnvError):
                 raise cause from e
             if _is_unusable_output_error(cause):
@@ -303,6 +328,10 @@ class _GroundingRun:
                 return _Reply(
                     output=None, trace=e.partial_trace, error=_describe_error(cause)
                 )
+            misbehaviour = _model_misbehaviour(cause)
+            if misbehaviour is not None:
+                self.usage_complete = False
+                raise misbehaviour from e
             raise
         self._add_usage(task_run.usage)
         return _Reply(output=run_output.output, trace=task_run.trace, error=None)
@@ -397,6 +426,54 @@ class _SubmitResultTool(UnmanagedKilnTool):
         self.result = result
         await self._session.close_tools()
         return ToolCallResult(output="Recorded. Reply with only the word done.")
+
+
+class _ModelMisbehaved(Exception):
+    """The adapter stopped the run over something the model did, not the provider or
+    the environment. Drops the one case."""
+
+    def __init__(self, reason: DropReason, detail: str) -> None:
+        super().__init__(detail)
+        self.reason = reason
+        self.detail = detail
+
+
+_CONTENT_FILTER_PREFIX = CONTENT_FILTER_ERROR_MESSAGE.split("{", 1)[0]
+
+
+def _model_misbehaviour(error: BaseException) -> _ModelMisbehaved | None:
+    """The drop for an adapter error the model caused, or None for any other error.
+    The adapter raises these as plain ValueError and RuntimeError, so they are told
+    apart by message."""
+    message = str(error)
+    unusable = "The agent's result could not be used: "
+    if isinstance(error, ValueError):
+        if message.startswith(EMPTY_RESPONSE_ERROR_MESSAGE):
+            return _ModelMisbehaved(
+                DropReason.invalid_output, unusable + "the model sent an empty reply."
+            )
+        if message.startswith(_CONTENT_FILTER_PREFIX):
+            return _ModelMisbehaved(
+                DropReason.invalid_output,
+                unusable + "the model declined to respond.",
+            )
+    if isinstance(error, RuntimeError):
+        if message.startswith("Model returned neither content nor tool calls"):
+            return _ModelMisbehaved(
+                DropReason.invalid_output, unusable + "the model sent an empty reply."
+            )
+        if message.startswith("Model asked for impossible combination"):
+            return _ModelMisbehaved(
+                DropReason.invalid_output,
+                unusable + "the model tried to answer and call tools in the same turn.",
+            )
+        if message.startswith("Too many tool calls"):
+            return _ModelMisbehaved(
+                DropReason.limit,
+                f"The agent made more than {MAX_TOOL_CALLS_PER_TURN} rounds of tool "
+                "calls without finishing.",
+            )
+    return None
 
 
 def _is_unusable_output_error(error: BaseException) -> bool:

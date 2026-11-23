@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import jsonschema
+import litellm
 import pytest
 
 from kiln_ai.adapters import adapter_registry
@@ -423,7 +424,70 @@ class TestStops:
         await server_is_free()
 
 
+MISBEHAVIOURS = {
+    "empty reply": (DropReason.invalid_output, "empty reply", [model_reply(None)]),
+    "answer and tools at once": (
+        DropReason.invalid_output,
+        "same turn",
+        [model_reply(None, ("task_response", {}), READ_NOTES)],
+    ),
+    "endless tool rounds": (
+        DropReason.limit,
+        "rounds of tool calls",
+        [model_reply(None, ("no_such_tool", {})) for _ in range(3)],
+    ),
+}
+"""Model replies, after the case's first reset, that make the adapter end the run,
+with the drop each one gives. The tool rounds need the `few_tool_rounds` fixture."""
+
+
+@pytest.mark.parametrize("answer_style", ["structured_output", "submit_result"])
+@pytest.mark.parametrize("misbehaviour", list(MISBEHAVIOURS))
+async def test_a_misbehaving_model_drops_the_case(
+    ground, scripted_model, server_is_free, few_tool_rounds, misbehaviour, answer_style
+):
+    reason, detail, replies = MISBEHAVIOURS[misbehaviour]
+    scripted_model.script(model_reply(None, start()), *replies)
+    outcome = await ground(answer_style=answer_style)
+    assert outcome.status == "dropped"
+    assert outcome.drop_reason == reason
+    assert detail in (outcome.drop_detail or "")
+    assert outcome.call_log[0].tool == "start_episode"
+    assert not outcome.usage_complete
+    await server_is_free()
+
+
 class TestSubmitResult:
+    async def test_an_empty_reply_after_the_submission_keeps_the_result(
+        self, ground, scripted_model, server_is_free
+    ):
+        scripted_model.script(
+            model_reply(None, start("b")),
+            model_reply(None, submit(**result(args={}))),
+            model_reply(None),
+        )
+        outcome = await ground(answer_style="submit_result")
+        assert outcome.status == "grounded"
+        assert outcome.openenv_reset is not None
+        assert outcome.openenv_reset.reset_kwargs == {"fixture_id": "b"}
+        assert not outcome.usage_complete
+        await server_is_free()
+
+    async def test_a_provider_failure_after_the_submission_keeps_the_result(
+        self, ground, scripted_model
+    ):
+        async def fail():
+            raise litellm.AuthenticationError("bad key", "openai", "gpt-4")
+
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(None, submit(**result(args={}))),
+            fail,
+        )
+        outcome = await ground(answer_style="submit_result")
+        assert outcome.status == "grounded"
+        assert not outcome.usage_complete
+
     async def test_an_accepted_result_grounds_the_case(
         self, ground, scripted_model, built_adapters, server_is_free
     ):
