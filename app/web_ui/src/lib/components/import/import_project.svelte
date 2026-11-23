@@ -383,6 +383,9 @@
   }
 
   const import_project = async (remove_conflicting_id = false) => {
+    // The path field stays editable during the request, so a result belongs
+    // to the path that was sent, not to the path in the field when it arrives.
+    const submitted_path = import_project_path
     try {
       import_submitting = true
       import_saved = false
@@ -396,7 +399,7 @@
       } = await client.POST("/api/import_project", {
         params: {
           query: {
-            project_path: import_project_path,
+            project_path: submitted_path,
             trusted: true,
             ...(remove_conflicting_id && { remove_conflicting_id: true }),
           },
@@ -404,10 +407,13 @@
       })
       if (post_error) {
         if (response?.status === 409) {
-          conflict_path = import_project_path
+          conflict_path = submitted_path
           already_imported_project_id =
             project_id_if_already_imported(post_error)
           if (already_imported_project_id) {
+            // The project can be registered from outside this page, so the
+            // list the host page shows next must be reloaded.
+            await load_projects()
             return
           }
           import_conflict = true

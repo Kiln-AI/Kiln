@@ -65,6 +65,7 @@ vi.mock("./step_branch.svelte", async () => {
 
 import ImportProject from "./import_project.svelte"
 import { client } from "$lib/api_client"
+import { load_projects } from "$lib/stores"
 import { git_import_wizard_store } from "$lib/stores/git_import_wizard_store"
 import { stepUrlProps } from "./__tests__/step_url_stub.svelte"
 import { stepCredentialsProps } from "./__tests__/step_credentials_stub.svelte"
@@ -376,6 +377,56 @@ describe("ImportProject local_file conflict handling", () => {
       getByText("Continue", { selector: 'button[type="button"]' }),
     )
     expect(baseProps.on_complete).toHaveBeenCalledWith("proj_1")
+  })
+
+  it("reloads the project list when the path is already registered", async () => {
+    vi.mocked(load_projects).mockClear()
+    vi.mocked(client.POST).mockResolvedValue(alreadyImportedResponse as never)
+
+    const { container } = await renderAtLocalStep()
+    await submitPathAndTrust(container)
+
+    await waitFor(() => {
+      expect(container.textContent).toContain(
+        "This project is already imported.",
+      )
+    })
+    expect(load_projects).toHaveBeenCalledTimes(1)
+  })
+
+  it("ignores an already-imported response for a path the user changed during the request", async () => {
+    let resolve_post: (value: unknown) => void = () => {}
+    vi.mocked(client.POST).mockReturnValue(
+      new Promise((resolve) => {
+        resolve_post = resolve
+      }) as never,
+    )
+
+    const { container } = await renderAtLocalStep()
+    await submitPathAndTrust(container)
+
+    const input = container.querySelector(
+      "#import_project_path",
+    ) as HTMLInputElement
+    await fireEvent.input(input, {
+      target: { value: "/different/path/project.kiln" },
+    })
+    await tick()
+
+    resolve_post(alreadyImportedResponse)
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sentOpts = vi.mocked(client.POST).mock.calls[0][1] as any
+    expect(sentOpts?.params?.query?.project_path).toBe("/path/to/project.kiln")
+    expect(container.textContent).not.toContain(
+      "This project is already imported.",
+    )
+    const submit = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    expect(submit?.classList.contains("hidden")).toBe(false)
   })
 
   it("editing path after an already-imported response restores the submit button", async () => {
