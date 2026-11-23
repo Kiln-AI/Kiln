@@ -1896,30 +1896,31 @@ def connect_document_api(app: FastAPI):
             )
         extraction.delete()
 
-        if extraction.extractor_config_id is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Extractor config ID not found",
-            )
-
         # there may be some cached partial extraction data in cache, which would be picked
-        # up on the next extraction run for this file, so we need to clear it
-        extractor_config = ExtractorConfig.from_id_and_parent_path(
-            extraction.extractor_config_id, project.path
+        # up on the next extraction run for this file, so we need to clear it. The extraction
+        # is already deleted at this point, so clearing the cache is best effort.
+        extractor_config = (
+            ExtractorConfig.from_id_and_parent_path(
+                extraction.extractor_config_id, project.path
+            )
+            if extraction.extractor_config_id is not None
+            else None
         )
         if extractor_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Extractor config not found",
+            logger.warning(
+                "Skipped clearing extractor cache for document %s (extraction %s): extractor config %s not found",
+                document_id,
+                extraction_id,
+                extraction.extractor_config_id,
             )
-
-        extractor = extractor_adapter_from_type(
-            extractor_config.extractor_type,
-            extractor_config,
-            filesystem_cache=TemporaryFilesystemCache.shared(),
-        )
+            return {"message": f"Extraction removed. ID: {extraction_id}"}
 
         try:
+            extractor = extractor_adapter_from_type(
+                extractor_config.extractor_type,
+                extractor_config,
+                filesystem_cache=TemporaryFilesystemCache.shared(),
+            )
             await extractor.clear_cache_for_file_path(
                 document.original_file.attachment.resolve_path(document.path.parent)
             )

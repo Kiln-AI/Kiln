@@ -4586,7 +4586,14 @@ async def test_create_documents_bulk_custom_name_truncation(client, mock_project
 async def test_delete_extraction_extractor_config_not_found(
     client, mock_project, mock_document
 ):
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+    """Deletion of extraction should succeed if its extractor config is gone"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.extractor_adapter_from_type"
+        ) as mock_extractor_factory,
+        patch("kiln_server.document_api.logger") as mock_logger,
+    ):
         mock_project_from_id.return_value = mock_project
 
         document = mock_document["document"]
@@ -4598,11 +4605,49 @@ async def test_delete_extraction_extractor_config_not_found(
         )
         extraction.save_to_file()
 
+        url = f"/api/projects/{mock_project.id}/documents/{document.id}/extractions/{extraction.id}"
+        response = client.delete(url)
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "message": f"Extraction removed. ID: {extraction.id}"
+        }
+        assert Extraction.from_id_and_parent_path(extraction.id, document.path) is None
+        mock_extractor_factory.assert_not_called()
+        mock_logger.warning.assert_called_once()
+
+        assert client.delete(url).status_code == 404
+
+
+async def test_delete_extraction_failed_to_build_extractor(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Deletion of extraction should not fail if the extractor adapter cannot be built"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.extractor_adapter_from_type",
+            side_effect=ValueError("Unsupported extractor"),
+        ),
+        patch("kiln_server.document_api.logger") as mock_logger,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("hello", "text/plain"),
+        )
+        extraction.save_to_file()
+
         response = client.delete(
             f"/api/projects/{mock_project.id}/documents/{document.id}/extractions/{extraction.id}",
         )
 
-    assert response.status_code == 404
+        assert response.status_code == 200, response.text
+        mock_logger.warning.assert_called_once()
 
 
 async def test_delete_extraction_success(
