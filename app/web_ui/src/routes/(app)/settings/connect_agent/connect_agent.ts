@@ -51,5 +51,5 @@ export function build_prompt(origin: string): string {
   if (is_default_address(origin)) {
     return BASE_PROMPT
   }
-  return `${BASE_PROMPT} The Kiln MCP server is at ${mcp_url(origin)}.`
+  return `${BASE_PROMPT}\n\nThe Kiln MCP server is at ${mcp_url(origin)}.`
 }

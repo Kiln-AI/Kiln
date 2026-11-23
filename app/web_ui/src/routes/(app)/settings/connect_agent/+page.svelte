@@ -19,7 +19,7 @@
 
 <AppPage
   title="Connect Your Agent"
-  subtitle="Use Kiln from Claude Code, Codex and other agents."
+  subtitle="Use Kiln from Claude Code, Codex, and other agents."
   breadcrumbs={[{ label: "Settings", href: "/settings" }]}
 >
   <div class="max-w-[900px] flex flex-col gap-6">
@@ -28,8 +28,8 @@
         inputType="header_only"
         id="connect_agent_prompt"
         label="Setup Prompt"
-        description="Paste this into your agent. Then ask it to work with Kiln, or type /kiln."
-        info_description="Your agent follows Kiln's install guide: it checks that Kiln is running, adds the Kiln MCP server to its settings and creates a /kiln skill."
+        description="Paste this into your agent. Then ask it to work with Kiln."
+        info_description="Your agent follows Kiln's install guide: it checks that Kiln is running, adds the Kiln MCP server to its settings and creates a Kiln skill."
         value=""
       />
       <div data-testid="connect-agent-prompt">

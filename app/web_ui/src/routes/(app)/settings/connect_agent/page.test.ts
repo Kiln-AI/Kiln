@@ -58,7 +58,9 @@ describe("Connect Your Agent page: addresses", () => {
     const { getByTestId } = render(Page)
     const prompt = getByTestId("connect-agent-prompt").textContent?.trim()
     expect(
-      prompt?.endsWith(" The Kiln MCP server is at http://localhost:9000/mcp."),
+      prompt?.endsWith(
+        "\n\nThe Kiln MCP server is at http://localhost:9000/mcp.",
+      ),
     ).toBe(true)
     expect(getByTestId("connect-agent-mcp-url").textContent?.trim()).toBe(
       "http://localhost:9000/mcp",
@@ -73,7 +75,7 @@ describe("Connect Your Agent page: content", () => {
       "Connect Your Agent",
     )
     expect(
-      getByText("Use Kiln from Claude Code, Codex and other agents."),
+      getByText("Use Kiln from Claude Code, Codex, and other agents."),
     ).toBeTruthy()
     expect(queryByText("Read the Docs")).toBeNull()
     const breadcrumb = container.querySelector(".breadcrumbs a")
@@ -85,9 +87,7 @@ describe("Connect Your Agent page: content", () => {
     const { getByText } = render(Page)
     expect(getByText("Setup Prompt")).toBeTruthy()
     expect(
-      getByText(
-        "Paste this into your agent. Then ask it to work with Kiln, or type /kiln.",
-      ),
+      getByText("Paste this into your agent. Then ask it to work with Kiln."),
     ).toBeTruthy()
   })
 
@@ -132,7 +132,7 @@ describe("Connect Your Agent page: copy", () => {
     const { getByTestId } = render(Page)
     await fireEvent.click(copy_button(getByTestId("connect-agent-prompt")))
     expect(write_text).toHaveBeenCalledWith(
-      BASE_PROMPT + " The Kiln MCP server is at http://localhost:9000/mcp.",
+      BASE_PROMPT + "\n\nThe Kiln MCP server is at http://localhost:9000/mcp.",
     )
   })
 

@@ -62,8 +62,9 @@ def test_texts_use_the_skill_terms():
         assert "endpoint doc" in text
 
 
-def test_skill_tool_description_names_the_slash_command():
+def test_skill_tool_description_names_the_skill_commands():
     assert "/kiln" in SKILL_TOOL_DESCRIPTION
+    assert "$kiln" in SKILL_TOOL_DESCRIPTION
 
 
 def test_path_description_says_how_to_use_the_argument():

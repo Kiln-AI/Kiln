@@ -32,7 +32,7 @@ SKILL_TOOL_DESCRIPTION = (
 
 """
     + WHAT_KILN_IS
-    + """. This skill says what Kiln can do, how to call its API with `call_kiln_api`, and how to make an agent better. When a request involves Kiln, call this tool first, before any other Kiln tool, and follow what it returns. Users may also ask for it by name (`/kiln`, or "the Kiln skill"); that is a request to call this tool.
+    + """. This skill says what Kiln can do, how to call its API with `call_kiln_api`, and how to make an agent better. When a request involves Kiln, call this tool first, before any other Kiln tool, and follow what it returns. Users may also ask for it by name (`/kiln`, `$kiln`, or "the Kiln skill"); that is a request to call this tool.
 
 - No arguments: returns the skill's instructions. They name the modes and the entry points; those files name the rest.
 - `path`: returns one skill file. Copy the path exactly as the skill wrote it, for example `references/knowledge/specs_and_evals.md`.

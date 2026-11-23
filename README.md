@@ -83,7 +83,7 @@ Paste this into your agent:
 Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md
 ```
 
-Then ask your agent to work with Kiln, or type `/kiln`. The same prompt is in the app under Settings, Connect Your Agent. To set up an agent by hand, see [agent_install.md](agent_install.md).
+Then ask your agent to work with Kiln, or type `/kiln` (`$kiln` in Codex). The same prompt is in the app under Settings, Connect Your Agent. To set up an agent by hand, see [agent_install.md](agent_install.md).
 
 ## Demo
 

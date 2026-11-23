@@ -177,7 +177,7 @@ Based on how agents such as Claude Code, Codex and OpenCode expose skills native
 
 ### 6.2 Description
 
-The tool description follows the shape of the native skill tools: one imperative line; what Kiln is; "call this tool first, before any other Kiln tool"; one line per argument; "users may ask for it by name (`/kiln`); that is a request to call this tool"; "only paths the instructions list are valid; do not guess".
+The tool description follows the shape of the native skill tools: one imperative line; what Kiln is; "call this tool first, before any other Kiln tool"; one line per argument; "users may ask for it by name (`/kiln`, `$kiln`); that is a request to call this tool"; "only paths the instructions list are valid; do not guess".
 
 It is short, about 100–150 words. The same trigger text is in the server instructions (section 4). The final wording is tuned in the content work.
 

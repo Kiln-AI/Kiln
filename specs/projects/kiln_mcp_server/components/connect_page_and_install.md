@@ -94,13 +94,15 @@ The address rule is the one of architecture section 3, item 11; this is its page
 - `app_origin`: `base_url` when `is_dev`, otherwise `window.location.origin`. In any production build the UI is served by the Kiln server, so the page origin is the server's real address (the desktop app opens `http://localhost:{port}`, `app/desktop/desktop_main.py:103`). Under `vite dev` the page origin is the Vite server, so the build-time `base_url` (`http://localhost:${VITE_API_PORT || "8757"}`) is used; this is a decision. `window` is read only inside the function.
 - `mcp_url`: `origin` without trailing slashes, plus `MCP_PATH`. It always shows the real origin, also when that origin counts as the default: on `http://127.0.0.1:8757` the manual URL is `http://127.0.0.1:8757/mcp`.
 - `is_default_address`: true when the origin is plain HTTP on port 8757 at a loopback host name. With `u = new URL(origin)`: `u.protocol === "http:"`, `u.port === "8757"`, and `u.hostname` is one of `localhost`, `127.0.0.1`, `[::1]`. A string that `URL` cannot parse gives false. So `http://127.0.0.1:8757` and `http://[::1]:8757` are the default and get no extra sentence: the guide's `http://localhost:8757` reaches the same server. `DEFAULT_ORIGIN` stays as the name of the address that the guide and the skill are written with.
-- `build_prompt`: `BASE_PROMPT` for the default address; otherwise `BASE_PROMPT + " The Kiln MCP server is at " + mcp_url(origin) + "."`.
+- `build_prompt`: `BASE_PROMPT` for the default address; otherwise `BASE_PROMPT + "\n\nThe Kiln MCP server is at " + mcp_url(origin) + "."`. The blank line puts the sentence on its own line, so it does not run on from the guide URL.
 
 The two exact strings today (the second for origin `http://localhost:9000`). After the switch in 4.1 both read `… here: https://kiln.tech/agent_install.md`.
 
 ```
 Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md
-Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md The Kiln MCP server is at http://localhost:9000/mcp.
+Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/agent_install.md
+
+The Kiln MCP server is at http://localhost:9000/mcp.
 ```
 
 ### 3.4 `+page.svelte`
@@ -110,14 +112,14 @@ State: three constants set once in the instance script, `origin = app_origin()`,
 ```
 <AppPage
   title="Connect Your Agent"
-  subtitle="Use Kiln from Claude Code, Codex and other agents."
+  subtitle="Use Kiln from Claude Code, Codex, and other agents."
   breadcrumbs={[{ label: "Settings", href: "/settings" }]}
 >
   <div class="max-w-[900px] flex flex-col gap-6">
     <div>
       <FormElement inputType="header_only" id="connect_agent_prompt" label="Setup Prompt"
-        description="Paste this into your agent. Then ask it to work with Kiln, or type /kiln."
-        info_description="Your agent follows Kiln's install guide: it checks that Kiln is running, adds the Kiln MCP server to its settings and creates a /kiln skill."
+        description="Paste this into your agent. Then ask it to work with Kiln."
+        info_description="Your agent follows Kiln's install guide: it checks that Kiln is running, adds the Kiln MCP server to its settings and creates a Kiln skill."
         value="" />
       <div data-testid="connect-agent-prompt"><Output raw_output={prompt} /></div>
     </div>
@@ -161,7 +163,7 @@ Decisions in the guide (4.3):
 
 - The agent does not install the Kiln app itself. It sends the user to the download page and waits, although the prompt says "Install Kiln's app".
 - The MCP server and the stub skill are installed at user level, so that they work in every project.
-- Codex users invoke the stub as Codex does, with `$kiln`. The guide says so; the Connect page keeps "type /kiln".
+- Codex users invoke the stub as Codex does, with `$kiln`. The guide says so; the Connect page names neither `/kiln` nor `$kiln`, only "ask it to work with Kiln".
 - The `405` or `404` test in step 1 relies on the server answering `GET /mcp` with 405 (server doc 2.1).
 
 ### 4.3 Full draft
@@ -383,7 +385,7 @@ Until page 1 exists, the Connect page has no docs link at all (owner decision): 
 
 - `mcp_url`: `http://localhost:8757` → `http://localhost:8757/mcp`; a trailing slash is removed; `http://127.0.0.1:9000` → `http://127.0.0.1:9000/mcp`.
 - `is_default_address`: true for `http://localhost:8757` (also with a trailing slash), `http://127.0.0.1:8757` and `http://[::1]:8757`; false for `http://localhost:9000`, `http://127.0.0.1:9000`, `https://localhost:8757`, `http://192.168.1.5:8757`, `http://kiln.lan:8757` and a string that is not a URL.
-- `build_prompt`: the default origin gives exactly `BASE_PROMPT`, and so does `http://127.0.0.1:8757`; `http://localhost:9000` gives `BASE_PROMPT + " The Kiln MCP server is at http://localhost:9000/mcp."`; `BASE_PROMPT` starts with "Install Kiln's app, skill, and MCP following the guide here: " and ends with `AGENT_INSTALL_GUIDE_URL`.
+- `build_prompt`: the default origin gives exactly `BASE_PROMPT`, and so does `http://127.0.0.1:8757`; `http://localhost:9000` gives `BASE_PROMPT + "\n\nThe Kiln MCP server is at http://localhost:9000/mcp."`; `BASE_PROMPT` starts with "Install Kiln's app, skill, and MCP following the guide here: " and ends with `AGENT_INSTALL_GUIDE_URL`.
 - `app_origin(true)` is `base_url`; `app_origin(false)` is the stubbed origin (`vi.stubGlobal("window", { location: { origin: "http://localhost:9000" } })`, as `lib/agent.test.ts` does).
 - Repo files, read with `node:fs` from the repo root (seven folders above the test file):
   - `README.md` has a line equal to `BASE_PROMPT` and the heading `## Use Kiln from your own agent`.
@@ -395,7 +397,7 @@ Setup: `vi.mock("./connect_agent", …)` with `importOriginal`, replacing only `
 
 - Default address: `connect-agent-prompt` text equals `BASE_PROMPT`; `connect-agent-mcp-url` text is `http://localhost:8757/mcp`.
 - Origin `http://127.0.0.1:8757`: the prompt equals `BASE_PROMPT` (no extra sentence); the URL is `http://127.0.0.1:8757/mcp` (the real origin).
-- Origin `http://localhost:9000`: the prompt ends with " The Kiln MCP server is at http://localhost:9000/mcp."; the URL is `http://localhost:9000/mcp`.
+- Origin `http://localhost:9000`: the prompt ends with a blank line and "The Kiln MCP server is at http://localhost:9000/mcp."; the URL is `http://localhost:9000/mcp`.
 - Header: title "Connect Your Agent"; the subtitle; no "Read the Docs" link; a breadcrumb link "Settings" to `/settings`. The "Setup Prompt" label and its description are present.
 - "Set Up Manually" is closed by default: the collapse checkbox is not checked; the "MCP Server URL" label, its description and `connect-agent-mcp-url` are inside the collapse. No element has class `btn-primary`.
 - Copy: clicking the copy button inside `connect-agent-prompt` calls `writeText` once with the full prompt (with the extra sentence on the other address); the one inside `connect-agent-mcp-url` calls it with the MCP URL.

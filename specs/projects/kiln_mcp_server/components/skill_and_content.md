@@ -69,12 +69,12 @@ Both constants live in `kiln_mcp_server/texts.py` with the server instructions a
 Optional. The path of a skill file to read, relative to the skill root and exactly as the skill's instructions wrote it, for example `references/knowledge/specs_and_evals.md`. Omit it to read the skill's instructions.
 ```
 
-`SKILL_TOOL_DESCRIPTION` (draft, 136 words; the trigger rule ends at character 447, inside the first 500). Its second paragraph starts with the shared opening `WHAT_KILN_IS` and a full stop; the code builds the text from that constant, so the opening cannot differ from the one in the server instructions:
+`SKILL_TOOL_DESCRIPTION` (draft, 137 words; the trigger rule ends at character 456, inside the first 500). Its second paragraph starts with the shared opening `WHAT_KILN_IS` and a full stop; the code builds the text from that constant, so the opening cannot differ from the one in the server instructions:
 
 ```
 Load the Kiln skill: the instructions for working with Kiln.
 
-Kiln is an app for building, evaluating and optimizing AI agents. This skill says what Kiln can do, how to call its API with `call_kiln_api`, and how to make an agent better. When a request involves Kiln, call this tool first, before any other Kiln tool, and follow what it returns. Users may also ask for it by name (`/kiln`, or "the Kiln skill"); that is a request to call this tool.
+Kiln is an app for building, evaluating and optimizing AI agents. This skill says what Kiln can do, how to call its API with `call_kiln_api`, and how to make an agent better. When a request involves Kiln, call this tool first, before any other Kiln tool, and follow what it returns. Users may also ask for it by name (`/kiln`, `$kiln`, or "the Kiln skill"); that is a request to call this tool.
 
 - No arguments: returns the skill's instructions. They list the reference files.
 - `path`: returns one reference file. Copy the path exactly as the instructions wrote it, for example `references/knowledge/specs_and_evals.md`.

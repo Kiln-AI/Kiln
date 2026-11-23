@@ -81,7 +81,7 @@ describe("build_prompt", () => {
 
   it("names the real MCP server URL on another address", () => {
     expect(build_prompt("http://localhost:9000")).toBe(
-      BASE_PROMPT + " The Kiln MCP server is at http://localhost:9000/mcp.",
+      BASE_PROMPT + "\n\nThe Kiln MCP server is at http://localhost:9000/mcp.",
     )
   })
 
