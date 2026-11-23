@@ -2,6 +2,7 @@
 connects to a running server named by `url`; it never starts one."""
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -497,6 +498,198 @@ class TestSessionLost:
         await session_manager.release(episode)
         with pytest.raises(OpenEnvSessionLostError, match="no live session"):
             await session_manager.call_tool(episode, "read_notes", {})
+
+
+def _report_session_limit(manager, max_sessions):
+    """Make the test server's capacity error report `max_sessions`, as OpenEnv's does.
+    Returns the patch and the list of refusals the server sent."""
+    real_request = manager._request
+    refusals: list[OpenEnvCapacityError] = []
+
+    async def request(ws, message, expected_type):
+        try:
+            return await real_request(ws, message, expected_type)
+        except OpenEnvCapacityError as e:
+            refusals.append(e)
+            raise OpenEnvCapacityError(str(e), max_sessions=max_sessions) from e
+
+    return patch.object(manager, "_request", new=request), refusals
+
+
+@pytest.fixture
+def limited_server(project, request):
+    """An OpenEnv server holding at most `request.param` sessions, and that limit."""
+    with serve_in_thread(max_sessions=request.param) as base_url:
+        openenv_server = OpenEnvServer(name="limited", parent=project, url=base_url)
+        openenv_server.save_to_file()
+        yield openenv_server, request.param
+
+
+class TestSessionLimit:
+    @pytest.mark.parametrize("limited_server", [1, 2], indirect=True)
+    async def test_episodes_over_the_limit_wait_their_turn(
+        self, session_manager, limited_server
+    ):
+        openenv_server, limit = limited_server
+        open_now = 0
+        peak = 0
+
+        async def run_one() -> None:
+            nonlocal open_now, peak
+            episode = await session_manager.start_episode(openenv_server, {})
+            open_now += 1
+            peak = max(peak, open_now)
+            await asyncio.sleep(0.3)
+            open_now -= 1
+            await session_manager.release(episode)
+
+        patcher, refusals = _report_session_limit(session_manager, limit)
+        with patcher:
+            await asyncio.gather(*(run_one() for _ in range(5)))
+
+        slots = session_manager._slots[openenv_server.id]
+        assert peak == limit
+        assert slots.limit == limit
+        # Only the first burst, sent before the limit was known, was refused.
+        assert len(refusals) == 5 - limit
+        assert slots.held == 0 and slots.waiting == []
+
+    @pytest.mark.parametrize("limited_server", [1], indirect=True)
+    async def test_waiting_gives_up_after_its_bound(self, limited_server):
+        openenv_server, _ = limited_server
+        manager = OpenEnvSessionManager(capacity_wait_s=0.3)
+        try:
+            first = await manager.start_episode(openenv_server, {})
+            patcher, refusals = _report_session_limit(manager, 1)
+            with patcher:
+                with pytest.raises(
+                    OpenEnvCapacityError, match=r"none came free within 0\.3s"
+                ) as raised:
+                    await manager.start_episode(openenv_server, {})
+            assert raised.value.max_sessions == 1
+            assert len(refusals) == 1
+            slots = manager._slots[openenv_server.id]
+            assert slots.held == 1 and slots.waiting == []
+            await manager.release(first)
+            assert slots.held == 0
+        finally:
+            await manager.shutdown()
+
+    @pytest.mark.parametrize("limited_server", [1], indirect=True)
+    async def test_refusal_without_a_limit_raises_at_once(
+        self, session_manager, limited_server
+    ):
+        openenv_server, _ = limited_server
+        first = await session_manager.start_episode(openenv_server, {})
+        with pytest.raises(OpenEnvCapacityError) as raised:
+            await session_manager.start_episode(openenv_server, {})
+        assert raised.value.max_sessions is None
+        slots = session_manager._slots[openenv_server.id]
+        assert slots.limit is None and slots.held == 1
+        await session_manager.release(first)
+
+    @pytest.mark.parametrize("limited_server", [1], indirect=True)
+    async def test_refresh_forgets_the_limit(self, limited_server):
+        openenv_server, _ = limited_server
+        manager = OpenEnvSessionManager(capacity_wait_s=0.1)
+        try:
+            first = await manager.start_episode(openenv_server, {})
+            patcher, _ = _report_session_limit(manager, 1)
+            with patcher, pytest.raises(OpenEnvCapacityError):
+                await manager.start_episode(openenv_server, {})
+            slots = manager._slots[openenv_server.id]
+            assert slots.limit == 1
+            await manager.refresh(openenv_server)
+            assert slots.limit is None and slots.held == 1
+            await manager.release(first)
+        finally:
+            await manager.shutdown()
+
+    @pytest.mark.parametrize(
+        "close", ["end_episode", "release", "forget", "session_failure"]
+    )
+    async def test_every_way_a_session_ends_frees_its_slot(
+        self, session_manager, remote_openenv_server, close
+    ):
+        episode = await session_manager.start_episode(remote_openenv_server, {})
+        session = session_manager._sessions[episode.episode_id]
+        slots = session_manager._slots[remote_openenv_server.id]
+        assert slots.held == 1
+        if close == "end_episode":
+            await session_manager.end_episode(episode)
+        elif close == "release":
+            await session_manager.release(episode)
+        elif close == "forget":
+            session_manager.forget(episode)
+            await session.ws.close()
+        else:
+            with patch.object(
+                session_manager, "_request", side_effect=RuntimeError("boom")
+            ):
+                with pytest.raises(OpenEnvSessionLostError):
+                    await session_manager.call_tool(episode, "read_notes", {})
+        assert slots.held == 0
+        # A second close of the same episode frees nothing more.
+        await session_manager.release(episode)
+        assert slots.held == 0
+
+
+class TestCapacityRefusals:
+    @pytest.mark.parametrize(
+        "data, expected",
+        [
+            ({"max_sessions": 3}, 3),
+            ({}, None),
+            ({"max_sessions": 0}, None),
+            ({"max_sessions": True}, None),
+            ({"max_sessions": "3"}, None),
+        ],
+    )
+    def test_reads_the_reported_limit(self, data, expected):
+        error = session_manager_module._rejection_error(
+            "reset",
+            {"message": "Server at capacity", "code": "CAPACITY_REACHED", **data},
+        )
+        assert isinstance(error, OpenEnvCapacityError)
+        assert error.max_sessions == expected
+
+    @pytest.mark.parametrize(
+        "buffered, expected_limit, match",
+        [
+            (
+                {
+                    "type": "error",
+                    "data": {
+                        "message": "Server at capacity: 2/2 sessions active.",
+                        "code": "CAPACITY_REACHED",
+                        "max_sessions": 2,
+                    },
+                },
+                2,
+                "2/2 sessions active",
+            ),
+            (
+                {"type": "error", "data": {"message": "nope"}},
+                None,
+                "closed the session",
+            ),
+            (None, None, "closed the session"),
+        ],
+    )
+    async def test_reads_the_answer_sent_before_the_close(
+        self, session_manager, buffered, expected_limit, match
+    ):
+        """OpenEnv answers a session over capacity and closes the socket, often before
+        Kiln sends its reset: the answer is read from what arrived before the close."""
+        ws = AsyncMock()
+        ws.send.side_effect = ConnectionClosed(None, None)
+        if buffered is None:
+            ws.recv.side_effect = ConnectionClosed(None, None)
+        else:
+            ws.recv.return_value = json.dumps(buffered)
+        with pytest.raises(OpenEnvCapacityError, match=match) as raised:
+            await session_manager._request(ws, {"type": "reset"}, "observation")
+        assert raised.value.max_sessions == expected_limit
 
 
 class TestSharedSessionManager:

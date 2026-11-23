@@ -20,8 +20,11 @@ Each eval job holds one session on the environment for its whole episode, and Ki
 up to 25 eval jobs at once per eval run. Run an environment's server with `max_concurrent_envs`
 of at least 25 (more if evals on the same environment may overlap); OpenEnv's default is 1,
 and allowing more than one requires the environment to keep its state per session
-(`SUPPORTS_CONCURRENT_SESSIONS = True`). A job that finds the server full fails with a
-capacity error before any model call, and re-running the eval runs only the jobs that
+(`SUPPORTS_CONCURRENT_SESSIONS = True`). A job that finds the server full waits: the
+server reports its limit when it refuses a session, and from then on Kiln opens at most
+that many sessions on it at once (see `kiln_ai.openenv.session_manager`). A job fails
+with a capacity error, before any model call, only when the server reports no limit or
+no session comes free within the wait; re-running the eval runs only the jobs that
 failed.
 
 Outside evals, a run whose tools reach an OpenEnv server (directly, through code tools or

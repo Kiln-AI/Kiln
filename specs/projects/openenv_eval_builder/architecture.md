@@ -460,17 +460,35 @@ prints "None." under its heading.
   ```python
   @asynccontextmanager
   async def openenv_episode_scope(
-      manager: OpenEnvSessionManager, server: OpenEnvServer, reset_kwargs: dict[str, JsonValue]
+      manager: OpenEnvSessionManager,
+      server: OpenEnvServer,
+      reset_kwargs: dict[str, JsonValue],
+      tools: dict[str, OpenEnvTool],
   ) -> AsyncIterator[EpisodeScope]
   ```
 
-  It starts the episode, binds it with `set_episode`, yields, then ends it and puts the ended
-  episode (with `final_state`) on `scope.ended`. On error it releases instead. `eval_runner` uses
-  it too, so both paths start, bind and end episodes the same way.
+  `tools` are the server's tools by name, as `list_tools` returned them; they go on the bound
+  `EpisodeContext`. It starts the episode, binds it with `set_episode`, yields, then ends it and
+  puts the ended episode (with `final_state`) on `scope.ended`. On error it releases instead.
+  `eval_runner` uses it too, so both paths start, bind and end episodes the same way.
 - `run_cases_batch` drives a case that has `openenv_reset` inside `openenv_episode_scope`, with
   `open_openenv_session=False` on the target adapter, and stores `scope.ended` as the leaf run's
   `openenv_episode`. An ended episode with no `final_state` is not saved: the case is retried in
-  a fresh episode, as the eval runner refuses such a trace. A case without one is driven as today.
+  a fresh episode, as the eval runner refuses such a trace.
+- A grounded case must name the OpenEnv server the run config's tools reach. Otherwise it fails
+  with `openenv_server_mismatch`, before any episode starts: when the run config reaches another
+  server, or none. The run config's server is worked out once per batch.
+- A case without `openenv_reset` whose run config's tools reach an OpenEnv server runs the same
+  way, in one episode on that server reset with no arguments. The runner must own that episode:
+  the run is unsaved (`allow_saving=False`), so the adapter has no run id to hold the session under
+  between turns. A case whose run config reaches no OpenEnv server opens no episode.
+- Each case holds one session for its whole drive, and up to 10 run at once. The session manager
+  keeps a per-server limit: an OpenEnv server publishes `max_concurrent_envs` only in the error it
+  answers a reset over capacity with (`max_sessions`), so the manager learns it from the first
+  refusal and from then on opens at most that many episodes on the server at once. A case over the
+  limit waits for a session to close, up to 30 minutes in all, instead of failing. A refusal that
+  reports no limit fails as before. The limit lives as long as the session manager and is
+  forgotten when the server is refreshed or its URL changes.
 
 ### Judge
 
@@ -535,6 +553,7 @@ fit the specification, or the case tests something else.
 | Server rejects reset arguments | `start_episode` tool | Tool error; the agent fixes them |
 | Server tool error | server tool | Tool error, as the server reported it |
 | Session ended by the server | server tool | Tool error asking for a new `start_episode` |
+| Server at its session limit | `start_episode` | Waits for a free session (see "Driving each case in its episode") |
 | Transient or capacity error | `start_episode` | Retried twice, then raised; the step fails |
 | Transient error | server tool, `read_state` | Episode cleared, error raised; the step fails |
 | Limits reached | session | Agent told to finish; then a `limit` drop |

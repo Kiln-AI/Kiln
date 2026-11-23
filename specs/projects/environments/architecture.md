@@ -243,7 +243,7 @@ def shared_conversation_sessions() -> ConversationSessions
 
 | Request | Behaviour |
 |---|---|
-| First turn (no parent) | Start the episode as in single-turn and set it. After the turn, `read_state` gives the turn's `openenv_episode.final_state`. `put(new_run_id, held)`. |
+| First turn (no parent) | Start the episode as in single-turn and set it. After the turn, `read_state` gives the turn's `openenv_episode.final_state`. `put(new_run_id, held)`. An unsaved run (`allow_saving=False`) has no run id to hold the session under, so its caller must own the episode across turns. The synthetic-user runner does this for every case whose run config reaches an OpenEnv server. |
 | Later turn, `take(parent_id)` finds a session | Set its context and ignore `reset_kwargs`, because the choice is locked. After the turn, `read_state`, record it, and `put(new_run_id, held)` with `turn_run_ids` updated. |
 | Later turn, no session, `holds_turn(parent_id)` is true | Raise `fork_refused`: "This conversation uses an OpenEnv server, so it can only continue from the latest turn." |
 | Later turn, no session, parent has `openenv_episode` | Raise `session_ended`, with the spec's message |

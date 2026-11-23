@@ -9,6 +9,7 @@ attempt — without affecting other in-flight cases.
 
 import asyncio
 import contextlib
+import functools
 import logging
 import uuid
 from dataclasses import dataclass
@@ -347,7 +348,8 @@ class _OpenEnvTarget:
 
 class _OpenEnvTargets:
     """The OpenEnv servers one batch's cases run on, each read once, on first use.
-    A failed read is not kept, so a retried case reads the server again."""
+    A failed read is not kept, so a retried case reads the server again. Which
+    server the run config's tools reach is worked out once per batch."""
 
     def __init__(
         self,
@@ -371,7 +373,14 @@ class _OpenEnvTargets:
 
     def run_config_server_id(self) -> str | None:
         """The one OpenEnv server the run config's tools reach, or None if they
-        reach none."""
+        reach none. Raises `_CaseFailure` when they reach more than one."""
+        reach = self._run_config_reach
+        if isinstance(reach, OpenEnvReachError):
+            raise _CaseFailure("openenv_reach", reach.message) from reach
+        return reach
+
+    @functools.cached_property
+    def _run_config_reach(self) -> str | OpenEnvReachError | None:
         tools_config = self._run_config.tools_config
         tool_ids = list(tools_config.tools) if tools_config is not None else []
         project = self._task.parent_project() if tool_ids else None
@@ -380,7 +389,7 @@ class _OpenEnvTargets:
         try:
             return single_openenv_server_id(project, tool_ids)
         except OpenEnvReachError as e:
-            raise _CaseFailure("openenv_reach", e.message) from e
+            return e
 
     async def _load(self, openenv_server_id: str) -> _OpenEnvTarget:
         project = self._task.parent_project()
@@ -404,18 +413,20 @@ async def _case_episode(
     case: SyntheticUserCase, openenv_targets: _OpenEnvTargets
 ) -> AsyncIterator[EpisodeScope | None]:
     """The episode a case runs in, bound for the whole drive. A grounded case
-    starts from its `openenv_reset`. Any other case starts on the server its run
-    config's tools reach, with no reset arguments: the adapter can't hold an
-    unsaved run's session from one turn to the next. None when the run config
-    reaches no server."""
+    starts from its `openenv_reset`, which must name the server the run config's
+    tools reach. Any other case starts on that server with no reset arguments:
+    the adapter can't hold an unsaved run's session from one turn to the next.
+    None when the case isn't grounded and the run config reaches no server."""
+    run_config_server_id = openenv_targets.run_config_server_id()
     if case.openenv_reset is not None:
-        openenv_server_id = case.openenv_reset.openenv_server_id
+        openenv_server_id = _grounded_server_id(
+            case.openenv_reset.openenv_server_id, run_config_server_id
+        )
         reset_kwargs = case.openenv_reset.reset_kwargs
+    elif run_config_server_id is None:
+        yield None
+        return
     else:
-        run_config_server_id = openenv_targets.run_config_server_id()
-        if run_config_server_id is None:
-            yield None
-            return
         openenv_server_id = run_config_server_id
         reset_kwargs = {}
     target = await openenv_targets.get(openenv_server_id)
@@ -426,6 +437,25 @@ async def _case_episode(
         target.tools,
     ) as scope:
         yield scope
+
+
+def _grounded_server_id(case_server_id: str, run_config_server_id: str | None) -> str:
+    """The server a grounded case runs on. Fails the case when its OpenEnv server isn't
+    the one the run config's tools reach: its episode would hold state the model's
+    tools never touch."""
+    if run_config_server_id is None:
+        raise _CaseFailure(
+            "openenv_server_mismatch",
+            f"This case is grounded on OpenEnv server {case_server_id}, but the run "
+            "config's tools don't reach an OpenEnv server.",
+        )
+    if case_server_id != run_config_server_id:
+        raise _CaseFailure(
+            "openenv_server_mismatch",
+            f"This case is grounded on OpenEnv server {case_server_id}, but the run "
+            f"config's tools reach OpenEnv server {run_config_server_id}.",
+        )
+    return case_server_id
 
 
 # ───────────────────────── per-case orchestration ─────────────────────────

@@ -1320,6 +1320,17 @@ def _grounded_case(openenv_server_id: str) -> SyntheticUserCase:
     )
 
 
+def _openenv_run_config(openenv_server_id: str) -> KilnAgentRunConfigProperties:
+    """A run config whose tools reach `openenv_server_id`."""
+    return _target_run_config().model_copy(
+        update={
+            "tools_config": ToolsRunConfig(
+                tools=[build_openenv_tool_id(openenv_server_id, "append_note")]
+            )
+        }
+    )
+
+
 def _patch_episode_adapter(
     monkeypatch: pytest.MonkeyPatch,
     session_manager: OpenEnvSessionManager,
@@ -1374,7 +1385,7 @@ async def test_grounded_case_drives_every_turn_in_one_episode(
         run_cases_batch(
             cases=[_grounded_case(str(server.id))],
             target_task=task,
-            target_run_config=_target_run_config(),
+            target_run_config=_openenv_run_config(str(server.id)),
             su_driver_config=_su_driver_config(),
             turns=2,
             openenv_session_manager=session_manager,
@@ -1411,7 +1422,7 @@ async def test_grounded_leaf_records_the_ended_episode(
         run_cases_batch(
             cases=[_grounded_case(str(server.id))],
             target_task=task,
-            target_run_config=_target_run_config(),
+            target_run_config=_openenv_run_config(str(server.id)),
             su_driver_config=_su_driver_config(),
             turns=2,
             openenv_session_manager=session_manager,
@@ -1483,19 +1494,12 @@ async def test_ungrounded_case_on_openenv_tools_drives_every_turn_in_one_episode
 
     monkeypatch.setattr(runner_mod, "_tag_leaf", _record_leaf)
     _patch_su_driver(monkeypatch, replies_per_case=["second message"])
-    run_config = _target_run_config().model_copy(
-        update={
-            "tools_config": ToolsRunConfig(
-                tools=[build_openenv_tool_id(server.id, "append_note")]
-            )
-        }
-    )
 
     events = await _collect(
         run_cases_batch(
             cases=[_case(0)],
             target_task=task,
-            target_run_config=run_config,
+            target_run_config=_openenv_run_config(str(server.id)),
             su_driver_config=_su_driver_config(),
             turns=2,
             openenv_session_manager=session_manager,
@@ -1528,7 +1532,7 @@ async def test_unknown_openenv_server_fails_the_case(
         run_cases_batch(
             cases=[_grounded_case("missing_server")],
             target_task=task,
-            target_run_config=_target_run_config(),
+            target_run_config=_openenv_run_config("missing_server"),
             su_driver_config=_su_driver_config(),
             turns=2,
             openenv_session_manager=session_manager,
@@ -1539,6 +1543,73 @@ async def test_unknown_openenv_server_fails_the_case(
     assert failed.error_code == "openenv_server_not_found"
     assert "missing_server" in failed.message
     assert episode_ids == []
+
+
+@pytest.mark.parametrize(
+    "run_config_server_id, message",
+    [
+        ("other_server", "reach OpenEnv server other_server"),
+        (None, "don't reach an OpenEnv server"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_grounded_case_on_another_server_than_the_run_config_fails(
+    openenv_project,
+    session_manager,
+    monkeypatch: pytest.MonkeyPatch,
+    run_config_server_id: str | None,
+    message: str,
+) -> None:
+    task, server = openenv_project
+    _, episode_ids = _patch_episode_adapter(monkeypatch, session_manager)
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+    start_episode = AsyncMock(wraps=session_manager.start_episode)
+    monkeypatch.setattr(session_manager, "start_episode", start_episode)
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_grounded_case(str(server.id))],
+            target_task=task,
+            target_run_config=_openenv_run_config(run_config_server_id)
+            if run_config_server_id
+            else _target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    (failed,) = [e for e in events if isinstance(e, CaseFailedEvent)]
+    assert failed.error_code == "openenv_server_mismatch"
+    assert str(server.id) in failed.message
+    assert message in failed.message
+    assert episode_ids == []
+    start_episode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_config_server_is_worked_out_once_per_batch(
+    openenv_project, session_manager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task, server = openenv_project
+    _patch_episode_adapter(monkeypatch, session_manager)
+    _patch_su_driver(monkeypatch, replies_per_case=[])
+    reach = Mock(wraps=runner_mod.single_openenv_server_id)
+    monkeypatch.setattr(runner_mod, "single_openenv_server_id", reach)
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_grounded_case(str(server.id)), _case(1), _case(2)],
+            target_task=task,
+            target_run_config=_openenv_run_config(str(server.id)),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+            openenv_session_manager=session_manager,
+        )
+    )
+
+    assert len([e for e in events if isinstance(e, CaseCompletedEvent)]) == 3
+    reach.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1555,7 +1626,7 @@ async def test_failed_drive_releases_the_episode(
         run_cases_batch(
             cases=[_grounded_case(str(server.id))],
             target_task=task,
-            target_run_config=_target_run_config(),
+            target_run_config=_openenv_run_config(str(server.id)),
             su_driver_config=_su_driver_config(),
             turns=2,
             openenv_session_manager=session_manager,
@@ -1593,7 +1664,7 @@ async def test_transient_openenv_error_retries_the_case_in_a_fresh_episode(
         run_cases_batch(
             cases=[_grounded_case(str(server.id))],
             target_task=task,
-            target_run_config=_target_run_config(),
+            target_run_config=_openenv_run_config(str(server.id)),
             su_driver_config=_su_driver_config(),
             turns=1,
             openenv_session_manager=session_manager,
@@ -1635,7 +1706,7 @@ async def test_grounded_case_without_a_final_state_is_never_saved(
         run_cases_batch(
             cases=[_grounded_case(str(server.id))],
             target_task=task,
-            target_run_config=_target_run_config(),
+            target_run_config=_openenv_run_config(str(server.id)),
             su_driver_config=_su_driver_config(),
             turns=1,
             openenv_session_manager=session_manager,

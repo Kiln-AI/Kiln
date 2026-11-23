@@ -28,6 +28,11 @@ what OpenEnv already exposes:
 One session per episode; sessions are closed by `end_episode`, so the record on the
 trace is the durable state. A multi-turn conversation keeps its session open between
 turns in the manager's `conversations`.
+
+An OpenEnv server holds at most `max_concurrent_envs` sessions at once and publishes that
+number only in the error it answers a reset over the limit with. The manager learns it
+from that error and from then on opens at most that many episodes on the server at
+once: a caller over the limit waits for a session to close instead of failing.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -89,11 +95,25 @@ instead of exhausting memory or writing an enormous trace."""
 
 _ERROR_PREVIEW_CHARS = 500
 
+CAPACITY_WAIT_S = 1800.0
+"""How long `start_episode` may wait in all for a session to come free on a server that
+reported its session limit. Generous, because an episode can hold its session for a
+whole multi-turn conversation; finite, so a server that keeps refusing can't stall a run
+forever."""
+
+_SLOT_POLL_S = 0.1
+
+_CAPACITY_BACKOFF_MIN_S = 0.25
+_CAPACITY_BACKOFF_MAX_S = 5.0
+
+_CLOSED_REPLY_WAIT_S = 0.5
+"""How long to look for an answer the environment sent before it closed the session.
+Any such answer has already arrived by the time the close is seen."""
+
 _CAPACITY_HINT = (
     " The environment holds max_concurrent_envs sessions at once (OpenEnv's default "
-    "is 1) and Kiln runs up to 25 eval jobs at once: start the server with "
-    "max_concurrent_envs of at least 25, then re-run the eval to run the jobs that "
-    "failed."
+    "is 1), and Kiln runs up to 25 eval jobs or 10 conversations at once: start the "
+    "server with a larger max_concurrent_envs, then run the ones that failed again."
 )
 
 
@@ -108,7 +128,12 @@ class OpenEnvTransientError(OpenEnvError):
 
 
 class OpenEnvCapacityError(OpenEnvTransientError):
-    """The environment holds as many sessions as it allows and refused another."""
+    """The environment holds as many sessions as it allows and refused another.
+    `max_sessions` is the limit it reported, or None when it reported none."""
+
+    def __init__(self, message: str, max_sessions: int | None = None) -> None:
+        super().__init__(message)
+        self.max_sessions = max_sessions
 
 
 class OpenEnvRejectedError(OpenEnvError):
@@ -197,9 +222,27 @@ class _ServerInfo:
 
 
 @dataclass
+class _SessionSlots:
+    """The episodes Kiln holds open on one OpenEnv server, and how many the server
+    allows. `limit` is None until the server refuses a reset and reports its
+    `max_sessions`. `waiting` holds one ticket per caller waiting for a slot, in arrival
+    order, so slots are handed out first come, first served."""
+
+    held: int = 0
+    limit: int | None = None
+    waiting: list[object] = field(default_factory=list)
+
+    def has_room_for(self, ticket: object) -> bool:
+        if self.limit is None:
+            return True
+        return self.held + self.waiting.index(ticket) < self.limit
+
+
+@dataclass
 class _Session:
     episode_id: str
     ws: ClientConnection
+    slots: _SessionSlots
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -207,13 +250,21 @@ class OpenEnvSessionManager:
     """Drives sessions on running OpenEnv environments, for the eval runner and the
     tool proxies.
 
-    What Kiln knows about each environment (its version and tools) is cached per OpenEnv server
-    and re-read when the OpenEnv server's URL changes or `refresh` is called."""
+    What Kiln knows about each environment (its version, tools and session limit) is
+    cached per OpenEnv server and re-read when the OpenEnv server's URL changes or
+    `refresh` is called. `capacity_wait_s` bounds how long `start_episode` waits for a
+    free session."""
 
-    def __init__(self, step_timeout_s: float = STEP_TIMEOUT_S) -> None:
+    def __init__(
+        self,
+        step_timeout_s: float = STEP_TIMEOUT_S,
+        capacity_wait_s: float = CAPACITY_WAIT_S,
+    ) -> None:
         self._step_timeout_s = step_timeout_s
+        self._capacity_wait_s = capacity_wait_s
         self._servers: dict[str, _ServerInfo] = {}
         self._server_locks: dict[str, asyncio.Lock] = {}
+        self._slots: dict[str, _SessionSlots] = {}
         self._sessions: dict[str, _Session] = {}
         self.conversations = ConversationSessions()
         """Sessions held between the turns of multi-turn conversations."""
@@ -293,37 +344,39 @@ class OpenEnvSessionManager:
         self, openenv_server: OpenEnvServer, reset_kwargs: dict[str, JsonValue]
     ) -> OpenEnvEpisode:
         """Open a session on the environment and reset it with `reset_kwargs`.
-        The session stays live until `end_episode` or `release`."""
+        The session stays live until `end_episode` or `release`.
+
+        Once the server has refused a reset for capacity and reported its limit, at most
+        that many episodes are open on it at once, and a caller over the limit waits for
+        one to end. Raises `OpenEnvCapacityError` when the server refuses without
+        reporting a limit, or when no session comes free within `capacity_wait_s`."""
         if openenv_server.id is None:
             raise ValueError("OpenEnv server must be saved before starting an episode")
         server = await self._server_for(openenv_server)
-        episode_id = f"ep_{uuid.uuid4().hex[:16]}"
-        ws = await self._open(server)
-        try:
-            data = await self._request(
-                ws,
-                {"type": "reset", "data": {**reset_kwargs, "episode_id": episode_id}},
-                "observation",
-            )
-        except BaseException:
-            await self._end_session(ws)
-            raise
-        self._sessions[episode_id] = _Session(episode_id=episode_id, ws=ws)
-
-        reset_metadata: dict[str, JsonValue] = {}
-        reported = data.get("metadata")
-        if not isinstance(reported, dict):
-            reported = (data.get("observation") or {}).get("metadata")
-        if isinstance(reported, dict):
-            reset_metadata.update({str(k): v for k, v in reported.items()})
-        return OpenEnvEpisode(
-            reset=OpenEnvReset(
-                openenv_server_id=openenv_server.id, reset_kwargs=reset_kwargs
-            ),
-            episode_id=episode_id,
-            openenv_version=server.openenv_version,
-            reset_metadata=reset_metadata,
-        )
+        slots = self._slots.setdefault(openenv_server.id, _SessionSlots())
+        deadline = time.monotonic() + self._capacity_wait_s
+        backoff_s = _CAPACITY_BACKOFF_MIN_S
+        while True:
+            await self._take_slot(slots, server, deadline)
+            try:
+                return await self._reset_session(
+                    openenv_server.id, server, slots, reset_kwargs
+                )
+            except OpenEnvCapacityError as e:
+                slots.held -= 1
+                if e.max_sessions is None:
+                    raise
+                slots.limit = e.max_sessions
+                remaining_s = deadline - time.monotonic()
+                if remaining_s <= 0:
+                    raise
+                # The server can be full of sessions Kiln doesn't hold (another
+                # client, a closing session), so a refusal under the limit waits too.
+                await asyncio.sleep(min(backoff_s, remaining_s))
+                backoff_s = min(backoff_s * 2, _CAPACITY_BACKOFF_MAX_S)
+            except BaseException:
+                slots.held -= 1
+                raise
 
     async def call_tool(
         self, episode: OpenEnvEpisode, tool_name: str, arguments: dict[str, Any]
@@ -393,6 +446,7 @@ class OpenEnvSessionManager:
                 data = await self._request(session.ws, {"type": "state"}, "state")
         finally:
             await self._end_session(session.ws)
+            session.slots.held -= 1
         state: dict[str, JsonValue] = {str(k): v for k, v in data.items()}
         return episode.model_copy(update={"final_state": state})
 
@@ -401,12 +455,18 @@ class OpenEnvSessionManager:
         failed generation."""
         session = self._sessions.pop(episode.episode_id, None)
         if session is not None:
-            await self._end_session(session.ws)
+            try:
+                await self._end_session(session.ws)
+            finally:
+                session.slots.held -= 1
 
     def forget(self, episode: OpenEnvEpisode) -> None:
         """Drop the manager's reference to an episode's session without closing it,
-        for a session opened on an event loop that can no longer be awaited on."""
-        self._sessions.pop(episode.episode_id, None)
+        for a session opened on an event loop that can no longer be awaited on. Its
+        slot is freed with it."""
+        session = self._sessions.pop(episode.episode_id, None)
+        if session is not None:
+            session.slots.held -= 1
 
     async def shutdown(self) -> None:
         """Close every live session and forget every environment."""
@@ -414,6 +474,7 @@ class OpenEnvSessionManager:
         sessions = list(self._sessions.values())
         self._sessions.clear()
         self._servers.clear()
+        self._slots.clear()
         await asyncio.gather(*(self._end_session(s.ws) for s in sessions))
 
     # ---- servers ----
@@ -424,7 +485,8 @@ class OpenEnvSessionManager:
         """What Kiln knows about the environment: its address, reported
         identity and content version. Cached per environment; re-read when the environment's URL
         changes or on `refresh`. A refresh that finds the same version keeps the
-        cached tools; a new version re-lists them."""
+        cached tools; a new version re-lists them. A re-read forgets the session limit,
+        which a restarted server may have changed; the next refusal reports it again."""
         if openenv_server.id is None:
             raise ValueError("OpenEnv server must be saved before it can be used")
         if not openenv_server.url:
@@ -444,6 +506,9 @@ class OpenEnvSessionManager:
             ):
                 server.tools = current.tools
             self._servers[openenv_server.id] = server
+            slots = self._slots.get(openenv_server.id)
+            if slots is not None:
+                slots.limit = None
             return server
 
     async def _connect_remote(
@@ -478,6 +543,65 @@ class OpenEnvSessionManager:
         return meta
 
     # ---- sessions ----
+
+    async def _reset_session(
+        self,
+        openenv_server_id: str,
+        server: _ServerInfo,
+        slots: _SessionSlots,
+        reset_kwargs: dict[str, JsonValue],
+    ) -> OpenEnvEpisode:
+        episode_id = f"ep_{uuid.uuid4().hex[:16]}"
+        ws = await self._open(server)
+        try:
+            data = await self._request(
+                ws,
+                {"type": "reset", "data": {**reset_kwargs, "episode_id": episode_id}},
+                "observation",
+            )
+        except BaseException:
+            await self._end_session(ws)
+            raise
+        self._sessions[episode_id] = _Session(episode_id=episode_id, ws=ws, slots=slots)
+
+        reset_metadata: dict[str, JsonValue] = {}
+        reported = data.get("metadata")
+        if not isinstance(reported, dict):
+            reported = (data.get("observation") or {}).get("metadata")
+        if isinstance(reported, dict):
+            reset_metadata.update({str(k): v for k, v in reported.items()})
+        return OpenEnvEpisode(
+            reset=OpenEnvReset(
+                openenv_server_id=openenv_server_id, reset_kwargs=reset_kwargs
+            ),
+            episode_id=episode_id,
+            openenv_version=server.openenv_version,
+            reset_metadata=reset_metadata,
+        )
+
+    async def _take_slot(
+        self, slots: _SessionSlots, server: _ServerInfo, deadline: float
+    ) -> None:
+        """Wait until the server has room for one more of Kiln's episodes, then count
+        it as held. Polls rather than waiting on an asyncio primitive: the shared
+        manager outlives event loops, and those primitives bind to the first loop that
+        waits on them."""
+        ticket = object()
+        slots.waiting.append(ticket)
+        try:
+            while not slots.has_room_for(ticket):
+                remaining_s = deadline - time.monotonic()
+                if remaining_s <= 0:
+                    raise OpenEnvCapacityError(
+                        f"{server.base_url} holds {slots.limit} sessions at once, and "
+                        f"none came free within {self._capacity_wait_s:g}s."
+                        f"{_CAPACITY_HINT}",
+                        max_sessions=slots.limit,
+                    )
+                await asyncio.sleep(min(_SLOT_POLL_S, remaining_s))
+            slots.held += 1
+        finally:
+            slots.waiting.remove(ticket)
 
     async def _open(self, server: _ServerInfo) -> ClientConnection:
         try:
@@ -522,10 +646,7 @@ class OpenEnvSessionManager:
             raw = await asyncio.wait_for(ws.recv(), timeout=self._step_timeout_s)
         except ConnectionClosed as e:
             if kind == "reset":
-                # Some servers close the socket instead of answering a reset over capacity.
-                raise OpenEnvCapacityError(
-                    f"The environment closed the session: {e}.{_CAPACITY_HINT}"
-                ) from e
+                raise await self._closed_on_reset(ws, e) from e
             raise OpenEnvTransientError(
                 f"The environment closed the session: {e}."
             ) from e
@@ -547,20 +668,33 @@ class OpenEnvSessionManager:
         data = response.get("data")
         response_type = response.get("type")
         if response_type == "error":
-            detail = data.get("message") if isinstance(data, dict) else data
-            code = data.get("code") if isinstance(data, dict) else None
-            rejection = (
-                f"The environment rejected a '{kind}' message: {_preview(detail)}"
-            )
-            if str(code).lower() == "capacity_reached":
-                raise OpenEnvCapacityError(rejection + _CAPACITY_HINT)
-            raise OpenEnvRejectedError(rejection, server_message=_preview(detail))
+            raise _rejection_error(kind, data)
         if response_type != expected_type:
             raise OpenEnvError(
                 f"The environment answered a '{kind}' message with a "
                 f"'{response_type}' message, not '{expected_type}'"
             )
         return data if isinstance(data, dict) else {}
+
+    async def _closed_on_reset(
+        self, ws: ClientConnection, closed: ConnectionClosed
+    ) -> OpenEnvError:
+        """The error for a session that closed on a reset. OpenEnv answers a session
+        over capacity with an error and then closes the socket, often before the reset
+        is sent: the error, and the limit it reports, are read from what arrived before
+        the close. A server that closes without answering is treated as full too."""
+        try:
+            raw = await asyncio.wait_for(ws.recv(), timeout=_CLOSED_REPLY_WAIT_S)
+            response = json.loads(raw)
+        except (ConnectionClosed, asyncio.TimeoutError, json.JSONDecodeError):
+            response = None
+        if isinstance(response, dict) and response.get("type") == "error":
+            error = _rejection_error("reset", response.get("data"))
+            if isinstance(error, OpenEnvCapacityError):
+                return error
+        return OpenEnvCapacityError(
+            f"The environment closed the session: {closed}.{_CAPACITY_HINT}"
+        )
 
     async def _end_session(self, ws: ClientConnection) -> None:
         """Tell the environment the session is over and wait for it to close the
@@ -588,8 +722,12 @@ class OpenEnvSessionManager:
             # A late answer to this message would be read as the answer to the next
             # one: OpenEnv responses carry no request id. The session is dropped so
             # nothing reads from it again.
-            self._sessions.pop(session.episode_id, None)
-            await self._close_quietly(session.ws)
+            held = self._sessions.pop(session.episode_id, None) is not None
+            try:
+                await self._close_quietly(session.ws)
+            finally:
+                if held:
+                    session.slots.held -= 1
         if isinstance(error, Exception) and not isinstance(error, OpenEnvError):
             lost = OpenEnvSessionLostError(
                 f"The session for episode {session.episode_id} failed: {error}"
@@ -690,6 +828,27 @@ def _parse_metadata(
         description=_string_or_none(meta.get("description")),
         readme_content=_string_or_none(meta.get("readme_content")),
     )
+
+
+def _rejection_error(kind: Any, data: Any) -> OpenEnvError:
+    """The error for an environment's `error` answer to a `kind` message."""
+    detail = data.get("message") if isinstance(data, dict) else data
+    code = data.get("code") if isinstance(data, dict) else None
+    rejection = f"The environment rejected a '{kind}' message: {_preview(detail)}"
+    if str(code).lower() == "capacity_reached":
+        return OpenEnvCapacityError(
+            rejection + _CAPACITY_HINT, max_sessions=_reported_session_limit(data)
+        )
+    return OpenEnvRejectedError(rejection, server_message=_preview(detail))
+
+
+def _reported_session_limit(data: Any) -> int | None:
+    """The `max_sessions` an OpenEnv capacity error reports, or None when it reports
+    no usable one."""
+    limit = data.get("max_sessions") if isinstance(data, dict) else None
+    if isinstance(limit, int) and not isinstance(limit, bool) and limit >= 1:
+        return limit
+    return None
 
 
 def _string_or_none(value: Any) -> str | None:
