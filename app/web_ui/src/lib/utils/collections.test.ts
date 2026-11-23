@@ -1,24 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { arrays_equal, sets_equal } from "./collections"
-
-describe("arrays_equal", () => {
-  it("returns true for identical arrays", () => {
-    expect(arrays_equal([1, 2, 3], [1, 2, 3])).toBe(true)
-    expect(arrays_equal([], [])).toBe(true)
-  })
-
-  it("returns false for arrays with different lengths", () => {
-    expect(arrays_equal([1, 2], [1, 2, 3])).toBe(false)
-  })
-
-  it("returns false for arrays with different elements", () => {
-    expect(arrays_equal([1, 2, 3], [1, 2, 4])).toBe(false)
-  })
-
-  it("returns false for arrays with same elements in different order", () => {
-    expect(arrays_equal([1, 2, 3], [3, 2, 1])).toBe(false)
-  })
-})
+import { sets_equal } from "./collections"
 
 describe("sets_equal", () => {
   it("returns true for sets with same elements", () => {

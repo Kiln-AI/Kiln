@@ -1,7 +1,6 @@
 <script lang="ts">
-  // Binds selected_run_config_id, tools and skills the way the Run page does,
-  // so a test can read the selection the component writes back and can change
-  // a picker's value the way a user's click does.
+  // Binds selected_run_config_id, tools and skills so a test can read what the
+  // component writes back, and can set a picker's value from outside.
   import type { Task } from "$lib/types"
   import RunConfigComponent from "../run_config_component.svelte"
 

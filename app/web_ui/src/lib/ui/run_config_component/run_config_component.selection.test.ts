@@ -116,7 +116,8 @@ function saved_config(id: string, tool_ids: string[]): TaskRunConfig {
 }
 
 const TOOLS_FIRST = saved_config("tools_first", [TOOL_A, TOOL_B, SKILL_A])
-// The order a config gets when tools and skills are added to it in turns.
+// A config made outside this component (the API, the SDK) can list tools and
+// skills in any order.
 const MIXED_ORDER = saved_config("mixed_order", [
   TOOL_A,
   SKILL_A,
