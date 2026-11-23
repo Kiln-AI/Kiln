@@ -4934,6 +4934,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.1-flash-lite-preview",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
@@ -5374,6 +5375,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-2.0-flash",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 provider_finetune_id="gemini-2.0-flash-001",
             ),
@@ -5435,6 +5437,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-2.0-flash-lite",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 provider_finetune_id="gemini-2.0-flash-lite-001",
             ),
@@ -5906,6 +5909,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="meta/llama-3.3-70b-instruct-maas",
+                deprecated=True,
                 # Doesn't work yet; needs debugging
                 supports_structured_output=False,
                 supports_data_gen=False,
