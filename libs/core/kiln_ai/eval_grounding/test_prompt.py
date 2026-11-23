@@ -167,6 +167,11 @@ def test_system_prompt_has_the_reading_simulated_user_evidence_and_setup_rules()
     assert "without calling it the only correct one" in prompt
     assert "Then remove what a real user wouldn't say" in prompt
     assert "instructions that rescue the agent" in prompt
+    assert "from seed_prompt, goal and behavior_guidance alike" in prompt
+    assert "Keep its wording, tone and difficulty." in prompt
+    assert "is a fact, not a reading" in prompt
+    assert "give each without saying which is right" in prompt
+    assert "Never cite a call whose arguments name a saved file" in prompt
     assert "Keep how the user answers questions the agent may ask them." in prompt
     assert "A call that returned nothing is not a refusal" in prompt
     assert "quote it word for word instead of paraphrasing it" in prompt
