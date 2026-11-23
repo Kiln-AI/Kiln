@@ -16,7 +16,7 @@
     if (has_tasks === false) {
       goto("/setup/create_task/" + project_id)
     } else {
-      goto("/setup/select_task")
+      goto("/setup/select_task?project_id=" + encodeURIComponent(project_id))
     }
   }
 
