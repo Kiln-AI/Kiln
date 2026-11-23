@@ -582,11 +582,14 @@ def connect_run_api(app: FastAPI):
         # is in our delete-set. Stop at the first ancestor that still has another
         # live child (a sibling branch) — or one an eval still needs.
         runs_to_delete = _collect_cascade_delete_runs(task, run)
-        for r in runs_to_delete:
-            r.delete()
-        await shared_conversation_sessions().release_runs(
-            str(r.id) for r in runs_to_delete
-        )
+        deleted_ids: list[str] = []
+        try:
+            for r in runs_to_delete:
+                r.delete()
+                deleted_ids.append(str(r.id))
+        finally:
+            # A failure partway still ends the sessions of the turns already gone.
+            await shared_conversation_sessions().release_runs(deleted_ids)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs",

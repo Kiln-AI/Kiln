@@ -608,6 +608,25 @@ class TestRunApiConversation:
         assert response.status_code == 200
         assert openenv_chat.manager._sessions == {}
 
+    def test_delete_failing_on_an_ancestor_still_ends_the_session(self, openenv_chat):
+        first = openenv_chat.send("one").json()
+        second = openenv_chat.send("two", parent_id=first["id"]).json()
+        real_delete = TaskRun.delete
+
+        def delete(run):
+            if run.id == first["id"]:
+                raise OSError("disk full")
+            real_delete(run)
+
+        with (
+            patch.object(TaskRun, "delete", delete),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            openenv_chat.client.delete(
+                f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/{second['id']}"
+            )
+        assert openenv_chat.manager._sessions == {}
+
     def test_bulk_delete_ends_the_session(self, openenv_chat):
         first = openenv_chat.send("one").json()
         second = openenv_chat.send("two", parent_id=first["id"]).json()

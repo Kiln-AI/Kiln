@@ -118,6 +118,8 @@ async def openenv_for_run(
         _refuse_openenv_change(held_sessions.peek(str(parent_run.id)), openenv_server)
 
     if openenv_server is None:
+        if is_multiturn and parent_run is not None:
+            _refuse_dropping_openenv(parent_run, conversations)
         if reset_kwargs is not None:
             raise OpenEnvRunError(
                 "kwargs_without_openenv",
@@ -176,6 +178,24 @@ def _refuse_openenv_change(
         "openenv_changed",
         f"This conversation uses OpenEnv server {held.context.openenv_server.name}. Start a new "
         f"conversation to {instead}.",
+    )
+
+
+def _refuse_dropping_openenv(
+    parent_run: TaskRun, conversations: ConversationSessions | None
+) -> None:
+    """A conversation that used an OpenEnv server can't continue without one, even
+    once its session is gone or from an earlier turn, where nothing is held under
+    the parent to compare against."""
+    held_sessions = conversations or shared_conversation_sessions()
+    if parent_run.openenv_episode is None and not held_sessions.holds_turn(
+        str(parent_run.id)
+    ):
+        return
+    raise OpenEnvRunError(
+        "openenv_changed",
+        "This conversation uses an OpenEnv server. Start a new conversation to run "
+        "without it.",
     )
 
 

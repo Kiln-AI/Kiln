@@ -680,6 +680,46 @@ class TestConversation:
         assert second.openenv_episode is not None and first.openenv_episode is not None
         assert second.openenv_episode.episode_id == first.openenv_episode.episode_id
 
+    async def test_dropping_openenv_after_the_session_ended_is_refused(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        first = await _turn(
+            multiturn_task, _openenv_server_properties(openenv_server), session_manager
+        )
+        await session_manager.conversations.release_runs([str(first.id)])
+        with pytest.raises(OpenEnvRunError) as raised:
+            await _turn(multiturn_task, _properties([]), session_manager, parent=first)
+        assert raised.value.kind == "openenv_changed"
+        assert raised.value.message == (
+            "This conversation uses an OpenEnv server. Start a new conversation to run "
+            "without it."
+        )
+
+    async def test_dropping_openenv_from_an_earlier_turn_is_refused(
+        self, multiturn_task, openenv_server, session_manager
+    ):
+        properties = _openenv_server_properties(openenv_server)
+        first = await _turn(multiturn_task, properties, session_manager)
+        await _turn(multiturn_task, properties, session_manager, parent=first)
+        # An earlier turn: the run as the run API loads it, without its episode.
+        earlier = first.model_copy(update={"openenv_episode": None})
+        with pytest.raises(OpenEnvRunError) as raised:
+            await _turn(
+                multiturn_task, _properties([]), session_manager, parent=earlier
+            )
+        assert raised.value.kind == "openenv_changed"
+
+    async def test_conversation_without_openenv_continues_without_it(
+        self, multiturn_task, session_manager
+    ):
+        first = TaskRun(
+            input="hi", output=TaskOutput(output="ok"), parent=multiturn_task
+        )
+        async with _conversation_turn(
+            multiturn_task, _properties([]), session_manager, first
+        ) as handle:
+            assert handle is None
+
     async def test_failed_turn_can_be_retried(
         self, multiturn_task, openenv_server, session_manager
     ):

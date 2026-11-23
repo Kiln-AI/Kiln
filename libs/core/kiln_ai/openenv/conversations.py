@@ -69,10 +69,17 @@ class ConversationSessions:
         if held is None or held.loop is asyncio.get_running_loop():
             return held
         del self._held[run_id]
-        # Its socket can only be closed from the loop that opened it, which may no
-        # longer run. Once the manager drops its reference, the socket is closed when
-        # it's garbage-collected, and the environment frees the slot.
-        held.context.session_manager.forget(held.context.episode)
+        manager = held.context.session_manager
+        if held.loop.is_running():
+            # Another thread's loop: its socket can only be closed there.
+            asyncio.run_coroutine_threadsafe(
+                manager.release(held.context.episode), held.loop
+            )
+        else:
+            # The loop that opened it is gone. Once the manager drops its reference,
+            # the socket is closed when it's garbage-collected, and the environment
+            # frees the slot.
+            manager.forget(held.context.episode)
         logger.warning(
             "OpenEnv server %s session %s was opened on another event loop; ending it",
             held.context.openenv_server.id,

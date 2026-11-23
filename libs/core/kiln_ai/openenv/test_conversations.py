@@ -3,6 +3,7 @@ session manager is a mock: only which episodes get released matters here."""
 
 import asyncio
 import logging
+import threading
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -92,6 +93,26 @@ class TestTakeAndPut:
             assert sessions.take("turn-1") is None
             manager.forget.assert_called_once()
         finally:
+            other_loop.close()
+
+    async def test_session_from_a_running_loop_is_released_there(
+        self, sessions, manager
+    ):
+        other_loop = asyncio.new_event_loop()
+        thread = threading.Thread(target=other_loop.run_forever, daemon=True)
+        thread.start()
+        try:
+            held = _held(manager, loop=other_loop)
+            sessions.put("turn-1", held)
+            assert sessions.take("turn-1") is None
+            assert not sessions.holds_turn("turn-1")
+            # Wait for the release scheduled on the other loop to run.
+            asyncio.run_coroutine_threadsafe(asyncio.sleep(0), other_loop).result(5)
+            manager.release.assert_awaited_once_with(held.context.episode)
+            manager.forget.assert_not_called()
+        finally:
+            other_loop.call_soon_threadsafe(other_loop.stop)
+            thread.join(5)
             other_loop.close()
 
     async def test_peek_leaves_the_entry(self, sessions, manager):
