@@ -78,6 +78,24 @@ describe("run_input_form structured value", () => {
     expect(closed_labels).toEqual(["Not Set", "Select an option"])
   })
 
+  it.each([
+    ["an integer enum set to 0", { level: 0, flag: true }],
+    ["a boolean enum set to false", { level: 2, flag: false }],
+  ])("keeps a required %s", async (_, value) => {
+    const { component } = render_form(
+      JSON.stringify({
+        type: "object",
+        properties: {
+          level: { type: "integer", enum: [0, 1, 2] },
+          flag: { type: "boolean", enum: [true, false] },
+        },
+        required: ["level", "flag"],
+      }),
+    )
+    await component.set_structured_input_data(value)
+    expect(component.get_structured_input_data()).toEqual(value)
+  })
+
   it("is a no-op in plaintext mode", async () => {
     const { component } = render_form(null)
     await component.set_structured_input_data({ note: "hello" })

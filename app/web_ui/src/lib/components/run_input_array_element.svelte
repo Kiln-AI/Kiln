@@ -10,7 +10,6 @@
   export let level: number = 0
   export let path: string = ""
   export let parentOptional: boolean = false
-  // Passed on to each item's RunInputFormElement.
   export let on_see_all_description:
     | ((title: string, description: string) => void)
     | null = null

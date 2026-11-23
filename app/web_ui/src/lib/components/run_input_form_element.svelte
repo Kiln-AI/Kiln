@@ -22,7 +22,6 @@
   export let path: string = ""
   export let hideHeaderAndIndent: boolean = false
   export let parentOptional: boolean = false
-  // Passed to each field's FormElement. See its on_see_all_description.
   export let on_see_all_description:
     | ((title: string, description: string) => void)
     | null = null
@@ -227,8 +226,12 @@
       // Valid empty value
       return undefined
     }
-    // Usually "", can be undefined (enums) or null (input type=number with non-number string)
-    if (!value && property.required) {
+    // Usually "", can be undefined (enums) or null (input type=number with non-number string).
+    // An enum holds its raw value, so 0 and false are set values.
+    if (
+      (value === "" || value === undefined || value === null) &&
+      property.required
+    ) {
       throw new MissingRequiredPropertyError(
         "Required property not set: " + path,
         path,
@@ -268,6 +271,11 @@
       return value
     }
     if (property.type === "boolean") {
+      // A boolean enum's dropdown holds the raw boolean.
+      const raw: unknown = value
+      if (typeof raw === "boolean") {
+        return raw
+      }
       if (value !== "true" && value !== "false") {
         throw new Error("Boolean property must be 'true' or 'false': " + path)
       }

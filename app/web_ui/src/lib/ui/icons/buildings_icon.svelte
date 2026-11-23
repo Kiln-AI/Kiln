@@ -1,4 +1,4 @@
-<!-- Drawn for Kiln: a tall tower between two shorter buildings, on a ground line. -->
+<!-- Drawn for Kiln, not taken from an icon library. -->
 <svg
   class="w-full h-full"
   viewBox="0 0 24 24"
