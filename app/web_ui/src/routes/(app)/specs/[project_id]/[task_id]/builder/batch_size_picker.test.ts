@@ -23,8 +23,7 @@ describe("BatchSizePicker", () => {
     expect(container.querySelector('input[aria-label="Count"]')).toBeNull()
   })
 
-  // TODO: un-skip when CUSTOM_MIN goes back to 35 (lowered for a manual end-to-end test).
-  it.skip("adds the Item Count row, bounded, on Custom", async () => {
+  it("adds the Item Count row, bounded, on Custom", async () => {
     const { container, queryByText } = render(BatchSizePicker, {
       props: { size: size("custom") },
     })

@@ -28,8 +28,7 @@ describe("planned_count", () => {
     expect(planned_count(size("custom", 80))).toBe(86)
   })
 
-  // TODO: un-skip when CUSTOM_MIN goes back to 35 (lowered for a manual end-to-end test).
-  it.skip("holds Custom inside its bounds", () => {
+  it("holds Custom inside its bounds", () => {
     // A stored count from a wider range can never plan a batch the picker
     // would refuse.
     expect(planned_count(size("custom", 5))).toBe(CUSTOM_MIN + 6)
@@ -74,8 +73,7 @@ describe("restore_batch_size", () => {
     ).toEqual(DEFAULT_BATCH_SIZE)
   })
 
-  // TODO: un-skip when CUSTOM_MIN goes back to 35 (lowered for a manual end-to-end test).
-  it.skip("clamps a custom count from outside its bounds", () => {
+  it("clamps a custom count from outside its bounds", () => {
     expect(restore_batch_size(size("custom", 10)).custom_count).toBe(CUSTOM_MIN)
     expect(restore_batch_size(size("custom", 999)).custom_count).toBe(
       CUSTOM_MAX,
