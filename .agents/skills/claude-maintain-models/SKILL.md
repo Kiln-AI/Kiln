@@ -66,7 +66,7 @@ If the user asks you to find new models, **do NOT just web search "new AI models
 
 ## Phase 1B – Lagging-Provider Backfill Check (every run)
 
-Some providers — **Fireworks AI**, **Together AI**, **SiliconFlow**, **Cloudflare** — expose new models on their own endpoints 1–2 weeks before those entries surface in models.dev / LiteLLM (or, for Cloudflare, never reach LiteLLM at all). Relying only on those two catalogs will both under-populate the provider list for the model you're adding now **and** miss the window to backfill recently-added models whose provider support has since grown.
+Some providers — **Fireworks AI**, **Together AI**, **SiliconFlow**, **Cloudflare**, **OpenCode** — expose new models on their own endpoints 1–2 weeks before those entries surface in models.dev / LiteLLM (or, for Cloudflare and OpenCode, never reach LiteLLM at all). Relying only on those two catalogs will both under-populate the provider list for the model you're adding now **and** miss the window to backfill recently-added models whose provider support has since grown.
 
 Run this check on **every invocation** of the skill, regardless of whether you're in discovery mode or adding a specific model.
 
@@ -75,11 +75,11 @@ Run this check on **every invocation** of the skill, regardless of whether you'r
    git log --follow -p -- libs/core/kiln_ai/adapters/ml_model_list.py | grep -E "^\+\s+name=ModelName\." | head -20
    ```
 
-2. **For the model you're adding (if any) AND each of those 10 models**, cross-check Fireworks, Together, SiliconFlow and Cloudflare directly using the endpoints in the [Lagging Providers Reference](#lagging-providers). Do NOT trust `models.dev` / LiteLLM as the final word for these providers.
+2. **For the model you're adding (if any) AND each of those 10 models**, cross-check Fireworks, Together, SiliconFlow, Cloudflare and OpenCode directly using the endpoints in the [Lagging Providers Reference](#lagging-providers). Do NOT trust `models.dev` / LiteLLM as the final word for these providers.
 
 3. **If a lagging provider now supports a recently-added model that isn't yet in its `KilnModel` entry**, flag it to the user and propose either bundling the provider addition into the current change or opening a separate PR. Do not silently add it.
 
-4. **Run the Cloudflare thinking-level checker** (see [Cloudflare thinking levels](#cloudflare-thinking-levels)). It checks every Cloudflare entry, not only the recent ones, because Cloudflare edits the effort lists of models Kiln already ships. Treat each ❌ finding like a backfill: fix the entry in the current change or propose a separate PR.
+4. **Run the thinking-level checker** (see [Cloudflare thinking levels](#cloudflare-thinking-levels) and [OpenCode thinking levels](#opencode-thinking-levels)). It checks every Cloudflare, OpenRouter and OpenCode entry, not only the recent ones, because these providers edit the effort lists of models Kiln already ships. Treat each ❌ finding like a backfill: fix the entry in the current change or propose a separate PR.
 
 ---
 
@@ -141,6 +141,7 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 | `featherless_ai` | HuggingFace repo id, case-sensitive (`zai-org/GLM-5.2`) | Verify via their `/v1/models` — see [Featherless](#featherless-ai) |
 | `typesafe` | Dotted System One version (`jev-1.13.0`) | Their `/v1/models` lists aliases only — verify by `POST /v1/systemone`, see [TypeSafe AI](#typesafe-ai) |
 | `cloudflare` | Cloudflare's own `@cf/<author>/<model>` id, verbatim (`@cf/zai-org/glm-5.3`) — no `cloudflare/` or `openai/` prefix | Verify via Cloudflare's model JSON — see [Cloudflare](#cloudflare-workers-ai) |
+| `opencode` | OpenCode's own `id`, verbatim (`claude-sonnet-5-5`, `deepseek-v4.1-flash`) — no `opencode/` or `openai/` prefix | Verify via the default-workspace `/inference/v1/models` list, matching on `canonical_id` — see [OpenCode](#opencode) |
 
 **Every single `model_id` must be verified from an authoritative source. No exceptions.**
 
@@ -679,7 +680,7 @@ Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `
 - [ ] Flags inherited from predecessor and adjusted for quirks
 - [ ] `reasoning_capable` defaulted to `False` for adaptive-reasoning models (only `True` for always-emits-reasoning models — see [Reasoning Capable Default](#reasoning-capable-default))
 - [ ] Thinking levels configured if model supports reasoning effort (see [Thinking Levels Reference](#thinking-levels-reference))
-- [ ] Cloudflare and OpenRouter: `check_thinking_levels.py` reports no ❌ finding (see [Cloudflare thinking levels](#cloudflare-thinking-levels) and [OpenRouter (general)](#openrouter-general))
+- [ ] Cloudflare, OpenRouter and OpenCode: `check_thinking_levels.py` reports no ❌ finding (see [Cloudflare thinking levels](#cloudflare-thinking-levels), [OpenRouter (general)](#openrouter-general) and [OpenCode thinking levels](#opencode-thinking-levels))
 - [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
@@ -926,7 +927,7 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
     uv run python .agents/skills/claude-maintain-models/scripts/check_thinking_levels.py
     ```
 
-    It compares every Cloudflare and OpenRouter entry in this checkout with the provider's catalog, and exits 1 on a level or default outside `supported_efforts`. For Cloudflare it also exits 1 on a missing level list, or levels on a model whose catalog lists none. `--provider cloudflare` or `--provider openrouter` checks one provider. A `note:` line is information only.
+    It compares every Cloudflare, OpenRouter and OpenCode entry in this checkout with the provider's catalog, and exits 1 on a level or default outside the listed efforts. For Cloudflare and OpenCode it also exits 1 on a missing level list, or levels on a model whose catalog lists none. OpenCode is skipped, with a log line, when `OPENCODE_API_KEY` is not set. `--provider cloudflare`, `--provider openrouter` or `--provider opencode` checks one provider. A `note:` line is information only.
   - Then run the paid `test_thinking_level_reasoning_content` for each new level. If `-k "<model_enum>"` collects no `cloudflare/...` case, `cloudflare` is missing from the provider list in `libs/core/kiln_ai/adapters/model_adapters/test_thinking_level_paid.py`; add it.
 - **Structured output:** these models take the OpenAI `response_format` envelope, so start from `json_schema` and fall back only on test failures. Cloudflare's JSON mode doesn't support streaming.
 - **Don't send `max_tokens`.** Live tests showed no truncation on the OpenAI-format models without it.
@@ -935,6 +936,38 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
 - **Slow models:** Qwen 3.8 27B runs at about 23 tokens/s. Long non-streaming generations hit Cloudflare's server-side timeout (HTTP 408, code 3046, after about 2 minutes).
 - **No cost reporting.** Kiln sends bare `@cf/...` ids through LiteLLM's `openai/` route, which never match LiteLLM's price map (its few entries are keyed `cloudflare/@cf/...`), so every Cloudflare run records tokens with `cost: null`.
 - **No Model Substitution.** When Cloudflare retires a model it may **silently alias** the old ID to a different, often more expensive, model (Kimi K2.5 → K2.6 in May 2026). The response still echoes the requested ID, so Kiln can't detect it at runtime. Cloudflare announces retirements by adding `planned_deprecation_date` to the model (notice has been 13–22 days). **Remove or mark deprecated every Kiln Cloudflare entry that gains a `planned_deprecation_date`, before that date.** The `kiln-check-deprecation` skill reports these dates.
+
+### OpenCode
+
+OpenCode Console (pay-as-you-go) is an AI gateway for models from many labs. Kiln calls every model through OpenCode's Chat Completions endpoint (`https://opencode.ai/inference/openai/v1`, LiteLLM's generic `openai/` route); OpenCode translates the request for models whose native API is Responses, Anthropic Messages or Gemini (the `recommended_api` field). Read this before adding or changing any entry:
+
+- **Source list: the default-workspace models list.** `GET /inference/v1/models` lists only the models the key's workspace allows, and calling any other model returns 403. Use a key from a workspace whose model settings are untouched, so the list is what a new workspace enables by default, and never change that workspace's model settings. The query is in [Lagging Providers](#lagging-providers).
+- **Inclusion rule.** Add an OpenCode entry only when all of these hold:
+  - `type` is `chat`. Skip `decision` (System One: Jev, GPT 6 Luna Decision, Gemini Decision 1), `image`, `embedding`, `video` and `realtime`.
+  - The price is not zero (`cost.text.input.price` or `cost.text.output.price`), and the id has no `-free` suffix. OpenCode's free models return 403 or a 429 `FreeUsageLimitError` to any client but OpenCode itself.
+  - It is not on the "Deprecated models" table of https://opencode.ai/docs/console/models.
+  - It is not a pure coding model (`*-codex*`, `kimi-*-code`, `grok-build-*`), as in Phase 1.
+  - Kiln already has its `KilnModel`. Match on `canonical_id`, not the display name: `deepseek-v4.1-flash` is `deepseek/deepseek-v4.1-flash-1017` (DeepSeek V4.1 Flash 1017), `deepseek-v4-pro` is the original V4 Pro (not 0813), and `muse-ember-1.0` is Kiln's Muse Ember. A model Kiln lacks goes through the normal new-model process first.
+- **Usually a new provider on an existing model.** Add a `KilnModelProvider(name=ModelProviderName.opencode, ...)` to the existing `KilnModel`, after its other providers.
+- **Starting flags**, kept only when the paid tests pass:
+  - `structured_output_mode=json_schema`. Qwen 3.6 Plus needs `json_instruction_and_object`: its upstream turns the schema into `json_object`, which fails with a 400 unless the prompt says "json".
+  - Leave `supports_function_calling` at its default.
+  - `reasoning_capable=False` (see [Reasoning Capable Default](#reasoning-capable-default)); OpenCode returns reasoning text in `reasoning_content`, which LiteLLM reads without a parser.
+  - Vision and MIME types: start from `modalities.input`, limited to the types the native entry has. `text` covers `TXT` and `MD`, plus `CSV` and `HTML` where the native entry has them. Add `PDF` only when `application/pdf` is listed, and no `multimodal_requires_pdf_as_image`. Video reached the model only on Gemini and Muse; Kimi K3, GLM 5.3 Flash and the Qwen models list video but failed every video extraction test, so they have no video types. Run the extraction tests (Phase 4d) for each entry.
+  - Keep `temp_top_p_exclusive=True` on Claude. Don't copy native-provider options (`gemini_reasoning_enabled`, `anthropic_*`, `openai_reasoning_summary`, `openrouter_*`): Kiln applies them only on their own provider.
+  - Copy `suggested_for_*` from the model's other entries, and apply the [judge rule](#judge-models-must-reason-by-default) to the default level.
+- <a id="opencode-thinking-levels"></a>**Thinking levels come from the models list.** Kiln sends the level as `reasoning_effort`. `capabilities.reasoning.effort` lists the values a model accepts:
+  - **Required** wherever the list is present: offer exactly those values, labelled as in [Cloudflare thinking levels](#cloudflare-thinking-levels). No list means no thinking levels. `toggle` and `budget` have no Kiln setting; add an Off level only when `none` is in the list.
+  - The list has no default. Use the model's default on its native provider or OpenRouter when it is in the list, else pick one from the list; the judge rule still applies.
+  - OpenCode accepts some unlisted values with HTTP 200 (`medium` on Kimi K3 and GLM 5.3), so a paid test cannot catch an extra level. Run `check_thinking_levels.py` (it needs `OPENCODE_API_KEY` and skips OpenCode without it); it must report no ❌ finding for OpenCode.
+  - The list can still be wrong: Mistral Large 4 lists `none` and `high`, and its upstream rejects `none`. Run the paid `test_thinking_level_reasoning_content` for every level.
+  - OpenCode returns the reasoning of OpenAI and Meta Muse models only encrypted (`reasoning_details`), so that test checks only that their runs succeed. Add each new GPT or Muse OpenCode entry to `OPENCODE_ENCRYPTED_REASONING_MODELS` in `test_thinking_level_paid.py`.
+- **Models that don't work through OpenCode yet.** Leave these out, and recheck them when LiteLLM is upgraded:
+  - Mistral Large 4: with reasoning on, OpenCode returns Mistral's native `content` list with `thinking` parts, which LiteLLM 1.105.7 can't parse.
+  - MiniMax M3 and Qwen 3.8 Max: their upstream rejects the `provider_specific_fields` that LiteLLM sends back on earlier assistant messages, so every multi-turn run (tool calls, two-call chain of thought, LLM judges) fails with a 400.
+- **Cost:** Kiln records OpenCode's own `usage.cost` for every call, including streaming, so cost is reported even for models LiteLLM doesn't price.
+- **Deprecations:** OpenCode lists a retirement date in the "Deprecated models" table, by display name. The date alone doesn't mean the model is gone: GPT 5.1 Codex Mini, dated July 23, 2026, was still listed and working in November 2026. A retired model returns 410 `ModelDeprecated`, with the replacement in `metadata.replacement`. The `kiln-check-deprecation` skill reports the table's dates, and deprecates an entry only after its date has passed and a call returns 410, or once the model leaves the models list.
+- **Paid tests:** set `OPENCODE_API_KEY`. In a cloud session where the network proxy saves the key for `opencode.ai`, set it to any placeholder; the proxy adds the real key. The key's workspace needs credits.
 
 ### Qwen3 / Thinking Models
 - Thinking variants: `reasoning_capable=True`, `parser=ModelParserID.r1_thinking`
@@ -945,7 +978,7 @@ Runs through LiteLLM's generic `openai/` route against Cloudflare's OpenAI-compa
 
 ## Thinking Levels Reference
 
-Two providers publish the thinking levels per model, and their list is the only source for their entries: Cloudflare (see [Cloudflare thinking levels](#cloudflare-thinking-levels)) and OpenRouter (`reasoning.supported_efforts` in its models API, see [OpenRouter (general)](#openrouter-general)). For every other provider the levels must be sourced by hand. Use this lookup chain in priority order.
+Three providers publish the thinking levels per model, and their list is the only source for their entries: Cloudflare (see [Cloudflare thinking levels](#cloudflare-thinking-levels)), OpenRouter (`reasoning.supported_efforts` in its models API, see [OpenRouter (general)](#openrouter-general)) and OpenCode (`capabilities.reasoning.effort` in its models list, see [OpenCode thinking levels](#opencode-thinking-levels)). For every other provider the levels must be sourced by hand. Use this lookup chain in priority order.
 
 ### Lookup Chain
 
@@ -1051,7 +1084,7 @@ curl -s https://models.dev/api.json | jq '.["PROVIDER"].models["MODEL_ID"]'
 
 ### Lagging Providers
 
-Fireworks, Together, SiliconFlow and Cloudflare typically expose new models on their own endpoints 1–2 weeks before models.dev / LiteLLM catch up. For these providers, **always** cross-check directly — both when adding a new model and when running the [Phase 1B backfill check](#phase-1b--lagging-provider-backfill-check-every-run).
+Fireworks, Together, SiliconFlow, Cloudflare and OpenCode typically expose new models on their own endpoints 1–2 weeks before models.dev / LiteLLM catch up. For these providers, **always** cross-check directly — both when adding a new model and when running the [Phase 1B backfill check](#phase-1b--lagging-provider-backfill-check-every-run).
 
 **Fireworks AI** — model pages are the most current source. WebFetch directly:
 ```
@@ -1139,6 +1172,21 @@ curl -s "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai
 - Also scan the [Workers AI changelog](https://developers.cloudflare.com/changelog/product/workers-ai/) for launches in the last two weeks, in case the catalog lags.
 
 See [Cloudflare (Workers AI)](#cloudflare-workers-ai) in Provider Quirks for the inclusion rule and flags.
+
+**OpenCode** — the authoritative list is `GET https://opencode.ai/inference/v1/models` with `OPENCODE_API_KEY` from a workspace whose model settings are untouched. It needs a key, but listing is free. Save it once and filter with `jq`:
+
+```bash
+curl -s https://opencode.ai/inference/v1/models -H "Authorization: Bearer $OPENCODE_API_KEY" -o /tmp/opencode_models.json
+
+# Candidates: paid chat models, with the fields that set Kiln flags
+jq -r '.data[] | select(.type == "chat")
+  | select((.cost.text.input.price // 0) > 0 or (.cost.text.output.price // 0) > 0)
+  | select(.id | endswith("-free") | not)
+  | [.id, .canonical_id, .recommended_api, (.capabilities.reasoning.effort // [] | join(",")),
+     (.modalities.input | join(","))] | @tsv' /tmp/opencode_models.json
+```
+
+Cross-check with models.dev (`curl -s https://models.dev/api.json | jq '.opencode.models | keys[]'`), but never use models.dev to decide inclusion: it lists every model OpenCode serves, including ones a new workspace does not enable. Also read the "Deprecated models" table on https://opencode.ai/docs/console/models. See [OpenCode](#opencode) in Provider Quirks for the inclusion rule and flags.
 
 **SiliconFlow** — WebFetch the public model catalog page, or a specific model page if you have the vendor/model path:
 ```
