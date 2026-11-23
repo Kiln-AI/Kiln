@@ -189,6 +189,11 @@
   // When a run config is selected, update the current run options to match the selected config
   let prior_selected_run_config_id: string | null = null
   let run_config_just_loaded = false
+  // The saved run config this component deselected because the options stopped
+  // matching it. While "custom" is selected, options that match it again select
+  // it again. Every other change of the selection clears it, so a user who
+  // picks "Custom" stays on it even when the options match a saved config.
+  let run_config_left_by_edit_id: string | null = null
 
   // Set every run option from a config's properties. `run_config_just_loaded`
   // stops the next reactive pass from re-applying model defaults over the values
@@ -232,6 +237,7 @@
       return
     }
     prior_selected_run_config_id = selected_run_config_id
+    run_config_left_by_edit_id = null
 
     const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
@@ -258,6 +264,8 @@
   // 2. Select a legacy fine-tune model (no run config baked in), it's prompt should be selected and RC stays custom
   // 3. Select a saved run config, should set all fields to the saved config's values
   // 4. Change any field after setting a run config, should deselect the run config to "custom"
+  // 5. Change the field back after 4, should select the run config again
+  // 6. Pick "Custom" by hand, should stay on "custom" even when the fields match a saved run config
   $: void (model,
   prompt_method,
   temperature,
@@ -326,6 +334,9 @@
 
     // deselect the run config if they have changed any run options to not match the selected run config
     await reset_to_custom_options_if_needed()
+
+    // select it again if they have changed the run options back
+    reselect_run_config_left_by_edit_if_needed()
   }
 
   let last_applied_pending_run_config_id: string | null = null
@@ -410,46 +421,68 @@
       return
     }
 
-    // Check if any values have changed from the saved config properties
-    let model_changed = false
-    let provider_changed = false
-    let prompt_changed = false
+    if (!run_options_match(config_properties)) {
+      run_config_left_by_edit_id = selected_run_config.id ?? null
+      selected_run_config_id = "custom"
+      // This change is the component's own. Marking it as seen keeps
+      // update_current_run_options_for_selected_run_config from reading it as a
+      // new selection and clearing run_config_left_by_edit_id.
+      prior_selected_run_config_id = "custom"
+    }
+  }
+
+  function reselect_run_config_left_by_edit_if_needed() {
+    if (selected_run_config_id !== "custom" || !run_config_left_by_edit_id) {
+      return
+    }
+    const config_properties = find_task_run_config(
+      run_config_left_by_edit_id,
+    )?.run_config_properties
+    if (!isKilnAgentRunConfig(config_properties)) {
+      // Deleted, or the task changed: there is nothing to return to.
+      run_config_left_by_edit_id = null
+      return
+    }
+    if (run_options_match(config_properties)) {
+      selected_run_config_id = run_config_left_by_edit_id
+    }
+  }
+
+  // Whether the options on screen are the ones a saved config holds. The one
+  // definition of "matches", for deselecting a run config and for selecting it
+  // again.
+  function run_options_match(
+    config_properties: KilnAgentRunConfigProperties,
+  ): boolean {
     const current_model_name = model ? model.split("/").slice(1).join("/") : ""
     const current_provider_name = model ? model.split("/")[0] : ""
-    model_changed = config_properties.model_name !== current_model_name
-    provider_changed =
-      config_properties.model_provider_name !== current_provider_name
-    prompt_changed = config_properties.prompt_id !== prompt_method
 
     // Legacy models can be "unknown". Don't consider those as mismatches.
-    const output_mode_mismatch =
-      config_properties.structured_output_mode !== "unknown" &&
-      config_properties.structured_output_mode !== structured_output_mode
+    const output_mode_matches =
+      config_properties.structured_output_mode === "unknown" ||
+      config_properties.structured_output_mode === structured_output_mode
 
     // Compared as sets: a saved list can mix tools and skills in any order, and
     // the two pickers here always give tools first, then skills.
-    const tools_changed = !sets_equal(
+    const tools_match = sets_equal(
       new Set(config_properties.tools_config?.tools ?? []),
       new Set([...tools, ...skills]),
     )
 
-    if (
-      model_changed ||
-      provider_changed ||
-      prompt_changed ||
-      config_properties.temperature !== temperature ||
-      config_properties.top_p !== top_p ||
-      (config_properties.thinking_level ?? null) !== thinking_level ||
-      output_mode_mismatch ||
-      tools_changed ||
-      !inputTransformsEqual(
+    return (
+      config_properties.model_name === current_model_name &&
+      config_properties.model_provider_name === current_provider_name &&
+      config_properties.prompt_id === prompt_method &&
+      config_properties.temperature === temperature &&
+      config_properties.top_p === top_p &&
+      (config_properties.thinking_level ?? null) === thinking_level &&
+      output_mode_matches &&
+      tools_match &&
+      inputTransformsEqual(
         config_properties.input_transform ?? null,
         input_transform,
       )
-    ) {
-      // The user has changed something, so deselect the run config - it no longer matches the selected run config
-      selected_run_config_id = "custom"
-    }
+    )
   }
 
   // Helper function to convert run options to server run_config_properties format
@@ -522,16 +555,19 @@
     } else if (selected_run_config_id === "custom") {
       return "custom"
     } else {
-      // Find the config by ID
-      const all_configs =
-        $run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, current_task.id)
-        ] ?? []
-      let run_config = all_configs.find(
-        (config) => config.id === selected_run_config_id,
-      )
-      return run_config ?? "custom"
+      return find_task_run_config(selected_run_config_id) ?? "custom"
     }
+  }
+
+  function find_task_run_config(run_config_id: string): TaskRunConfig | null {
+    if (!current_task?.id) {
+      return null
+    }
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    return all_configs.find((config) => config.id === run_config_id) ?? null
   }
 
   // Expose methods for run parent component
