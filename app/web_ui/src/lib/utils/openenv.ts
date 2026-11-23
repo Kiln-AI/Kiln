@@ -7,10 +7,8 @@ import type {
 } from "$lib/types"
 import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
-// TODO: publish this page on docs.kiln.tech before merging. It doesn't exist
-// yet, so the link 404s until it does.
 export const OPENENV_DOCS_URL =
-  "https://docs.kiln.tech/docs/tools-and-mcp/openenv"
+  "https://docs.kiln.tech/docs/evals-and-specs/openenv"
 export const SEAHAVEN_URL = "https://github.com/Kiln-AI/Seahaven"
 
 /**

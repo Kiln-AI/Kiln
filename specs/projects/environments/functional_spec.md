@@ -116,7 +116,7 @@ Environments are managed in the Tools area, next to MCP servers. See `ui_design.
 - **Archive:** `OpenEnvServer.is_archived`, set by `POST .../openenv_servers/{id}/archive` with `{"is_archived": bool}`, the same field name and request shape as an MCP server's archive. The detail page has Archive and Unarchive, and the Tools list shows "Archived". An archived server's tools behave as an archived MCP server's do: `available_tools` leaves them out, the tool picker drops them from the selection, and a saved run config that already lists them still runs, since tool ids resolve without checking the archive flag.
 - **No delete in V1:** the UI has no way to delete an environment. The existing delete route and its rule (refused while a saved eval input resets into the environment) are unchanged.
 - **Seahaven:** a callout at the top of the Connect OpenEnv Server page promotes Kiln Seahaven (https://github.com/Kiln-AI/Seahaven) for people who don't have an environment yet.
-- **Docs:** Connect OpenEnv Server's "Read the Docs" link points at https://docs.kiln.tech/docs/tools-and-mcp/openenv, which needs writing before merge. The OpenEnv Servers item on Add Tools has no link, like the other items there.
+- **Docs:** Connect OpenEnv Server's "Read the Docs" link points at https://docs.kiln.tech/docs/evals-and-specs/openenv. The OpenEnv Servers item on Add Tools has no link, like the other items there.
 
 ## Tool picker
 

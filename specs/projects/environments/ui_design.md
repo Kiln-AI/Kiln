@@ -177,7 +177,7 @@ New strings not already given above. The mockups' "All copy" section lists every
 | Where | Text |
 |---|---|
 | Connect OpenEnv Server subtitle | Connect to a running OpenEnv server to add its tools to your project. |
-| Read the Docs link | https://docs.kiln.tech/docs/tools-and-mcp/openenv (to be written before merge) |
+| Read the Docs link | https://docs.kiln.tech/docs/evals-and-specs/openenv |
 | Kiln Seahaven callout title | Build an OpenEnv Server with Kiln Seahaven |
 | Kiln Seahaven callout description | Kiln Seahaven is an open-source framework for building realistic copies of your product's tools and data, served as an OpenEnv server. |
 | Kiln Seahaven callout button | Learn More |
