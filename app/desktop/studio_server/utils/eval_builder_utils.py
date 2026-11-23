@@ -26,6 +26,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalTaskInput,
     LlmJudgeProperties,
+    LlmJudgeRunConfig,
     TaskRunSplit,
 )
 from kiln_ai.datamodel.openenv import OpenEnvEpisode
@@ -128,7 +129,15 @@ GROUNDED_JUDGE_INSTRUCTIONS = (
     "When the specification is about when the agent acts (for example before or "
     "after the user replies), use the order of the agent's calls and messages in "
     "the transcript. When the environment's final state is given, use it to check "
-    "what the agent changed."
+    "what the agent changed. Check each figure, record or claim the agent states "
+    "against the facts in the guidance. When a figure differs from a fact, find the "
+    "tool result it came from: if the agent counted a different set of records or "
+    "read a different field, said which, and the result shows that figure, it is "
+    "not a contradiction; judge whether that reading fits the user's request. One "
+    "the facts contradict counts against whatever requirement of the specification "
+    "it touches, even when the steps above don't name it. The readings and outcomes "
+    "the guidance lists are what the environment allows, not a ruling on what the "
+    "user meant: decide that from the conversation."
 )
 """The grounded judge's added instructions, ahead of the guidance and final state."""
 
@@ -205,6 +214,13 @@ def grounded_judge_reference_keys(grounded: bool) -> list[str]:
     return [JUDGE_GUIDANCE_REFERENCE_KEY] if grounded else []
 
 
+def judge_run_config(judge: JudgeConfig) -> LlmJudgeRunConfig | None:
+    """The judge model call's settings, or None to use the model's defaults."""
+    if judge.thinking_level is None:
+        return None
+    return LlmJudgeRunConfig(thinking_level=judge.thinking_level)
+
+
 def build_transient_judge_eval_config(
     task: Task, judge: JudgeConfig, multi_turn: bool, grounded: bool = False
 ) -> EvalConfig:
@@ -247,6 +263,7 @@ def build_transient_judge_eval_config(
                 judge.prompt, multi_turn, grounded=grounded
             ),
             reference_keys=grounded_judge_reference_keys(grounded),
+            run_config=judge_run_config(judge),
         ),
         parent=eval_obj,
     )

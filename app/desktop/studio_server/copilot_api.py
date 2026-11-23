@@ -150,6 +150,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
 from app.desktop.studio_server.utils.eval_builder_utils import (
     build_judge_prompt_template,
     grounded_judge_reference_keys,
+    judge_run_config,
 )
 from app.desktop.studio_server.utils.response_utils import (
     unwrap_response,
@@ -1374,6 +1375,7 @@ def connect_copilot_api(app: FastAPI):
                     grounded=grounded,
                 ),
                 reference_keys=grounded_judge_reference_keys(grounded),
+                run_config=judge_run_config(request.judge_info),
             ),
             provenance=request.provenance,
         )

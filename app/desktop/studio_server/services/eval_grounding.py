@@ -112,6 +112,7 @@ async def grounding_frames(
             session_manager=session_manager,
             model_name=model.model_name,
             model_provider=model.model_provider,
+            thinking_level=model.thinking_level,
             target_tools=target_tools,
         )
         async with contextlib.aclosing(progress):

@@ -250,6 +250,32 @@ class TestBuildJudgePromptTemplate:
 
 
 class TestBuildTransientJudgeEvalConfig:
+    def test_judge_thinking_level_reaches_the_judge_call(
+        self, in_memory_task, judge_config
+    ):
+        unset = build_transient_judge_eval_config(
+            in_memory_task, judge_config, multi_turn=True
+        ).properties
+        assert isinstance(unset, LlmJudgeProperties)
+        assert unset.run_config is None
+
+        thinking = judge_config.model_copy(update={"thinking_level": "high"})
+        properties = build_transient_judge_eval_config(
+            in_memory_task, thinking, multi_turn=True
+        ).properties
+        assert isinstance(properties, LlmJudgeProperties)
+        assert properties.run_config is not None
+        assert properties.run_config.thinking_level == "high"
+
+    def test_judge_thinking_level_must_be_one_the_model_offers(self):
+        with pytest.raises(ValueError, match="not available for judge model"):
+            JudgeConfig(
+                prompt="Judge it.",
+                model_name="claude_sonnet_4_6",
+                model_provider="anthropic",
+                thinking_level="xhigh",
+            )
+
     def test_single_turn_config_shape(self, in_memory_task, judge_config):
         config = build_transient_judge_eval_config(
             in_memory_task, judge_config, multi_turn=False
@@ -3249,6 +3275,9 @@ class TestGroundedJudge:
         assert "openenv_episode.final_state" in template
         assert "Grade against the specification" in template
         assert "use the order of the agent's calls and messages" in template
+        assert "Check each figure, record or claim the agent states" in template
+        assert "find the tool result it came from" in template
+        assert "not a ruling on what the user meant" in template
         assert "Must not happen" not in template
         # The guidance comes before the conversation it grades.
         assert template.index("<judge_guidance>") < template.index(

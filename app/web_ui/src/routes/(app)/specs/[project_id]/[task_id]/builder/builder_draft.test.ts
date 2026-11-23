@@ -146,6 +146,7 @@ const full_draft: BuilderDraft = {
     model_name: "gpt_5_4",
     model_provider: "openai",
   },
+  judge_thinking_level: "high",
   // Deliberately NOT the default 5: a fixture on the default couldn't tell a
   // restored choice from the fallback.
   turns_per_case: 8,
@@ -154,10 +155,6 @@ const full_draft: BuilderDraft = {
   openenv_server_lookup: {
     tool_ids_key: JSON.stringify(["kiln_tool::openenv::srv_1::search"]),
     openenv_server_id: "srv_1",
-  },
-  reset_arguments_brief: {
-    openenv_server_id: "srv_1",
-    brief: "## The system the agent works on",
   },
   landed_plan_steer: "Fewer refund scenarios.",
 }

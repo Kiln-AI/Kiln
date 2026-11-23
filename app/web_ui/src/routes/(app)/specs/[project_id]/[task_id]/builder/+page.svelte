@@ -18,7 +18,9 @@
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { build_suggested_models } from "$lib/ui/run_config_component/suggested_models"
+  import { THINKING_LEVEL_INFO_DESCRIPTION } from "$lib/utils/run_config_formatters"
   import {
+    available_model_details,
     available_models,
     get_task_composite_id,
     load_available_models,
@@ -69,6 +71,7 @@
     openenv_lookup_key,
     read_grounding_stream,
     type GroundingDrop,
+    type GroundingModel,
     type GroundingOutcome,
   } from "./grounding_flow"
   import DroppedCasesScreen from "./dropped_cases_screen.svelte"
@@ -192,6 +195,7 @@
     is_partial_stop,
     stale_case_caches,
     pick_target_run_config,
+    judge_thinking_level_refused,
     restore_turns_per_case,
     stop_primary_action,
     MAX_TURNS_PER_CASE,
@@ -484,11 +488,11 @@
         input_generator,
         input_gen_run_config,
         judge_model,
+        judge_thinking_level,
         turns_per_case,
         synthetic_user_guide,
         target_run_config_id,
         openenv_server_lookup,
-        reset_arguments_brief,
         landed_plan_steer,
       }
     : null
@@ -596,6 +600,7 @@
       // to pre-population, exactly like a lane with no model on record.
       input_gen_run_config = saved.input_gen_run_config ?? null
       judge_model = saved.judge_model ?? null
+      judge_thinking_level = saved.judge_thinking_level ?? null
       // Conversation length: no key, no choice on record, or a stored value
       // that isn't a number restores the default; a real number is clamped to
       // the current range.
@@ -612,7 +617,6 @@
       // Older drafts lack the OpenEnv keys: the server is looked up again,
       // and its brief read again, when the next plan needs them.
       openenv_server_lookup = saved.openenv_server_lookup ?? null
-      reset_arguments_brief = saved.reset_arguments_brief ?? null
       // Older drafts lack the key: a Retry then re-plans without a steer.
       landed_plan_steer = saved.landed_plan_steer ?? ""
       // Rebuild the shallow-routing chain up to the restored step (the
@@ -1242,7 +1246,7 @@
         judge_model: string
         synthetic_user_guide: string
         target_run_config_id: string
-        judge_choice: ModelChoice
+        judge_choice: GroundingModel
         // Why the last Replace Dropped Cases stopped part-way, when it failed.
         replace_error?: string | null
       })
@@ -1338,7 +1342,9 @@
   // rather than right after step 1: nothing before planning reads it, and the
   // planner is its first reader.
   let openenv_server_lookup: OpenEnvServerLookup | null = null
-  // The server's reset arguments brief, read once per server and drafted.
+  // The server's reset arguments brief, read once per server per page load.
+  // Never drafted: the server's owner can rewrite it at any time, and a
+  // restored copy would plan against starting states the server no longer has.
   let reset_arguments_brief: CachedResetArgumentsBrief | null = null
   $: build_openenv_server_id = is_multi_turn
     ? openenv_server_lookup?.openenv_server_id ?? null
@@ -1560,6 +1566,8 @@
   // restored session can run again without reopening the dialog.
   let input_gen_run_config: KilnAgentRunConfigProperties | null = null
   let judge_model: ModelChoice | null = null
+  // Null runs the judge at its model's default thinking level.
+  let judge_thinking_level: string | null = null
   let drive_settings_dialog: Dialog | null = null
   // Model-only lane bindings: the combined "provider_id/model_id" string plus
   // the parsed ids the dropdown maintains. Committed to the lanes on submit —
@@ -1576,6 +1584,37 @@
   let judge_model_combined: string | null = null
   let judge_model_id: string | null = null
   let judge_provider_id: string | null = null
+  let staged_judge_thinking_level: string | null = null
+  // Read off the dropdown's combined value, not the ids it parses from it: the
+  // ids trail a reseed by a tick, and checking the level against the previous
+  // model could clear one the reseeded model offers.
+  $: judge_model_details = judge_model_combined
+    ? available_model_details(
+        judge_model_combined.split("/").slice(1).join("/"),
+        judge_model_combined.split("/")[0],
+        $available_models,
+      )
+    : null
+  $: judge_thinking_levels =
+    judge_model_details?.available_thinking_levels ?? null
+  $: judge_thinking_level_options = [
+    {
+      label: "Thinking Level",
+      options: Object.entries(judge_thinking_levels ?? {}).map(
+        ([label, value]) => ({ label, value }),
+      ),
+    },
+  ]
+  // A level the newly picked judge model doesn't offer would be refused by the
+  // judge route, so it falls back to the model's default.
+  $: if (
+    judge_thinking_level_refused(
+      staged_judge_thinking_level,
+      judge_model_details,
+    )
+  ) {
+    staged_judge_thinking_level = null
+  }
   let drive_settings_submitting = false
   // Typed as KilnError so the dialog's FormContainer renders it in its own
   // centered error slot, like every other form in the app.
@@ -1590,6 +1629,7 @@
     su_model_combined,
     input_gen_model_combined,
     judge_model_combined,
+    staged_judge_thinking_level,
     staged_turns_per_case,
   )
 
@@ -1754,6 +1794,7 @@
     judge_model_combined = judge_model
       ? `${judge_model.model_provider}/${judge_model.model_name}`
       : judge_model_combined
+    staged_judge_thinking_level = judge_thinking_level
     // The input lane holds more than a model, and its component stays mounted
     // between opens, so reseed the whole lane: a visit abandoned by Esc or
     // Cancel must not leave its tool and sampling edits on the next one. With
@@ -1938,6 +1979,7 @@
       )
     }
     judge_model = model_choice(judge_model_id, judge_provider_id)
+    judge_thinking_level = staged_judge_thinking_level
     // Commit the staged length. Clamped on the way in so the committed value —
     // what the request, the draft, and the stamp all read — is always one the
     // drive route accepts.
@@ -2430,7 +2472,7 @@
     cases: SyntheticUserCaseWire[],
     approved_prompts: string[],
     target_run_config_id: string,
-    judge_model: ModelChoice,
+    judge_model: GroundingModel,
     synthetic_user_guide: string,
   ): Promise<GroundingOutcome | null> {
     const request_cases = grounding_request_cases(cases, approved_prompts)
@@ -2735,12 +2777,16 @@
       const openenv_server_id = await ensure_openenv_server(
         drive_config.tool_ids,
       )
+      const grounding_model: GroundingModel = {
+        ...chosen_judge_model,
+        thinking_level: judge_thinking_level,
+      }
       const grounding_key =
         openenv_server_id === null
           ? null
           : {
               openenv_server_id,
-              judge_model: model_choice_key(chosen_judge_model),
+              judge_model: model_choice_key(grounding_model),
               synthetic_user_guide: synthetic_user_guide.trim(),
             }
 
@@ -2756,6 +2802,7 @@
         prompt: authored,
         model_name: chosen_judge_model.model_name,
         model_provider: chosen_judge_model.model_provider,
+        thinking_level: judge_thinking_level,
       }
       generation_phase = "preflight"
 
@@ -2845,7 +2892,7 @@
             cases,
             approved_prompts,
             target_run_config_id,
-            chosen_judge_model,
+            grounding_model,
             grounding_key.synthetic_user_guide,
           )
           if (outcome === null) return
@@ -2859,7 +2906,7 @@
               total: cases.length,
               ...grounding_key,
               target_run_config_id,
-              judge_choice: chosen_judge_model,
+              judge_choice: grounding_model,
             }
             return
           }
@@ -3366,6 +3413,7 @@
         prompt: authored,
         model_name: chosen_judge_model.model_name,
         model_provider: chosen_judge_model.model_provider,
+        thinking_level: judge_thinking_level,
       }
       generation_phase = "preflight"
 
@@ -6096,6 +6144,17 @@
         requires_tool_support: build_openenv_server_id !== null,
       }}
     />
+    {#if judge_thinking_levels && Object.keys(judge_thinking_levels).length > 0}
+      <FormElement
+        id="judge_thinking_level"
+        label="Judge Thinking Level"
+        inputType="fancy_select"
+        bind:value={staged_judge_thinking_level}
+        fancy_select_options={judge_thinking_level_options}
+        info_description={THINKING_LEVEL_INFO_DESCRIPTION}
+        optional={true}
+      />
+    {/if}
     <!-- What the run costs, last child of the form so it sits directly above
          the submit row (run_eval's placement). Multi-turn gets a red mark
          rather than the usual amber one: every case there is a whole

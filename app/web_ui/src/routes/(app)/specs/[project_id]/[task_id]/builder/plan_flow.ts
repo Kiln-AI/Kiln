@@ -141,6 +141,20 @@ export function restore_turns_per_case(
   return clamp_turns_per_case(stored)
 }
 
+// ── Judge thinking level ──────────────────────────────────────────────────
+
+// Whether the judge model's details rule out a thinking level, so it must fall
+// back to the model's default. Unknown details (the model list still loading,
+// or the model missing from it) rule nothing out: a level restored from a draft
+// has to survive until there is a list to check it against.
+export function judge_thinking_level_refused(
+  level: string | null,
+  details: { available_thinking_levels?: Record<string, string> | null } | null,
+): boolean {
+  if (level === null || details === null) return false
+  return !Object.values(details.available_thinking_levels ?? {}).includes(level)
+}
+
 // ── Top-off drive planning ────────────────────────────────────────────────
 //
 // A retry after a partial drive must fill the batch, not replace it: the

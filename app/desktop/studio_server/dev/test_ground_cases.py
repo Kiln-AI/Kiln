@@ -580,6 +580,66 @@ def test_ground_runs_claude_with_only_the_grounding_tools(
     )
 
 
+def test_ground_passes_the_thinking_level_as_claude_effort(
+    project, openenv_server, prepared_dir, tmp_path
+):
+    fake = FakeClaude([reply(GROUNDED_REPLY)])
+    main(
+        ground_argv(
+            project,
+            openenv_server,
+            prepared_dir,
+            tmp_path / "run",
+            "--thinking-level",
+            "xhigh",
+        ),
+        claude_runner=fake,
+    )
+    argv = fake.calls[0]["argv"]
+    assert argv[argv.index("--effort") + 1] == "xhigh"
+
+
+def test_ground_without_a_thinking_level_leaves_claude_effort_alone(
+    project, openenv_server, prepared_dir, tmp_path
+):
+    fake = FakeClaude([reply(GROUNDED_REPLY)])
+    main(
+        ground_argv(project, openenv_server, prepared_dir, tmp_path / "run"),
+        claude_runner=fake,
+    )
+    assert "--effort" not in fake.calls[0]["argv"]
+
+
+def test_cited_tools_lose_the_grounding_servers_prefix(
+    project, openenv_server, prepared_dir, tmp_path
+):
+    prefixed = json.loads(json.dumps(GROUNDED_REPLY))
+    prefixed["reference"]["facts"][0]["evidence"]["tool"] = "mcp__grounding__read_notes"
+    out = tmp_path / "run"
+    main(
+        ground_argv(project, openenv_server, prepared_dir, out),
+        claude_runner=FakeClaude([reply(prefixed)]),
+    )
+    [outcome] = read_json(out / "outcomes.json")
+    [fact] = outcome["outcome"]["reference"]["facts"]
+    assert fact["evidence"]["tool"] == "read_notes"
+
+
+def test_run_config_id_needs_a_task_id(project, openenv_server, prepared_dir, tmp_path):
+    code = main(
+        ground_argv(
+            project,
+            openenv_server,
+            prepared_dir,
+            tmp_path / "run",
+            "--run-config-id",
+            "rc1",
+        ),
+        claude_runner=FakeClaude([]),
+    )
+    assert code == 1
+
+
 def test_ground_uses_a_prompt_file_and_bare_mode(
     project, openenv_server, prepared_dir, tmp_path
 ):
@@ -887,6 +947,29 @@ def test_engine_kiln_defaults_to_structured_output(
             )
         )
     assert fake.calls[0]["answer_style"] == "structured_output"
+    assert fake.calls[0]["thinking_level"] is None
+
+
+def test_engine_kiln_runs_at_the_thinking_level(
+    project, openenv_server, prepared_dir, tmp_path
+):
+    fake = FakeGroundCases()
+    with patch.object(ground_cases, "ground_cases", fake):
+        main(
+            kiln_argv(
+                project,
+                openenv_server,
+                prepared_dir,
+                tmp_path / "run",
+                "--model",
+                "gpt-4",
+                "--provider",
+                "openai",
+                "--thinking-level",
+                "high",
+            )
+        )
+    assert fake.calls[0]["thinking_level"] == "high"
 
 
 def test_an_error_from_ground_cases_keeps_the_outcomes_so_far(

@@ -10,6 +10,7 @@ import {
   first_preflight_failure,
   is_claims_resolved,
   is_partial_stop,
+  judge_thinking_level_refused,
   missing_slot_indices,
   new_plan_confirm,
   pick_target_run_config,
@@ -1121,5 +1122,40 @@ describe("stale_case_caches", () => {
         grounded_cases: null,
       }),
     ).toEqual({ generated: false, grounded: false })
+  })
+})
+
+describe("judge_thinking_level_refused", () => {
+  const offers = {
+    available_thinking_levels: { High: "high", "Extra High": "xhigh" },
+  }
+
+  it("keeps a level while the model's details are unknown", () => {
+    // A restored draft's level, checked before the model list has loaded,
+    // must not be wiped: that blank level would no longer match the grounded
+    // cases' cache key and the builder would ground every case again.
+    expect(judge_thinking_level_refused("xhigh", null)).toBe(false)
+  })
+
+  it("keeps a level the model offers", () => {
+    expect(judge_thinking_level_refused("xhigh", offers)).toBe(false)
+  })
+
+  it("refuses a level the model does not offer", () => {
+    expect(judge_thinking_level_refused("max", offers)).toBe(true)
+  })
+
+  it("refuses any level for a model with no thinking levels", () => {
+    expect(judge_thinking_level_refused("xhigh", {})).toBe(true)
+    expect(
+      judge_thinking_level_refused("xhigh", {
+        available_thinking_levels: null,
+      }),
+    ).toBe(true)
+  })
+
+  it("never refuses the model's default", () => {
+    expect(judge_thinking_level_refused(null, offers)).toBe(false)
+    expect(judge_thinking_level_refused(null, {})).toBe(false)
   })
 })

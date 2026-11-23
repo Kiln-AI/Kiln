@@ -363,6 +363,16 @@ describe("keys", () => {
     ).toBe("openai/gpt_5_4")
   })
 
+  it("keys a thinking level apart, so a new level grounds again", () => {
+    const model = { model_name: "gpt_5_4", model_provider: "openai" as const }
+    expect(model_choice_key({ ...model, thinking_level: null })).toBe(
+      "openai/gpt_5_4",
+    )
+    expect(model_choice_key({ ...model, thinking_level: "high" })).toBe(
+      "openai/gpt_5_4@high",
+    )
+  })
+
   it("keys a tool set regardless of order", () => {
     expect(openenv_lookup_key(["b", "a"])).toBe(openenv_lookup_key(["a", "b"]))
     expect(openenv_lookup_key(["a"])).not.toBe(openenv_lookup_key(["a", "b"]))

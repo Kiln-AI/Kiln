@@ -1904,6 +1904,29 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert unreviewed is not None
         assert unreviewed.reference is None
 
+    def test_save_keeps_the_judge_thinking_level(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        project, task = project_and_task
+        multi_turn_request_data["judge_info"] = {
+            "prompt": "Test prompt",
+            "model_name": "claude_sonnet_4_6",
+            "model_provider": "anthropic",
+            "thinking_level": "high",
+        }
+        response = self._post(client, project, task, multi_turn_request_data)
+
+        assert response.status_code == 200, response.text
+        (eval_obj,) = task.evals()
+        (config,) = eval_obj.configs()
+        assert isinstance(config.properties, LlmJudgeProperties)
+        assert config.properties.run_config is not None
+        assert config.properties.run_config.thinking_level == "high"
+
     def test_ungrounded_save_keeps_todays_judge(
         self,
         client,

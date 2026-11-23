@@ -286,6 +286,9 @@ export type BuilderDraft = {
   // as "nothing chosen".
   input_gen_run_config: KilnAgentRunConfigProperties | null
   judge_model: ModelChoice | null
+  // The judge's thinking level from Generation Settings. Null runs the judge at
+  // its model's default; drafts written before this key restore that way.
+  judge_thinking_level: string | null
   // The Generation Settings conversation length (multi-turn). Persisted for
   // the same reason as the lanes above: a reload should not silently put the
   // drive back on the default length. Null means no choice on record — drafts
@@ -306,8 +309,6 @@ export type BuilderDraft = {
   // looked up again. Null when no lookup is on record, including on older
   // drafts.
   openenv_server_lookup: OpenEnvServerLookup | null
-  // The planner's reset arguments brief, read once per server per build.
-  reset_arguments_brief: CachedResetArgumentsBrief | null
   // The Refine Plan steer the plan on screen was drafted under. A grounding
   // Retry re-plans with it, so it has to survive a reload too.
   landed_plan_steer: string
@@ -349,11 +350,11 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   input_generator: null,
   input_gen_run_config: null,
   judge_model: null,
+  judge_thinking_level: null,
   turns_per_case: null,
   synthetic_user_guide: "",
   target_run_config_id: null,
   openenv_server_lookup: null,
-  reset_arguments_brief: null,
   landed_plan_steer: "",
 }
 

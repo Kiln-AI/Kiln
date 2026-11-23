@@ -78,6 +78,8 @@ from kiln_ai.openenv.reset_schema_brief import reset_arguments_brief
 from kiln_ai.openenv.session_manager import OpenEnvError, OpenEnvSessionManager
 from kiln_ai.synthetic_user.runner import CONCURRENCY
 from kiln_ai.tools.base_tool import ToolCallDefinition, ToolFunction
+from kiln_ai.tools.mcp_session_manager import mcp_session_scope
+from kiln_ai.tools.run_config_tools import tool_definitions_without_episode
 from kiln_ai.utils.usage import Usage
 from pydantic import JsonValue, ValidationError
 
@@ -338,6 +340,28 @@ def parse_grounding_result(text: str) -> GroundingResult:
     return GroundingResult.model_validate_json(text[start : end + 1])
 
 
+def without_mcp_tool_prefix(result: GroundingResult) -> GroundingResult:
+    """The result with each fact's tool named as the environment names it. claude sees
+    the grounding server's tools as `mcp__<server>__<tool>` and sometimes cites them that
+    way; the judge only knows the environment's own tool names."""
+    if result.reference is None:
+        return result
+    prefix = f"mcp__{MCP_SERVER_NAME}__"
+    facts = [
+        fact.model_copy(
+            update={
+                "evidence": fact.evidence.model_copy(
+                    update={"tool": fact.evidence.tool.removeprefix(prefix)}
+                )
+            }
+        )
+        for fact in result.reference.facts
+    ]
+    return result.model_copy(
+        update={"reference": result.reference.model_copy(update={"facts": facts})}
+    )
+
+
 def _is_json_error(error: ValidationError) -> bool:
     return any(e["type"] == "json_invalid" for e in error.errors())
 
@@ -452,6 +476,7 @@ class ClaudeEngine:
     project_path: Path
     openenv_server_id: str
     bare: bool = False
+    effort: str | None = None
     time_limit_s: float = DEFAULT_TIME_LIMIT_S
     runner: ClaudeRunner = run_claude
 
@@ -506,6 +531,8 @@ class ClaudeEngine:
             "--system-prompt",
             self.system_prompt,
         ]
+        if self.effort is not None:
+            argv += ["--effort", self.effort]
         if self.bare:
             argv.append("--bare")
         return argv
@@ -559,7 +586,7 @@ class ClaudeEngine:
                 usage_complete=usage_complete,
             )
         return GroundingOutcome.from_result(
-            result,
+            without_mcp_tool_prefix(result),
             openenv_reset=run_log.last_reset,
             call_log=run_log.call_log,
             usage=usage,
@@ -618,6 +645,9 @@ class GroundArgs:
     cases: str | None
     claude_bin: str
     claude_bare: bool
+    thinking_level: str | None = None
+    task_id: str | None = None
+    run_config_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -632,7 +662,11 @@ async def ground(args: GroundArgs, *, claude_runner: ClaudeRunner = run_claude) 
     openenv_server = load_openenv_server(args.project, args.openenv_server_id)
     prepared = await asyncio.to_thread(load_prepared, args.in_dir)
     indices = parse_case_indices(args.cases, len(prepared.cases))
-    target_tools = target_tool_definitions(await _list_server_tools(openenv_server))
+    target_tools = (
+        await _run_config_target_tools(args.project, args.task_id, args.run_config_id)
+        if args.run_config_id is not None
+        else target_tool_definitions(await _list_server_tools(openenv_server))
+    )
     prompt_text = (
         await _read_text(args.prompt)
         if args.prompt is not None
@@ -712,6 +746,7 @@ async def _ground_with_claude(
         project_path=args.project,
         openenv_server_id=args.openenv_server_id,
         bare=args.claude_bare,
+        effort=args.thinking_level,
         runner=claude_runner,
     )
     if not args.claude_bare:
@@ -776,6 +811,7 @@ async def _ground_with_kiln(
             model_name=model,
             model_provider=provider,
             target_tools=target_tools,
+            thinking_level=args.thinking_level,
             answer_style=args.answer_style,
             system_prompt_text=prompt_text,
         ):
@@ -856,6 +892,34 @@ def _describe_run(run: CaseRun) -> str:
         return "grounded"
     reason = run.outcome.drop_reason.value if run.outcome.drop_reason else "?"
     return f"dropped ({reason}): {run.outcome.drop_detail}"
+
+
+async def _run_config_target_tools(
+    project_path: Path, task_id: str | None, run_config_id: str
+) -> list[ToolCallDefinition]:
+    """The agent-under-test tool list the product's grounding step reads: the tools on
+    the task's run config."""
+    if task_id is None:
+        raise GroundingSetupError("--run-config-id needs --task-id.")
+    task = await asyncio.to_thread(_load_task, project_path, task_id)
+    run_config = next(
+        (rc for rc in task.run_configs(readonly=True) if rc.id == run_config_id), None
+    )
+    if run_config is None:
+        raise GroundingSetupError(
+            f"Task {task.name} has no run config with id {run_config_id}."
+        )
+    properties = run_config.run_config_properties
+    tools_config = getattr(properties, "tools_config", None)
+    tool_ids = list(tools_config.tools) if tools_config is not None else []
+    session_manager = OpenEnvSessionManager()
+    try:
+        async with mcp_session_scope():
+            return await tool_definitions_without_episode(
+                task, tool_ids, session_manager
+            )
+    finally:
+        await session_manager.shutdown()
 
 
 async def _list_server_tools(openenv_server: OpenEnvServer) -> list[OpenEnvTool]:
@@ -990,6 +1054,21 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--claude-bin", default="claude", help="The claude executable to run."
     )
     grd.add_argument(
+        "--thinking-level",
+        help="The grounding agent's thinking level: claude's --effort for --engine "
+        "claude, the run config's thinking level for --engine kiln. Default: the "
+        "model's own.",
+    )
+    grd.add_argument(
+        "--task-id",
+        help="With --run-config-id: the task whose run config lists the agent's tools.",
+    )
+    grd.add_argument(
+        "--run-config-id",
+        help="Describe the agent under test with this run config's tools, as the "
+        "product does. Default: every tool the OpenEnv server has.",
+    )
+    grd.add_argument(
         "--claude-bare",
         action="store_true",
         help="Run claude with --bare: no CLAUDE.md, memory, hooks or plugins in the "
@@ -1047,6 +1126,9 @@ def main(
                     cases=args.cases,
                     claude_bin=args.claude_bin,
                     claude_bare=args.claude_bare,
+                    thinking_level=args.thinking_level,
+                    task_id=args.task_id,
+                    run_config_id=args.run_config_id,
                 ),
                 claude_runner=claude_runner,
             )

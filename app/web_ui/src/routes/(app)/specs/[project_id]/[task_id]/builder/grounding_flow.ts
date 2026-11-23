@@ -89,11 +89,15 @@ export function grounding_request_cases(
   })
 }
 
+// The model the grounding agent runs on: the judge model, at the judge's
+// thinking level (null runs it at the model's default).
+export type GroundingModel = ModelChoice & { thinking_level?: string | null }
+
 // The ground_cases request body. A blank synthetic user guide is sent as
 // null, so the grounding agent reads no guide rather than an empty one.
 export function ground_cases_request(args: {
   target_run_config_id: string
-  judge_model: ModelChoice
+  judge_model: GroundingModel
   specification: string
   cases: GroundCaseApi[]
   synthetic_user_guide: string
@@ -240,9 +244,13 @@ export function grounded_server_id(
   )
 }
 
-// A model lane as one string, for keying what depends on the exact model.
-export function model_choice_key(choice: ModelChoice): string {
-  return `${choice.model_provider}/${choice.model_name}`
+// A model lane as one string, for keying what depends on the exact model and,
+// when one is set, the thinking level it runs at.
+export function model_choice_key(
+  choice: ModelChoice & { thinking_level?: string | null },
+): string {
+  const key = `${choice.model_provider}/${choice.model_name}`
+  return choice.thinking_level ? `${key}@${choice.thinking_level}` : key
 }
 
 // A run config's tool set as one string, order-independent: the OpenEnv

@@ -160,6 +160,17 @@ class TestStructuredOutput:
             in (user["content"])
         )
 
+    async def test_the_thinking_level_reaches_the_model_call(
+        self, ground, scripted_model, built_adapters
+    ):
+        scripted_model.script(model_reply(json.dumps(result(), ensure_ascii=False)))
+        scripted_model.script(model_reply(json.dumps(result(), ensure_ascii=False)))
+        await ground()
+        await ground(thinking_level="high")
+        default, chosen = built_adapters
+        assert default.run_config.thinking_level is None  # type: ignore[union-attr]
+        assert chosen.run_config.thinking_level == "high"  # type: ignore[union-attr]
+
     async def test_the_schema_the_model_sees_keeps_args(
         self, ground, scripted_model, built_adapters
     ):

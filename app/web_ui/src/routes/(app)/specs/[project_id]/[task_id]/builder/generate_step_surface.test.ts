@@ -1266,12 +1266,15 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     expect(driving).toBeGreaterThan(grounding)
   })
 
-  it("reuses the grounded set only for the same server and judge model", () => {
+  it("reuses the grounded set only for the same server, judge model and thinking level", () => {
     expect(normalize(drive)).toContain(
       "reusable_grounded_cases( cached_grounded_cases, approved_prompts, spec_text(), grounding_key, )",
     )
     expect(normalize(drive)).toContain(
-      "judge_model: model_choice_key(chosen_judge_model),",
+      "const grounding_model: GroundingModel = { ...chosen_judge_model, thinking_level: judge_thinking_level, }",
+    )
+    expect(normalize(drive)).toContain(
+      "judge_model: model_choice_key(grounding_model),",
     )
   })
 
@@ -1473,12 +1476,12 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     ).toBe(true)
   })
 
-  it("keeps the server lookup and the brief across a reload", () => {
+  it("keeps the server lookup across a reload, but reads the brief afresh", () => {
     const mirror = normalize(
       region("$: current_draft = draft_ready", "    : null"),
     )
     expect(mirror).toContain("openenv_server_lookup,")
-    expect(mirror).toContain("reset_arguments_brief,")
+    expect(mirror).not.toContain("reset_arguments_brief")
     expect(mirror).toContain("landed_plan_steer,")
     expect(mirror).toContain("cached_grounded_cases,")
   })

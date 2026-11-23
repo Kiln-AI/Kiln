@@ -85,6 +85,7 @@ async def ground_case(
     target_tools: list[ToolCallDefinition],
     reset_schema: dict[str, JsonValue] | None,
     metadata: OpenEnvMetadata,
+    thinking_level: str | None = None,
     answer_style: KilnAnswerStyle = "structured_output",
     system_prompt_text: str | None = None,
     limits: GroundingLimits = DEFAULT_LIMITS,
@@ -105,6 +106,7 @@ async def ground_case(
         submit_tool,
         model_name=model_name,
         model_provider=model_provider,
+        thinking_level=thinking_level,
         instruction=system_prompt_text
         or system_prompt(limits, time_limit_s, answer_style),
     )
@@ -137,6 +139,7 @@ def _build_adapter(
     *,
     model_name: str,
     model_provider: ModelProviderName,
+    thinking_level: str | None,
     instruction: str,
 ) -> BaseAdapter:
     structured = submit_tool is None
@@ -158,6 +161,7 @@ def _build_adapter(
         if structured
         else StructuredOutputMode.default,
         tools_config=ToolsRunConfig(tools=[]),
+        thinking_level=thinking_level,
     )
     return adapter_for_task(
         task,

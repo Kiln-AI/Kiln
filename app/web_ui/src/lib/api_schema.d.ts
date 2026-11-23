@@ -9317,12 +9317,18 @@ export interface components {
         };
         /**
          * GroundingModelApi
-         * @description The model the grounding agent runs on: the build's judge model.
+         * @description The model the grounding agent runs on: the build's judge model, at the judge's
+         *     thinking level.
          */
         GroundingModelApi: {
             /** Model Name */
             model_name: string;
             model_provider: components["schemas"]["ModelProviderName"];
+            /**
+             * Thinking Level
+             * @description The thinking level, one of the levels the model's provider offers. Unset uses the model's default.
+             */
+            thinking_level?: string | null;
         };
         /** GuidePreviewInput */
         GuidePreviewInput: {
@@ -9669,6 +9675,11 @@ export interface components {
             /** Model Name */
             model_name: string;
             model_provider: components["schemas"]["ModelProviderName"];
+            /**
+             * Thinking Level
+             * @description The judge model's thinking level, one of the levels its provider offers. Unset uses the model's default.
+             */
+            thinking_level?: string | null;
         };
         /**
          * JudgeTracesRequest

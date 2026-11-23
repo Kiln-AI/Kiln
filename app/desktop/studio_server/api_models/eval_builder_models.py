@@ -9,13 +9,14 @@ No SDK types leak to the UI.
 
 from typing import Any, Literal
 
+from kiln_ai.adapters.eval.base_eval import validate_judge_thinking_level
 from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.openenv import OpenEnvReset
 from kiln_ai.eval_grounding.models import DropReason
 from kiln_ai.utils.usage import Usage
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # The binary verdict vocabulary, shared by every judge_score and human_verdict
 # field on this API surface (mirrors the server contract's enum).
@@ -51,6 +52,18 @@ class JudgeConfig(BaseModel):
     # model-lane field on this surface — a bad provider must 422 here, not
     # persist a judge config that fails deep inside every eval run.
     model_provider: ModelProviderName
+    thinking_level: str | None = Field(
+        default=None,
+        description="The judge model's thinking level, one of the levels its provider offers. Unset uses the model's default.",
+    )
+
+    @model_validator(mode="after")
+    def thinking_level_is_offered(self) -> "JudgeConfig":
+        if self.thinking_level is not None:
+            validate_judge_thinking_level(
+                self.model_name, self.model_provider, self.thinking_level
+            )
+        return self
 
 
 class CitationApi(BaseModel):
@@ -373,10 +386,23 @@ class PipelineBatchAbortedEvent(BaseModel):
 
 
 class GroundingModelApi(BaseModel):
-    """The model the grounding agent runs on: the build's judge model."""
+    """The model the grounding agent runs on: the build's judge model, at the judge's
+    thinking level."""
 
     model_name: str = Field(min_length=1)
     model_provider: ModelProviderName
+    thinking_level: str | None = Field(
+        default=None,
+        description="The thinking level, one of the levels the model's provider offers. Unset uses the model's default.",
+    )
+
+    @model_validator(mode="after")
+    def thinking_level_is_offered(self) -> "GroundingModelApi":
+        if self.thinking_level is not None:
+            validate_judge_thinking_level(
+                self.model_name, self.model_provider, self.thinking_level
+            )
+        return self
 
 
 class GroundCaseApi(BaseModel):

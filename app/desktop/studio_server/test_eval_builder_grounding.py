@@ -304,6 +304,45 @@ class TestGroundCasesRoute:
         assert resp.status_code == 400
         assert resp.json()["message"]["code"] == "no_openenv_server"
 
+    def test_the_judge_thinking_level_runs_the_grounding_agent(
+        self, client, project_task_server
+    ):
+        _project, _task, server = project_task_server
+        calls: list[dict[str, Any]] = []
+        fake = _fake_ground_cases(
+            [
+                GroundingFinished(
+                    grounded=0, dropped=0, usage=Usage(), usage_complete=True
+                )
+            ],
+            calls,
+        )
+        body = _request(
+            server,
+            judge_model={
+                "model_name": "claude_opus_4_5",
+                "model_provider": "anthropic",
+                "thinking_level": "high",
+            },
+        )
+        with patch(f"{SERVICE}.ground_cases", new=fake):
+            resp = client.post(GROUND_URL, json=body)
+        assert resp.status_code == 200, resp.text
+        assert calls[0]["thinking_level"] == "high"
+
+    def test_a_thinking_level_the_model_lacks_is_422(self, client, project_task_server):
+        _project, _task, server = project_task_server
+        body = _request(
+            server,
+            judge_model={
+                "model_name": "claude_opus_4_5",
+                "model_provider": "anthropic",
+                "thinking_level": "not_a_level",
+            },
+        )
+        resp = client.post(GROUND_URL, json=body)
+        assert resp.status_code == 422
+
     def test_unknown_field_is_422(self, client, project_task_server):
         _project, _task, server = project_task_server
         resp = client.post(GROUND_URL, json=_request(server, judge="x"))
