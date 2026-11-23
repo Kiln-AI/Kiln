@@ -120,19 +120,30 @@
    * OpenEnv server, reach more than one, or it has no presets. Waits for a pending
    * lookup, so a Run clicked right after a tool change uses the new tools.
    * A failed lookup is tried once more, and its error thrown if it fails again.
-   * Throws when the task or tools change while it waits, since the arguments
-   * would then belong to another selection than the one being sent.
+   * Throws when the task, tools or chosen preset change while it waits, since
+   * the arguments would then belong to another selection than the one sent.
    */
   export async function get_openenv_reset_kwargs(): Promise<ResetKwargs | null> {
     clearTimeout(debounce_timer)
     start_scheduled_lookup()
     const request = latest_request
+    const preset_when_sent = selected_preset
     await in_flight
     if (failed_lookup) {
       in_flight = failed_lookup.retry()
       await in_flight
     }
-    if (request !== latest_request) {
+    // A lookup reply can itself move the selection, when the chosen preset is
+    // gone; that's the server's answer, not a change by the user.
+    const lookup_replaced_preset =
+      field_state.kind === "presets" &&
+      !field_state.openenv_server.named_reset_kwargs?.some(
+        (preset) => preset.name === preset_when_sent,
+      )
+    if (
+      request !== latest_request ||
+      (selected_preset !== preset_when_sent && !lookup_replaced_preset)
+    ) {
       throw new Error(RUN_OPTIONS_CHANGED_WHILE_SENDING)
     }
     if (failed_lookup) {

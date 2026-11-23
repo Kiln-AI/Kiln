@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, cleanup } from "@testing-library/svelte"
+import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import { tick } from "svelte"
 import type { OpenEnvServer, RunOpenEnvServer } from "$lib/types"
 import { RUN_OPTIONS_CHANGED_WHILE_SENDING } from "$lib/utils/openenv"
@@ -223,6 +223,24 @@ describe("EnvironmentPresetField", () => {
     const { component } = render_field([OPENENV_TOOL])
     const reset_kwargs = component.get_openenv_reset_kwargs()
     await component.$set({ task_id: "t2" })
+    answer({ openenv_server: ACME, error: null })
+    await expect(reset_kwargs).rejects.toThrow(
+      RUN_OPTIONS_CHANGED_WHILE_SENDING,
+    )
+  })
+
+  it("refuses when the chosen preset changes while it waits for the lookup", async () => {
+    lookup.mockResolvedValueOnce({ openenv_server: ACME, error: null })
+    const { component, container } = render_field([OPENENV_TOOL])
+    await settle()
+    let answer: (value: RunOpenEnvServer) => void = () => {}
+    lookup.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    await component.$set({ tool_ids: [OPENENV_TOOL, "mcp::remote::s::search"] })
+    const reset_kwargs = component.get_openenv_reset_kwargs()
+    await fireEvent.input(
+      container.querySelector('[data-testid="form-element-value"]')!,
+      { target: { value: "Acme Manager" } },
+    )
     answer({ openenv_server: ACME, error: null })
     await expect(reset_kwargs).rejects.toThrow(
       RUN_OPTIONS_CHANGED_WHILE_SENDING,
