@@ -265,9 +265,7 @@ export function dropped_notice(
       one ? "was" : "were"
     } dropped when Kiln checked ${
       one ? "it" : "them"
-    } against your OpenEnv server. ${
-      one ? "The row below says" : "Each row says"
-    } why. Continue reviewing the conversations that fit, or refine the plan with these reasons in hand.`,
+    } against your OpenEnv server. Continue reviewing the conversations that fit, or refine the plan and generate again.`,
   }
 }
 

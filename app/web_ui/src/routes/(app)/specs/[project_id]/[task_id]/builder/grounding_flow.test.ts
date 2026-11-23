@@ -482,7 +482,7 @@ describe("dropped_notice", () => {
     expect(dropped_notice(2, 20)).toEqual({
       title: "Some Conversations Were Dropped",
       summary:
-        "2 of 20 planned conversations were dropped when Kiln checked them against your OpenEnv server. Each row says why. Continue reviewing the conversations that fit, or refine the plan with these reasons in hand.",
+        "2 of 20 planned conversations were dropped when Kiln checked them against your OpenEnv server. Continue reviewing the conversations that fit, or refine the plan and generate again.",
     })
   })
 
@@ -490,7 +490,7 @@ describe("dropped_notice", () => {
     expect(dropped_notice(1, 20)).toEqual({
       title: "A Conversation Was Dropped",
       summary:
-        "1 of 20 planned conversations was dropped when Kiln checked it against your OpenEnv server. The row below says why. Continue reviewing the conversations that fit, or refine the plan with these reasons in hand.",
+        "1 of 20 planned conversations was dropped when Kiln checked it against your OpenEnv server. Continue reviewing the conversations that fit, or refine the plan and generate again.",
     })
   })
 })

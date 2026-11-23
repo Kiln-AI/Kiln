@@ -50,13 +50,10 @@ dropped some cases. A `Dialog`, laid out like the Improve Judge dialog:
 
 - Title: "Some Conversations Were Dropped" ("A Conversation Was Dropped" for one).
 - One paragraph: "2 of 20 planned conversations were dropped when Kiln checked them against your
-  OpenEnv server. Each row says why. Continue reviewing the conversations that fit, or refine the
-  plan with these reasons in hand." (Singular: "1 of 20 planned conversations was dropped when
-  Kiln checked it… The row below says why.")
-- The dropped cases (`dropped_cases_list.svelte`), one table row each: the planned scenario (one
-  line, clamped, "See all" opens it), and under it the reason in muted text. The reason is the
-  grounding agent's `drop_detail`, as written. No reason codes on screen. The first five rows
-  show; the rest sit in a `Collapse` titled "N More".
+  OpenEnv server. Continue reviewing the conversations that fit, or refine the plan and generate
+  again." (Singular: "1 of 20 planned conversations was dropped when Kiln checked it…")
+- A count only, for v1: the dropped scenarios and their reasons aren't listed. Refine Plan still
+  hands them to the planner.
 - Buttons: **Refine Plan** (grey) and **Continue** (primary).
   - **Refine Plan** goes back to the plan screen and opens the Refine Plan dialog there, with the
     plan's steer filled in. Its warning reads "Refining the plan discards your 18 generated

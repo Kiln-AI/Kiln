@@ -5933,10 +5933,7 @@
   ]}
 >
   {#if notice_shown}
-    <div class="flex flex-col gap-4">
-      <p class="text-sm text-gray-500">{notice_shown.summary}</p>
-      <DroppedCasesList drops={notice_shown.drops} />
-    </div>
+    <p class="text-sm text-gray-500">{notice_shown.summary}</p>
   {/if}
 </Dialog>
 
