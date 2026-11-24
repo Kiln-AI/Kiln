@@ -523,18 +523,36 @@ New tests:
 | `tests/test_kiln_skill.py`: parsers | `smell_ids` on a table with a header, a separator, marker lines and a second section; no id raises; `smell_title` with a plain title, a quoted title, no front matter, no title |
 | `tests/test_gateway.py`: the tool | The text comes back unchanged, with quotes and newlines; no path is refused with "give a path"; an unknown path is an MCP error with Kiln's text; a text over 40,000 characters comes back as an `AnswerPart`; each of the 7 roles has the tool and the 3 others do not |
 | `tests/test_smells.py` | `_smell_titles` reads the index once and each smell once for a run; a failed read logs `knowledge_unreadable`, returns `None` and is tried again |
-| `tests/test_agent_templates.py` | The rendered prompt holds `KILN_SKILL_RULES` for the 7 roles only; the constant equals the pinned text of section 6; each role template names `references/knowledge-entry.md` and that file exists in the role's skill; each role file starts with the fixed paragraph; no HT skill has a folder `references/knowledge/`, `references/levers/` or `references/improving_agents/`; no agent text names a removed skill; the three map tests of section 7; the lever table test of 4.2; the contract test of section 8 |
+| `tests/test_agent_templates.py` | The rendered prompt holds `KILN_SKILL_RULES` for the 7 roles only; the constant equals the pinned text of section 6; each role template names `references/knowledge-entry.md` and that file exists in the role's skill; each entry file starts with the fixed paragraph; no HT skill has a folder `references/knowledge/`, `references/levers/` or `references/improving_agents/`; no agent text names a removed skill; the three map tests of section 7; the lever table test of 4.2; the contract test of section 8 |
 
-## 10. Conflicts and open points
+**Tests that bind HT's code to knowledge text** (architecture ruling 19). They cannot run offline after the switch, because the text is in Kiln. The functional spec (section 6) names three: the first three rows below. The code has more. The lever ids move into Kiln's contract test (section 8). Each of the others becomes a review item of the audit (sibling document, 8.2), and its test goes with the knowledge copy or loses the part that reads the copy:
 
-1. **The costing port is not in Kiln's skill.** The fresh copy at `5522a7b9` has no port of `experiment-costing` (5.2). The planner's pointer (three places) and one contract entry wait for it. The functional spec makes this a pre-flight item; HT's copy is not removed before it.
-2. **The Smells table format is a dependency that the contract JSON cannot hold.** `smell_ids` needs each row's first cell to be the backticked path. The JSON shape has paths, ids, headings and keys only. HT guards it: the start-up check runs `smell_ids` and stops when it finds no id. Request to the Kiln contract test: also assert that each `ids.smells` entry is in the "Smells" section as that backticked path. The sibling draft [kiln_smells_skills_version.md](kiln_smells_skills_version.md) (section 8) does not have this assertion; its four keys are the shape used here.
-3. **Two kinds of path look alike.** The architecture fixes the entry file name `references/knowledge-entry.md`. Kiln's own files are under `references/knowledge/`. The fixed paragraph of section 4, the block of section 6 and one test keep them apart. An agent can still mix them up; the audit and the demo run will show it.
-4. **More than three tests bind HT's code to knowledge text.** The functional spec (section 6) names three. The code has these too: the `playbook` case of `test_the_val_rejection_readers_quote_every_reason_code_writes` (Kiln's playbook paraphrases the reason lines today, so that case would fail on Kiln's text); the read of `levers/new_tool.md` for the wrapper templates; `test_the_output_contract_playbook_ranks_every_kiln_mode`; `test_the_output_mode_lever_is_what_the_code_does`. This document treats each as a review item of the audit, like the two the spec names.
-5. **`memory.md` tells its reader not to write a `hypothesis` record and to read the `baseline` record.** Both are right for a chat agent. Rules 5 and 6 override them for a loop agent. Nothing in code enforces rule 6 for the `baseline` record (the gateway hides only `val`), as today.
-6. **Kiln's knowledge links to chat procedure files.** For example `train_val_test.md` (18 links from the trees) and `run_an_experiment.md`. A loop agent can follow them, by the owner's ruling. `run_an_experiment.md` now starts with "If you are Kiln Harness Tuner, follow your system prompt."
+| Test today | What it binds | After |
+|---|---|---|
+| `test_each_list_of_lever_ids_names_every_lever_document` (`tests/test_knowledge.py`) | The lever ids in HT's files against the lever documents | `ids.levers` of the contract list |
+| `test_spending_the_budget_names_real_planner_input_fields` (`tests/test_knowledge.py`) | The playbook `spending-the-budget` against the fields of `schemas.BatchPlanInput` | Review item |
+| `test_the_output_mode_lever_names_every_kiln_mode` (`tests/test_knowledge.py`) | The lever `output_mode`, "What it is", against Kiln's list of output modes | Review item |
+| `test_the_output_mode_lever_is_what_the_code_does` (`tests/test_knowledge.py`) | The lever `output_mode` against what a screen and a probe can set | Review item |
+| `test_the_output_contract_playbook_ranks_every_kiln_mode` (`tests/test_knowledge.py`) | The playbook `output-contract-not-met` against Kiln's list of output modes | Review item |
+| The `playbook` case of `test_the_val_rejection_readers_quote_every_reason_code_writes` (`tests/test_agent_templates.py:310`) | The playbook `dealing-with-train-wins-rejected-at-val` against the reason lines that code writes. Kiln's playbook paraphrases the lines today, so the case would fail on Kiln's text | Review item. The `planner` case stays |
+| The read of `levers/new_tool.md` in `test_planner_skill_names_the_lever_attempts_input_and_the_knowledge` (`tests/test_agent_templates.py:1511`) | The lever `new_tool` names the wrapper templates | Review item. The rest of the test stays |
+| `test_rejection_stamp_is_in_the_memory_vocabulary`, `test_memory_skill_names_the_same_spend_slot_as_the_analysis_skill` (`tests/test_agent_templates.py:321`, `:458`) | The `memory` skill's text against the rejection stamp (`REJECTION_STAMP` of the test file) and against the analysis skill's `bundle cost` slot | Review item, against Kiln's `references/knowledge/memory.md` and its format files |
 
-## 11. Not verified
+This table holds the tests that were found. Another test that reads removed text, and so cannot run after a removal, gets the same treatment: its part that tests HT's own files stays, and its part that reads Kiln's text becomes a review item.
+
+## 10. Accepted limits
+
+Each of these is settled. Nothing here waits for a decision.
+
+1. **`memory.md` is written for a chat agent.** It tells its reader not to write a `hypothesis` record and to read the `baseline` record. Rules 5 and 6 of the shared block override both for a loop agent. Nothing in code enforces rule 6 for the `baseline` record (the gateway hides only `val`), as today.
+2. **Kiln's knowledge links to chat procedure files**, for example `train_val_test.md` (18 links from the trees) and `run_an_experiment.md`. A loop agent can follow them: the whole skill is passed through (functional spec 5.1). The shared rules keep the role on its own procedure.
+3. **Two kinds of path still look alike.** `references/knowledge-entry.md` is a file of the role's skill, on disk. `references/knowledge/…` is a path in Kiln's skill. The name, the fixed paragraph of section 4, the block of section 6 and one test keep them apart. If an agent mixes them up, the audit and the demo run show it.
+
+## 11. Open points
+
+1. **The path of the costing file is not known.** The fresh copy at `5522a7b9` has no port of `experiment-costing` (5.2). It is a pre-flight item (architecture ruling 22). Until then the planner's three pointers, one contract entry and the removal of HT's skill wait.
+
+## 12. Not verified
 
 - Everything in 1.6 against a real Kiln. The check that was made used a stand-in server (1.6).
 - The `mcp` version that first has `streamable_http_client`.

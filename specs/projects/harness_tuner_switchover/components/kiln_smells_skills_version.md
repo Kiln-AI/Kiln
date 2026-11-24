@@ -496,7 +496,7 @@ How the test reads the tree:
 - The folder of a kind is `COMPONENT_ROOTS[kind]` of `knowledge_schema.py`. "Every document of the kind" is every file directly in that folder, except `index.md`. A sub-file of a technique is not a document; HT names a sub-file in `paths`.
 - A heading is present when a line outside a fenced block starts with one to six `#` and a space, and the rest of the line, stripped, equals the heading. The level is not checked.
 - Front matter is read with `read_front_matter` of `skill_checks/front_matter.py`.
-- The Smells table is read by the rule that HT's `smell_ids` uses. In the text of `references/improving_agents/index.md`, the section "Smells" starts at the line that is exactly `## Smells` (after a strip at the right) and ends at the next line that starts with `## `. In that section, take each line that starts with `|`, split it on `|`, and strip the first cell. A smell id is in the table when one first cell equals `` `references/improving_agents/smells/<id>.md` ``.
+- The Smells table is read by the rule that HT's `smell_ids` uses. In the text of `references/improving_agents/index.md`, the section "Smells" starts at the line that is exactly `## Smells` (after a strip at the right) and ends at the next line that starts with `## `. In that section, take each line that starts with `|`, split it on `|`, and strip the second element, which is the first cell. A smell id is in the table when one first cell equals `` `references/improving_agents/smells/<id>.md` ``.
 
 Tests:
 
