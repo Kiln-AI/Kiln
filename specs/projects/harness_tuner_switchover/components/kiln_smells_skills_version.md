@@ -387,23 +387,22 @@ From `skill_checks/` and its tests on the build branch:
 
 ### 7.2 The statistics file
 
-One new file. **Proposed** path: `references/knowledge/eval_statistics.md`. It names the calls of functional spec 3.2 to 3.5 and 3.8. It adds calls to HT's method and no rule: spec one's ruling stands that the skill gives no guidance of its own on how to read the noise of an eval. Each definition is copied from the playbook or from `run_an_experiment.md`, not written new.
+One new file. **Proposed** path: `references/knowledge/eval_statistics.md`. It covers detectability, the significance floor and the paired comparison, and names the calls of functional spec 3.2, 3.3 and 3.8. It adds no call for noise: Kiln has no noise route, and measuring noise stays with Kiln Harness Tuner (functional spec 3.4). It adds calls to HT's method and no rule: spec one's ruling stands that the skill gives no guidance of its own on how to read the noise of an eval. Each definition is copied from the playbook or from `run_an_experiment.md`, not written new.
 
 Outline:
 
-1. **What this file is.** The calls behind three questions. The method stays in `references/knowledge/run_an_experiment.md` and the playbooks; the split rule in `references/knowledge/train_val_test.md`. The detectability read, the noise estimate and the noise job use train only, and leave out an item that is also in a val or test split (`left_out_held_out`).
-2. **Words**, as the knowledge has them: room, floor, fewest wins, best-case change, flip rate, noise-adjusted wins.
+1. **What this file is.** The calls behind three questions. The method stays in `references/knowledge/run_an_experiment.md` and the playbooks; the split rule in `references/knowledge/train_val_test.md`. The detectability read uses train only, and leaves out an item that is also in a val or test split (`left_out_held_out`).
+2. **Words**, as the knowledge has them: room, floor, fewest wins, best-case change.
 3. **The significance floor.** `POST /api/statistics` with `operation: significance_floor` (`references/knowledge/api_docs/post_api_statistics.md`): the inputs, the outputs, and the pinned example (6 for a pass/fail score at 0.95).
 4. **What the evals can show.** The `eval_detectability` read of a run config: one row per score, `skipped`, and `include_val_size`, which reads a size and no result.
-5. **Noise.** First the free `noise_check_estimate`. Tell the user the estimate and ask before the paid job. Then `POST /api/jobs/evals/noise_check` with `max_usd`, the job routes to wait and to read errors, the result fields, and that the job leaves nothing in the project.
-6. **Two run configs on one split.** The `compare` route: train or val only (say in words that test is refused), no rows in the answer, one eval per call. For a comparison from rows, name `references/knowledge/eval_scores.md`.
-7. **What these calls do not decide.** The verdict rules are in `references/knowledge/run_an_experiment.md`.
+5. **Two run configs on one split.** The `compare` route: train or val only (say in words that test is refused), no rows in the answer, one eval per call. For a comparison from rows, name `references/knowledge/eval_scores.md`.
+6. **What these calls do not decide.** The verdict rules are in `references/knowledge/run_an_experiment.md`. No call of this file measures noise.
 
 Files that link to it:
 
 | File | Change |
 |---|---|
-| `references/knowledge/run_an_experiment.md` (required by the functional spec) | One row in the endpoint doc table at the top. One sentence in "The hypothesis", where it gives the 6 changed items and the room. One sentence in "Cost before you spend" for the noise estimate |
+| `references/knowledge/run_an_experiment.md` (required by the functional spec) | One row in the endpoint doc table at the top. One sentence in "The hypothesis", where it gives the 6 changed items and the room |
 | `references/modes/improve_task.md` | One row in its table of eval files, so the file is reachable |
 | `references/knowledge/eval_scores.md` | One line that names the file, beside its paired statistics recipe |
 
@@ -458,17 +457,17 @@ Integration: `references/knowledge/run_an_experiment.md`, "Two paths", and `refe
 
 ### 7.6 Other files that the new calls make stale
 
-"Find the right place to integrate" includes every file that says today that noise and room are measured only by Kiln Harness Tuner, that tells the reader to measure a smell by hand, or that lists the skill routes (architecture ruling 13). Beside the files of 7.2 to 7.4, these are, on the build branch now:
+"Find the right place to integrate" includes every file that says today that an eval's room is measured only by Kiln Harness Tuner, that tells the reader to measure a smell by hand, or that lists the skill routes (architecture ruling 13). Text that says noise is measured by Kiln Harness Tuner stays true and is not changed. Beside the files of 7.2 to 7.4, these are, on the build branch now:
 
 | File | Today | After |
 |---|---|---|
 | `references/knowledge/diagnose_an_agent.md`, "What the smells measure" | Tells the reader to measure by hand | For the five smells that code detects, it names the smell check call (the endpoint doc of 7.3). The text goes inside the section: the headings of this file are pinned (7.1) |
 | `references/knowledge/adding_skills.md` | Lists the skill endpoints without the three new ones | Adds the three skill bundle docs of section 6, with one line each: create from a folder, list the files, read one file |
-| `references/improving_agents/playbooks/dealing-with-a-noisy-eval.md`, `dealing-with-a-saturated-eval.md`, `spending-the-budget.md` | Say that noise and room are measured only when Kiln Harness Tuner runs | Say that noise and room are measured with the calls of the statistics file, and name it by its full path (7.2). A playbook does not repeat the endpoint docs |
+| `references/improving_agents/playbooks/dealing-with-a-noisy-eval.md`, `dealing-with-a-saturated-eval.md`, `spending-the-budget.md` | Say that noise and room are measured only when Kiln Harness Tuner runs | A sentence about room says that room is measured with the detectability read of the statistics file, and names the file by its full path (7.2). A sentence about noise is not changed: noise is still measured only when Kiln Harness Tuner runs. A sentence that names both is split, and only its room half changes. A playbook that speaks of noise only is not changed. A playbook does not repeat the endpoint docs |
 
 - The three playbooks keep their ids, their headings and their front matter keys, so the contract list of section 8 is not touched.
 - After a change to a playbook: `make skill_index`, and the checks of 7.1.
-- **The pre-flight check.** Search the merged tree again for the three kinds of sentence: `yourself` in a smell document and in `diagnose_an_agent.md`; `Kiln Harness Tuner` beside "noise", "room" or "is built when running"; and the name of an existing skill endpoint doc (`post_api_projects_project_id_skills.md`) in a file that does not name the three new ones. A file that the search finds and this section does not list is added to the work.
+- **The pre-flight check.** Search the merged tree again for the three kinds of sentence: `yourself` in a smell document and in `diagnose_an_agent.md`; `Kiln Harness Tuner` beside "room" or "is built when running"; and the name of an existing skill endpoint doc (`post_api_projects_project_id_skills.md`) in a file that does not name the three new ones. A file that the search finds and this section does not list is added to the work. A sentence that has `Kiln Harness Tuner` beside "noise" only is left as it is.
 
 ## 8. The contract test
 
@@ -525,6 +524,6 @@ Each of these is settled. Nothing here waits for a decision.
 - Nothing here was run. `Skill.save_to_file()` with a preset `path`, then a rename, was read in `basemodel.py` only. The same holds for `ModelCache` after the rename.
 - A `{path:path}` parameter with the agent policy annotations, with the Kiln Assistant's policy lookup, and the generated doc name `…_files_path.md`.
 - Whether spec one's PyInstaller hook already leaves out `skill_checks/` (section 10, point 2), and that an OpenEnv tool is unread outside an episode (a docstring, not a test).
-- The files and sentences of 7.6: named from the earlier draft's reading of the build branch, not read again.
+- The files and sentences of 7.6: named from the earlier draft's reading of the build branch, not read again. Which of the three playbooks has a sentence about room, and which speaks of noise only, was not read.
 - The facts of 7.5: taken from the facts file. Spot-checked in HT's docs: the install command, the option table, `--no-model-catalog`, `--dest`. The text of HT's "update HT" message does not exist yet.
 - Every build-branch path and sentence is as of commit `5522a7b`; spec one's phases 17 and 18 can move them. Which HT versions before `0.6.0` work with this Kiln.
