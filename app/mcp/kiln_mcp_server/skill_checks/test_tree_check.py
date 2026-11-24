@@ -321,6 +321,21 @@ def test_call_syntax_fails(tmp_path, text):
     }
 
 
+def test_skill_md_may_name_the_skill_tool(tmp_path):
+    problems = problems_of(
+        tmp_path,
+        {"SKILL.md": with_line(SKILL_MD, 'Call kiln_skill(path="SKILL.md").')},
+    )
+    assert ("tree-call-syntax", "SKILL.md") not in rules_of(problems)
+
+
+def test_skill_md_may_not_use_the_old_call_syntax(tmp_path):
+    problems = problems_of(
+        tmp_path, {"SKILL.md": with_line(SKILL_MD, 'Call skill(name="kiln").')}
+    )
+    assert ("tree-call-syntax", "SKILL.md") in rules_of(problems)
+
+
 @pytest.mark.parametrize(
     "text",
     [

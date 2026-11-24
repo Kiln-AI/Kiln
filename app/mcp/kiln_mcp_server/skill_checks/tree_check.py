@@ -52,6 +52,9 @@ NO_FRONT_MATTER_FILES = frozenset({DOCS_INDEX_PATH, *INDEX_BLOCKS})
 SKILL_DESCRIPTION_MAX = 1024
 
 CALL_SYNTAX = ("skill(name=", "kiln_skill")
+# SKILL.md is the one file that names the skill tool, to say how to read the
+# skill with it; every other file names plain paths only.
+TOOL_NAME_ALLOWED = {ROOT_FILE: ("kiln_skill",)}
 
 # Scope -> terms. "tree" is every file outside the API reference, "SKILL.md"
 # is the root file, "knowledge" is the two knowledge trees, and "guidance" is
@@ -500,9 +503,10 @@ class _TreeChecker:
                 )
 
     def check_call_syntax(self, key: str, text: str) -> None:
+        allowed = TOOL_NAME_ALLOWED.get(key, ())
         for number, line in enumerate(text.split("\n"), start=1):
             for needle in CALL_SYNTAX:
-                if needle in line:
+                if needle in line and needle not in allowed:
                     self.problem(
                         "tree-call-syntax",
                         key,

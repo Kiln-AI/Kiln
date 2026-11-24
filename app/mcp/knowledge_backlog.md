@@ -674,6 +674,26 @@ Tuner's method unchanged (vocabulary only); one owner per question; nothing sele
 ("the mode's bootstrap", "Task Context Discovery"): a non-interactive reader meets `agent_overview`
 with no source. Name the step in the file itself, or label it "in a chat with a user".
 
+### A concept file for prompts
+
+- Kind: guide
+- Where: knowledge
+- Depends on: None
+- Source: owner
+
+A knowledge file on what a prompt is in Kiln: saved prompts, prompt generators, frozen prompts
+in run configs. `SKILL.md` "Kiln features" now links only `prompt_rewrite.md`, a how-to file.
+
+### A concept file for synthetic data generation
+
+- Kind: guide
+- Where: knowledge
+- Depends on: None
+- Source: owner
+
+A knowledge file on synthetic data generation in Kiln: inputs, outputs, topics and where Data
+Guides fit. `SKILL.md` "Kiln features" now links only `data_guides.md`.
+
 ### using_harness_tuner
 
 - Kind: guide

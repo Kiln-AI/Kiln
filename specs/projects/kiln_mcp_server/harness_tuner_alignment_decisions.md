@@ -229,6 +229,14 @@ The owner approved the design of Phase 21 ([phase_plans/phase_21.md](phase_plans
 
 *Where it goes:* Phase 21 ([phase_plans/phase_21.md](phase_plans/phase_21.md)); the skill component doc, section 4.6; [harness_tuner_switchover_requirements.md](harness_tuner_switchover_requirements.md), SR4, SR5, SR6 and SR19.
 
+## 16. `SKILL.md` text, reviewed on the pull request (2026-11-24)
+
+The owner reviewed `SKILL.md` on the pull request and approved its exact text. Its parts are "Reading this skill", "Who reads this skill", "Kiln concepts", "Kiln features", "Skill contents" and, last, "Chat client guidance" (skill_and_content 4.3). The decisions:
+- `SKILL.md` names the `kiln_skill` tool and its `path` argument; it is the one skill file allowed to name the tool (the tree check's `tree-call-syntax`).
+- The feature table is split into Kiln's concepts, a real feature list and the skill's contents. "AI provider" is the term. TypeSafe AI (Jev) is an AI provider, not a feature, and sits under "Other".
+- The dataset is every run of a task; the train, val and test splits belong to an eval's items.
+- The chat client guidance ends the file, as an instruction.
+
 ## Related
 
 - [phase_8_revisit.md](phase_8_revisit.md): Phase 17, approved on 2026-11-24 (section 12); its plan is [phase_plans/phase_17.md](phase_plans/phase_17.md).

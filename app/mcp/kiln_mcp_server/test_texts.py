@@ -29,13 +29,14 @@ def test_server_instructions_start_with_what_kiln_is():
     assert SERVER_INSTRUCTIONS.startswith(f"{WHAT_KILN_IS}: {WHAT_KILN_COVERS}.")
 
 
-def test_skill_md_names_what_kiln_covers_in_its_description_and_opening():
+def test_skill_md_names_what_kiln_covers_in_its_description():
     skill_md = read_file(ROOT_FILE, get_index())
     description = next(
         line for line in skill_md.split("\n") if line.startswith("description: ")
     )
     assert f"- {WHAT_KILN_COVERS} -" in description
-    assert f"{WHAT_KILN_IS}: {WHAT_KILN_COVERS}." in skill_md.split("---", 2)[2]
+    # The body names it as "**Kiln** is an app ...", so match past the bold.
+    assert f"{WHAT_KILN_IS.removeprefix('Kiln ')}." in skill_md.split("---", 2)[2]
 
 
 def test_skill_tool_description_holds_what_kiln_is_as_a_sentence():

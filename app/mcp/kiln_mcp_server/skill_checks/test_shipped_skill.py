@@ -997,19 +997,23 @@ SKILL_MD_MAX_LINES = 300
 SKILL_MD_MAX_CHARS = 20_000
 
 # The `## ` sections of SKILL.md, in order. The text before the first one says
-# what Kiln is.
+# what the skill is. The chat client guidance is last, so the key instruction
+# for chat clients closes the file.
 SKILL_MD_PARTS = (
-    "Reading skill files",
+    "Reading this skill",
     "Who reads this skill",
-    "The parts of the skill",
+    "Kiln concepts",
+    "Kiln features",
+    "Skill contents",
+    "Chat client guidance",
 )
-# The `### ` parts of "The parts of the skill", in order.
+# The `### ` parts of "Skill contents", in order.
 SKILL_LAYOUT_PARTS = (
-    "Kiln's features",
+    "Help and the project's state",
     "Improving agents",
     "Memory",
     "The Kiln API",
-    "Chat client guidance",
+    "Other",
 )
 
 # The chat client guidance; each file opens with this line after its front
@@ -1072,9 +1076,9 @@ BLOCKED_CAPABILITY_PAGES = tuple(
     )
 )
 
-# The entry points of the parts of SKILL.md other than "Kiln's features".
+# The entry points of the parts of "Skill contents" in SKILL.md.
 ENTRY_POINTS = {
-    "Kiln's features": (DOCS_INDEX_PATH,),
+    "Help and the project's state": (DOCS_INDEX_PATH,),
     "Improving agents": (
         "references/levers/index.md",
         "references/improving_agents/index.md",
@@ -1083,7 +1087,6 @@ ENTRY_POINTS = {
     ),
     "Memory": (MEMORY,),
     "The Kiln API": (API_CATALOGUE_INDEX_PATH, API_RULES_PATH),
-    "Chat client guidance": (USING_KILN_FROM_CHAT,),
 }
 
 
@@ -1106,12 +1109,15 @@ def _subsections(text: str) -> dict[str, str]:
 def test_skill_md_has_the_required_parts():
     intro, sections = _skill_md_sections()
     assert tuple(sections) == SKILL_MD_PARTS
-    assert WHAT_KILN_IS in intro
-    assert "served over MCP" in intro
+    assert "`kiln_skill`" in intro
     assert "while you do Kiln work" in intro
+    # The concepts open with "**Kiln** is an app ...", so match past the bold.
+    assert WHAT_KILN_IS.removeprefix("Kiln ") in sections["Kiln concepts"]
+    assert 'kiln_skill(path="' in sections["Reading this skill"]
 
     assert USING_KILN_FROM_CHAT in sections["Who reads this skill"]
-    layout = _subsections(sections["The parts of the skill"])
+    assert USING_KILN_FROM_CHAT in sections["Chat client guidance"]
+    layout = _subsections(sections["Skill contents"])
     assert tuple(layout) == SKILL_LAYOUT_PARTS
     for part, paths in ENTRY_POINTS.items():
         for path in paths:

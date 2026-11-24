@@ -45,7 +45,7 @@ states a branch by its real condition, never by the name of a client.
 | Content | Where |
 |---|---|
 | The knowledge: levers, techniques, playbooks, smells | The two trees above. Shared |
-| How to do one feature in Kiln | `references/knowledge/<feature>.md`, listed in the table "Kiln's features" of `SKILL.md`. Shared |
+| How to do one feature in Kiln | `references/knowledge/<feature>.md`, named in "Kiln concepts", "Kiln features" or "Skill contents" of `SKILL.md`. Shared |
 | The ports of Kiln Harness Tuner's shared skills: memory, its formats, experiment costing, code tool authoring, the split rule | `references/knowledge/`. Shared, ported word for word |
 | The rules for every call of `call_kiln_api` | `references/knowledge/api_docs/calling_the_kiln_api.md`, the one hand-written file of the generated folder. It opens with its condition: "if you have the `call_kiln_api` tool" |
 | Guidance only for chat clients: working with the user, the modes, the one-off experiment guide, how to read Kiln Harness Tuner's words | `references/client_guidance/chat/`. Each file opens with the line "For chat clients working with a user. …", and `references/client_guidance/chat/using_kiln_from_chat.md` lists them |

@@ -47,7 +47,7 @@ Before each reply, check that the user's message still fits this mode. If the us
 
 ## Knowledge
 
-The table "Kiln's features" of `SKILL.md` names the knowledge file of each feature.
+The sections "Kiln concepts", "Kiln features" and "Skill contents" of `SKILL.md` name the knowledge file of each feature.
 
 ## Tools
 
