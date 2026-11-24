@@ -47,11 +47,12 @@ The one new kind of connection is the call to `kiln_skill`. Everything else is t
 
 Each new `connect_*_api(app)` is called from `desktop_server.make_app()` before `connect_webhost`.
 
-Three small changes to existing code are allowed, and no others:
+Two small changes to existing code are allowed, and no others:
 
 - `libs/core/kiln_ai/utils/validation.py` gains `skill_name_errors`, which returns every failure of a skill name. The existing validator calls it, so its behaviour does not change.
-- The lookups `task_run_config_from_id` and `eval_from_id` move out of `eval_api.py` into a service module, as a pure move, in the first phase that needs them. New modules import them from there, because Kiln's conventions forbid one router importing another.
 - Spec one's model info module returns its service object from its connect function, and the service gains a read of a model's release date. The smell check uses it and builds no second catalogue.
+
+One existing pattern is followed, not fixed. `task_run_config_from_id` and `eval_from_id` stay in `eval_api.py`. New modules import them from there, as `jobs/api.py` and `jobs/workers/eval.py` do today. Kiln's convention E17 says routers do not import each other, and the lookups raise `HTTPException`, so they cannot move to a service module without a refactor. Convention H24 covers this case: follow the local pattern, do not refactor neighbouring code, and report it in the end-of-task summary with the rule id.
 
 ### 2.2 Harness-tuner
 
@@ -202,7 +203,7 @@ The component docs were written at the same time, and each listed its open point
 8. **A cancelled or failed noise job reports no spend.** This is the same as today.
 9. **One unreadable skill** stops the skill-description check for every skill of the run config. This is HT's behaviour, kept.
 10. **The source strings of the smell limits** say "a Kiln default" where HT says "a default of the tuner". The numbers are unchanged.
-11. **Guards on the skill bundle create route** that HT's installer did not need are kept: stray root entries are not walked, reads are bounded by the size limits, and a folder has at most 1,000 entries.
+11. **Guards on the skill bundle create route** that HT's installer did not need are kept: stray root entries are not walked, reads are bounded by the size limits, a folder has at most 1,000 entries, and the sweep of old staging folders removes one only when it is more than one hour old. The age test protects a write that another Kiln process has in progress.
 12. **`MIN_SUPPORTED_HARNESS_TUNER_VERSION` starts at `0.6.0`.**
 13. **Skill text.** "Find the right place to integrate" includes the files that say today that noise and room are measured only by Kiln Harness Tuner, that tell the reader to measure a smell by hand, or that list the skill routes. The component doc names them as they are now; the list is checked again at pre-flight.
 14. **The contract test** also checks that each smell id of the list is in the Smells table of the index, written as its backticked path. HT's code reads the ids from that table.
@@ -217,4 +218,4 @@ The component docs were written at the same time, and each listed its open point
 20. **`has_thinking_levels` in a model list row** can be true because of a provider entry that HT's policy then drops. The model details answer is exact. Accepted.
 21. **Developers.** A Kiln run from source reports the version of its last release, so HT's version check would refuse it. HT reads one environment variable that skips the Kiln version check. The contract checks of section 5.5 still run, so a missing route is still caught.
 22. **The costing port** is a pre-flight item. Until it is in Kiln's skill, HT's `experiment-costing` skill is not removed and the planner's pointer is not changed.
-
+23. **The contract list ships in the packaged app.** It is small and holds no secret, and leaving it out would need another change to existing code.

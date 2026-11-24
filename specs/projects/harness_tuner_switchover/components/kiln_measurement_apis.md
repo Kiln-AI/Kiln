@@ -26,7 +26,6 @@ This document designs the Kiln side of [functional spec](../functional_spec.md) 
 | `eval_power/noise_cleanup.py` | `NOISE_NAME_PREFIX`, `NOISE_NAME_RE`, `noise_object_name`, `SWEEP_MIN_AGE`; `delete_job_objects`, `sweep_task`, `sweep_all_projects` (6.6, 6.7) |
 | `eval_power/api.py` | `connect_eval_power_api(app)`: the two routes of sections 4 and 5 |
 | `app/desktop/studio_server/api_models/eval_power_models.py` | Every pydantic model of sections 4 to 6, except the job's params and result |
-| `app/desktop/studio_server/services/eval_lookups.py` | `task_run_config_from_id`, `eval_from_id`: moved from `eval_api.py` (below) |
 | `app/desktop/studio_server/jobs/workers/noise_check.py` | `NoiseCheckJobWorker`, `NoiseCheckJobParams`, `NoiseCheckJobResult` |
 | `jobs/api.py` | The create route `POST /api/jobs/evals/noise_check`, and the worker registration |
 | `app/desktop/studio_server/eval_api.py` | The `split` parameter (section 7) and the compare route (section 8) |
@@ -34,7 +33,7 @@ This document designs the Kiln side of [functional spec](../functional_spec.md) 
 
 `trace_reuse.py`, `noise_compare.py`, `noise_cleanup.py`, `train_items.py` and `stored_rows.py` are additions inside the package that architecture 2.1 names. The `eval_power` modules other than `api.py` are service code: they take loaded models, raise no `HTTPException`, and hold no module-level state. Tests sit beside each module as `test_<module>.py`.
 
-**The one change to existing code** (architecture 2.1 allows three in all; this document uses one of them). `task_run_config_from_id` and `eval_from_id` move out of `eval_api.py` into a service module, as a pure move: the bodies, the 404 texts and the signatures do not change. **Proposed** module name, shared with [kiln_smells_skills_version.md](kiln_smells_skills_version.md): `app/desktop/studio_server/services/eval_lookups.py`. The move is made in the first phase that needs it (build step 3, or step 5 when the smell check is built first). `eval_api.py` and today's other importers (`jobs/api.py`, `jobs/workers/eval.py`, `multiturn_sdg_api.py`, `utils/copilot_utils.py`) change their import line only. `eval_power/api.py`, the noise worker and the noise create route import the two lookups from the new module, because Kiln's conventions forbid one router importing another (E17).
+**No change to existing lookups.** `task_run_config_from_id` and `eval_from_id` stay in `eval_api.py`. New modules import them from there, as `jobs/api.py` and `jobs/workers/eval.py` do today. Kiln's convention E17 says routers do not import each other, and the lookups raise `HTTPException`, so they cannot move to a service module without a refactor. Convention H24 covers this case: follow the local pattern, do not refactor neighbouring code, and report it in the end-of-task summary with the rule id.
 
 No other existing code is moved. The noise worker needs the eval worker's error helpers `_error_detail` and `_item_source`. It imports them from `jobs/workers/eval.py` as they are: a worker that imports a worker, not a router that imports a router.
 
