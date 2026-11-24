@@ -64,7 +64,9 @@ class OpenRouterRouting(BaseModel):
             "routes it only to zero-data-retention endpoints and rejects it when none "
             "serves the model. A call that does not go through OpenRouter is refused. "
             "Endpoints OpenRouter labels Safety Retention stay eligible unless the "
-            "OpenRouter account's privacy settings are set to ZDR only."
+            "OpenRouter account's privacy settings are set to ZDR only. Covers only "
+            "this run config's own model calls: tools and sub-agent tasks that call "
+            "models or services use their own settings."
         ),
     )
     sort: Literal["price", "throughput", "latency"] | None = Field(
@@ -75,6 +77,26 @@ class OpenRouterRouting(BaseModel):
             "that do not go through OpenRouter. If None, Kiln's default order is used."
         ),
     )
+
+
+def require_openrouter_for_zero_data_retention(
+    routing: OpenRouterRouting | None, provider_name: ModelProviderName
+) -> None:
+    """Refuse a model call that asks for zero data retention but would not go through OpenRouter.
+
+    Raises:
+        ValueError: zero data retention is requested and the provider is not OpenRouter.
+    """
+    if (
+        routing is not None
+        and routing.zero_data_retention
+        and provider_name != ModelProviderName.openrouter
+    ):
+        raise ValueError(
+            "This run config requires zero data retention "
+            "(openrouter_routing.zero_data_retention), which Kiln can only enforce "
+            f"on OpenRouter. The call to provider '{provider_name.value}' was not sent."
+        )
 
 
 class KilnAgentRunConfigProperties(BaseModel):
@@ -146,6 +168,13 @@ class KilnAgentRunConfigProperties(BaseModel):
         if self.temperature < 0 or self.temperature > 2:
             raise ValueError("temperature must be between 0 and 2")
 
+        return self
+
+    @model_validator(mode="after")
+    def validate_zero_data_retention_provider(self) -> Self:
+        require_openrouter_for_zero_data_retention(
+            self.openrouter_routing, self.model_provider_name
+        )
         return self
 
 

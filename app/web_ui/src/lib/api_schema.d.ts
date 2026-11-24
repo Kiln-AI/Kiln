@@ -10624,7 +10624,7 @@ export interface components {
         OpenRouterRouting: {
             /**
              * Zero Data Retention
-             * @description When true, the call is sent with OpenRouter's `provider.zdr`, so OpenRouter routes it only to zero-data-retention endpoints and rejects it when none serves the model. A call that does not go through OpenRouter is refused. Endpoints OpenRouter labels Safety Retention stay eligible unless the OpenRouter account's privacy settings are set to ZDR only.
+             * @description When true, the call is sent with OpenRouter's `provider.zdr`, so OpenRouter routes it only to zero-data-retention endpoints and rejects it when none serves the model. A call that does not go through OpenRouter is refused. Endpoints OpenRouter labels Safety Retention stay eligible unless the OpenRouter account's privacy settings are set to ZDR only. Covers only this run config's own model calls: tools and sub-agent tasks that call models or services use their own settings.
              * @default false
              */
             zero_data_retention: boolean;

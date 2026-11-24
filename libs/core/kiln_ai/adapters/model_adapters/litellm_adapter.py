@@ -59,6 +59,7 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     OpenRouterRouting,
     as_kiln_agent_run_config,
+    require_openrouter_for_zero_data_retention,
 )
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
@@ -852,17 +853,8 @@ class LiteLlmAdapter(BaseAdapter):
             ValueError: zero data retention is requested for a call that does not go
                 through OpenRouter, where nothing would enforce it.
         """
-        if routing is None:
-            return
-
-        if provider.name != ModelProviderName.openrouter:
-            if routing.zero_data_retention:
-                raise ValueError(
-                    "This run config requires zero data retention "
-                    "(openrouter_routing.zero_data_retention), which Kiln can only "
-                    "enforce on OpenRouter. The call to provider "
-                    f"'{provider.name.value}' was not sent."
-                )
+        require_openrouter_for_zero_data_retention(routing, provider.name)
+        if routing is None or provider.name != ModelProviderName.openrouter:
             return
 
         if routing.zero_data_retention:

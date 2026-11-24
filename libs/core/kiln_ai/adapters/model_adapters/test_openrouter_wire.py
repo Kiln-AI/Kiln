@@ -5,7 +5,6 @@ import litellm
 import pytest
 import respx
 
-from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.ml_model_list import ModelName, ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
@@ -67,16 +66,20 @@ def make_adapter(plain_task):
         routing: OpenRouterRouting | None,
         provider: ModelProviderName = ModelProviderName.openrouter,
     ) -> LiteLlmAdapter:
+        run_config = KilnAgentRunConfigProperties(
+            model_name=ModelName.gpt_4o_mini,
+            model_provider_name=ModelProviderName.openrouter,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="default",
+            openrouter_routing=routing,
+        )
+        # model_copy skips validation, the way callers that copy a run config and
+        # change one field do, so the adapter's own check is the one under test.
+        run_config = run_config.model_copy(update={"model_provider_name": provider})
         return LiteLlmAdapter(
             config=LiteLlmConfig(
-                run_config_properties=KilnAgentRunConfigProperties(
-                    model_name=ModelName.gpt_4o_mini,
-                    model_provider_name=provider,
-                    prompt_id="simple_prompt_builder",
-                    structured_output_mode="default",
-                    openrouter_routing=routing,
-                ),
-                base_url=BASE_URL if provider == ModelProviderName.openrouter else None,
+                run_config_properties=run_config,
+                base_url=BASE_URL,
                 additional_body_options={"api_key": API_KEY},
             ),
             kiln_task=plain_task,
@@ -124,13 +127,10 @@ async def test_zero_data_retention_off_openrouter_sends_no_request(make_adapter)
     any_request = respx.route().mock(
         return_value=httpx.Response(200, json=SUCCESS_BODY)
     )
-    adapter = make_adapter(
-        OpenRouterRouting(zero_data_retention=True), ModelProviderName.openai
-    )
 
-    with pytest.raises(KilnRunError) as exc_info:
-        await adapter.invoke("ping")
+    with pytest.raises(ValueError, match="zero data retention"):
+        make_adapter(
+            OpenRouterRouting(zero_data_retention=True), ModelProviderName.openai
+        )
 
-    assert isinstance(exc_info.value.original, ValueError)
-    assert "zero data retention" in str(exc_info.value.original)
     assert any_request.call_count == 0

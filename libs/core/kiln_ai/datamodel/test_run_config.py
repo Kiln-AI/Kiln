@@ -482,11 +482,6 @@ class TestOpenRouterRoutingField:
         assert isinstance(config, KilnAgentRunConfigProperties)
         assert config.openrouter_routing is None
 
-    def test_defaults_request_nothing(self):
-        routing = OpenRouterRouting()
-        assert routing.zero_data_retention is False
-        assert routing.sort is None
-
     def test_roundtrip(self):
         raw = {
             **KILN_AGENT_JSON,
@@ -500,6 +495,26 @@ class TestOpenRouterRoutingField:
         )
         restored = run_config_adapter.validate_json(config.model_dump_json())
         assert restored == config
+
+    @pytest.mark.parametrize("provider", ["openai", "typesafe", "openai_compatible"])
+    def test_zero_data_retention_requires_openrouter(self, provider):
+        raw = {
+            **KILN_AGENT_JSON,
+            "model_provider_name": provider,
+            "openrouter_routing": {"zero_data_retention": True},
+        }
+        with pytest.raises(ValidationError, match="zero data retention"):
+            run_config_adapter.validate_python(raw)
+
+    @pytest.mark.parametrize(
+        "routing", [{"zero_data_retention": False}, {"sort": "price"}, {}]
+    )
+    def test_routing_without_zero_data_retention_allowed_off_openrouter(self, routing):
+        config = run_config_adapter.validate_python(
+            {**KILN_AGENT_JSON, "openrouter_routing": routing}
+        )
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.openrouter_routing == OpenRouterRouting(**routing)
 
     @pytest.mark.parametrize(
         "routing",

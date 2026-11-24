@@ -295,6 +295,7 @@ async def test_properties_for_task_output_includes_all_run_config_properties(ada
         "type": None,
         "tools_config": None,
         "input_transform": None,
+        "openrouter_routing": None,
     }
 
     missing_properties = []
@@ -346,6 +347,7 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
             "type": None,
             "tools_config": None,
             "input_transform": None,
+            "openrouter_routing": None,
         }
 
         missing_properties = []
