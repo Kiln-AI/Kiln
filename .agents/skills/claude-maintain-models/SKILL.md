@@ -258,14 +258,18 @@ For each new model, write `agent_notes` and the model `tags`, then run the `curr
 - The `current` tag, when it is the newest release at its lab's price level. `current` is mechanical: it needs only the release date, not a benchmark.
 - A `Superseded by:` line on the predecessor, when the `current` tag moves.
 
-Other note lines (Strengths, Behavior, etc.) and set tags (recommended, top_value, etc.) need an independent source. When no source supports a set tag or a judgment line, leave it out and say so in the PR.
+Other note lines (Strengths, Behavior, etc.) need an independent source; when none supports a line, leave it out and say so in the PR. Set tags are different: the set review below is required for every new model. The cost-band sets (`recommended`, `top_value`, `top_open`) and `top_fast` use Artificial Analysis numbers; without an AA cost per task, the three cost-band sets are deferred, and `top_fast` takes the model only as a faster serving of a model in `top_open` or `recommended`. `top_on_device` and `top_writing` do not need AA: they use device fit and a writing source. Say in **Set review** which source each decision used, or that none was found.
+
+`test_live_models_have_notes` in `test_ml_model_list.py` fails for any live model without `agent_notes`, except the older models in `MODELS_WITHOUT_NOTES`. Never add a new model to that list.
 
 Steps for each new model:
 
 1. Write the model's `agent_notes` — at minimum `Description:` + `Lineup:`.
 2. Run the `current` procedure for its lab and price level (always).
-3. Write set tags and judgment note lines where a source supports them.
-4. Run the set-review procedure for each set the model could join.
+3. Fetch its Artificial Analysis page if it has one (`https://artificialanalysis.ai/models/<slug>`; try the obvious slug variants). AA often benchmarks a model days or weeks after release, so a new model may have no page yet; that is expected and is not evidence against the model. Record the intelligence index with its effort variant (for example "61, Xhigh"), the cost per Intelligence Index task, the output speed and the time to first token. Use the cost per task, not the blended $/M-token price, which the page shows in another table. If there is no page yet, write "AA page not yet available; set review deferred" in **Set review**. Until AA data exists the model skips `recommended`, `top_value` and `top_open`, and joins `top_fast` only as a faster serving of a model in `top_open` or `recommended`. The sets that do not use AA are still reviewed. A later sweep re-runs the deferred review once the page appears, for models added in the last 30 days (see the sweep skill); after that a human picks it up.
+4. Run the [set review](#set-tags) for every set in `MODEL_TAGS`. List each set's members from `built_in_models`. Then fetch same-day AA pages for every member of each set, `current` or not (a serving variant in `top_fast` is not `current`), and for every `current` non-member whose cost per task can fall inside the new model's cost band. Token prices do not bound task cost, because models use different numbers of tokens per task, so never drop a candidate on its token price: fetch its AA page and use its cost per task. The join test compares against all fetched models, and the removal review against the members among them.
+5. Write judgment note lines where a source supports them.
+6. Add a **Set review** section to the PR (see 3h), even when no set changed.
 
 ### 3h. PR description — set changes
 
@@ -275,6 +279,19 @@ When any set changed (a model added to or removed from a set tag), add a section
 ## Set changes
 - **recommended**: +GPT-6.1 Terra (strong general quality, current); −GPT-5.6 Terra (superseded)
 - **top_value**: +Claude Haiku 5.5 (best quality at its price)
+```
+
+Every PR that adds a model also has a **Set review** section, one line per set and per new model, that states the numbers compared. A reviewer can then see that the review ran, also when nothing changed. Example:
+
+```
+## Set review
+- **Gemini 4 Neon** (AA 61 at $6.44/task, 110 tok/s):
+  - recommended: joins; highest index within 1.5x of its cost, above GPT-6 Astra (57 at $6.24).
+    Candidate removals: none inside the band.
+  - top_value: no; top price, and 61 / $6.44 is far below the members' index per dollar (GPT-6.1 Terra: 51 / $0.96).
+  - top_fast: no; 110 tok/s is below every member with a speed.
+  - top_open, top_on_device: no; closed weights, not local.
+  - top_writing: no writing source checked.
 ```
 
 ---
@@ -432,14 +449,25 @@ Procedure when a model could be in a set:
 
 1. Load the whole set (every model with that tag across `built_in_models`).
 2. Decide whether the new model joins the set.
-3. If it joins, review every member and remove each one that no longer earns its place. That can be an older model at the same level, or a model from any lab or level that the new model beats for the set's purpose.
-4. A set never goes over its limit (`max_models` in the tag map). To add a model to a full set, remove one.
+3. If it joins, review every member for one that no longer earns its place. That can be an older model at the same level, or a model from any lab or level that the new model beats for the set's purpose. Remove a member only when it lost `current` (for `recommended`) or the set is full (step 4); list every other one under **Candidate removals** in **Set review** and leave it in the set.
+4. A set never goes over its limit (`max_models` in the tag map). To add a model to a full set, remove one, by the full-set rule below.
+
+The comparison rules the log already applies, so each run decides the same way:
+
+- **Cost band.** Compare a model only with models whose AA cost per task is within 1.5x of its own, in either direction. The sets keep models at several price levels on purpose, so a much cheaper model with a higher index does not keep a model out. Example: GPT-6.1 Sol (55 at $1.27) is outside the band of Claude 5.5 Sonnet ($10.02), and both are members.
+- **`recommended`:** a model joins when it is `current`, is not available only on local providers, and has the highest AA index in its cost band, among all `current` models with AA numbers (members or not). Without an AA cost per task the cost band is unknown, so the decision is deferred. Example: Gemini 4 Neon (61 at $6.44) is above GPT-6 Astra (57 at $6.24), Gemini 4 Carbon (60 at $7.76) and Gemini 4 Argon (50 at $4.97), so it joins; Carbon is below Neon in its band, so it does not.
+- **`top_value`:** low and mid price only; a top-price model never joins. It joins when its index per dollar is near the members'. This set compares index per dollar across all its members, not within a cost band.
+- **`top_fast`:** output speed and time to first token from AA, or a faster serving of a model in `top_open` or `recommended`.
+- **`top_writing`:** needs a writing source (an AA writing score, a writing benchmark, or the lab's writing evals with an independent check). No source, no join.
+- **`top_open`:** open-weight models only, compared by AA index within the cost band with other open-weight models. Without an AA cost per task, the decision is deferred. **`top_on_device`:** models that run on a laptop or phone.
+- **Removals.** A member that loses `current` leaves `recommended` in the same change. Any other removal is a judgment: a member that the new model beats on both index and cost inside the band may also stand for something the numbers do not show (a lab, a region, a size). List it under **Candidate removals** in the PR's **Set review** and leave it in the set; a human decides. The exception is a full set. Then remove the member that ranks lowest on the set's own property inside the new model's cost band: AA index for `recommended` and `top_open`, index per dollar for `top_value`, output speed and time to first token for `top_fast` (when the two metrics pick different members, a human decides). Say so in **Set changes**. When no member is inside the band, or the set has no comparable numbers for its property (as in `top_on_device` and `top_writing`), do not add the model: put the proposed swap under **Decisions required** and a human picks the member to remove.
 
 Rules:
 
 - **The bar for a `top_` set:** when an agent optimizes for that property, it should know about this model. So `top_fast` can hold a serving variant that is not among the fastest models overall, but is the faster way to run a strong model; its note says so.
 - Every `recommended` model is also `current`. When a model loses `current`, it also leaves `recommended`.
-- **The `recommended` bar.** `recommended` is not one model per lab or per level; `current` already gives that. A model is `recommended` only when Artificial Analysis (or, without an AA page, another independent benchmark) shows its quality is high for its cost, compared with the models across all labs at a similar cost. "The lab's flagship" or "the lab's smallest model" is not a reason. A model available only on local providers (Ollama, Docker Model Runner) is never `recommended`: an optimizer cannot easily test it.
+- **The `recommended` bar.** `recommended` is not one model per lab or per level; `current` already gives that. A model is `recommended` only when Artificial Analysis shows its quality is high for its cost, compared with the models across all labs at a similar cost. "The lab's flagship" or "the lab's smallest model" is not a reason. A model available only on local providers (Ollama, Docker Model Runner) is never `recommended`: an optimizer cannot easily test it.
+- When a comparison model's AA page cannot be fetched, name it under **Sources**. Its cost and index are unknown, so it could fall in the band: put each cost-band join or removal that it could change under **Decisions required** instead of applying it, unless that model is clearly outside the band (for example a top-price model against a low-price one). This never delays removing a model that lost `current` from `recommended`, and it does not touch `top_on_device` or `top_writing`, which do not use AA.
 - A model in a set has a note, so a reviewer can read the reason.
 - A set tag is a claim the maintainer would stand behind. Apply it only when a source supports it, as for notes.
 
@@ -449,14 +477,13 @@ Rules:
 - A lab's own release benchmarks are chosen to look good. They can support a claim but are never its only source.
 - Common sense.
 
-### Sources log
+### Sources in the PR
 
-When a set changes, update the sources log at `specs/projects/model-agent-info/backfill_sources.md` so a reviewer can answer "why is this model in this set?" without redoing the research:
+Put the evidence in the PR body, so a reviewer can answer "why is this model in this set?" without redoing the research. Do not edit files under `specs/`, including `specs/projects/model-agent-info/backfill_sources.md`, a point-in-time record of the Phase 4 and 5 backfill.
 
-- **Per set:** one row per member with the AA intelligence index, AA cost per task (or blended price when AA has no cost per task), AA output speed, and the AA page URL. A member with no AA page cites the URL of the source used instead. The reason column states the comparison ("index 52 at $1.10/task; next best at that cost is 44"), not a description ("strong flagship").
-- **Per model:** the source URL behind each line of its note other than `Description:` and `Lineup:` when those come from the lab's own model page, which is cited once.
-- **Per provider:** the source URL behind each line of its note.
-- Every figure in the log is checked against its source; a price is labeled input or output.
+- **Set review:** for each set, the AA intelligence index, AA cost per task and AA output speed of the new model and of the models it was compared with. A blended $/M-token price is not a cost per task: when AA has no cost per task for a model, say so and leave that model out of the cost-band and value comparisons, deferring any decision that depends on it. The reason states the comparison ("index 52 at $1.10/task; next best at that cost is 44"), not a description ("strong flagship").
+- **Sources:** the URL behind each note line other than `Description:` and `Lineup:` when those come from the lab's own model page, which is cited once. When the lab page is unreachable and the note uses another description (for example the OpenRouter model description), name that source and say the lab page was unreachable. For a provider note, the URL behind each line.
+- Every figure is checked against its source; a price is labeled input or output.
 
 ### Adding a tag
 
@@ -683,7 +710,9 @@ Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `
 - [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
-- [ ] `agent_notes` always written (at minimum `Description:` + `Lineup:`); set tags written where a source supports them, or left out and the PR says so (see [Agent notes and tags](#agent-notes-and-tags))
+- [ ] `agent_notes` always written (at minimum `Description:` + `Lineup:`); `test_live_models_have_notes` passes (see [Agent notes and tags](#agent-notes-and-tags))
+- [ ] AA page fetched (or its absence noted), set review run for every set with same-day AA numbers for the members in the band, and a **Set review** section in the PR
+- [ ] Note and set sources cited in the PR body's **Sources** section
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
 - [ ] API keys bridged into the test env (see 4a — settings.yaml is NOT used by tests)
 - [ ] Smoke test passed
@@ -702,7 +731,7 @@ Most recent models use *adaptive* reasoning and sometimes return no reasoning at
 `reasoning_capable` is **orthogonal to `available_thinking_levels`** — you keep the important behavior with it set to `False`:
 - Thinking-level / effort selection still works (every GPT-5.x entry sets `available_thinking_levels` with `reasoning_capable` unset).
 - Reasoning is still parsed and displayed when the model returns it (parser-driven, independent of this flag).
-- The `test_thinking_level_reasoning_content` paid test still runs and still asserts reasoning is present — it is gated on `available_thinking_levels`, not `reasoning_capable`. So you do NOT lose the ability to test the model's reasoning, as long as it has thinking levels.
+- The `test_thinking_level_reasoning_content` paid test still runs and still asserts reasoning is present — it is gated on `available_thinking_levels`, not `reasoning_capable`. So you do NOT lose the ability to test the model's reasoning, as long as it has thinking levels. OpenAI-direct providers are the exception: OpenAI returns reasoning only as a summary, so that test checks only that the run succeeds, and `test_openai_reasoning_summaries_paid` (same file) checks the summary on providers that set `openai_reasoning_summary`.
 
 What you give up with `reasoning_capable=False`:
 - The conditional "reasoning is present in `intermediate_outputs`" assertion inside the structured-output / structured-input paid tests stops firing (the tests themselves still run — no whole test is skipped).
@@ -792,7 +821,10 @@ model.
   provider card (name, description, and the auth flow — `api_key_steps` /
   `api_key_fields` for key providers, or the custom flow the auth model
   needs) plus connected-status
-  wiring from `settings` keys
+  wiring from `settings` keys. A setting chosen at connect time is an
+  `api_key_options` checkbox; its value reaches `connect_api_key` in the
+  payload's `options` dict, and the provider's disconnect case resets it, because the
+  dialog always opens unchecked (see OpenAI's reasoning summaries)
 - `src/lib/api_schema.d.ts` — regenerate with `make schema` (needs the server
   running on :8757)
 
@@ -839,6 +871,7 @@ map. That is why the plumbing PR must not skip them.
 ### OpenAI
 - Most GPT models use `json_schema` for structured output
 - GPT-5.x models support `available_thinking_levels` — see [Thinking Levels Reference](#thinking-levels-reference)
+- Reasoning summaries: set `openai_reasoning_summary="auto"` on the `openai` provider of GPT-5.4+ and GPT-6+ reasoning models, and of the Pro models LiteLLM already sends to `/v1/responses` (GPT-5.2 Pro, GPT-5.4 Pro). Kiln passes the value to OpenAI as `reasoning.summary` unchanged, and only sends it when the user turned on the reasoning summaries checkbox when connecting OpenAI. Leave it unset on every other provider, OpenRouter included, and on models without reasoning.
 - Chat/instant variants (e.g. GPT-5.3 Instant) may not support reasoning effort
 - o-series models have fixed thinking tiers (separate model entries per tier, not configurable levels)
 

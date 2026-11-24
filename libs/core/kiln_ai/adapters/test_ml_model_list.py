@@ -483,6 +483,39 @@ def test_suggested_for_synthetic_user():
             )
 
 
+def test_openai_reasoning_summary_only_on_responses_capable_openai_providers():
+    """Exactly these OpenAI-direct providers request the "auto" summary mode, and no
+    other provider sets openai_reasoning_summary. Setting it anywhere else changes this
+    contract, not just the list."""
+    expected = {
+        ModelName.gpt_6_2_astra,
+        ModelName.gpt_6_2_sol,
+        ModelName.gpt_6_1_sol,
+        ModelName.gpt_6_1_terra,
+        ModelName.gpt_6_astra,
+        ModelName.gpt_6_sol,
+        ModelName.gpt_6_luna,
+        ModelName.gpt_5_6_sol,
+        ModelName.gpt_5_6_terra,
+        ModelName.gpt_5_6_luna,
+        ModelName.gpt_5_5,
+        ModelName.gpt_5_4,
+        ModelName.gpt_5_4_pro,
+        ModelName.gpt_5_2_pro,
+    }
+
+    with_summary = {
+        (model.name, provider.name): provider.openai_reasoning_summary
+        for model in built_in_models
+        for provider in model.providers
+        if provider.openai_reasoning_summary is not None
+    }
+
+    assert with_summary == {
+        (model_name.value, ModelProviderName.openai): "auto" for model_name in expected
+    }
+
+
 def test_no_empty_multimodal_mime_types():
     """Ensure that multimodal fields are self-consistent as they are interdependent"""
     for model in built_in_models:
@@ -967,3 +1000,156 @@ def test_note_has_no_banned_time_words(model: KilnModel):
         assert not pattern.search(model.agent_notes), (
             f"{model.name}: agent_notes contains banned time-relative word {word!r}"
         )
+
+
+# Models that predate the agent-notes backfill and were left without a note on
+# purpose. Never add to it: every model added later needs at least the
+# Description: and Lineup: lines, so a new entry without a note fails
+# test_live_models_have_notes. A listed model that later gets a note or is
+# fully deprecated can stay listed; the exemption then has no effect.
+MODELS_WITHOUT_NOTES: frozenset[ModelName] = frozenset(
+    {
+        ModelName.gpt_5_2_chat,
+        ModelName.gpt_5_1,
+        ModelName.gpt_5,
+        ModelName.gpt_5_mini,
+        ModelName.gpt_5_nano,
+        ModelName.gpt_4_1,
+        ModelName.gpt_4_1_mini,
+        ModelName.gpt_4_1_nano,
+        ModelName.gpt_4o,
+        ModelName.gpt_4o_mini,
+        ModelName.gpt_o4_mini_low,
+        ModelName.gpt_o4_mini_medium,
+        ModelName.gpt_o4_mini_high,
+        ModelName.gpt_o3_low,
+        ModelName.gpt_o3_medium,
+        ModelName.gpt_o3_high,
+        ModelName.gpt_o3_mini_low,
+        ModelName.gpt_o3_mini_medium,
+        ModelName.gpt_o3_mini_high,
+        ModelName.gpt_oss_120b,
+        ModelName.gpt_oss_20b,
+        ModelName.gpt_o1_low,
+        ModelName.gpt_o1_medium,
+        ModelName.gpt_o1_high,
+        ModelName.claude_opus_4_1,
+        ModelName.claude_sonnet_4_5,
+        ModelName.claude_4_5_haiku,
+        ModelName.gemini_2_5_pro,
+        ModelName.gemini_2_5_flash,
+        ModelName.gemini_2_5_flash_lite,
+        ModelName.gemini_2_0_flash,
+        ModelName.gemini_2_0_flash_lite,
+        ModelName.nemotron_3_nano,
+        ModelName.llama_4_maverick,
+        ModelName.llama_4_scout,
+        ModelName.llama_3_3_70b,
+        ModelName.llama_3_2_90b,
+        ModelName.llama_3_2_11b,
+        ModelName.llama_3_2_3b,
+        ModelName.llama_3_2_1b,
+        ModelName.llama_3_1_405b,
+        ModelName.llama_3_1_70b,
+        ModelName.llama_3_1_8b,
+        ModelName.mistral_large,
+        ModelName.mistral_medium_3_1,
+        ModelName.mistral_small_3,
+        ModelName.mistral_nemo,
+        ModelName.phi_4,
+        ModelName.phi_4_mini,
+        ModelName.phi_3_5,
+        ModelName.gemma_3n_4b,
+        ModelName.gemma_3n_2b,
+        ModelName.gemma_3_27b,
+        ModelName.gemma_3_12b,
+        ModelName.gemma_3_4b,
+        ModelName.gemma_3_1b,
+        ModelName.gemma_3_0p27b,
+        ModelName.gemma_2_27b,
+        ModelName.gemma_2_9b,
+        ModelName.gemma_2_2b,
+        ModelName.mixtral_8x7b,
+        ModelName.deepseek_3_1_terminus,
+        ModelName.deepseek_3_1,
+        ModelName.deepseek_r1_0528,
+        ModelName.deepseek_r1_0528_distill_qwen3_8b,
+        ModelName.deepseek_3,
+        ModelName.deepseek_r1,
+        ModelName.deepseek_r1_distill_qwen_32b,
+        ModelName.deepseek_r1_distill_llama_70b,
+        ModelName.deepseek_r1_distill_qwen_14b,
+        ModelName.deepseek_r1_distill_llama_8b,
+        ModelName.deepseek_r1_distill_qwen_7b,
+        ModelName.deepseek_r1_distill_qwen_1p5b,
+        ModelName.dolphin_2_9_8x22b,
+        ModelName.qwen_3_next_80b_a3b,
+        ModelName.qwen_3_235b_a22b_2507,
+        ModelName.qwen_3_235b_a22b,
+        ModelName.qwen_3_235b_a22b_2507_no_thinking,
+        ModelName.qwen_3_235b_a22b_no_thinking,
+        ModelName.qwen_3_32b,
+        ModelName.qwen_3_32b_no_thinking,
+        ModelName.qwen_3_30b_a3b_2507,
+        ModelName.qwen_3_30b_a3b,
+        ModelName.qwen_3_30b_a3b_2507_no_thinking,
+        ModelName.qwen_3_30b_a3b_no_thinking,
+        ModelName.qwen_3_14b,
+        ModelName.qwen_3_14b_no_thinking,
+        ModelName.qwen_3_8b,
+        ModelName.qwen_3_8b_no_thinking,
+        ModelName.qwen_3_4b,
+        ModelName.qwen_3_4b_no_thinking,
+        ModelName.qwen_3_1p7b,
+        ModelName.qwen_3_1p7b_no_thinking,
+        ModelName.qwen_3_0p6b,
+        ModelName.qwen_3_vl_235b_a22b_no_thinking,
+        ModelName.qwen_3_vl_32b_no_thinking,
+        ModelName.qwen_3_vl_30b_a3b_no_thinking,
+        ModelName.qwen_3_vl_8b_no_thinking,
+        ModelName.qwen_3_vl_235b_a22b,
+        ModelName.qwen_3_vl_32b,
+        ModelName.qwen_3_vl_30b,
+        ModelName.qwen_3_vl_8b,
+        ModelName.qwen_3_vl_4b,
+        ModelName.qwen_3_vl_2b,
+        ModelName.qwq_32b,
+        ModelName.qwen_2p5_vl_72b,
+        ModelName.qwen_2p5_vl_32b,
+        ModelName.qwen_2p5_vl_7b,
+        ModelName.qwen_2p5_vl_3b,
+        ModelName.qwen_2p5_72b,
+        ModelName.qwen_2p5_14b,
+        ModelName.qwen_2p5_7b,
+        ModelName.glm_4_6,
+        ModelName.glm_4_5v,
+        ModelName.glm_4_5,
+        ModelName.glm_4_5_air,
+        ModelName.glm_z1_9b_0414,
+        ModelName.kimi_k2_thinking,
+        ModelName.kimi_k2_0905,
+        ModelName.kimi_k2,
+        ModelName.bytedance_seed_oss_36b,
+        ModelName.jev_1_13,
+        ModelName.xing_4_0_29b_a4b,
+        ModelName.ultramarine_1_flash,
+    }
+)
+
+
+def _is_live(model: KilnModel) -> bool:
+    return any(not p.deprecated for p in model.providers)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [m for m in built_in_models if _is_live(m) and m.name not in MODELS_WITHOUT_NOTES],
+    ids=lambda m: m.name,
+)
+def test_live_models_have_notes(model: KilnModel):
+    assert model.agent_notes is not None, (
+        f"{model.name}: every new model needs agent_notes with at least"
+        " Description: and Lineup: lines, and the current tag when it is the"
+        " newest release at its lab's price level. See 'Agent notes and tags'"
+        " in .agents/skills/claude-maintain-models/SKILL.md."
+    )

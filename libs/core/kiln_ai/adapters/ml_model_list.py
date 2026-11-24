@@ -57,6 +57,7 @@ class ModelFamily(str, Enum):
     nex = "nex"
     motif = "motif"
     kt = "kt"
+    radixark = "radixark"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -85,6 +86,10 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_6_2_astra_pro = "gpt_6_2_astra_pro"
+    gpt_6_2_astra = "gpt_6_2_astra"
+    gpt_6_2_sol_pro = "gpt_6_2_sol_pro"
+    gpt_6_2_sol = "gpt_6_2_sol"
     gpt_6_1_sol_pro = "gpt_6_1_sol_pro"
     gpt_6_1_sol = "gpt_6_1_sol"
     gpt_6_1_terra_pro = "gpt_6_1_terra_pro"
@@ -201,6 +206,7 @@ class ModelName(str, Enum):
     gemini_3_pro_preview = "gemini_3_pro_preview"
     gemini_4_carbon = "gemini_4_carbon"
     gemini_4_argon = "gemini_4_argon"
+    gemini_4_neon = "gemini_4_neon"
     gemini_4_hydrogen = "gemini_4_hydrogen"
     gemini_3_8_flash = "gemini_3_8_flash"
     gemini_3_7_flash = "gemini_3_7_flash"
@@ -252,6 +258,7 @@ class ModelName(str, Enum):
     grok_4 = "grok_4"
     qwen_3p5_flash = "qwen_3p5_flash"
     qwen_3p5_9b = "qwen_3p5_9b"
+    qwen_3p5_4b = "qwen_3p5_4b"
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
@@ -369,6 +376,7 @@ class ModelName(str, Enum):
     mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling_2_small = "inkling_2_small"
+    inkling_2_mini = "inkling_2_mini"
     inkling = "inkling"
     inkling_small = "inkling_small"
     jev_1_13 = "jev_1_13"
@@ -384,6 +392,7 @@ class ModelName(str, Enum):
     nex_n2_6 = "nex_n2_6"
     motif_3 = "motif_3"
     midm_k_3_0_pro = "midm_k_3_0_pro"
+    daisyrose_27b = "daisyrose_27b"
 
 
 class ModelParserID(str, Enum):
@@ -488,6 +497,9 @@ class KilnModelProvider(BaseModel):
     # Opus 4.7/4.8 default thinking display to "omitted" (empty thinking text, signature
     # only). Set this for those models to request the readable reasoning summary.
     anthropic_summarized_thinking: bool = False
+    # The summary mode sent to OpenAI as reasoning.summary, passed as-is. Only sent
+    # when the user turned on reasoning summaries for their OpenAI connection.
+    openai_reasoning_summary: str | None = None
     gemini_reasoning_enabled: bool = False
     # Can only specify top_p or temp, not both. Opus 4.1 and Sonnet 4.5 for example.
     temp_top_p_exclusive: bool = False
@@ -608,7 +620,8 @@ GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
     "Max": "max",
 }
 
-# GPT-6.1 Sol on OpenAI direct. The model page lists `max` as well, but
+# GPT-6.1 Sol, GPT-6.2 Sol and GPT-6.2 Astra on OpenAI direct. The 6.1 Sol
+# model page lists `max` as well, but
 # /v1/chat/completions (which Kiln uses) rejects it with a 400; only
 # /v1/responses accepts it. `none` and `minimal` are rejected on both.
 # https://developers.openai.com/api/docs/models/gpt-6.1-sol
@@ -671,7 +684,7 @@ GEMINI_4_HYDROGEN_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
-# Gemini 4 Hydrogen on the Gemini API and Vertex. Google lists xhigh too, but
+# Gemini 4 Hydrogen and Neon on the Gemini API and Vertex. Google lists xhigh too, but
 # LiteLLM rejects `xhigh` as a Gemini reasoning_effort, so it is left out here.
 GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS = {
     "Low": "low",
@@ -918,6 +931,13 @@ MUSE_EMBER_OPENROUTER_THINKING_LEVELS = {
     "Max": "max",
 }
 
+DAISYROSE_27B_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "Extra High": "xhigh",
+}
+
 NEX_N2_6_OPENROUTER_THINKING_LEVELS = {
     "Medium": "medium",
     "High": "high",
@@ -987,6 +1007,204 @@ QWEN_3P8_CLOUDFLARE_THINKING_LEVELS = {
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 6.2 Astra Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_astra_pro,
+        friendly_name="GPT-6.2 Astra Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.2 Astra with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. The first Astra Pro model in Kiln, above GPT-6.2 Astra.\n"
+            "Same weights: GPT-6.2 Astra is the standard version; Astra Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-astra-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.2 Astra
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_astra,
+        friendly_name="GPT-6.2 Astra",
+        agent_notes=(
+            "Description: OpenAI's top-tier model in the GPT-6.2 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Astra is the top tier, above GPT-6.2 Sol. Replaced GPT-6 Astra.\n"
+            "Same weights: GPT-6.2 Astra Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task.\n"
+            "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
+        ),
+        tags=["current", "recommended"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-6.2-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                openai_reasoning_summary="auto",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.2 Sol Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_sol_pro,
+        friendly_name="GPT-6.2 Sol Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.2 Sol with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6.1 Sol Pro.\n"
+            "Same weights: GPT-6.2 Sol is the standard version; Sol Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-sol-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.2 Sol
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_sol,
+        friendly_name="GPT-6.2 Sol",
+        agent_notes=(
+            "Description: OpenAI's balanced high-tier model in the GPT-6.2 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A step down from GPT-6.2 Astra, above GPT-6.1 Terra. Replaced GPT-6.1 Sol.\n"
+            "Same weights: GPT-6.2 Sol Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task.\n"
+            "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
+        ),
+        tags=["current", "recommended", "top_value"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-6.2-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                openai_reasoning_summary="auto",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 6.1 Sol Pro
     KilnModel(
         family=ModelFamily.gpt,
@@ -994,9 +1212,10 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-6.1 Sol Pro",
         agent_notes=(
             "Description: Pro-compute variant of GPT-6.1 Sol with extended reasoning.\n"
-            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6 Sol Pro."
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6 Sol Pro.\n"
+            "Superseded by: GPT-6.2 Sol Pro, the Pro variant at the Sol level in the GPT-6.2 generation."
         ),
-        tags=["current", "top_writing"],
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1035,9 +1254,10 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: OpenAI's balanced high-tier model in the GPT-6.1 generation.\n"
             "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A step down from GPT-6 Astra, much stronger than GPT-6.1 Terra. Replaced GPT-6 Sol.\n"
+            "Superseded by: GPT-6.2 Sol, the Sol-level model of the GPT-6.2 generation.\n"
             "Strengths: Steady quality in multi-turn tool use; near GPT-6 Astra on reasoning."
         ),
-        tags=["current", "recommended", "top_writing"],
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1047,6 +1267,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1147,6 +1368,7 @@ built_in_models: List[KilnModel] = [
                 # model and rejects max with a 400.
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1195,9 +1417,10 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: OpenAI's most capable model, the top of the GPT-6 lineup.\n"
             "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Astra is the top tier, above GPT-6.1 Sol.\n"
+            "Superseded by: GPT-6.2 Astra, the Astra-level model of the GPT-6.2 generation.\n"
             "Strengths: Leads on hard reasoning and computer use among OpenAI models."
         ),
-        tags=["current", "recommended", "top_writing"],
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1207,6 +1430,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1307,6 +1531,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1409,6 +1634,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1471,6 +1697,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1535,6 +1762,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1599,6 +1827,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1660,6 +1889,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1719,6 +1949,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1771,6 +2002,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4 direct. Disable function calling until Kiln routes
                 # these models to /v1/responses. The OpenRouter route is unaffected.
@@ -1960,6 +2192,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -3824,6 +4057,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_4_carbon,
         friendly_name="Gemini 4 Carbon",
+        agent_notes=(
+            "Description: Google's Gemini 4 model for long-horizon agentic work in knowledge work, engineering, cybersecurity and scientific reasoning.\n"
+            "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon and Argon for deep, long-horizon reasoning. Carbon is based on Gemini 4 Argon and uses more thinking tokens than Argon."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4022,10 +4260,111 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Gemini 4 Neon
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_4_neon,
+        friendly_name="Gemini 4 Neon",
+        agent_notes=(
+            "Description: Google's mid-tier model in the Gemini 4 generation, adapted from Gemini 4 Carbon, for coding, analytical reasoning and enterprise workflows.\n"
+            "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon for the hardest long-horizon projects. Argon is the Pro-level model."
+        ),
+        tags=["current", "recommended"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-4-neon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_THINKING_LEVELS,
+                default_thinking_level="medium",
+                litellm_allowed_openai_params=["reasoning_effort"],
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-4-neon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-4-neon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+        ],
+    ),
     KilnModel(
         family=ModelFamily.gemini,
         name=ModelName.gemini_4_hydrogen,
         friendly_name="Gemini 4 Hydrogen",
+        agent_notes=(
+            "Description: Google's Gemini 4 model for rapid execution in everyday coding and agentic workflows, adapted from Gemini 4 Carbon.\n"
+            "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon and Argon for deep, long-horizon reasoning."
+        ),
+        tags=["current", "recommended", "top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4909,6 +5248,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.1-flash-lite-preview",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
@@ -5349,6 +5689,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-2.0-flash",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 provider_finetune_id="gemini-2.0-flash-001",
             ),
@@ -5410,6 +5751,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-2.0-flash-lite",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 provider_finetune_id="gemini-2.0-flash-lite-001",
             ),
@@ -5621,6 +5963,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/nvidia/nemotron-3-120b-a12b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -5880,6 +6223,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="meta/llama-3.3-70b-instruct-maas",
+                deprecated=True,
                 # Doesn't work yet; needs debugging
                 supports_structured_output=False,
                 supports_data_gen=False,
@@ -6061,6 +6405,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="meta-llama/llama-3.2-1b-instruct",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
@@ -7541,6 +7886,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -7585,8 +7931,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
-                suggested_for_synthetic_user=True,
                 model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -8363,6 +8709,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_4_max,
         friendly_name="Qwen 4 Max",
+        agent_notes=(
+            "Description: The flagship model of Alibaba's Qwen4 series.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. Qwen 4 Max replaced Qwen 3.8 Max 0902 at the Max level."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8396,9 +8747,10 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: Qwen's flagship closed-weight model in the 3.8 generation.\n"
             "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. The 0902 snapshot is the dated release of 3.8 Max.\n"
+            "Superseded by: Qwen 4 Max, the Max model of the Qwen4 series.\n"
             "Strengths: Strong at coding, reasoning, and agentic frameworks."
         ),
-        tags=["current"],
+        tags=[],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -9228,6 +9580,32 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 4B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_4b,
+        friendly_name="Qwen 3.5 4B",
+        agent_notes=(
+            "Description: Qwen's small 4B dense open-weight model in the 3.5 generation.\n"
+            "Lineup: Qwen 3.5 open sizes run 0.8B < 2B < 4B < 9B < 27B, then larger MoE models. A step down from Qwen 3.5 9B."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.5-4B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                # Featherless returns the thinking text inline, ending in </think>.
+                reasoning_capable=True,
+                parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3.5-4B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -11085,8 +11463,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
-                suggested_for_synthetic_user=True,
                 model_id="@cf/zai-org/glm-5.3-flash",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -11215,6 +11593,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.2",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_2_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -11937,6 +12316,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/moonshotai/kimi-k2.6",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=KIMI_K2_6_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -12043,6 +12423,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="moonshotai/kimi-k2-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
@@ -12059,6 +12440,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,
                 model_id="moonshotai/Kimi-K2-Thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
             ),
@@ -12073,6 +12455,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="moonshotai/kimi-k2-0905:exacto",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
@@ -12124,6 +12507,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="moonshotai/kimi-k2",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
@@ -12170,7 +12554,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.ernie,
         name=ModelName.ernie_light_dt_1_0,
         friendly_name="Ernie Light DT 1.0",
+        agent_notes=(
+            "Description: Baidu's light model built on open-source GLM models, with the Baidu Sparse Attention mechanism from Baidu Search's Lightning model.\n"
+            "Lineup: A light model in Baidu's ERNIE family. The sources checked do not place it against Baidu's larger ERNIE models."
+        ),
         editorial_notes="Baidu's ERNIE-Light-DT-1.0, built on open GLM models with Baidu Sparse Attention. Text only, 1M context. Not recommended as an eval judge: in testing it sometimes gave ratings outside the requested scale.",
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12238,6 +12627,11 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="tencent/Hy4",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Hy4 Flash is Tencent's lower-cost Hy4 variant. OpenRouter lists no reasoning efforts for it, so it has no thinking levels.
@@ -12246,7 +12640,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.hunyuan,
         name=ModelName.hunyuan_hy4_flash,
         friendly_name="Hunyuan Hy4 Flash",
+        agent_notes=(
+            "Description: Tencent's cost-efficient variant of Hunyuan Hy4, for code assistance and agent workloads.\n"
+            "Lineup: Below Hunyuan Hy4, with about a quarter of Hy4's parameters. It has its own weights, so it is not a serving variant of Hy4."
+        ),
         editorial_notes="Tencent's lower-cost Hy4 variant. Text and image input, 1M context. Not recommended as an eval judge: in testing it sometimes gave ratings outside the requested scale.",
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12995,6 +13394,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="xiaomi/mimo-v2.5-pro",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
             ),
@@ -13087,7 +13487,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.thinking_machines,
         name=ModelName.inkling_2_small,
         friendly_name="Inkling 2 Small",
+        agent_notes=(
+            "Description: Thinking Machines' small multimodal reasoning model, the first model of the Inkling 2 generation.\n"
+            "Lineup: Thinking Machines ships Inkling and a Small variant. Inkling 2 Small replaced Inkling Small.\n"
+            "Deployment: Mixture of experts with 17B active parameters out of 594B total."
+        ),
         editorial_notes="The first model of Thinking Machines' second Inkling generation (Apache 2.0). A 594B-parameter MoE (17B active) with image input, a 1M-token context and configurable reasoning.",
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -13116,6 +13522,12 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/inkling-2-small",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/thinkingmachines/inkling-2-small",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -13125,6 +13537,39 @@ built_in_models: List[KilnModel] = [
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.thinking_machines,
+        name=ModelName.inkling_2_mini,
+        friendly_name="Inkling 2 Mini",
+        editorial_notes="The smallest model of Thinking Machines' Inkling 2 generation (open weights). A 26.4B-parameter looped MoE (3.4B active) with image input, a 1M-token context and configurable reasoning.",
+        agent_notes=(
+            "Description: Thinking Machines' smallest open-weight multimodal model in the Inkling 2 generation, a looped MoE transformer whose middle layers run three times.\n"
+            "Lineup: Inkling 2 sizes are Mini < Small. Mini is a new size class with no Inkling 1 counterpart."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thinkingmachines/inkling-2-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=INKLING_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
                     KilnMimeType.JPG,
@@ -13175,9 +13620,10 @@ built_in_models: List[KilnModel] = [
         editorial_notes="The smaller sibling of Thinking Machines' Inkling (Apache 2.0). A 276B-parameter MoE (12B active) with image and audio input and configurable reasoning.",
         agent_notes=(
             "Description: Smaller variant of Inkling for lighter workloads.\n"
-            "Lineup: Below Inkling in size and capability."
+            "Lineup: Below Inkling in size and capability.\n"
+            "Superseded by: Inkling 2 Small, which scores far higher on Artificial Analysis (index 31 vs 10)."
         ),
-        tags=["current"],
+        tags=[],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -13620,6 +14066,52 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.radixark,
+        name=ModelName.daisyrose_27b,
+        friendly_name="DaisyRose 27B",
+        editorial_notes="RadixArk's open-weight multimodal reasoning model, trained from Qwen 3.8 27B with reinforcement learning on long-horizon agent tasks only.",
+        agent_notes=(
+            "Description: RadixArk's open-weight multimodal reasoning model, trained from Qwen 3.8 27B with reinforcement learning only, on long-horizon agent tasks.\n"
+            "Lineup: RadixArk's first public model. Same size class as its base, Qwen 3.8 27B."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="radixark/daisyrose-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DAISYROSE_27B_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="RadixArk/DaisyRose-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
