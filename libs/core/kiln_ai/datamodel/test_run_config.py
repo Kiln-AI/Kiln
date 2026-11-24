@@ -196,7 +196,7 @@ class TestKilnAgentRunConfigProperties:
             ("frequency_penalty", -2),
             ("frequency_penalty", 2),
             ("presence_penalty", -2),
-            ("presence_penalty", 0.5),
+            ("presence_penalty", 2),
         ],
     )
     def test_optional_model_setting_accepts_value_in_range(self, field, value):

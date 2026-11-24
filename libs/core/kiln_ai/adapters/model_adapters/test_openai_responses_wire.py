@@ -444,6 +444,28 @@ async def test_summaries_on_reports_same_usage_and_cost_as_non_streamed(plain_ta
 
 
 @respx.mock
+async def test_bridged_model_gets_output_limit_but_no_seed(plain_task):
+    route = respx.post(RESPONSES_URL).mock(
+        return_value=httpx.Response(200, json=responses_body([FINAL_MESSAGE]))
+    )
+    adapter = openai_adapter(
+        plain_task,
+        ModelName.gpt_5_4_pro,
+        thinking_level="medium",
+        max_output_tokens=256,
+        seed=7,
+    )
+
+    run = await adapter.invoke("what is 2+2")
+
+    assert run.output.output == "The answer is [4]"
+    body = request_body(route, 0)
+    assert body["max_output_tokens"] == 256
+    # The Responses API has no seed, so LiteLLM drops it.
+    assert "seed" not in body
+
+
+@respx.mock
 async def test_summaries_off_sends_no_summary(plain_task):
     route = respx.post(CHAT_COMPLETIONS_URL).mock(
         return_value=chat_completion_reply("The answer is [4]")

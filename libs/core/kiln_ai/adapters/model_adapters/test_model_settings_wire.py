@@ -6,7 +6,6 @@ setting or dropped it for a model that does not accept it.
 """
 
 import json
-from typing import Any
 
 import httpx
 import litellm
@@ -48,16 +47,22 @@ ANTHROPIC_REPLY = {
     "usage": {"input_tokens": 10, "output_tokens": 5},
 }
 
+ENDPOINTS = {
+    ModelProviderName.openai: (OPENAI_URL, OPENAI_REPLY),
+    ModelProviderName.anthropic: (ANTHROPIC_URL, ANTHROPIC_REPLY),
+}
+
 ALL_SETTINGS = {
     "max_output_tokens": 256,
     "seed": 7,
     "frequency_penalty": 0.5,
     "presence_penalty": 0.25,
 }
-# Every name a setting can take in a request body, in any provider's format.
+# The names the settings take in an OpenAI or Anthropic request body.
 SETTING_BODY_KEYS = {
     "max_tokens",
     "max_completion_tokens",
+    "max_output_tokens",
     "seed",
     "frequency_penalty",
     "presence_penalty",
@@ -85,24 +90,60 @@ def plain_task(tmp_path):
     return task
 
 
-async def sent_settings(
-    task: Task,
-    provider: ModelProviderName,
-    model_name: str,
-    url: str,
-    reply: dict[str, Any],
-    settings: dict[str, Any],
-) -> dict[str, Any]:
-    """Runs the task once and returns the settings found in the request body."""
+@respx.mock
+@pytest.mark.parametrize(
+    "provider,model_name,run_config,expected",
+    [
+        pytest.param(
+            ModelProviderName.openai,
+            ModelName.gpt_4o,
+            ALL_SETTINGS,
+            {
+                "max_tokens": 256,
+                "seed": 7,
+                "frequency_penalty": 0.5,
+                "presence_penalty": 0.25,
+            },
+            id="model_that_accepts_every_setting",
+        ),
+        pytest.param(
+            ModelProviderName.openai,
+            ModelName.gpt_5,
+            ALL_SETTINGS,
+            {"max_completion_tokens": 256, "seed": 7},
+            id="reasoning_model_renames_limit_and_drops_penalties",
+        ),
+        pytest.param(
+            ModelProviderName.anthropic,
+            ModelName.claude_sonnet_4_5,
+            # Thinking is off: Anthropic rejects a max_tokens that is not above the
+            # thinking budget, and this model thinks by default.
+            {**ALL_SETTINGS, "thinking_level": "none"},
+            {"max_tokens": 256},
+            id="anthropic_drops_seed_and_penalties",
+        ),
+        pytest.param(
+            ModelProviderName.openai,
+            ModelName.gpt_4o,
+            {},
+            {},
+            id="unset_settings_send_nothing",
+        ),
+    ],
+)
+async def test_settings_in_request_body(
+    plain_task, provider, model_name, run_config, expected
+):
+    url, reply = ENDPOINTS[provider]
     route = respx.post(url).mock(return_value=httpx.Response(200, json=reply))
     adapter = adapter_for_task(
-        task,
+        plain_task,
         KilnAgentRunConfigProperties(
             model_name=model_name,
             model_provider_name=provider,
             prompt_id="simple_prompt_builder",
             structured_output_mode="default",
-            **settings,
+            **run_config,
         ),
         base_adapter_config=AdapterConfig(allow_saving=False),
     )
@@ -110,53 +151,7 @@ async def sent_settings(
     run = await adapter.invoke("what is 2+2")
 
     assert run.output.output == "4"
-    body = json.loads(route.calls[0].request.content)
-    return {key: body[key] for key in SETTING_BODY_KEYS if key in body}
-
-
-@respx.mock
-async def test_model_that_accepts_every_setting_gets_them_all(plain_task):
-    sent = await sent_settings(
-        plain_task,
-        ModelProviderName.openai,
-        ModelName.gpt_4o,
-        OPENAI_URL,
-        OPENAI_REPLY,
-        ALL_SETTINGS,
-    )
-
-    assert sent == {
-        "max_tokens": 256,
-        "seed": 7,
-        "frequency_penalty": 0.5,
-        "presence_penalty": 0.25,
-    }
-
-
-@respx.mock
-async def test_settings_a_model_does_not_accept_are_dropped(plain_task):
-    # Anthropic's Messages API has no seed and no penalties.
-    sent = await sent_settings(
-        plain_task,
-        ModelProviderName.anthropic,
-        ModelName.claude_sonnet_4_5,
-        ANTHROPIC_URL,
-        ANTHROPIC_REPLY,
-        ALL_SETTINGS,
-    )
-
-    assert sent == {"max_tokens": 256}
-
-
-@respx.mock
-async def test_unset_settings_send_nothing(plain_task):
-    sent = await sent_settings(
-        plain_task,
-        ModelProviderName.openai,
-        ModelName.gpt_4o,
-        OPENAI_URL,
-        OPENAI_REPLY,
-        {},
-    )
-
-    assert sent == {}
+    [call] = route.calls
+    body = json.loads(call.request.content)
+    assert "thinking" not in body
+    assert {key: body[key] for key in SETTING_BODY_KEYS if key in body} == expected

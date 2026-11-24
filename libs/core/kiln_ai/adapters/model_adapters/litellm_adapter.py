@@ -234,7 +234,7 @@ def _is_json_object(arguments: Any) -> bool:
         return False
 
 
-def optional_model_settings(
+def _optional_model_settings(
     run_config: KilnAgentRunConfigProperties,
 ) -> dict[str, Any]:
     """The LiteLLM params for the run config settings that are unset by default.
@@ -913,7 +913,7 @@ class LiteLlmAdapter(BaseAdapter):
             "headers": self._headers,
             "temperature": run_config.temperature,
             "top_p": run_config.top_p,
-            **optional_model_settings(run_config),
+            **_optional_model_settings(run_config),
             # This drops params that are not supported by the model. Only openai params like top_p, temperature -- not litellm params like model, etc.
             # Not all models and providers support all openai params (for example, o3 doesn't support top_p)
             # Better to ignore them than to fail the model call.
