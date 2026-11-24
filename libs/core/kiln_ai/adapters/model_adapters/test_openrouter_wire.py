@@ -51,6 +51,13 @@ def use_httpx_transport(monkeypatch):
     monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
 
 
+@pytest.fixture(autouse=True)
+def fake_openrouter_key(monkeypatch):
+    # The adapter checks that an OpenRouter key is configured before a call. CI has
+    # none, and a real key from a local .env must not reach the test.
+    monkeypatch.setenv("OPENROUTER_API_KEY", API_KEY)
+
+
 @pytest.fixture
 def plain_task(tmp_path):
     project = Project(name="Test Project", path=str(tmp_path / "project.kiln"))
