@@ -6,9 +6,7 @@ status: draft
 
 This document designs the Kiln side of [functional spec](../functional_spec.md) sections 3.1 to 3.5, 3.7 and 3.8, under the fixed decisions of the [architecture](../architecture.md) (decisions 5 to 9, 13, 14, and section 2.1).
 
-**HT** is Kiln Harness Tuner at `b49f159`. `HT/x.py:f` names a function in `harness-tuner/src/kiln_harness_tuner/`. Kiln was read at `325c7cb3`. Marks: **[V]** checked by running code against Kiln's library in this checkout; **[U]** not verified. Everything else was read in the source.
-
-Every number and definition is HT's. A place where Kiln must differ is listed in section 10 and is not decided here.
+**HT** is Kiln Harness Tuner at `b49f159`. `HT/x.py:f` names a function in `harness-tuner/src/kiln_harness_tuner/`. Kiln was read at `325c7cb3`. Marks: **[V]** checked by running code against Kiln's library in this checkout; **[U]** not verified. Everything else was read in the source. Every number and definition is HT's. Each place where the specs leave a gap, or where Kiln must differ, is listed in section 10.
 
 ## 1. Modules and shared parts
 
@@ -36,8 +34,7 @@ Every number and definition is HT's. A place where Kiln must differ is listed in
 
 ### 1.2 Shared definitions (`eval_power/stored_rows.py`)
 
-- **Score types.** Binary: `pass_fail`, `pass_fail_critical`. Rating: `five_star`. The paired test of a binary score is `mcnemar_paired`. The paired test of a rating score is `compare_paired` (`HT/analysis.py:_stats_row`).
-- **Pass line.** A binary value `>= 0.5` is a pass.
+- **Score types.** Binary: `pass_fail`, `pass_fail_critical`. Rating: `five_star`. The paired test of a binary score is `mcnemar_paired`. The paired test of a rating score is `compare_paired` (`HT/analysis.py:_stats_row`). A binary value `>= 0.5` is a pass (the pass line).
 - **`ScoreSpec`**: frozen dataclass `key: str` (`EvalOutputScore.json_key()`), `type: TaskOutputRatingType`, `direction: ScoreDirection`.
 - **`comparable_scores(eval: Eval) -> tuple[list[ScoreSpec], list[SkippedScore]]`** ports `HT/detectability.py:comparable_specs`. It walks `eval.output_scores` in order. An `informational` score is left out with no entry. A score whose type is not binary or rating gives `SkippedScore(eval_id, score_key, reason="score type '<type>' has no statistics operation")`. On Kiln data today the skipped list is always empty: `EvalOutputScore` refuses a custom type and always has a direction.
 - **`rows_by_item(runs: Iterable[EvalRun]) -> dict[ItemKey, ItemRow]`** ports `HT/analysis.py:_runs_by_item`. The item is `eval_run_item_key(run)`. `ItemRow` is a frozen dataclass: `scores: dict[str, float | None]`, `last: EvalRun`, `replicates: int`. One record: its scores. Several records of one item are replicates: each score is the mean of the non-null values, and `last` is the newest record by `created_at`. A binary score is read at the pass line after the mean.
@@ -103,12 +100,10 @@ All functions are pure. `SIGNIFICANCE_FLOOR_SEARCH_LIMIT = 10_000` ports HT's `_
 
 ### 2.4 Handler and errors
 
-`_op_significance_floor(req)` in `statistics_api.py`, added to `_OPERATIONS`.
+`_op_significance_floor(req)` in `statistics_api.py`, added to `_OPERATIONS`. All errors are 422:
 
-All errors are 422:
-
-- `test` absent: `'test' is required for significance_floor.`
-- `room > n`: `room must not be greater than n (got room=<room>, n=<n>).`
+- `test` absent: `'test' is required for significance_floor.` `room > n`: `room must not be greater than n (got room=<room>, n=<n>).`
+- An `OverflowError` from the exact test: open point 10.6.
 - A negative `room` or `noise_rate`, `noise_rate > 1`, an unknown `test`, and `n < 1` (the existing `ge=1`, open point 10.1): pydantic's own text.
 
 ### 2.5 Tests
@@ -126,9 +121,7 @@ All errors are 422:
 | `interval_wins("mcnemar_paired", 10, 5) == 3`; `(1, 1) == 1`; `interval_wins("compare_paired", 20, 10) == 4`; the closed form is false at `(20, 3)` and true at `(20, 4)` | same |
 | `mcnemar_exact_p(6, 0) == 0.03125`; `noise_adjusted_wins(0.0, 40, 40, 0.05) == 6`; at 0.2 the result `w` is above 6 (9 [V]), `mcnemar_exact_p(w + 4, 4) < 0.05`, `mcnemar_exact_p(w + 3, 4) >= 0.05`, and with `room = w - 1` the result is None | `tests/test_noise.py::test_the_noise_adjusted_bar` |
 
-Also: a test named `test_bootstrap_rule_is_the_closed_form_not_the_seeded_draw`, which patches `paired_bootstrap_diff_ci` to raise and checks that `interval_wins("compare_paired", 20, 10, 0.95)` is still 4.
-
-`test_statistics_api.py`: the six output keys for a full request (`test=mcnemar_paired, n=30, room=6, noise_rate=0.1`); every optional output null when only `test` is given, with `floor == 6`; each row of 2.4; `interpretation` is one sentence or two; `test_openapi_exposes_operation_enum_and_agent_allow` lists five operations.
+Also `test_bootstrap_rule_is_the_closed_form_not_the_seeded_draw`: it patches `paired_bootstrap_diff_ci` to raise, and `interval_wins("compare_paired", 20, 10, 0.95)` is still 4. `test_statistics_api.py`: every output key for a full request (`test=mcnemar_paired, n=30, room=6, noise_rate=0.1`); every optional output null when only `test` is given, with `floor == 6`; each case of 2.4; `interpretation` is one sentence or two; `test_openapi_exposes_operation_enum_and_agent_allow` lists five operations.
 
 ## 3. The train helper (decision 7)
 
@@ -147,10 +140,8 @@ class TrainSplits:
     def val_size(self, eval: Eval) -> int | None             # None: the eval has no val split
 ```
 
-- **Split resolution is Kiln's.** Every item set comes from `kiln_ai.datamodel.eval_splits.resolve_split(task, eval, name)`. Items are `ItemKey` pairs `(source, id)`, never a bare id.
-- **Held-out set.** The constructor takes the union of the `val` and `test` split keys of every eval of `task.evals(readonly=True)`. Archived evals count: "any eval of the task".
-- **`train_items`**: `keys = split.item_keys() - held_out`, `left_out = split.item_keys() & held_out`. `split` is the full resolved split with this eval's `eval_id`, because `EvalRunner` refuses a split of another eval.
-- **`left_out_held_out`** in a response is `len` of the union of `left_out` over the evals that the call read.
+- **Split resolution is Kiln's.** Every item set comes from `kiln_ai.datamodel.eval_splits.resolve_split(task, eval, name)`. Items are `ItemKey` pairs `(source, id)`, never a bare id. **Held-out set.** The constructor takes the union of the `val` and `test` split keys of every eval of `task.evals(readonly=True)`. Archived evals count: "any eval of the task".
+- **`train_items`**: `keys = split.item_keys() - held_out`, `left_out = split.item_keys() & held_out`. `split` is the full resolved split with this eval's `eval_id`, because `EvalRunner` refuses a split of another eval. **`left_out_held_out`** in a response is `len` of the union of `left_out` over the evals that the call read.
 - **Cost.** `resolve_split` reads one whole store (`task.runs()` or `task.eval_inputs()`). The instance keeps a dict keyed `(split_ref.source, split_ref.filter_id)`, so each distinct filter is resolved once, and a hit is re-stamped with `dataclasses.replace(cached, name=..., eval_id=...)`, as `eval_api._cached_test_split` does. One instance lives for one request or one job run. It is never stored at module level.
 - **Tests.** An item that is train in eval A and val in eval B is not in A's `keys` and is in `left_out`. The same for test in A itself, and for a val split of an archived eval. A `TaskRun` and an `EvalInput` with the same id do not collide. An eval with no train split gives None. Two evals with the same train filter resolve it once (count the calls to `resolve_split`). The returned `split.eval_id` is the eval asked for. `val_size` is the key count, and None with no val split.
 
@@ -158,11 +149,9 @@ class TrainSplits:
 
 `GET /api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_detectability`, in `eval_power/api.py`. Tag `Run Configs`. Free. It writes nothing.
 
-### 4.1 Query parameters
+### 4.1 Query and response models
 
-`eval_ids: list[str] | None = None` (repeat the key; `None` is the set of 1.2), `confidence: float = 0.95` (`gt=0`, `lt=1`), `include_val_size: bool = False`.
-
-### 4.2 Response models
+Query: `eval_ids: list[str] | None = None` (repeat the key; `None` is the set of 1.2), `confidence: float = 0.95` (`gt=0`, `lt=1`), `include_val_size: bool = False`.
 
 `EvalDetectability`: `rows: list[EvalDetectabilityRow]` (in eval order, then score order), `skipped: list[SkippedScore]` (`eval_id: str`, `score_key: str`, `reason: str`), `unread_eval_ids: list[str]`, `left_out_held_out: int`.
 
@@ -183,26 +172,23 @@ class TrainSplits:
 
 `EvalDetectabilityVal`: `n: int | None` (`TrainSplits.val_size`), `room_estimate: int | None` (`round(val_n * room / n)` when `val_n` is not null and `n > 0`), `best_case_change: float | None` (`floor / val_n` when `val_n >= floor`). It reads the size of the val split only.
 
-### 4.3 Algorithm: `detectability.eval_detectability(task, run_config_id, evals, splits, confidence, include_val_size)`
+### 4.2 Algorithm: `detectability.eval_detectability(task, run_config_id, evals, splits, confidence, include_val_size)`
 
 Ports `HT/detectability.py:train_detectability`, `train_row` and the val half of `build_rows`.
 
 1. The handler loads the task and the run config (404), checks each id of `eval_ids` with `eval_from_id` (404), calls `select_evals`, and builds one `TrainSplits(task)`.
 2. For each eval: `comparable_scores`. Add its skipped entries. With no comparable score, go to the next eval.
-3. `train = splits.train_items(eval)`. None, or a read that raises `ValueError` or `OSError` (but not `json.JSONDecodeError`, which the torn-read helper must see): add the id to `unread_eval_ids` and go on.
-4. Read the stored train rows (1.2). For each spec, build the row of 4.2. An eval with no stored row gives rows with `n = 0`.
+3. `train = splits.train_items(eval)`. None, or a read that raises `ValueError` or `OSError` (but not `json.JSONDecodeError`, which the torn-read helper must see): add the id to `unread_eval_ids` and go on. This is HT's rule: a failed read drops that eval, never the call.
+4. Read the stored train rows (1.2). For each spec, build the row of 4.1. An eval with no stored row gives rows with `n = 0`.
 
-Step 3 is HT's rule: a failed read drops that eval, never the call.
-
-### 4.4 Tests (`eval_power/test_detectability.py`, `test_api.py`)
+### 4.3 Tests (`eval_power/test_detectability.py`, `test_api.py`)
 
 - `score_room`: `[1,1,0,0,0]` pass_fail → 3 (2 under `lower_is_better`); `[1,0,-1]` pass_fail_critical → 2; `[5,5,4,1]` five_star → 2; `[1,2,5]` five_star `lower_is_better` → 2 (`test_room_is_the_items_not_at_the_best_value`). The `lower_is_better` cases use a hand-built `ScoreSpec`.
 - An informational score gives no row and no skipped entry; a score built with `model_construct` and a custom type gives the skipped reason text (`test_informational_scores_never_count`).
-- Replicates of one item fold by the mean; `1, 0, 1` is a pass.
 - A row on a held-out item is not counted in `n`, and `left_out_held_out` counts the item. No val or test result is read: a test makes every `EvalRun` of a val item raise on access to `scores`.
 - `n = 0` rows for an eval with no stored row; an eval with no default judge config is absent; an eval with no train split is in `unread_eval_ids`; an unknown eval id is 404.
 - `val` is absent without the flag. With it: the size, `round(val_n * room / n)`, and `floor / val_n`.
-- A second call returns the same body, and the project folder has no changed file.
+- Replicates of one item fold by the mean: `1, 0, 1` is a pass. A second call returns the same body, and the project folder has no changed file.
 
 ## 5. Noise-check estimate
 
@@ -232,11 +218,10 @@ Ports `HT/noise.py:_sample`, `sample_items` and `judge_copy_note`. `NoisePlan` i
 1. For each eval of `select_evals`, in order: `comparable_scores`. No comparable score: the eval has no sample.
 2. `baseline` = the stored train rows (1.2), on the default judge config.
 3. **Covered items**: the items whose folded row has a non-null value for every comparable score.
-4. **The sample**: `sorted(covered, key=lambda k: hashlib.sha256(k[1].encode()).hexdigest())[:items_per_eval]`. There is no seed and no random draw. The order is the hash of the item id, so every call returns the same items.
-5. An empty sample: the eval is left out.
-6. **Items shared between evals.** Each eval is sampled alone, by the same order, so two evals over the same items take the same items. A shared item is one distinct item: it is driven once and costed once.
-7. `train_values[key]` = every non-null folded value of the score over the whole train set of section 3, not only the sample.
-8. **Is the judge checked again?** The default config's properties are `CodeEvalProperties`: no, `a code eval is deterministic: no judge noise`. Else `config_type == EvalConfigType.v2`: yes. Else: no, `a legacy judge config (<config_type>) drives inside its own job, so a copy would re-drive: judge noise alone cannot be measured`.
+4. **The sample**: `sorted(covered, key=lambda k: hashlib.sha256(k[1].encode()).hexdigest())[:items_per_eval]`. There is no seed and no random draw. The order is the hash of the item id, so every call returns the same items. An empty sample: the eval is left out.
+5. **Items shared between evals.** Each eval is sampled alone, by the same order, so two evals over the same items take the same items. A shared item is one distinct item: it is driven once and costed once.
+6. `train_values[key]` = every non-null folded value of the score over the whole train set of section 3, not only the sample.
+7. **Is the judge checked again?** The default config's properties are `CodeEvalProperties`: no, `a code eval is deterministic: no judge noise`. Else `config_type == EvalConfigType.v2`: yes. Else: no, `a legacy judge config (<config_type>) drives inside its own job, so a copy would re-drive: judge noise alone cannot be measured`.
 
 ### 5.3 The estimate: `noise_sample.estimate_from_plan(plan, task) -> NoiseCheckEstimate`
 
@@ -246,8 +231,7 @@ Ports `HT/noise.py:estimate_usd`.
 - `drive` = the median of the non-null drive costs over all folded rows of the sampled evals; 0.0 with none.
 - `judge_e` = the median over an eval's folded rows of `eval_usage.cost`, with a missing cost as 0.0; 0.0 with no row.
 - `estimate_usd = distinct_items * drive + sum(passes_e * len(items_e) * judge_e)`, with `passes_e` 2 when the judge is checked again, else 1.
-
-Errors: 1.3, and 422 for `items_per_eval < 1`.
+- Errors: 1.3, and 422 for `items_per_eval < 1`.
 
 ### 5.4 Tests (`test_noise_sample.py`, `test_api.py`)
 
@@ -282,21 +266,14 @@ Errors: 1.3, and 422 for `items_per_eval < 1`.
 
 `NoiseRow` keeps HT's field names (`HT/schemas.py:NoiseRow`): `eval_id`, `eval_name`, `score_key`, `score_type`, `items: int`, `redrive_changed: int`, `redrive_rate: float | None`, `redrive_mean_abs_change: float | None`, `rejudge_items: int`, `rejudge_changed: int | None`, `rejudge_rate: float | None`, `rejudge_mean_abs_change: float | None`, `rejudge_note: str`, `noise_adjusted_wins: int | None`, `train_room: int | None`. HT's `baseline_rc_id` and `clone_rc_id` are not served: the run config is in the params, and the copy does not exist when the job ends.
 
-**Create route**, in `jobs/api.py`, placed beside `POST /api/jobs/evals/run` and before `POST /api/jobs/{type}`:
-
-```
-POST /api/jobs/evals/noise_check   -> 201 CreateJobResponse
-async def run_noise_check_job(params: NoiseCheckJobParams) -> CreateJobResponse
-```
-
-It checks the task, the run config and each id of `eval_ids` (404; 503 on a half-written file), then calls `job_registry.create(type_name="eval_noise_check", params=params, project_id=params.project_id)`. `connect_jobs_api` adds `job_registry.register_type(NoiseCheckJobWorker)`. The docstring says that the job costs money, that the estimate route is free, and what `max_usd` does. Progress, the result, the error log, wait and cancel are the existing job routes, unchanged.
+**Create route**: `POST /api/jobs/evals/noise_check`, status 201, `async def run_noise_check_job(params: NoiseCheckJobParams) -> CreateJobResponse`, in `jobs/api.py`, beside `POST /api/jobs/evals/run` and before `POST /api/jobs/{type}`. It checks the task, the run config and each id of `eval_ids` (404; 503 on a half-written file), then calls `job_registry.create(type_name="eval_noise_check", params=params, project_id=params.project_id)`. `connect_jobs_api` adds `job_registry.register_type(NoiseCheckJobWorker)`. The docstring says that the job costs money, that the estimate route is free, and what `max_usd` does. Progress, the result, the error log, wait and cancel are the existing job routes, unchanged.
 
 ### 6.2 The sequence of `run(params, ctx)`
 
 **The core eval runner is not changed.** The job builds `EvalRunner` objects itself, as `EvalJobWorker._build_eval_runner` does, with constructor parameters that exist today: `eval_configs`, `run_configs`, `eval_run_type="task_run_eval"`, `split`, `save_context`, `item_ids`, `judge=True`, `trace_index_registry`. It starts no child job: a child would need a second job slot while the parent holds one. Runners run one after the other.
 
 1. `save_context = save_context_for_project(project_id, context=f"noise check job {ctx.job_id}") or default_save_context`, on the event loop. Load the task, the run config and the evals in a thread. A missing one fails the job: this is the only way it fails.
-2. Sweep the task (6.7). A failure is logged and does not stop the job.
+2. Sweep the task (6.7), inside `save_context`. A failure is logged and does not stop the job.
 3. `plan = build_noise_plan(...)`. No sample: return with `skipped = "no stored baseline train row to compare with"`.
 4. `estimate_from_plan`. With `max_usd` set and `estimate_usd > max_usd`: return with `skipped = f"the estimate ${estimate_usd:.2f} is above max_usd ${max_usd:.2f}"`. No object is made and no model is called.
 5. Open `try`. **Temporary run config**: inside `save_context`, `TaskRunConfig(parent=task, name=f"NOISE-CHECK {ctx.job_id}", description=f"Temporary copy of run config {run_config_id}, made by noise check job {ctx.job_id}. Kiln deletes it when the job ends.", run_config_properties=measured.run_config_properties.model_copy(deep=True), prompt=None, provenance=None)`, then `save_to_file()`. The id is recorded before the save. The properties are copied as they are, so a frozen prompt id still names the measured run config's prompt (`HT/noise.py:_create_clone`). If the save raises: `skipped = f"the temporary run config could not be made ({exc})"[:300]`, and go to the clean-up.
@@ -319,12 +296,10 @@ It checks the task, the run config and each id of `eval_ids` (404; 503 on a half
 | Function | Ports | Rule |
 |---|---|---|
 | `changes(spec, before, after, items) -> (compared, changed, mean_abs)` | `HT/noise.py:changes` | Over the sampled items where both rows have a value. Binary: changed when `(a >= 0.5) != (b >= 0.5)`; `mean_abs` None. Rating: changed when `abs(b - a) > 1e-9`; `mean_abs` is the mean of `abs(b - a)` |
-| `same_outputs(baseline, copied) -> bool` | `noise.py:same_outputs` | False with no copied row. For each copied row: the baseline row exists; when both name a `scored_run_id`, they are equal; else both `EvalRun.output` values are equal and not None |
+| `same_outputs(baseline, copied) -> bool` | `noise.py:same_outputs` | False with no copied row. For each copied row: the baseline row exists; when both name a `scored_run_id`, they are equal; else both `EvalRun.output` values are equal and not None. It is checked for every eval that was judged again. When it is false, the copied rows are not used, and the note is `the copy judged other outputs than the stored ones (the server drove again), so judge noise alone is not separable here` |
 | `noise_rows(sample, redrive, rejudge, note, confidence) -> list[NoiseRow]` | the loop at the end of `noise.py:run_noise_check` | Below |
 | `noise_warnings(row, test, n, confidence) -> list[str]` | `noise.py:_warnings` | Below |
 | `flip_rate(rows) -> float \| None` | `HT/stop_rules.py:noise_flip_rate`, no eval filter | Over the binary rows: `sum(redrive_changed) / sum(items)`; None when the sum of `items` is 0 |
-
-**`same_outputs` is checked for every eval that was judged again.** When it is false, the copied rows are not used and the note is `the copy judged other outputs than the stored ones (the server drove again), so judge noise alone is not separable here`.
 
 **A row**, per spec of a sample, with `values = train_values[key]` and `alpha = 1 - confidence`:
 
@@ -354,23 +329,19 @@ A missing cost counts as 0. A drive shared by two evals is one `TaskRun`, so it 
 
 ### 6.6 Clean-up: `noise_cleanup.delete_job_objects(task, temp_rc_ids, judge_copies)`
 
-It runs in the `finally` of step 9, on success, failure and cancel. It deletes only objects of this job, found by the ids that the job recorded. It reads fresh from disk.
-
-All deletes run in one `async with save_context():` block, in one worker thread. Each delete is `KilnBaseModel.delete()` on an instance loaded for the delete (not a read-only cached one). `delete()` removes the object's folder and clears its cache entry.
+It runs in the `finally` of step 9, on success, failure and cancel. It deletes only objects of this job, found by the ids that the job recorded. It reads fresh from disk. All deletes run in one `async with save_context():` block, in one worker thread. Each delete is `KilnBaseModel.delete()` on an instance loaded for the delete (not a read-only cached one). `delete()` removes the object's folder and clears its cache entry.
 
 | Step | What | How it is found |
 |---|---|---|
 | 1 | The eval runs of the temporary run config | Every `EvalRun` with `task_run_config_id == temp_rc_id`, over every config of every eval of the task |
-| 2 | The task runs of the second drive | Every run of `task.runs(readonly=True, include_intermediate_runs=True, include_eval_generated=True)` with `output.source.run_config_id == temp_rc_id` |
-| 3 | A task run that a second judgment drove (rare) | For each judge copy: a `scored_run_id` of the copy's runs that no baseline row names, whose `TaskRun.created_at >= copy.created_at`, and that no `EvalRun` outside `NOISE-CHECK` configs names (open point 10.5) |
+| 2 | The task runs of the second drive | Every run of `task.runs(readonly=True, include_intermediate_runs=True, include_eval_generated=True)` with `output.source.run_config_id == temp_rc_id`. `include_eval_generated` is meant for the eval runner; the clean-up is a deliberate second user, because it must see eval traces |
+| 3 | A task run that a second judgment drove (rare) | For each judge copy: a `scored_run_id` of the copy's runs whose `TaskRun.created_at >= copy.created_at`, and that no `EvalRun` of a config without the prefix names. A stored baseline trace is older than the copy, and a baseline row names it, so it is never taken (open point 10.5) |
 | 4 | Each judge copy | `EvalConfig.from_id_and_parent_path(copy_id, eval.path)`. Its folder holds its eval runs, so they go with it |
 | 5 | The temporary run config | `TaskRunConfig.from_id_and_parent_path(temp_rc_id, task.path)`. Only when steps 1 and 2 had no failure |
 
 - **Why this order.** The temporary run config is deleted last because its id is the only way to find the objects of steps 1 and 2. If the app dies in the middle, what is left still has a `NOISE-CHECK` object that the sweep finds.
-- **When one delete fails.** The exception is caught inside the block, logged with `logger.exception`, written with `ctx.report_error(..., cleanup=True)`, and added to `warnings` as `clean-up could not delete <kind> <id>: <error>`. The other deletes go on. The job does not fail. The object stays for the sweep. No exception leaves the block, because `GitSyncManager.atomic_write` rolls back every write of the block on an exception.
-- **When the block itself fails** (the write lock, or the push): the roll-back restores the deleted files. The failure is logged and reported in the same way, and the sweep does the work later.
+- **When one delete fails.** The exception is caught inside the block, logged with `logger.exception`, written with `ctx.report_error(..., cleanup=True)`, and added to `warnings` as `clean-up could not delete <kind> <id>: <error>`. The other deletes go on. The job does not fail. The object stays for the sweep. No exception leaves the block, because `GitSyncManager.atomic_write` rolls back every write of the block on an exception. When the block itself fails (the write lock, or the push), the roll-back restores the deleted files; the failure is logged and reported in the same way, and the sweep does the work later.
 - **Git sync.** With auto sync, each save of the job is a commit and a push, as for an eval job, so other clones see the temporary objects while the job runs. The clean-up is one more commit, with the context `noise check job <id>`. The objects stay in the git history.
-- A second call to `Task.runs(include_eval_generated=True)` outside the eval runner is deliberate here: the clean-up must see eval traces.
 
 ### 6.7 The sweep of left-overs
 
@@ -382,9 +353,7 @@ A left-over is a `TaskRunConfig` or an `EvalConfig` whose name starts with `NOIS
 
 ### 6.8 Cancel
 
-`POST /api/jobs/{id}/cancel` cancels the supervising task. The loop body of steps 6 and 7 has no suspension point of its own (`ctx.report_progress` does not suspend), so the `CancelledError` arrives inside `runner.run()`. `AsyncJobRunner.run` then cancels and awaits its item workers in its own `finally`, before the exception reaches the job. So no item is still writing when the clean-up starts [U]. The runner is also wrapped in `contextlib.aclosing`.
-
-The clean-up is protected from a second cancel: it runs as a task that the `finally` awaits through `asyncio.shield`, in a loop that goes on until the task is done. The cancel request returns after the clean-up, because the registry awaits the task. The job ends as `cancelled`, with no result. The error log keeps what was reported.
+`POST /api/jobs/{id}/cancel` cancels the supervising task. The loop body of steps 6 and 7 has no suspension point of its own (`ctx.report_progress` does not suspend), so the `CancelledError` arrives inside `runner.run()`. `AsyncJobRunner.run` then cancels and awaits its item workers in its own `finally`, before the exception reaches the job. So no item is still writing when the clean-up starts [U]. The runner is also wrapped in `contextlib.aclosing`. The clean-up is protected from a second cancel: it runs as a task that the `finally` awaits through `asyncio.shield`, in a loop that goes on until the task is done. The cancel request returns after the clean-up, because the registry awaits the task. The job ends as `cancelled`, with no result. The error log keeps what was reported.
 
 ### 6.9 Tests (`jobs/workers/test_noise_check.py`, `eval_power/test_noise_compare.py`, `test_noise_cleanup.py`)
 
@@ -401,24 +370,16 @@ All with fake model adapters and a real project in `tmp_path`. Six train items w
 | Second drive gives `[1, 1, 0, 0, 1, 1]`: `train_room == 2`, `noise_adjusted_wins is None`, one warning that holds `67% of items change between two runs` and `even fixing all 2 item(s) with room is not enough` | `test_noise_large_for_the_room_warns_and_never_refuses` |
 | No stored row: `skipped` text, nothing made | `test_no_stored_rows_means_no_spend` |
 
-Also:
-
-- **Leaves nothing.** After success, after a failing adapter, and after a cancel in the middle of each pass: the set of files under the project folder equals the set before the job. `test_the_judge_copy_leaves_the_project_after_use` is the HT origin.
+- **Leaves nothing.** After success, after a failing adapter, and after a cancel in the middle of each pass: the set of files under the project folder equals the set before the job. A second cancel during the clean-up does not stop it. `test_the_judge_copy_leaves_the_project_after_use` is the HT origin.
 - One eval whose adapter raises a provider error: the job succeeds, the other eval has rows, `errors` holds the provider's text whole, and `GET /api/jobs/{id}/errors` holds it too.
 - A shared item of two V2 evals is driven once (count the adapter calls), and `spend_usd` counts it once.
 - A delete that raises (patched): the other objects are deleted, the temporary run config stays, `warnings` names the object, and the job succeeds. The next `sweep_task` removes the rest.
 - Sweep: a left-over run config with eval runs and task runs, and a left-over judge copy, are removed; an object whose job is live in the registry is kept; an object with another name is never touched; a task with no left-over causes no read of runs.
-- A second cancel during the clean-up does not stop it.
-- `POST /api/jobs/eval_noise_check` is refused with the `create_path` text. The create route gives 404 for an unknown run config or eval id, and 422 for `items_per_eval=0`.
-- `flip_rate` pools binary rows only, and is None with no compared item.
+- `POST /api/jobs/eval_noise_check` is refused with the `create_path` text. The create route gives 404 for an unknown run config or eval id, and 422 for `items_per_eval=0`. `flip_rate` pools binary rows only, and is None with no compared item.
 
 ## 7. Scores by split
 
-Each of the four routes gets one query parameter, with one description:
-
-```
-split: Annotated[EvalSplitName, Query(description="Which of the eval's dataset splits to summarise: train, val or test. Default test.")] = "test"
-```
+Each of the four routes gets the same query parameter: `split: Annotated[EvalSplitName, Query(description="Which of the eval's dataset splits to summarise: train, val or test. Default test.")] = "test"`.
 
 | Route | Handler | Change |
 |---|---|---|
@@ -427,26 +388,21 @@ split: Annotated[EvalSplitName, Query(description="Which of the eval's dataset s
 | `GET …/run_configs/{run_config_id}/eval_scores` | `get_run_config_eval_scores` | Passes `split` to `run_config_eval_scores(task, run_config_ids, split)` |
 | `GET …/run_configs/eval_scores` | `get_all_run_configs_eval_scores` | The same |
 
-`run_config_eval_scores` gets `split: EvalSplitName = "test"`, and its `resolve_split(task, eval, "test")` becomes `resolve_split(task, eval, split)`. No response model changes. `dataset_size` is the size of the split asked for.
-
-**422.** `score_summary` works on one eval, so a missing split gives the results route's text from `resolved_split_or_422`: `Eval '<id>' has no '<split>' split.` The three other routes work on every eval of the task: see open point 10.2.
+`run_config_eval_scores` gets `split: EvalSplitName = "test"`, and its `resolve_split(task, eval, "test")` becomes `resolve_split(task, eval, split)`. No response model changes. `dataset_size` is the size of the split asked for. **422:** `score_summary` works on one eval, so a missing split gives the results route's text from `resolved_split_or_422`: `Eval '<id>' has no '<split>' split.` The three other routes work on every eval of the task: see open point 10.2.
 
 **Tests** (`test_eval_api.py`), on a fixture whose train, val and test splits hold different items with different scores:
 
 - For each of the four routes: the body with no `split` equals the body with `split=test`, and equals a body recorded from the code before the change. The existing tests of the four routes pass unchanged.
 - `split=train` and `split=val` give that split's means and `dataset_size`.
-- `score_summary` with a split that the eval does not have: 422 with the text. A value that is not a split name: 422 from FastAPI.
-- The empty-split 400 names the split.
+- `score_summary` with a split that the eval does not have: 422 with the text. A value that is not a split name: 422 from FastAPI. The empty-split 400 names the split.
 
 ## 8. Paired comparison
 
-`GET /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/compare`, in `eval_api.py`, beside the results route. Tag `Evals`. Free. It writes nothing. One eval per call. It returns no number across scores or evals.
-
-Query: `baseline_run_config_id: str` (required), `split: EvalSplitName` (required). The path's run config is the candidate. The confidence is fixed at 0.95.
+`GET /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/compare`, in `eval_api.py`, beside the results route. Tag `Evals`. Free. It writes nothing. One eval per call. It returns no number across scores or evals. Query: `baseline_run_config_id: str` (required), `split: EvalSplitName` (required). The path's run config is the candidate. The confidence is fixed at 0.95.
 
 ### 8.1 Response models (in `eval_api.py`)
 
-`RunConfigComparison`: `rows: list[RunConfigComparisonRow]`, `n_baseline_items: int`, `n_candidate_items: int`, `skipped: list[SkippedScore]`. The two counts are the distinct items of the split with a stored row that is not a skip record.
+`RunConfigComparison`: `rows: list[RunConfigComparisonRow]`, `n_baseline_items: int`, `n_candidate_items: int`, `skipped: list[SkippedScore]`. The two counts are the distinct items of the split with a stored row that is not a skip record. No item id and no per-item value is in the response.
 
 `RunConfigComparisonRow`:
 
@@ -461,8 +417,6 @@ Query: `baseline_run_config_id: str` (required), `split: EvalSplitName` (require
 | `ci_low`, `ci_high` | `float \| None` | Rounded to 4 places, as the statistics route serves them; sign-normalised |
 | `headroom` | `float \| None` | Binary: `1 - baseline_score` (`baseline_score` under `lower_is_better`). Rating: null |
 | `fail_to_pass`, `pass_to_fail` | `int \| None` | Binary: the raw counts. Rating: null |
-
-No item id and no per-item value is in the response.
 
 ### 8.2 Algorithm
 
@@ -485,11 +439,9 @@ Two functions in `eval_api.py`, beside `compute_score_summary`. They port `HT/an
 
 **Sign normalisation** (HT's rule): under `lower_is_better`, `delta = -delta`, and `(ci_low, ci_high) = (-ci_high, -ci_low)`. The scores, the headroom rule above and the two counts are not turned. Kiln does not allow `lower_is_better` on these three score types today, so the branch runs only in its unit test.
 
-### 8.3 Errors
+**Errors:** 1.3, with the baseline run config checked by `task_run_config_from_id`. A split that the eval does not have: 422, `Eval '<id>' has no '<split>' split.` `split=test`: 422, `The compare route does not compare on the test split. Use split=train or split=val.`, raised before any read.
 
-1.3, with the baseline run config checked by `task_run_config_from_id`. A split that the eval does not have: 422, `Eval '<id>' has no '<split>' split.` `split=test`: 422, `The compare route does not compare on the test split. Use split=train or split=val.`, raised before any read.
-
-### 8.4 Tests (`test_eval_api.py`)
+### 8.3 Tests (`test_eval_api.py`)
 
 HT's tests of this code run against a fake statistics answer, so they pin behaviour, not numbers. Kiln's tests pin the numbers against the statistics route: for one binary and one rating fixture, `p_value` equals `p_exact` or `wilcoxon_p` of `POST /api/statistics` before rounding, and the CI ends are equal.
 
@@ -507,13 +459,13 @@ Also: `split=test` is 422 and reads nothing; a missing val split is 422; an unkn
 
 ### 9.1 Agent policy of each route (decision 13)
 
-| Route | `openapi_extra` | MCP |
-|---|---|---|
-| `POST /api/statistics`, and the four routes of section 7 | `ALLOW_AGENT`, unchanged | Allowed |
-| `GET …/eval_detectability`, `POST …/noise_check_estimate`, `GET …/compare` | `ALLOW_AGENT` | Allowed |
-| `POST /api/jobs/evals/noise_check` | `agent_policy_require_approval("Run a noise check in the background? This runs the run config and its judges again on a sample of train items and uses AI credits.")` | Allowed |
+Every route here is allowed for MCP: none gets an `x-mcp-policy` tag, and absent means allowed (spec one).
 
-"Allowed" for MCP means that the route has no `x-mcp-policy` tag. Absent is allowed (spec one).
+| Route | `openapi_extra` |
+|---|---|
+| `POST /api/statistics`, and the four routes of section 7 | `ALLOW_AGENT`, unchanged |
+| `GET …/eval_detectability`, `POST …/noise_check_estimate`, `GET …/compare` | `ALLOW_AGENT` |
+| `POST /api/jobs/evals/noise_check` | `agent_policy_require_approval("Run a noise check in the background? This runs the run config and its judges again on a sample of train items and uses AI credits.")` |
 
 ### 9.2 Regeneration, in the phase that adds or changes the route (decision 14)
 
@@ -525,14 +477,14 @@ Also: `split=test` is 422 and reads nothing; a missing val split is 422; an unkn
 
 ## 10. Conflicts and open points
 
-None of these is decided here. Each has the evidence and a proposal for the owner.
+These are not decided by this document. Each has the evidence and a proposal. Where the design above needs an answer to be buildable, it uses the proposal, and the owner can overrule it. Points 3 and 4 are not built in: the sweep is as decision 6 says.
 
 1. **`n = 0` on the statistics route.** The functional spec lists 422 for a negative number only. The shared field `n` has `ge=1` today (`statistics_api.py`, used by `proportion_ci`), so `n = 0` is a 422. Proposed: keep the constraint, because no existing behaviour may change. HT's pinned `fewest_wins(0, 0) is None` is then tested on the library function, which the detectability read calls directly.
 2. **`split` on the three task-wide summary routes.** The functional spec says "422 when the eval has no such split". `eval_results_summary` and the two `eval_scores` routes cover every eval of the task, and train and val splits are optional. A 422 would fail the whole call when one eval has no val split. Proposed: such an eval is left out of the answer, which is what the code already does for a missing test split (`if test_split is None: continue`).
 3. **The sweep and a second Kiln.** Decision 6 says the sweep removes what no live job owns. A job record is in memory of one process (`JobRecord`, "never persisted"). With git auto sync, the temporary objects are pushed (`atomic_write` commits and pushes each save). A second machine that pulls them has no such job, so its app start, or its next noise job, deletes the objects of a job that still runs elsewhere. Proposed: the sweep also skips an object whose `created_at` is less than 24 hours old. This needs a ruling, because it changes when a left-over goes.
 4. **The prefix is reserved but not enforced.** A run config or judge config that a person names `NOISE-CHECK …` is deleted by the sweep, with its eval runs. Proposed: the create and rename routes of run configs and judge configs refuse the prefix with a 422. This touches existing routes.
 5. **A second judgment that drives.** When the stored trace of a baseline row cannot be reused (it was deleted, or the item's environment version changed), the runner drives the measured run config again. The new task run is under the measured run config, and it becomes the newest trace of its key. The runner does not say which traces it generated (`TraceIndex.get_or_create` returns `was_generated`, and `EvalRunner._trace` drops it). The rule of 6.6 step 3 finds such a run without a runner change, but it can also remove a drive that another job made in the same seconds and that nothing has scored yet. The smallest runner change that makes it exact: `EvalRunner` records the runs it generates in a judged run, as `driven_runs` does for a drive-only run. Not required; flagged.
-6. **The exact test fails above about 1,030 changed pairs.** `mcnemar_exact_p(600, 700)` raises `OverflowError: int too large to convert to float` [V]. HT's `binomial_two_sided_p` has the same limit. It is reached by `noise_adjusted_wins` on a large, noisy train split (`n = 2000`, rate 0.5 [V]) and by the compare route. Proposed, with no change to the arithmetic: the statistics route maps `OverflowError` to a 422; the noise job gives `noise_adjusted_wins = None` for that row with a warning that says the value could not be computed; the compare route puts the score in `skipped`. The existing `mcnemar_paired` operation has the same failure today, as a 500.
+6. **The exact test fails above about 1,030 changed pairs.** `mcnemar_exact_p(600, 700)` raises `OverflowError: int too large to convert to float` [V]. HT's `binomial_two_sided_p` has the same limit. It is reached by `noise_adjusted_wins` on a large, noisy train split (`n = 2000`, rate 0.5 [V]) and by the compare route. Proposed, with no change to the arithmetic: the statistics route maps `OverflowError` to a 422; the noise job gives `noise_adjusted_wins = None` for that row with a warning that says the value could not be computed; the compare route puts the score in `skipped`. The existing `mcnemar_paired` operation has the same failure today: its handler catches `ValueError` and `TypeError` only.
 7. **`spend_usd` and the synthetic user.** 6.5 adds `synthetic_user_usage.cost`, because it is money the job spent. HT's own figure, and the estimate formula, read `task_run_usage.cost` only, which leaves it out. For a multi-turn task the spend is then above the estimate. The other choice is HT's figure exactly.
 8. **Build order.** The compare route imports `eval_power/stored_rows.py`. The architecture says steps 2 to 9 are free in order except "4 needs 3". So step 6 also needs step 3, or whichever is built first creates that file.
 9. **Convention E17.** `eval_power/api.py` and the worker import `task_run_config_from_id` and `eval_from_id` from `eval_api.py`, as `jobs/api.py` and `workers/eval.py` do today. The rule says routers do not import each other. The fix is to move the lookups to a service module, which is outside this spec. It is reported under rule H24.
@@ -546,5 +498,4 @@ None of these is decided here. Each has the evidence and a proposal for the owne
 - That a drive writes nothing in the project folder besides its `TaskRun` and `EvalRun`, for multi-turn and environment items. The "leaves nothing" test must have one item of each kind.
 - That work in a worker thread inside `atomic_write` is safe. The eval runner saves on the event loop inside it.
 - What HT's `Analyzer.judge_items` returns when only some items fail. 6.4 compares the items that have a row.
-- That `resolve_split` and HT's on-disk reader give the same train count for every eval. `unscored` depends on it.
-- The order of `eval_config.runs()`. HT keeps the last record of a replicate set in served order; 1.2 uses the newest by `created_at`.
+- That `resolve_split` and HT's on-disk reader give the same train count for every eval; `unscored` depends on it. Also the order of `eval_config.runs()`: HT keeps the last record of a replicate set in served order; 1.2 uses the newest by `created_at`.
