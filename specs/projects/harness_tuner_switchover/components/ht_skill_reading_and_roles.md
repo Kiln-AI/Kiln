@@ -2,7 +2,7 @@
 status: draft
 ---
 
-# Component: How Harness Tuner Reads Kiln's Skill, and Its Role Files
+# Component: How Harness Tuner Reads Kiln's Skill, and Its Role Entry Files
 
 This document designs steps 10 and 11 of the [architecture](../architecture.md) build order. It covers [functional spec](../functional_spec.md) sections 5.1 to 5.5, and the parts of sections 6 and 7 that belong to them. The sibling document [ht_api_switch_and_removals.md](ht_api_switch_and_removals.md) covers the API switches, the removals, the start-up order, the audit and the demo run.
 
@@ -12,6 +12,7 @@ Conventions:
 - **Kiln paths** are from `app/mcp/kiln_mcp_server/skill/`. Each one was checked against the build branch at commit `5522a7b9` (after its phase 18).
 - A code block with no language is a signature or pseudo-code. It is not final code.
 - "Per the Kiln component doc" marks a name that a sibling Kiln document fixes.
+- The rulings of architecture section 10 are applied in the body. Section 10 lists the limits that are accepted, and section 11 the one point that is still open.
 
 ## 1. `SkillReader`
 
@@ -86,6 +87,7 @@ HT's lock file has `mcp` 1.30.0. One uncached read does this, in this order:
 
 - One dict per `SkillReader`: the path as given, stripped, to the text. No expiry, no size limit: the tree is about 2 MB.
 - A gateway process holds one reader for its life, which is one agent session. Loop code holds one reader per run, at `Ctx.skill_reader`, made in `cli.build_ctx` from `target.kiln_host`.
+- The start-up check runs before the run has a `Ctx`. It holds its own reader, for the check only (sibling document, section 3).
 - Two reads of one path at the same time may both fetch. Both store the same text.
 
 ### 1.6 What must be proved first, against a real Kiln
@@ -143,7 +145,7 @@ class FakeSkillReader:                              # implements SkillSource
 
 | Role | Gets it | Because it names |
 |---|---|---|
-| `batch_plan` | yes | Its entry file; levers, techniques, playbooks; memory; the costing file |
+| `batch_plan` | yes | Its entry file; levers, techniques, playbooks; memory; the costing file, when the pre-flight has found it (5.2) |
 | `create_experiment_rc` | yes | Its entry file; levers, techniques; the code tool authoring file and templates; memory; the run config file |
 | `analyze_experiment_results` | yes | Its entry file; memory |
 | `baseline_review` | yes | Its entry file; the smell documents |
@@ -202,19 +204,19 @@ Both rules were run on the 16 real files of the fresh copy: the index gives the 
 
 ## 4. Role entry files
 
-Each entry file moves from `agent_files/skills/kiln-harness-tuner-knowledge/references/` to `references/knowledge.md` of a role skill. Every new file starts with this fixed paragraph, after its title:
+Each entry file moves from `agent_files/skills/kiln-harness-tuner-knowledge/references/` to `references/knowledge-entry.md` of a role skill (architecture 5.3). The name is fixed by the architecture. It is chosen so that it cannot be mistaken for Kiln's own `references/knowledge/` folder. Every new file starts with this fixed paragraph, after its title:
 
 > A path in this file that starts with `references/improving_agents/`, `references/levers/` or `references/knowledge/` is a file of Kiln's skill. Read it with the gateway tool `kiln_skill`. It is not a file on disk.
 
 | Today | New path | Hand-written part kept | Generated table | Becomes this line |
 |---|---|---|---|---|
-| `planner.md` | `kiln-harness-tuner-batch-selection/references/knowledge.md` | Lines 1 to 50 ("How to use the knowledge", the list of lever ids, the "Applies to" note), and the two-line intro of each section | `smells` | "The smells: read the section "Smells" of `references/improving_agents/index.md`." |
+| `planner.md` | `kiln-harness-tuner-batch-selection/references/knowledge-entry.md` | Lines 1 to 50 ("How to use the knowledge", the list of lever ids, the "Applies to" note), and the two-line intro of each section | `smells` | "The smells: read the section "Smells" of `references/improving_agents/index.md`." |
 | | | | `playbooks-order`, `playbooks-goal`, `playbooks-failure`, `playbooks-eval`, `playbooks-design` | One line each, with the sections "Order of work", "Goals", "Failure patterns", "Eval problems" and "Design" of the same file |
-| `builder.md` | `kiln-harness-tuner-experiment-build/references/knowledge.md` | Lines 1 to 30 | `techniques` | "The techniques: read the section "Techniques" of `references/improving_agents/index.md`. It does not list dormant techniques." |
+| `builder.md` | `kiln-harness-tuner-experiment-build/references/knowledge-entry.md` | Lines 1 to 30 | `techniques` | "The techniques: read the section "Techniques" of `references/improving_agents/index.md`. It does not list dormant techniques." |
 | | | | `levers` | The hand-kept table 4.2 |
-| `analyzer.md` | `kiln-harness-tuner-experiment-analysis/references/knowledge.md` | Lines 1 to 29, and the section intros | `playbooks-failure`, `playbooks-eval` | One line each, with the sections "Failure patterns" and "Eval problems" |
-| `smells.md` | `kiln-harness-tuner-baseline-review/references/knowledge.md` | Lines 1 to 24 | `smells-detail` | "The smells: read the section "Smells" of `references/improving_agents/index.md`." Then the hand-kept table 4.1 |
-| `report.md` | `kiln-harness-tuner-report/references/knowledge.md` | Lines 1 to 15 | `smells`, `playbooks`, `techniques` | Three lines: "Smells"; the five playbook sections; "Techniques" |
+| `analyzer.md` | `kiln-harness-tuner-experiment-analysis/references/knowledge-entry.md` | Lines 1 to 29, and the section intros | `playbooks-failure`, `playbooks-eval` | One line each, with the sections "Failure patterns" and "Eval problems" |
+| `smells.md` | `kiln-harness-tuner-baseline-review/references/knowledge-entry.md` | Lines 1 to 24 | `smells-detail` | "The smells: read the section "Smells" of `references/improving_agents/index.md`." Then the hand-kept table 4.1 |
+| `report.md` | `kiln-harness-tuner-report/references/knowledge-entry.md` | Lines 1 to 15 | `smells`, `playbooks`, `techniques` | Three lines: "Smells"; the five playbook sections; "Techniques" |
 | `technique-index.md` | Removed | Its one rule ("Prefer a playbook…") is already in step 4 of the planner's file | `techniques` | Nothing. Kiln's index has the table "Techniques" |
 
 Edits inside the kept parts:
@@ -255,20 +257,20 @@ The rows are today's `gateway_ops` values (`builder.md:69-75`). The skill row ad
 
 ## 5. Links to re-point
 
-"Kiln:" marks a path in Kiln's skill. "Role file" is `references/knowledge.md` of the role's own skill. Skill files are under `agent_files/skills/`.
+"Kiln:" marks a path in Kiln's skill. "Entry file" is `references/knowledge-entry.md` of the role's own skill. Skill files are under `agent_files/skills/`.
 
 | File | Line | Today | New |
 |---|---|---|---|
-| `agents/batch_plan.md` | 8 | `references/planner.md` of the `kiln-harness-tuner-knowledge` skill | `references/knowledge.md` of your `kiln-harness-tuner-batch-selection` skill |
+| `agents/batch_plan.md` | 8 | `references/planner.md` of the `kiln-harness-tuner-knowledge` skill | `references/knowledge-entry.md` of your `kiln-harness-tuner-batch-selection` skill |
 | `agents/create_experiment_rc.md` | 7 | the `kiln-harness-tuner-code-tool-authoring` skill | Kiln: `references/knowledge/code_tool_authoring.md` |
-| | 7-8 | `references/builder.md` of the knowledge skill | `references/knowledge.md` of your `kiln-harness-tuner-experiment-build` skill |
-| `agents/baseline_review.md` | 5 | `references/smells.md` of the knowledge skill | `references/knowledge.md` of your `kiln-harness-tuner-baseline-review` skill |
-| `agents/analyze_experiment_results.md` | 5-6 | `references/analyzer.md` of the knowledge skill | `references/knowledge.md` of your `kiln-harness-tuner-experiment-analysis` skill |
-| `agents/report_writer.md` | 6 | `references/report.md` of the knowledge skill | `references/knowledge.md` of your `kiln-harness-tuner-report` skill |
+| | 7-8 | `references/builder.md` of the knowledge skill | `references/knowledge-entry.md` of your `kiln-harness-tuner-experiment-build` skill |
+| `agents/baseline_review.md` | 5 | `references/smells.md` of the knowledge skill | `references/knowledge-entry.md` of your `kiln-harness-tuner-baseline-review` skill |
+| `agents/analyze_experiment_results.md` | 5-6 | `references/analyzer.md` of the knowledge skill | `references/knowledge-entry.md` of your `kiln-harness-tuner-experiment-analysis` skill |
+| `agents/report_writer.md` | 6 | `references/report.md` of the knowledge skill | `references/knowledge-entry.md` of your `kiln-harness-tuner-report` skill |
 | `…-batch-selection/SKILL.md` | 27, 1160 | Load the `memory` skill | Kiln: `references/knowledge/memory.md`, and the format files of 5.1 |
-| | 28, 750, 1166 | the `experiment-costing` skill | Kiln: the costing file. Not found yet (section 10, point 1) |
+| | 28, 750, 1166 | the `experiment-costing` skill | No change until the pre-flight finds the port in Kiln's skill (architecture ruling 22). Then: Kiln: the costing file, by its full path |
 | | 433 | the knowledge skill's playbooks … and the technique | Kiln's playbooks … and the technique (prose only) |
-| | 463-464, 471, 627, 1162-1163 | `references/planner.md` of the knowledge skill | the role file |
+| | 463-464, 471, 627, 1162-1163 | `references/planner.md` of the knowledge skill | the entry file |
 | | 531 | the knowledge lever `levers/output_mode.md` | Kiln: `references/levers/output_mode.md` |
 | | 806-807 | `techniques/model-swap-inside-a-class.md`, `techniques/decision-model-for-a-classifier.md` | Kiln: `references/improving_agents/techniques/<same names>` |
 | | 906 | a lever document of the knowledge skill | a lever document of Kiln's skill (`references/levers/`) |
@@ -277,18 +279,18 @@ The rows are today's `gateway_ops` values (`builder.md:69-75`). The skill row ad
 | | 1129 | A memory-write-failure disclosure — `memory` skill | Kiln: `references/knowledge/memory.md`, "Write discipline"; you disclose it in your output |
 | | 610, 628 | "How to confirm it", "What it blocks" | No change. Kiln's smell files have both headings |
 | `…-baseline-review/SKILL.md` | 45-46 | code could not read the knowledge skill: use the ids of the table in `references/smells.md` | code could not read Kiln's skill: use the ids of the section "Smells" of Kiln: `references/improving_agents/index.md` |
-| | 50-51, 124-125 | `references/smells.md` of the knowledge skill | the role file |
+| | 50-51, 124-125 | `references/smells.md` of the knowledge skill | the entry file |
 | | 70, 74 | "How to recognise it", "How to confirm it" | No change |
-| `…-experiment-analysis/SKILL.md` | 337 | the knowledge skill's playbook id, `references/analyzer.md` | Kiln's playbook id, from the role file |
+| `…-experiment-analysis/SKILL.md` | 337 | the knowledge skill's playbook id, `references/analyzer.md` | Kiln's playbook id, from the entry file |
 | | 387, 394 | the `memory` skill | Kiln: `references/knowledge/memory.md` |
 | `…-experiment-build/SKILL.md` | 17, 321 | load `kiln-task-setup` | the lever of your item; Kiln: `references/knowledge/model_create_configs.md` ("Key Parameters", "Kiln Name Validation") for the run config fields and the name rules |
 | | 18, 322 | `kiln-harness-tuner-code-tool-authoring` | Kiln: `references/knowledge/code_tool_authoring.md`. New sentence: "The tuner grants code tool trust itself, once per run, with `trust_code_tools`. Skip the steps that explain trust to a user or open the trust page." |
 | | 58-60 | the knowledge lever `levers/model.md` (step 4); `levers/output_mode.md` | Kiln: `references/levers/model.md`, where it gives the output mode of a new model; `references/levers/output_mode.md`. The step number is not cited |
 | | 89 | the `install_skill_bundle` MCP tool | the gateway tool `install_skill_bundle` (decision 15) |
 | | 306, 325 | the `memory` skill | Kiln: `references/knowledge/memory.md` |
-| | 323-325 | the knowledge skill's `references/builder.md` | the role file |
+| | 323-325 | the knowledge skill's `references/builder.md` | the entry file |
 | `…-experiment-build/references/skill-authoring.md` | 5-7 | Flat: `POST /skills` … as `kiln-task-setup` documents | Flat: a bundle folder that holds only `SKILL.md`, installed with `install_skill_bundle`. No gateway tool calls `POST /skills` |
-| | 10-12, 84, 125, 143, 163 | the installer; `install_skill_bundle`; `export_skill_bundle` | The tool names stay. "the installer" becomes "the gateway" |
+| | 10-12, 84, 125, 143, 163 | the installer; `install_skill_bundle`; `export_skill_bundle` | The tool names stay. "the installer" becomes "the gateway". One new sentence at `export_skill_bundle`: "The export does not copy a binary asset. Its answer names each file that it skipped." (architecture ruling 16) |
 | | 63 | The knowledge skill's playbook (lost in long instructions) | Kiln: `references/improving_agents/playbooks/lost-in-long-instructions.md` |
 | `…-gateway/SKILL.md` | 271, 350 | The `memory` skill says what to write | Kiln: `references/knowledge/memory.md`; your role skill says what your role writes |
 | `…-probe/SKILL.md` | 59, 112 | the `kiln-harness-tuner-code-tool-authoring` skill | Kiln: `references/knowledge/code_tool_authoring.md` |
@@ -320,8 +322,10 @@ HT's `memory` skill (28,273 characters) held the conventions and the formats in 
 | Removed skill | Replacement | State on the fresh copy |
 |---|---|---|
 | `kiln-harness-tuner-code-tool-authoring` | `references/knowledge/code_tool_authoring.md` and the 8 files of `references/knowledge/code_tool_wrappers/` (`.md`, each a fenced template) | All 9 exist. `wrappers/README.md` has no file: the section "Wrapper templates" of the authoring file holds its table |
-| `experiment-costing` | Its port in Kiln's skill | **Not found.** The nearest text is "Cost before you spend" in `run_an_experiment.md` and "Cost Estimation" in `model_work.md`. Neither is the port |
+| `experiment-costing` | Its port in Kiln's skill | **Not found.** The nearest text is "Cost before you spend" in `run_an_experiment.md` and "Cost Estimation" in `model_work.md`. Neither is the port. See below |
 | `kiln-task-setup` | `references/knowledge/model_create_configs.md`, the levers, HT's own `skill-authoring.md` | See below |
+
+**The costing port is a pre-flight item** (architecture ruling 22; functional spec section 2). Until the port is in Kiln's skill: HT's `experiment-costing` skill is not removed, the planner's three pointers (section 5) are not changed, and the planner's skill goes on naming the HT skill. When the pre-flight finds the file: the three pointers name it by its full path, its path is added to `paths` of the contract list (section 8) and to `KILN_SKILL_PATHS`, and the sibling document removes the HT skill (its step 15d).
 
 The unique facts of `kiln-task-setup`, checked on the fresh copy:
 
@@ -413,11 +417,11 @@ The seven rules are the functional spec's (5.4), word for word.
 | `get_api_projects_project_id_add_code_trust.md` | not available |
 | `post_api_projects_project_id_skills.md` | not available |
 
-That is 24 with a tool and 3 without, as the functional spec says. The generated table also has one row for each other route of `OP_ROUTES` (about 30 more, for example `post_api_statistics.md` | `compute_statistics`). When Kiln's skill text of functional spec section 4 lands, it names new docs. Their rows come from `OP_ROUTES` (the two skill bundle routes) or are added to `NOT_AVAILABLE` by hand (the smell check, detectability and the noise routes: rule 3 sends the agent to its input).
+That is 24 with a tool and 3 without, as the functional spec says. The generated table also has one row for each other route of `OP_ROUTES` (about 30 more, for example `post_api_statistics.md` | `compute_statistics`). When Kiln's skill text of functional spec section 4 lands, it names new docs. Their rows come from `OP_ROUTES` (the three skill bundle routes: `post_api_projects_project_id_skills_from_folder.md` for `install_skill_bundle`, and `get_api_projects_project_id_skills_skill_id_files.md` and `get_api_projects_project_id_skills_skill_id_files_path.md` for `export_skill_bundle`; per the Kiln component doc) or are added to `NOT_AVAILABLE` by hand (the smell check, detectability, the two noise routes and the compare route: rule 3 sends the agent to its input).
 
 ## 8. The contract list
 
-This is the full content of `app/mcp/kiln_mcp_server/skill_checks/harness_tuner_contract.json`. A Kiln document owns the test. `ids` name files by kind: `levers` in `references/levers/`, the three others in `references/improving_agents/<kind>/`. Path count for HT's start-up check: 71 ids and the 22 `paths` below are 93 files.
+This is the full content of `app/mcp/kiln_mcp_server/skill_checks/harness_tuner_contract.json`. This document owns the content. The Kiln document [kiln_smells_skills_version.md](kiln_smells_skills_version.md) (section 8) owns the test and the shape: exactly the four keys `paths`, `ids`, `headings` and `front_matter_keys`; the four kinds `levers`, `techniques`, `playbooks` and `smells`; a `headings` key that is a file path or `kind:<kind>`; and a `front_matter_keys` key that is `kind:<kind>`. The content below uses this shape and no other key. `ids` name files by kind: `levers` in `references/levers/`, the three others in `references/improving_agents/<kind>/`. Path count for HT's start-up check: 71 ids and the 22 `paths` below are 93 files.
 
 ```
 {
@@ -491,7 +495,9 @@ This is the full content of `app/mcp/kiln_mcp_server/skill_checks/harness_tuner_
 }
 ```
 
-Every entry was checked on the fresh copy: each path exists, the id sets equal the folders (7, 27, 22 and 15 files), each kind heading is in every file of its kind, and every smell file has `title`. One entry is added at pre-flight: the costing file, when it is found (section 10, point 1).
+Every entry was checked on the fresh copy: each path exists, the id sets equal the folders (7, 27, 22 and 15 files), each kind heading is in every file of its kind, and every smell file has `title`. One entry is added at pre-flight: the path of the costing file, when it is found (5.2; architecture ruling 22).
+
+**The Smells table.** `smell_ids` (section 3) needs each row of the "Smells" table of the index to have the backticked path of the smell file in its first cell. The four keys cannot hold this. So Kiln's contract test has one fixed check more: each id of `ids.smells` is in that table, written as `` `references/improving_agents/smells/<id>.md` `` (architecture ruling 14; per the Kiln component doc, which reads the table by the rule of `smell_ids`). HT guards the same thing at start-up: the check of the sibling document (section 4) runs `smell_ids` on the index and stops when it finds no id.
 
 HT keeps the same list as a constant, `KILN_SKILL_PATHS` in `contract.py`, for its start-up check. New HT test `test_every_kiln_path_in_agent_text_is_in_the_contract`: every string that matches ``references/(improving_agents|levers|knowledge)/[^`\s)]+\.md`` in the role skills, their reference files and the prompt templates is in `KILN_SKILL_PATHS`, or is a `<id>` pattern of an id folder.
 
@@ -503,7 +509,7 @@ Existing tests, with collected counts at `b49f159` (3,965 in all):
 |---|---|
 | `tests/test_baseline_review.py` (55) | Stays. `known_smells` comes from `FakeSkillReader` (`:98-99`); the patch of `_smell_titles` (`:464`) and the `KnowledgeError` cases (`:560-577`) use `FakeSkillReader(fail=…)` |
 | `tests/test_smells.py` (44) | The tests that patch `load` (`:536-594`) use `FakeSkillReader`. The detector tests change in the sibling document |
-| `tests/test_agent_templates.py` (73) | The 6 `kiln-api` deep-link tests (`:1221-1361`) go. `test_planner_skill_names_the_lever_attempts_input_and_the_knowledge` (`:1511-1529`) asserts the role file name and no longer reads `levers/new_tool.md`. The `playbook` case of `test_the_val_rejection_readers_quote_every_reason_code_writes` goes; the `planner` case stays. The exception for the code tool skill in `test_no_loop_doc_or_prompt_tells_an_agent_to_call_the_generic_kiln_tool` goes. `GATEWAY_RULE` and its tests do not change |
+| `tests/test_agent_templates.py` (73) | The 6 `kiln-api` deep-link tests (`:1221-1361`) go. `test_planner_skill_names_the_lever_attempts_input_and_the_knowledge` (`:1511-1529`) asserts the entry file name and no longer reads `levers/new_tool.md`. The `playbook` case of `test_the_val_rejection_readers_quote_every_reason_code_writes` goes; the `planner` case stays. The exception for the code tool skill in `test_no_loop_doc_or_prompt_tells_an_agent_to_call_the_generic_kiln_tool` goes. `GATEWAY_RULE` and its tests do not change |
 | `tests/test_gateway.py` (89) | Gains the tests below. No test goes in these steps |
 | `tests/test_dispatch_claude_cli.py` (124), `…_codex_cli.py` (39), `…_opencode_cli.py` (40) | A test that pins a role's exact tool list gains `kiln_skill` |
 | `tests/test_docs.py` (55) | `resolve_link` (`:33`) moves to a helper in the test file. Done with the removal of `knowledge/` |
@@ -517,13 +523,13 @@ New tests:
 | `tests/test_kiln_skill.py`: parsers | `smell_ids` on a table with a header, a separator, marker lines and a second section; no id raises; `smell_title` with a plain title, a quoted title, no front matter, no title |
 | `tests/test_gateway.py`: the tool | The text comes back unchanged, with quotes and newlines; no path is refused with "give a path"; an unknown path is an MCP error with Kiln's text; a text over 40,000 characters comes back as an `AnswerPart`; each of the 7 roles has the tool and the 3 others do not |
 | `tests/test_smells.py` | `_smell_titles` reads the index once and each smell once for a run; a failed read logs `knowledge_unreadable`, returns `None` and is tried again |
-| `tests/test_agent_templates.py` | The rendered prompt holds `KILN_SKILL_RULES` for the 7 roles only; the constant equals the pinned text of section 6; each role template names `references/knowledge.md` and that file exists in the role's skill; each role file starts with the fixed paragraph; no HT skill has a folder `references/knowledge/`, `references/levers/` or `references/improving_agents/`; no agent text names a removed skill; the three map tests of section 7; the lever table test of 4.2; the contract test of section 8 |
+| `tests/test_agent_templates.py` | The rendered prompt holds `KILN_SKILL_RULES` for the 7 roles only; the constant equals the pinned text of section 6; each role template names `references/knowledge-entry.md` and that file exists in the role's skill; each role file starts with the fixed paragraph; no HT skill has a folder `references/knowledge/`, `references/levers/` or `references/improving_agents/`; no agent text names a removed skill; the three map tests of section 7; the lever table test of 4.2; the contract test of section 8 |
 
 ## 10. Conflicts and open points
 
 1. **The costing port is not in Kiln's skill.** The fresh copy at `5522a7b9` has no port of `experiment-costing` (5.2). The planner's pointer (three places) and one contract entry wait for it. The functional spec makes this a pre-flight item; HT's copy is not removed before it.
 2. **The Smells table format is a dependency that the contract JSON cannot hold.** `smell_ids` needs each row's first cell to be the backticked path. The JSON shape has paths, ids, headings and keys only. HT guards it: the start-up check runs `smell_ids` and stops when it finds no id. Request to the Kiln contract test: also assert that each `ids.smells` entry is in the "Smells" section as that backticked path. The sibling draft [kiln_smells_skills_version.md](kiln_smells_skills_version.md) (section 8) does not have this assertion; its four keys are the shape used here.
-3. **Two kinds of path look alike.** The architecture fixes the entry file name `references/knowledge.md`. Kiln's own files are under `references/knowledge/`. The fixed paragraph of section 4, the block of section 6 and one test keep them apart. An agent can still mix them up; the audit and the demo run will show it.
+3. **Two kinds of path look alike.** The architecture fixes the entry file name `references/knowledge-entry.md`. Kiln's own files are under `references/knowledge/`. The fixed paragraph of section 4, the block of section 6 and one test keep them apart. An agent can still mix them up; the audit and the demo run will show it.
 4. **More than three tests bind HT's code to knowledge text.** The functional spec (section 6) names three. The code has these too: the `playbook` case of `test_the_val_rejection_readers_quote_every_reason_code_writes` (Kiln's playbook paraphrases the reason lines today, so that case would fail on Kiln's text); the read of `levers/new_tool.md` for the wrapper templates; `test_the_output_contract_playbook_ranks_every_kiln_mode`; `test_the_output_mode_lever_is_what_the_code_does`. This document treats each as a review item of the audit, like the two the spec names.
 5. **`memory.md` tells its reader not to write a `hypothesis` record and to read the `baseline` record.** Both are right for a chat agent. Rules 5 and 6 override them for a loop agent. Nothing in code enforces rule 6 for the `baseline` record (the gateway hides only `val`), as today.
 6. **Kiln's knowledge links to chat procedure files.** For example `train_val_test.md` (18 links from the trees) and `run_an_experiment.md`. A loop agent can follow them, by the owner's ruling. `run_an_experiment.md` now starts with "If you are Kiln Harness Tuner, follow your system prompt."

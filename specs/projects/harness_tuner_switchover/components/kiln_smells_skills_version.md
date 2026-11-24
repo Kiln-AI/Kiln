@@ -4,7 +4,7 @@ status: draft
 
 # Component: Kiln smell check, skill bundles, version, skill text and contract test
 
-This document gives the detail for functional spec sections 3.6, 3.9, 3.10 and 4. The [architecture](../architecture.md) fixes the decisions; this document changes none of them. Section 9 lists what does not fit.
+This document gives the detail for functional spec sections 3.6, 3.9, 3.10 and 4. The [architecture](../architecture.md) fixes the decisions; this document changes none of them. The rulings of architecture section 10 are applied in the body. Section 9 lists the limits that are accepted, and section 10 the two points that are still open.
 
 Words and sources:
 
@@ -21,10 +21,18 @@ Words and sources:
 | Smell check: response models | `api_models/smell_check_models.py` (the repository's rule for desktop models) |
 | Skill bundle: folder rules, staged write, file list and read | `skill_bundle.py` |
 | Skill bundle: routes and their models | `skill_api.py`, beside the existing skill models (`SkillBundleResponse` extends `SkillResponse`, which is there) |
-| All failures of a skill name at once | `libs/core/kiln_ai/utils/validation.py`: new `skill_name_errors` (section 3.3; outside architecture 2.1, see 9.2) |
+| All failures of a skill name at once | `libs/core/kiln_ai/utils/validation.py`: new `skill_name_errors` (section 3.3) |
+| The run config lookup | `services/eval_lookups.py`: `task_run_config_from_id`, moved from `eval_api.py` |
+| The model's release date | Spec one's model info module: its connect function returns the service, and the service gains `release_facts` (section 2.5) |
 | Version route and model | `version_api.py`, with `connect_version_api(app)` |
 | The HT minimum | `compat.py` |
 | Tests | `test_smell_check.py`, `test_smell_check_api.py`, `test_skill_bundle.py`, `test_skill_api.py` (added cases), `test_version_api.py` |
+
+**Changes to existing code.** Architecture 2.1 allows three, and no others. This document uses all three:
+
+1. `skill_name_errors` in `validation.py`. The existing validator calls it, so its behaviour does not change (3.3).
+2. `task_run_config_from_id` (with `eval_from_id`) moves out of `eval_api.py` into a service module, as a pure move, in the first phase that needs it. **Proposed** module name, shared with [kiln_measurement_apis.md](kiln_measurement_apis.md): `app/desktop/studio_server/services/eval_lookups.py`. `smell_check_api.py` imports the lookup from there, because Kiln's conventions forbid one router importing another.
+3. Spec one's model info module returns its service object from its connect function, and the service gains a read of a model's release date (2.5).
 
 Rules that come from `AGENTS.md` and `.agents/skills/kiln-conventions/`:
 
@@ -85,7 +93,7 @@ No parameter changes a limit (functional spec 3.6).
 
 ### 2.3 The limits
 
-Constants in `smell_check.py`. Each has a comment with its source, and a `<NAME>_SOURCE` string (port of `HT:smells/thresholds.py`). The numbers are HT's. The source strings are HT's with "the tuner" changed to "Kiln", as the functional spec's table says.
+Constants in `smell_check.py`. Each has a comment with its source, and a `<NAME>_SOURCE` string (port of `HT:smells/thresholds.py`). The numbers are HT's. The source strings are HT's, except that they say "a Kiln default" where HT says "a default of the tuner" (architecture ruling 10, and the functional spec's table).
 
 | Constant | Value | `_SOURCE` string |
 |---|---|---|
@@ -99,7 +107,7 @@ Constants in `smell_check.py`. Each has a comment with its source, and a `<NAME>
 
 The inputs are collected once (port of `_collect`, `HT:smells/run.py:454`, and of `rc_texts` and `rc_prompt_text`, `HT:prompt_text.py`). HT reads them over REST and from disk. Kiln reads its own datamodel.
 
-1. **The run config.** The handler loads the task with `task_from_id` and the run config with the existing `task_run_config_from_id` (see 9.3). A fine-tune run config id resolves as it does today.
+1. **The run config.** The handler loads the task with `task_from_id` and the run config with the existing `task_run_config_from_id`, imported from `services/eval_lookups.py` (section 1). A fine-tune run config id resolves as it does today.
 2. **The prompt text**, `str | None`:
    - properties of type `mcp`: the empty string (HT: no prompt id);
    - the run config has a frozen `prompt`: `prompt.prompt`, then `prompt.chain_of_thought_instructions` when it is set, joined with `"\n"`;
@@ -107,7 +115,7 @@ The inputs are collected once (port of `_collect`, `HT:smells/run.py:454`, and o
    - any error while it is built: `None`. HT's extra reads of the property keys `prompt`, `system_prompt` and `instructions` are not ported: Kiln's run config has no such keys.
 3. **The tool ids**: `properties.tools_config.tools` in order, or none.
 4. **The tool definitions.** For each tool id that does not start with `kiln_tool::skill::`, in order: `tool_from_id(tool_id, task)` then `await tool.toolcall_definition()`, as the route `tools/{tool_id}/definition` does. Keep `tool_id`, `function.name` and `function.description`. On any exception the id goes to `unread_tools`. A skill id is never resolved this way. An OpenEnv tool resolves only during an episode (docstring of `tool_from_id_and_project`), so it is normally unread.
-5. **The skills.** For each attached `kiln_tool::skill::<id>`: `Skill.from_id_and_parent_path(id, project.path)` and `skill.skill_md_raw()`. If one skill is missing or its `SKILL.md` cannot be read as UTF-8, the whole skill input is `None` (HT: `RcText.skills is None`; see 9.9).
+5. **The skills.** For each attached `kiln_tool::skill::<id>`: `Skill.from_id_and_parent_path(id, project.path)` and `skill.skill_md_raw()`. If one skill is missing or its `SKILL.md` cannot be read as UTF-8, the whole skill input is `None` (HT: `RcText.skills is None`). So one unreadable skill stops the skill-description check for every skill of the run config. This is HT's behaviour, kept (architecture ruling 9).
 6. **The model**: section 2.5.
 
 Steps 1, 2, 3 and 5 run in one worker thread call. Step 4 and step 6 are awaited on the event loop.
@@ -122,14 +130,14 @@ The checks are pure functions over these inputs, in this fixed order. `value` is
 | 4 | `many_tools` | `too-many-tools` | The count of distinct tool ids of step 3 that do not start with `kiln_tool::skill::`. A skill is not a tool here: Kiln gives every skill through one skill tool. A repeated id counts once. An unread tool still counts (`many_tools.py`) | `The run config attaches {value:,} tools, not counting skills. The reference is {reference:,}.` |
 | 5 | `old_model` | `old-model` | The whole calendar months from the release date to `as_of`. It fires when `add_months(release_date, 8) < as_of`. No model or no date: silent (`old_model.py`) | `The run config's model, {display_name[:80]} ({model_name[:80]}), was released on {release_date}, {value} months before {as_of}. The reference is 8 months.` |
 
-Ported helpers, unchanged: `skill_description(skill_md) -> str | None` (first line `---` after `strip()`, the next `---` line, `yaml.safe_load`, a string `description`; else `None`); `add_months(d, months)` (the day is clamped to the last day of the month); `whole_months(start, end)`. Check 5's sentence differs from HT's ("The baseline's model … before this run"), because the route has no baseline and no run (see 9.7). `checked` is built from the same table: one `SmellCheckLimit` for each row.
+Ported helpers, unchanged: `skill_description(skill_md) -> str | None` (first line `---` after `strip()`, the next `---` line, `yaml.safe_load`, a string `description`; else `None`); `add_months(d, months)` (the day is clamped to the last day of the month); `whole_months(start, end)`. Check 5's sentence differs from HT's ("The baseline's model … before this run"), because the route has no baseline and no run (section 9). `checked` is built from the same table: one `SmellCheckLimit` for each row.
 
 ### 2.5 The model's release date
 
 Port of `_model_facts` (`HT:smells/run.py:499`), with Kiln's model info in place of HT's catalogue (architecture decision 10).
 
 1. Properties that are not `kiln_agent`: `model` is `None`.
-2. The smell check asks the model info service of spec one for the model. On the build branch that is `ModelInfoService` in `services/model_info/service.py`. It gets one new method (**find the right place to integrate**, the module can still move):
+2. The smell check asks the model info service of spec one for the model. On the build branch that is `ModelInfoService` in `services/model_info/service.py`. It gets one new method (**find the right place to integrate**, the module can still move). Architecture 2.1 allows this change to spec one's code:
 
    ```
    async def release_facts(self, model_id: str) -> ModelReleaseFacts
@@ -139,7 +147,7 @@ Port of `_model_facts` (`HT:smells/run.py:499`), with Kiln's model info in place
 
    It calls `self._kiln_model_list()`, `await self._models_dev.current()` and `self._catalog(...)`, then `catalog.model(model_id)`: an exact match on Kiln's model id, as HT does. It does not call the provider list.
 3. "Waits under that module's own rules" is `ModelsDevCache.current()`: with no data it starts one load and waits at most its `wait_secs` (15 seconds). The smell check adds no fetch and no wait of its own. So a first call on a machine with no network can take 15 seconds; HT's client timeout must allow it.
-4. One service per app. `connect_model_info_api` builds the service today and keeps it private. It returns the service, and `make_app` passes it to `connect_smell_check_api(app, model_info=...)` (see 9.4).
+4. One service per app. `connect_model_info_api` builds the service today and keeps it private. After this change it returns the service, and `make_app` passes it to `connect_smell_check_api(app, model_info=...)`. The smell check builds no second catalogue (architecture 2.1).
 5. The date string is parsed with `date.fromisoformat`; a bad string is "not known" (HT `_iso_date`).
 6. `release_date_note`, exact texts:
    - the model is not in the model list (a fine-tune, a custom model): `release date not known: the model is not in Kiln's model list`;
@@ -200,6 +208,8 @@ Not ported, because they test HT's loop: the events, the unknown-smell filter, t
 - File content is read after that, each file once, into memory. Only a regular file within F5 is opened, in the order `SKILL.md`, `references/**`, `assets/**`, and reading stops when the bytes read pass 2 MiB. Where the platform has it, a file is opened with `os.O_NOFOLLOW`. The bytes in memory are the bytes that are checked and the bytes that are written.
 - A stray entry at the root is reported by name and never opened or walked. So a wrong path, such as a home folder, costs one folder listing.
 
+Three guards here are not in HT's installer, which read only an agent's scratch folder. They are kept, because this route is open to every caller and reads a path that the caller names (architecture ruling 11): a stray root entry is not walked; reads are bounded by the size limits (each file once, and at most to the 2 MiB limit); and a folder has at most 1,000 entries (F7).
+
 ### 3.3 The folder rules
 
 Port of `validate_bundle` and `parse_skill_md` (`HT:skill_installer/bundle.py:99-284`). Every rule runs and every failure is collected, except where a rule says "stop". HT's location rule (the folder is inside the agent's scratch folder) is not ported: it stays in HT's gateway (functional spec 5.6). HT's two argument rules are replaced by Kiln's provenance rules (3.2).
@@ -212,7 +222,7 @@ Port of `validate_bundle` and `parse_skill_md` (`HT:skill_installer/bundle.py:99
 | F4 | No symlink under `references/` or `assets/`, and every entry is a folder or a regular file. A symlinked folder is not entered | `symlinked folder not allowed: {rel}` · `symlinked file not allowed: {rel}` · `not a regular file: {rel}` |
 | F5 | Each file has at most 524,288 bytes (512 KiB) | `file too large: {rel} is {size} bytes (limit 524288)` |
 | F6 | All files together, `SKILL.md` included, have at most 2,097,152 bytes (2 MiB) | `folder too large: {total} bytes in all (limit 2097152)` |
-| F7 | Guard, not an HT rule (9.8): the walk stops at entry 1,001 | `the folder has more than 1000 files and folders; it is not a skill folder` |
+| F7 | Guard, not an HT rule (architecture ruling 11): the walk stops at entry 1,001 | `the folder has more than 1000 files and folders; it is not a skill folder` |
 | F8 | Every file under `references/` is UTF-8. `assets/` may be binary. A file that F6 stopped the read for is not decoded | `references file is not UTF-8 text: {rel}` |
 | F9 | `SKILL.md` exists at the root. Stop the `SKILL.md` rules | `the folder has no SKILL.md at its root` |
 | F10 | `SKILL.md` is UTF-8. Stop the `SKILL.md` rules | `SKILL.md is not UTF-8 text` |
@@ -244,7 +254,7 @@ Any failed rule raises `SkillBundleInvalid(errors: list[str])`. The route answer
 
 Port of `mint_skill_id` and the write half of `install_bundle` (`bundle.py:287-373`), through Kiln's datamodel (architecture decision 11). `skills_dir` is `<project folder>/skills`.
 
-1. Create `skills_dir` when it is missing. Remove each `skills_dir/.staging-*` folder that has no `skill.kiln` and is more than one hour old (port of `sweep_staging`; the age test is new, see 9.8).
+1. Create `skills_dir` when it is missing. Remove each `skills_dir/.staging-*` folder that has no `skill.kiln` (port of `sweep_staging`). This runs under the lock of 3.2, so no write of this Kiln process is in progress.
 2. **Mint.** At most 100 times: build `Skill(name=…, description=…, provenance=…, parent=project)`. The datamodel mints `id` (`generate_model_id`) and sets `created_by` and `created_at`. `final = skill.build_path()` gives `skills/<id> - <name>/skill.kiln`, with Kiln's own `build_child_dirname`. When `final.parent` exists or a folder `<id> - *` exists, try again. Else `mkdir(skills_dir / f".staging-{id}", exist_ok=False)`; on `FileExistsError` try again. After 100 tries: the 500 above.
 3. **Stage**, inside `try`: write `SKILL.md` with the exact bytes that were read (not rebuilt, so `save_skill_md` is not called); write each `references/` and `assets/` file from memory; create `references/` and `assets/` when the folder had none, as `save_skill_md` does.
 4. **The model file last**: set `skill.path = staging / "skill.kiln"` and call `skill.save_to_file()`. The datamodel writes the file, so its fields and format are Kiln's.
@@ -261,7 +271,7 @@ Port of `mint_skill_id` and the write half of `install_bundle` (`bundle.py:287-3
 
 - `TestValidateBundle`: `test_happy_path`, `test_bundle_is_a_file`, `test_missing_skill_md`, `test_stray_root_entries_rejected`, `test_symlinks_rejected`, `test_frontmatter_missing`, `test_frontmatter_unclosed`, `test_frontmatter_extra_and_missing_keys`, `test_bad_name_reported` (two name errors in one answer), `test_name_collision_via_sidecar_and_dirname`, `test_description_bounds`, `test_empty_body`, `test_non_utf8_reference_rejected_binary_asset_accepted`, `test_size_caps`, `test_all_errors_reported_at_once`.
 - `TestInstall`: `test_installed_tree_and_sidecar` (`SKILL.md` is byte-identical; the skill loads with `Skill.from_id_and_parent_path`; `created_by` and the provenance are set), `test_rejection_writes_nothing`, `test_id_collision_retries`, `test_failure_after_staging_cleans_up`.
-- `TestSweep`: `test_sweeps_staging_only` (a young staging folder and one with `skill.kiln` stay), `test_tolerates_missing_skills_dir`.
+- `TestSweep`: `test_sweeps_staging_only` (a staging folder with `skill.kiln` stays, and so does every folder that is not a staging folder), `test_tolerates_missing_skills_dir`.
 - New: a relative path; a root with 25 stray entries gives 20 lines and one count line, and no stray folder is walked; the 1,001-entry guard; a file that changes after the size check is written as it was read.
 
 Not ported: `test_bundle_outside_scratch`, `test_bundle_is_scratch_root_itself` and `test_provenance_args` (HT's gateway keeps these rules); `TestSanitizeParity` (Kiln's own function is called); `TestServer` (the server is removed). `TestValidateSkillName.test_each_branch` becomes a test of `skill_name_errors` in `libs/core/kiln_ai/utils/test_validation.py`.
@@ -277,6 +287,7 @@ Not ported: `test_bundle_outside_scratch`, `test_bundle_is_scratch_root_itself` 
 `SkillFileList`: `files: list[SkillFileEntry]`, `total_bytes: int`. `SkillFileEntry`: `path: str` (POSIX, from the skill's folder), `size_bytes: int`.
 
 - Listed: `SKILL.md`, then every regular file under `references/`, then under `assets/`, each group sorted by path. A binary asset is listed.
+- A binary asset is listed but never returned as text (4.2). So a caller that copies a skill through these two routes gets a copy without its binary assets. HT's export tool does not copy such an asset, and its answer names each one it skipped (architecture ruling 16). Kiln's skill runtime reads assets as text only, so a binary asset was of no use to an agent.
 - Never listed: `skill.kiln`, and any other entry at the skill's root (HT's export never copies the identity file).
 - A symlink is not followed and not listed (as `read_skill` in `HT:prompt_text.py`).
 - Unknown skill: the 404 of the existing `_get_skill`.
@@ -324,11 +335,11 @@ In `test_skill_bundle.py` and `test_skill_api.py`. From `TestExport`: `test_copi
 
 - `version` is `app.desktop.studio_server._version.__version__`. The MCP mount of spec one reports the same value as its server version (`kiln_mcp_mount.py` on the build branch).
 - **Packaged build:** `app/desktop/build_desktop_app.sh` rewrites `_version.py` from `app/desktop/pyproject.toml` before it builds, so the route gives the release version.
-- **Dev server:** nothing rewrites the file, so the route gives the committed value (`1.2.1` today). See 9.5.
+- **Dev server:** nothing rewrites the file, so the route gives the committed value (`1.2.1` today), which is the version of the last release. HT's check of the Kiln version would refuse such a server, also when it has every route. HT reads one environment variable, `KILN_HARNESS_TUNER_SKIP_KILN_VERSION_CHECK`, that skips that check (architecture ruling 21; [ht_api_switch_and_removals.md](ht_api_switch_and_removals.md), section 3). HT's contract checks still run, so a missing route is still caught. Kiln has no code for this.
 - `compat.py` holds one constant and its comment: `MIN_SUPPORTED_HARNESS_TUNER_VERSION = "0.6.0"`. The comment says: edited by hand; raise it in the same change that breaks older HT versions, which includes a change to the skill that breaks `harness_tuner_contract.json` (section 8); the packaging script does not write this file.
-- **Starting value** (architecture decision 16): the lowest HT version that runs against this Kiln. **Proposed:** `0.6.0`, the version of HT at `b49f159`. See 9.6. The format is `MAJOR.MINOR.PATCH`, digits only, so HT can compare it as a version.
+- **Starting value:** `0.6.0` (architecture decision 16 and ruling 12). It is the version of HT at `b49f159`. No HT version before the switch reads the route, so any value at or below the first switched HT version has the same effect. The format is `MAJOR.MINOR.PATCH`, digits only, so HT can compare it as a version.
 
-Tests (`test_version_api.py`): the route returns both fields; `version` equals `_version.__version__`; the constant matches `^\d+\.\d+\.\d+$`; the text of `build_desktop_app.sh` does not name `compat.py`.
+Tests (`test_version_api.py`): the route returns both fields; `version` equals `_version.__version__`; `min_supported_harness_tuner_version` equals the constant, and the constant matches `^\d+\.\d+\.\d+$`; the text of `build_desktop_app.sh` does not name `compat.py`.
 
 ## 6. Policies and generated files
 
@@ -356,7 +367,7 @@ No web UI code changes. The skill text of section 7 names these files, so it is 
 
 ## 7. Skill text
 
-The tree is still changing. Each item says what must be true and where it goes on the build branch now. When the work is done: **find the right place to integrate**. Paths below are from the skill root.
+The tree is still changing. Each item says what must be true and where it goes on the build branch now. When the work is done: **find the right place to integrate**. Paths below are from the skill root. The files are named as they are at commit `5522a7b`. The whole list, 7.6 included, is checked again at pre-flight (functional spec section 2; architecture ruling 13).
 
 ### 7.1 The checks that new and changed files must pass
 
@@ -441,10 +452,24 @@ Facts that the switchover changes, against the facts file:
 
 - The Kiln version check is the two-way check of functional spec 5.8, not "Kiln v1.3, read from `/openapi.json`".
 - `--no-model-catalog` is removed. Do not name it.
-- The `--dest` form of `harness-tuner-install-agents` is removed. Do not name it. An agent that works by hand uses this skill and `call_kiln_api`.
+- The command `harness-tuner-install-agents` is removed whole: `--dest` was its only form (architecture ruling 15). Do not name it. An agent that works by hand uses this skill and `call_kiln_api`.
 - Do not name `kiln_api_mcp` or the skill installer.
 
 Integration: `references/knowledge/run_an_experiment.md`, "Two paths", and `references/modes/improve_task.md` (its line on experiments at scale) name the file. `app/mcp/knowledge_backlog.md` has an entry `using_harness_tuner`, and `test_the_using_harness_tuner_entry_is_last_in_unranked` pins it: remove both when the file is written.
+
+### 7.6 Other files that the new calls make stale
+
+"Find the right place to integrate" includes every file that says today that noise and room are measured only by Kiln Harness Tuner, that tells the reader to measure a smell by hand, or that lists the skill routes (architecture ruling 13). Beside the files of 7.2 to 7.4, these are, on the build branch now:
+
+| File | Today | After |
+|---|---|---|
+| `references/knowledge/diagnose_an_agent.md`, "What the smells measure" | Tells the reader to measure by hand | For the five smells that code detects, it names the smell check call (the endpoint doc of 7.3). The text goes inside the section: the headings of this file are pinned (7.1) |
+| `references/knowledge/adding_skills.md` | Lists the skill endpoints without the three new ones | Adds the three skill bundle docs of section 6, with one line each: create from a folder, list the files, read one file |
+| `references/improving_agents/playbooks/dealing-with-a-noisy-eval.md`, `dealing-with-a-saturated-eval.md`, `spending-the-budget.md` | Say that noise and room are measured only when Kiln Harness Tuner runs | Say that noise and room are measured with the calls of the statistics file, and name it by its full path (7.2). A playbook does not repeat the endpoint docs |
+
+- The three playbooks keep their ids, their headings and their front matter keys, so the contract list of section 8 is not touched.
+- After a change to a playbook: `make skill_index`, and the checks of 7.1.
+- **The pre-flight check.** Search the merged tree again for the three kinds of sentence: `yourself` in a smell document and in `diagnose_an_agent.md`; `Kiln Harness Tuner` beside "noise", "room" or "is built when running"; and the name of an existing skill endpoint doc (`post_api_projects_project_id_skills.md`) in a file that does not name the three new ones. A file that the search finds and this section does not list is added to the work.
 
 ## 8. The contract test
 
@@ -461,39 +486,47 @@ The JSON object has exactly these four keys:
 | `headings` | map: a file path, or `kind:<kind>`, to a list of headings | Each heading must be present in the file, or in every document of the kind |
 | `front_matter_keys` | map: `kind:<kind>` to a list of keys | Each key must be present in the front matter of every document of the kind |
 
+The content in [ht_skill_reading_and_roles.md](ht_skill_reading_and_roles.md), section 8, uses all four keys in this shape, and no other key.
+
+One more check has no key of its own. It reads `ids.smells` (architecture ruling 14): each smell id of the list must be in the Smells table of `references/improving_agents/index.md`, written as its backticked path. HT's code reads the smell ids from that table (`smell_ids` in the same HT document, section 3), so a change of the table's form breaks HT although every path, id and heading is still there.
+
 How the test reads the tree:
 
 - It reads the files that the skill tool serves, with `get_index()` and `read_file(key, index)` of `kiln_mcp_server.skill_files`. This is the text HT gets.
 - The folder of a kind is `COMPONENT_ROOTS[kind]` of `knowledge_schema.py`. "Every document of the kind" is every file directly in that folder, except `index.md`. A sub-file of a technique is not a document; HT names a sub-file in `paths`.
 - A heading is present when a line outside a fenced block starts with one to six `#` and a space, and the rest of the line, stripped, equals the heading. The level is not checked.
 - Front matter is read with `read_front_matter` of `skill_checks/front_matter.py`.
+- The Smells table is read by the rule that HT's `smell_ids` uses. In the text of `references/improving_agents/index.md`, the section "Smells" starts at the line that is exactly `## Smells` (after a strip at the right) and ends at the next line that starts with `## `. In that section, take each line that starts with `|`, split it on `|`, and strip the first cell. A smell id is in the table when one first cell equals `` `references/improving_agents/smells/<id>.md` ``.
 
 Tests:
 
-- `test_the_contract_file_has_the_four_keys`: exactly the four keys; every kind is one of the four; every `headings` key is a path or `kind:<kind>`; no list has a repeat.
-- `test_the_shipped_skill_meets_the_harness_tuner_contract`: it collects every miss, then fails once. Each miss is one line: `path <path>: not in the skill`, `id <kind>/<id>: no file <path>`, `heading "<heading>": not in <path>`, or `front matter key <key>: not in <path>`. The message ends with: `Kiln Harness Tuner reads these names. Keep the name in the skill, or change harness_tuner_contract.json and raise MIN_SUPPORTED_HARNESS_TUNER_VERSION in app/desktop/studio_server/compat.py.`
-- Synthetic cases with a small tree in `tmp_path`: one for each kind of miss, and one for a heading inside a fenced block.
+- `test_the_contract_file_has_the_four_keys`: exactly the four keys (`paths`, `ids`, `headings`, `front_matter_keys`); every key of `ids` is one of the four kinds; every `headings` key is a path or `kind:<kind>`; every `front_matter_keys` key is `kind:<kind>`; the kind after `kind:` is one of the four; every value is a list of strings; no list has a repeat.
+- `test_the_shipped_skill_meets_the_harness_tuner_contract`: it checks every entry of the four keys, and the Smells table for every id of `ids.smells`. It collects every miss, then fails once. Each miss is one line: `path <path>: not in the skill`, `id <kind>/<id>: no file <path>`, `heading "<heading>": not in <path>`, `front matter key <key>: not in <path>`, or ``smell id <id>: not in the Smells table of references/improving_agents/index.md as `references/improving_agents/smells/<id>.md` ``. The message ends with: `Kiln Harness Tuner reads these names. Keep the name in the skill, or change harness_tuner_contract.json and raise MIN_SUPPORTED_HARNESS_TUNER_VERSION in app/desktop/studio_server/compat.py.`
+- Synthetic cases with a small tree in `tmp_path`: one for each of the five kinds of miss, and one for a heading inside a fenced block. For the Smells table: a smell id that has its file but no row; a row that names the id without the backticks; a row with the path in the second cell; and the same row under another `## ` section. Each is a miss.
 
-The PyInstaller hook of spec one collects every file of the package that is not Python. Add `skill_checks/*.json` to its `DATA_EXCLUDES`, so that the list does not ship in the app.
+The PyInstaller hook of spec one is not changed. Architecture 2.1 allows three changes to existing Kiln code, and a line in the hook is not one of them (section 10, point 2).
 
-## 9. Conflicts and open points
+## 9. Accepted limits
 
-1. **Binary assets are lost on a copy.** The functional spec says a binary asset is not returned. HT's export copies assets byte for byte today (`bundle.py`, `export_bundle`). After the switch, a builder that clones a skill with a binary asset gets a copy without it. The HT document must say what the export tool does then.
-2. **`validation.py` is outside architecture 2.1.** Reporting every name failure at once needs `skill_name_errors` in `libs/core`. Without it, the route reports one name failure per call, against "every problem in one answer".
-3. **A router imports a router.** `task_run_config_from_id` is in `eval_api.py`. `kiln-conventions` forbids a new import from another `*_api.py`; three modules do it today. The measurement APIs have the same need. One decision for both documents: import it, or move it to a service module first.
-4. **Model info needs a two-line change in spec one's code.** `connect_model_info_api` must return its `ModelInfoService`, and the service gets `release_facts`. Otherwise the smell check builds a second catalogue.
-5. **A dev server reports the last release.** `_version.py` is `1.2.1` on the build branch, and HT's docs already call the features on it "Kiln v1.3". HT's minimum will be the first release with this spec. Against a dev server, HT stops with "Kiln too old" until `app/desktop/pyproject.toml` and `_version.py` are raised. The demo run (functional spec 7) needs a build with the raised version.
-6. **The starting value of the constant** cannot be read from the code. `0.6.0` is proposed. No HT version before the switch reads the route, so any value at or below the first switched HT version has the same effect.
-7. **Reworded strings.** The old-model sentence and three source strings are HT's with Kiln's words (2.3, 2.4). HT's planner reads the new sentence. If the owner wants HT's exact text, it is one string.
-8. **Guards added for an open route.** Not in HT: stray root entries are not walked; content is read once and at most to the 2 MiB limit; the 1,000-entry guard; the one-hour age test of the staging sweep. Each limits what a caller-named path can make Kiln do.
-9. **One unreadable skill silences the skill check for all skills.** This is HT's behaviour, kept as an exact port. A check per skill is a small change if wanted.
-10. **Skill text the functional spec does not list.** `references/knowledge/diagnose_an_agent.md` ("What the smells measure") tells the reader to measure by hand. `references/knowledge/adding_skills.md` lists the skill endpoints without the three new ones. Three playbooks (`dealing-with-a-noisy-eval.md`, `dealing-with-a-saturated-eval.md`, `spending-the-budget.md`) say that noise and room are measured only when Kiln Harness Tuner runs. Left unchanged here; the owner decides.
-11. **A crash between the model file and the rename** leaves a whole, usable skill in `skills/.staging-<id>/`. The sweep does not remove it. Accepted, as in HT.
+Each of these is settled. Nothing here waits for a decision.
 
-## 10. Not verified
+1. **A copy of a skill loses its binary assets.** The read route does not return a binary asset as text. HT's export does not copy it and names it as skipped (ruling 16).
+2. **One unreadable skill stops the skill-description check for every skill** of the run config. This is HT's behaviour, kept (ruling 9).
+3. **Reworded strings.** Three source strings say "a Kiln default" (ruling 10). The old-model `fact` sentence differs from HT's, because the route has no baseline and no run. HT's planner reads the new sentence.
+4. **A dev server reports the last release.** HT's Kiln version check refuses it unless `KILN_HARNESS_TUNER_SKIP_KILN_VERSION_CHECK` is set (ruling 21). The demo run (functional spec section 7) uses a build with the release version.
+5. **A crash between the model file and the rename** leaves a whole, usable skill in `skills/.staging-<id>/`. The sweep does not remove it. As in HT.
+6. **A first smell check with no network can take 15 seconds** (2.5): the wait is the model info module's own.
+
+## 10. Open points
+
+1. **The age test of the staging sweep is not in the body.** An earlier draft removed a `.staging-*` folder only when it was more than one hour old. Ruling 11 names three guards and not this one, so 3.5 has HT's rule: every `.staging-*` folder with no `skill.kiln` goes. The lock of 3.2 protects a write of the same process. A second Kiln process on the same project folder, in the middle of a write, loses its staging folder; its call answers the 500 of 3.4 and nothing is written. The owner can put the age test back.
+2. **The contract JSON can ship in the packaged app.** Spec one's PyInstaller hook collects the files of the package that are not Python. To leave the list out, the hook needs one more exclude, which is a fourth change to existing code. It is not built in. The file is small and holds no secret.
+
+## 11. Not verified
 
 - Nothing here was run. `Skill.save_to_file()` with a preset `path`, then a rename, was read in `basemodel.py` only. The same holds for `ModelCache` after the rename.
 - A `{path:path}` parameter with the agent policy annotations, with the Kiln Assistant's policy lookup, and the generated doc name `…_files_path.md`.
-- The `DATA_EXCLUDES` pattern for the JSON file, and that an OpenEnv tool is unread outside an episode (a docstring, not a test).
+- Whether spec one's PyInstaller hook already leaves out `skill_checks/` (section 10, point 2), and that an OpenEnv tool is unread outside an episode (a docstring, not a test).
+- The files and sentences of 7.6: named from the earlier draft's reading of the build branch, not read again.
 - The facts of 7.5: taken from the facts file. Spot-checked in HT's docs: the install command, the option table, `--no-model-catalog`, `--dest`. The text of HT's "update HT" message does not exist yet.
 - Every build-branch path and sentence is as of commit `5522a7b`; spec one's phases 17 and 18 can move them. Which HT versions before `0.6.0` work with this Kiln.

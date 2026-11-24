@@ -4,9 +4,9 @@ status: draft
 
 # Component: Kiln measurement APIs
 
-This document designs the Kiln side of [functional spec](../functional_spec.md) sections 3.1 to 3.5, 3.7 and 3.8, under the fixed decisions of the [architecture](../architecture.md) (decisions 5 to 9, 13, 14, and section 2.1).
+This document designs the Kiln side of [functional spec](../functional_spec.md) sections 3.1 to 3.5, 3.7 and 3.8, under the fixed decisions of the [architecture](../architecture.md) (decisions 5 to 9, 13, 14, section 2.1, and the rulings 1 to 8 of section 10).
 
-**HT** is Kiln Harness Tuner at `b49f159`. `HT/x.py:f` names a function in `harness-tuner/src/kiln_harness_tuner/`. Kiln was read at `325c7cb3`. Marks: **[V]** checked by running code against Kiln's library in this checkout; **[U]** not verified. Everything else was read in the source. Every number and definition is HT's. Each place where the specs leave a gap, or where Kiln must differ, is listed in section 10.
+**HT** is Kiln Harness Tuner at `b49f159`. `HT/x.py:f` names a function in `harness-tuner/src/kiln_harness_tuner/`. Kiln was read at `325c7cb3`. Marks: **[V]** checked by running code against Kiln's library in this checkout; **[U]** not verified. Everything else was read in the source. Every number and definition is HT's. The rulings of architecture section 10 are applied in the body. Section 10 lists the limits that are accepted.
 
 ## 1. Modules and shared parts
 
@@ -21,16 +21,22 @@ This document designs the Kiln side of [functional spec](../functional_spec.md) 
 | `eval_power/stored_rows.py` | `ScoreSpec`, `comparable_scores`, `rows_by_item`, `score_room`, `select_evals` (1.2) |
 | `eval_power/detectability.py` | `eval_detectability(...)` (section 4) |
 | `eval_power/noise_sample.py` | `build_noise_plan`, `estimate_from_plan` (section 5) |
-| `eval_power/noise_compare.py`, `noise_cleanup.py` | The comparison (6.4); `delete_job_objects`, `sweep_task`, `sweep_all_projects` (6.6, 6.7) |
+| `eval_power/trace_reuse.py` | `check_trace_reuse`, `TraceReuse`: the pre-check of the second judgment (6.2) |
+| `eval_power/noise_compare.py` | The comparison (6.4) |
+| `eval_power/noise_cleanup.py` | `NOISE_NAME_PREFIX`, `NOISE_NAME_RE`, `noise_object_name`, `SWEEP_MIN_AGE`; `delete_job_objects`, `sweep_task`, `sweep_all_projects` (6.6, 6.7) |
 | `eval_power/api.py` | `connect_eval_power_api(app)`: the two routes of sections 4 and 5 |
 | `app/desktop/studio_server/api_models/eval_power_models.py` | Every pydantic model of sections 4 to 6, except the job's params and result |
+| `app/desktop/studio_server/services/eval_lookups.py` | `task_run_config_from_id`, `eval_from_id`: moved from `eval_api.py` (below) |
 | `app/desktop/studio_server/jobs/workers/noise_check.py` | `NoiseCheckJobWorker`, `NoiseCheckJobParams`, `NoiseCheckJobResult` |
-| `jobs/workers/eval_errors.py` | `safe_str`, `error_detail`, `item_source`: moved from `workers/eval.py` with no change, so both workers use them |
 | `jobs/api.py` | The create route `POST /api/jobs/evals/noise_check`, and the worker registration |
 | `app/desktop/studio_server/eval_api.py` | The `split` parameter (section 7) and the compare route (section 8) |
 | `app/desktop/desktop_server.py` | `connect_eval_power_api(app)` before `connect_webhost`; the app-start sweep in `lifespan` (6.7) |
 
-`noise_compare.py`, `noise_cleanup.py`, `train_items.py` and `stored_rows.py` are additions inside the package that architecture 2.1 names. The `eval_power` modules other than `api.py` are service code: they take loaded models, raise no `HTTPException`, and hold no module-level state. Tests sit beside each module as `test_<module>.py`.
+`trace_reuse.py`, `noise_compare.py`, `noise_cleanup.py`, `train_items.py` and `stored_rows.py` are additions inside the package that architecture 2.1 names. The `eval_power` modules other than `api.py` are service code: they take loaded models, raise no `HTTPException`, and hold no module-level state. Tests sit beside each module as `test_<module>.py`.
+
+**The one change to existing code** (architecture 2.1 allows three in all; this document uses one of them). `task_run_config_from_id` and `eval_from_id` move out of `eval_api.py` into a service module, as a pure move: the bodies, the 404 texts and the signatures do not change. **Proposed** module name, shared with [kiln_smells_skills_version.md](kiln_smells_skills_version.md): `app/desktop/studio_server/services/eval_lookups.py`. The move is made in the first phase that needs it (build step 3, or step 5 when the smell check is built first). `eval_api.py` and today's other importers (`jobs/api.py`, `jobs/workers/eval.py`, `multiturn_sdg_api.py`, `utils/copilot_utils.py`) change their import line only. `eval_power/api.py`, the noise worker and the noise create route import the two lookups from the new module, because Kiln's conventions forbid one router importing another (E17).
+
+No other existing code is moved. The noise worker needs the eval worker's error helpers `_error_detail` and `_item_source`. It imports them from `jobs/workers/eval.py` as they are: a worker that imports a worker, not a router that imports a router.
 
 ### 1.2 Shared definitions (`eval_power/stored_rows.py`)
 
@@ -44,7 +50,7 @@ This document designs the Kiln side of [functional spec](../functional_spec.md) 
 
 ### 1.3 Errors common to the routes of sections 4, 5, 6 and 8
 
-- **404**: an unknown project, task, run config, eval or judge config. The text is the existing lookup's: `task_from_id`, `task_run_config_from_id` (`Task run config not found. ID: <id>`), `eval_from_id` (`Eval not found. ID: <id>`), `eval_config_from_id`.
+- **404**: an unknown project, task, run config, eval or judge config. The text is the existing lookup's: `task_from_id`, `task_run_config_from_id` (`Task run config not found. ID: <id>`), `eval_from_id` (`Eval not found. ID: <id>`), `eval_config_from_id`. The second and third are imported from `services/eval_lookups.py` (1.1).
 - **422**: a bad value, from pydantic, with the field named.
 - **503**: a project file was half written. `A project file was not readable. Another process can be writing it. Please try again.` with `Retry-After: 1`, as `run_eval_job` does.
 - Each handler does its reads in one sync function, called through `to_thread_retrying_torn_read`.
@@ -60,7 +66,7 @@ Route and method do not change. The agent policy stays `ALLOW_AGENT`.
 | `operation` | adds the literal `"significance_floor"` | — | |
 | `test` | `Literal["mcnemar_paired", "compare_paired"] \| None` | `None` | Required for this operation |
 | `confidence` | existing | 0.95 | `alpha = 1.0 - confidence`, as the other operations compute it |
-| `n` | existing `int \| None`, `ge=1` | `None` | The paired items. The constraint is not changed (open point 10.1) |
+| `n` | existing `int \| None`, `ge=1` | `None` | The paired items. The constraint is not changed, so `n = 0` is a 422 (architecture ruling 1) |
 | `room` | `int \| None`, `ge=0` | `None` | Of `n`, the items not at the best value |
 | `noise_rate` | `float \| None`, `ge=0`, `le=1` | `None` | The share of items that change between two runs of one config |
 
@@ -103,8 +109,8 @@ All functions are pure. `SIGNIFICANCE_FLOOR_SEARCH_LIMIT = 10_000` ports HT's `_
 `_op_significance_floor(req)` in `statistics_api.py`, added to `_OPERATIONS`. All errors are 422:
 
 - `test` absent: `'test' is required for significance_floor.` `room > n`: `room must not be greater than n (got room=<room>, n=<n>).`
-- An `OverflowError` from the exact test: open point 10.6.
-- A negative `room` or `noise_rate`, `noise_rate > 1`, an unknown `test`, and `n < 1` (the existing `ge=1`, open point 10.1): pydantic's own text.
+- **Overflow** (architecture ruling 6). The exact test fails above about 1,030 changed pairs: `mcnemar_exact_p(600, 700)` raises `OverflowError: int too large to convert to float` [V]. HT's `binomial_two_sided_p` has the same limit. Here it is reached by `noise_adjusted_wins` with a large `n` and a high `noise_rate` (`n = 2000`, rate 0.5 [V]). The arithmetic is not changed. `_op_significance_floor` catches `OverflowError` and answers 422: `The exact test cannot be computed for this many changed pairs (above about 1,030). Give a smaller n or noise_rate.`
+- A negative `room` or `noise_rate`, `noise_rate > 1`, an unknown `test`, and `n < 1` (the existing `ge=1`; `n = 0` stays a 422, architecture ruling 1): pydantic's own text.
 
 ### 2.5 Tests
 
@@ -121,7 +127,9 @@ All functions are pure. `SIGNIFICANCE_FLOOR_SEARCH_LIMIT = 10_000` ports HT's `_
 | `interval_wins("mcnemar_paired", 10, 5) == 3`; `(1, 1) == 1`; `interval_wins("compare_paired", 20, 10) == 4`; the closed form is false at `(20, 3)` and true at `(20, 4)` | same |
 | `mcnemar_exact_p(6, 0) == 0.03125`; `noise_adjusted_wins(0.0, 40, 40, 0.05) == 6`; at 0.2 the result `w` is above 6 (9 [V]), `mcnemar_exact_p(w + 4, 4) < 0.05`, `mcnemar_exact_p(w + 3, 4) >= 0.05`, and with `room = w - 1` the result is None | `tests/test_noise.py::test_the_noise_adjusted_bar` |
 
-Also `test_bootstrap_rule_is_the_closed_form_not_the_seeded_draw`: it patches `paired_bootstrap_diff_ci` to raise, and `interval_wins("compare_paired", 20, 10, 0.95)` is still 4. `test_statistics_api.py`: every output key for a full request (`test=mcnemar_paired, n=30, room=6, noise_rate=0.1`); every optional output null when only `test` is given, with `floor == 6`; each case of 2.4; `interpretation` is one sentence or two; `test_openapi_exposes_operation_enum_and_agent_allow` lists five operations.
+Also `test_bootstrap_rule_is_the_closed_form_not_the_seeded_draw`: it patches `paired_bootstrap_diff_ci` to raise, and `interval_wins("compare_paired", 20, 10, 0.95)` is still 4. HT's pinned `fewest_wins(0, 0) is None` is tested on the library function only (the `(0, 0)` case above), because the route refuses `n = 0`.
+
+`test_statistics_api.py`: every output key for a full request (`test=mcnemar_paired, n=30, room=6, noise_rate=0.1`); every optional output null when only `test` is given, with `floor == 6`; each case of 2.4, with `n=0` as a 422; the overflow request (`test=mcnemar_paired, n=2000, room=2000, noise_rate=0.5`) is a 422 with the text of 2.4, and `mcnemar_exact_p(600, 700)` still raises `OverflowError` (the arithmetic is not changed); `interpretation` is one sentence or two; `test_openapi_exposes_operation_enum_and_agent_allow` lists five operations.
 
 ## 3. The train helper (decision 7)
 
@@ -231,6 +239,8 @@ Ports `HT/noise.py:estimate_usd`.
 - `drive` = the median of the non-null drive costs over all folded rows of the sampled evals; 0.0 with none.
 - `judge_e` = the median over an eval's folded rows of `eval_usage.cost`, with a missing cost as 0.0; 0.0 with no row.
 - `estimate_usd = distinct_items * drive + sum(passes_e * len(items_e) * judge_e)`, with `passes_e` 2 when the judge is checked again, else 1.
+- The estimate does not run the pre-check of trace reuse (6.2). It counts every sampled item in the second pass. When the job leaves an item out of the second judgment, the estimate is above the cost.
+- The estimate reads `usage.cost` and `eval_usage.cost` only. It does not count the simulated user of a multi-turn item, as HT's estimate does not. `spend_usd` of the job (6.5) is counted the same way.
 - Errors: 1.3, and 422 for `items_per_eval < 1`.
 
 ### 5.4 Tests (`test_noise_sample.py`, `test_api.py`)
@@ -258,7 +268,7 @@ Ports `HT/noise.py:estimate_usd`.
 | `estimate_usd` | `float` | Computed when the job starts (5.3) |
 | `spend_usd` | `float` | 6.5 |
 | `rows` | `list[NoiseRow]` | One per eval score, 6.4 |
-| `warnings` | `list[str]` | 6.4, and one line for each object that the clean-up could not delete |
+| `warnings` | `list[str]` | 6.4, and one line for each object that the clean-up could not delete (6.6) |
 | `skipped` | `str \| None` | The whole check did not run, and why |
 | `errors` | `list[NoiseCheckPassError]` | `eval_id: str`, `noise_pass: Literal["redrive", "rejudge"]`, `item_id: str \| None`, `message: str` (the provider's text, whole) |
 | `flip_rate` | `float \| None` | 6.4 |
@@ -266,7 +276,9 @@ Ports `HT/noise.py:estimate_usd`.
 
 `NoiseRow` keeps HT's field names (`HT/schemas.py:NoiseRow`): `eval_id`, `eval_name`, `score_key`, `score_type`, `items: int`, `redrive_changed: int`, `redrive_rate: float | None`, `redrive_mean_abs_change: float | None`, `rejudge_items: int`, `rejudge_changed: int | None`, `rejudge_rate: float | None`, `rejudge_mean_abs_change: float | None`, `rejudge_note: str`, `noise_adjusted_wins: int | None`, `train_room: int | None`. HT's `baseline_rc_id` and `clone_rc_id` are not served: the run config is in the params, and the copy does not exist when the job ends.
 
-**Create route**: `POST /api/jobs/evals/noise_check`, status 201, `async def run_noise_check_job(params: NoiseCheckJobParams) -> CreateJobResponse`, in `jobs/api.py`, beside `POST /api/jobs/evals/run` and before `POST /api/jobs/{type}`. It checks the task, the run config and each id of `eval_ids` (404; 503 on a half-written file), then calls `job_registry.create(type_name="eval_noise_check", params=params, project_id=params.project_id)`. `connect_jobs_api` adds `job_registry.register_type(NoiseCheckJobWorker)`. The docstring says that the job costs money, that the estimate route is free, and what `max_usd` does. Progress, the result, the error log, wait and cancel are the existing job routes, unchanged.
+A job that fails or is cancelled has no result (the job registry keeps a result only after success). So it reports no `spend_usd`. This is the same as HT today, where an interrupted check books nothing (architecture ruling 8).
+
+**Create route**: `POST /api/jobs/evals/noise_check`, status 201, `async def run_noise_check_job(params: NoiseCheckJobParams) -> CreateJobResponse`, in `jobs/api.py`, beside `POST /api/jobs/evals/run` and before `POST /api/jobs/{type}`. It checks the task, the run config and each id of `eval_ids` with the lookups of `services/eval_lookups.py` (404; 503 on a half-written file), then calls `job_registry.create(type_name="eval_noise_check", params=params, project_id=params.project_id)`. `connect_jobs_api` adds `job_registry.register_type(NoiseCheckJobWorker)`. The docstring says that the job costs money, that the estimate route is free, and what `max_usd` does. Progress, the result, the error log, wait and cancel are the existing job routes, unchanged.
 
 ### 6.2 The sequence of `run(params, ctx)`
 
@@ -276,15 +288,37 @@ Ports `HT/noise.py:estimate_usd`.
 2. Sweep the task (6.7), inside `save_context`. A failure is logged and does not stop the job.
 3. `plan = build_noise_plan(...)`. No sample: return with `skipped = "no stored baseline train row to compare with"`.
 4. `estimate_from_plan`. With `max_usd` set and `estimate_usd > max_usd`: return with `skipped = f"the estimate ${estimate_usd:.2f} is above max_usd ${max_usd:.2f}"`. No object is made and no model is called.
-5. Open `try`. **Temporary run config**: inside `save_context`, `TaskRunConfig(parent=task, name=f"NOISE-CHECK {ctx.job_id}", description=f"Temporary copy of run config {run_config_id}, made by noise check job {ctx.job_id}. Kiln deletes it when the job ends.", run_config_properties=measured.run_config_properties.model_copy(deep=True), prompt=None, provenance=None)`, then `save_to_file()`. The id is recorded before the save. The properties are copied as they are, so a frozen prompt id still names the measured run config's prompt (`HT/noise.py:_create_clone`). If the save raises: `skipped = f"the temporary run config could not be made ({exc})"[:300]`, and go to the clean-up.
+5. Open `try`. **Temporary run config**: inside `save_context`, `TaskRunConfig(parent=task, name=noise_object_name(ctx.job_id, "run config"), description=f"Temporary copy of run config {run_config_id}, made by noise check job {ctx.job_id}. Kiln deletes it when the job ends.", run_config_properties=measured.run_config_properties.model_copy(deep=True), prompt=None, provenance=None)`, then `save_to_file()`. The id is recorded before the save. The properties are copied as they are, so a frozen prompt id still names the measured run config's prompt (`HT/noise.py:_create_clone`). If the save raises: `skipped = f"the temporary run config could not be made ({exc})"[:300]`, and go to the clean-up.
 6. **Second drive.** One `TraceIndexRegistry()` is made for this run and given to every runner, so a V2 drive of an item is shared by the evals that sample it. For each sample: `EvalRunner(eval_configs=[default_config], run_configs=[temp_rc], eval_run_type="task_run_eval", split=train.split, save_context=save_context, item_ids={id of each sampled key}, judge=True, trace_index_registry=registry)`, built in a thread; then `validate_multi_turn_drive_readiness()` and `validate_openenv_readiness()`; then iterate `runner.run(concurrency=params.concurrency, observers=[observer], max_retries=JOB_TRANSIENT_ERROR_MAX_RETRIES, retry_delay=JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS)`. The temporary run config has no stored row, so every item is driven and judged. A legacy judge config drives inside its own job, as today.
-7. **Second judgment.** For each sample with `rejudge`: inside `save_context`, `EvalConfig(parent=eval, name=f"NOISE-CHECK {ctx.job_id}", config_type=default.config_type, properties=<deep copy of default.properties>, model_name=default.model_name, model_provider=default.model_provider, provenance=None)`, id recorded, then `save_to_file()`. `eval.current_config_id` is not touched. Then a runner as in step 6 with `eval_configs=[copy]` and `run_configs=[measured]`. The trace index is keyed by item and run config, so the copy scores the stored trace and drives nothing.
+7. **Second judgment. It never drives** (architecture ruling 5). For each sample with `rejudge`:
+   1. `reuse = await check_trace_reuse(task, measured, sample)`: the pre-check below. It runs before any object of this step is made.
+   2. With no reusable item: no judge copy is made and no runner is built. The rows of the eval get the note of 6.4.
+   3. Else, inside `save_context`: `EvalConfig(parent=eval, name=noise_object_name(ctx.job_id, "judge config"), config_type=default.config_type, properties=<deep copy of default.properties>, model_name=default.model_name, model_provider=default.model_provider, provenance=None)`, id recorded, then `save_to_file()`. `eval.current_config_id` is not touched.
+   4. A runner as in step 6 with `eval_configs=[copy]`, `run_configs=[measured]` and `item_ids={id of each key of reuse.reusable}`. The trace index returns the stored trace of each of these items, so the copy scores the stored trace and drives nothing. An item of `reuse.not_measured` is not given to the runner: it is "not measured", with its reason in the note of 6.4.
 8. Read the new rows from disk: `rows_by_item` of the default config's runs with `task_run_config_id == temp_rc.id`, and of the copy's runs. Build rows and warnings (6.4) and the spend (6.5).
 9. `finally`: the clean-up (6.6). Then return the result.
 
-**Errors.** `_NoiseErrorObserver(AsyncJobRunnerObserver[EvalJob])` gets each final item failure. It appends a `NoiseCheckPassError` with `error_detail(error)` (the provider's own text, from `KilnRunError.original`) and calls `ctx.report_error(message, eval_id=..., noise_pass=..., dataset_id=job.item.id, item_source=item_source(job.item))`, so `GET /api/jobs/{id}/errors` shows it. A runner that cannot be built or validated (`ValueError`), and a copy that cannot be saved, give one entry with `item_id=None`; the job goes on with the next eval.
+**Names.** `noise_cleanup.noise_object_name(job_id: str, kind: Literal["run config", "judge config"]) -> str` returns `f"NOISE-CHECK {job_id} {kind}"`, for example `NOISE-CHECK j_k3v7qa2mzx4b run config`. `NOISE_NAME_PREFIX = "NOISE-CHECK "`. A job id is `j_` and 12 characters of `a-z2-7` (`jobs/registry.py:_new_job_id`), so the name passes Kiln's name rules. These two generated forms are the only names that the sweep matches (6.7).
 
-**Progress.** `total = sum(len(items_e) * passes_e)`. After each runner event: `ctx.report_progress(success=<done before> + progress.complete, error=<errors before> + progress.errors, total=total, message="second drive: eval 2 of 5")` (or `second judgment: ...`).
+**The pre-check of trace reuse** (`eval_power/trace_reuse.py`): `async def check_trace_reuse(task, measured, sample) -> TraceReuse`. `TraceReuse` is a frozen dataclass: `reusable: list[ItemKey]` (in sample order) and `not_measured: dict[ItemKey, str]` (the reason). It reads only. It makes no object and calls no model.
+
+The runner reuses a stored trace only when its trace index holds one under the key `(item, run config, environment tag)` (`kiln_ai.adapters.eval.trace_index`). In every other case the runner drives. The pre-check applies the same test before a runner exists. An item is reusable when every line holds. The first line that fails gives the reason:
+
+| # | Line | Reason |
+|---|---|---|
+| 1 | The item's baseline record (`ItemRow.last`) names a `scored_run_id` | `the stored result names no task run` |
+| 2 | The `TaskRun` of that id loads from the task | `the stored trace is gone` |
+| 3 | The trace files itself under this item and the measured run config: `eval_item_key(run.eval_source)` is the item, and `run.output.source.run_config_id` is the measured run config's id | `the stored result was not scored on a trace of this run config` |
+| 4 | No newer eval trace of the same item and run config is on disk. The trace index keeps the newest trace of a key, so the runner would score the newer one, not the one that the baseline row scored | `a newer trace of the item exists` |
+| 5 | The environment half of the key is the same. With no `openenv_episode` on the trace and no `openenv_reset` on the item, the line holds. With an episode: it recorded a final state, and `openenv_trace_tag(<the environment's version now>, <the item's reset now>)` equals the tag of the version and reset that the episode recorded. The version is read once per environment for the job, with the shared session manager, as the runner reads it. An episode on one side only fails the line | `the environment's version or the item's reset changed after the trace was made` · `the environment could not be reached` |
+
+- Line 5 is strict on purpose. A case that the pre-check cannot decide is "not measured". A wrong "reusable" would let the runner drive the measured run config; a wrong "not measured" only loses one judgment.
+- The job never deletes a task run whose `output.source.run_config_id` is the measured run config (6.6). The clean-up has no step that looks for one.
+- The runner still decides for itself when it runs. If a stored trace goes away between the pre-check and the judgment, the runner drives the item. `same_outputs` (6.4) then drops the copied rows, and the driven task run stays in the project (section 10).
+
+**Errors.** `_NoiseErrorObserver(AsyncJobRunnerObserver[EvalJob])` gets each final item failure. It appends a `NoiseCheckPassError` with `_error_detail(error)` (the provider's own text, from `KilnRunError.original`) and calls `ctx.report_error(message, eval_id=..., noise_pass=..., dataset_id=job.item.id, item_source=_item_source(job.item))`, so `GET /api/jobs/{id}/errors` shows it. The two helpers are the eval worker's (1.1). A runner that cannot be built or validated (`ValueError`), and a copy that cannot be saved, give one entry with `item_id=None`; the job goes on with the next eval.
+
+**Progress.** `total = sum(len(items_e) * passes_e)`, less the items that the pre-check left out of a second judgment. After each runner event: `ctx.report_progress(success=<done before> + progress.complete, error=<errors before> + progress.errors, total=total, message="second drive: eval 2 of 5")` (or `second judgment: ...`).
 
 ### 6.3 `max_usd` and `concurrency`
 
@@ -296,7 +330,7 @@ Ports `HT/noise.py:estimate_usd`.
 | Function | Ports | Rule |
 |---|---|---|
 | `changes(spec, before, after, items) -> (compared, changed, mean_abs)` | `HT/noise.py:changes` | Over the sampled items where both rows have a value. Binary: changed when `(a >= 0.5) != (b >= 0.5)`; `mean_abs` None. Rating: changed when `abs(b - a) > 1e-9`; `mean_abs` is the mean of `abs(b - a)` |
-| `same_outputs(baseline, copied) -> bool` | `noise.py:same_outputs` | False with no copied row. For each copied row: the baseline row exists; when both name a `scored_run_id`, they are equal; else both `EvalRun.output` values are equal and not None. It is checked for every eval that was judged again. When it is false, the copied rows are not used, and the note is `the copy judged other outputs than the stored ones (the server drove again), so judge noise alone is not separable here` |
+| `same_outputs(baseline, copied) -> bool` | `noise.py:same_outputs` | False with no copied row. For each copied row: the baseline row exists; when both name a `scored_run_id`, they are equal; else both `EvalRun.output` values are equal and not None. It is checked for every eval that was judged again. After the pre-check of 6.2 it is a guard only: it is false when the runner drove after all. When it is false, the copied rows are not used, and the note is `the copy judged other outputs than the stored ones (the server drove again), so judge noise alone is not separable here` |
 | `noise_rows(sample, redrive, rejudge, note, confidence) -> list[NoiseRow]` | the loop at the end of `noise.py:run_noise_check` | Below |
 | `noise_warnings(row, test, n, confidence) -> list[str]` | `noise.py:_warnings` | Below |
 | `flip_rate(rows) -> float \| None` | `HT/stop_rules.py:noise_flip_rate`, no eval filter | Over the binary rows: `sum(redrive_changed) / sum(items)`; None when the sum of `items` is 0 |
@@ -304,11 +338,13 @@ Ports `HT/noise.py:estimate_usd`.
 **A row**, per spec of a sample, with `values = train_values[key]` and `alpha = 1 - confidence`:
 
 - `items, redrive_changed, redrive_mean_abs_change = changes(spec, baseline, redrive, items)`; `redrive_rate = changed / items`, or None when `items == 0`.
-- `rejudge_items` from `changes(spec, baseline, rejudge, items)`. When it is 0: `rejudge_changed`, `rejudge_rate` and `rejudge_mean_abs_change` are None, and `rejudge_note` is the reason: the note of 5.2, or the `same_outputs` text, or `f"the re-judge failed ({message})"[:200]`, or `no re-judged row`. Else the note is `""`.
+- `rejudge_items` from `changes(spec, baseline, rejudge, items)`. When it is 0: `rejudge_changed`, `rejudge_rate` and `rejudge_mean_abs_change` are None, and `rejudge_note` is the reason: the note of 5.2; or `f"not measured: no stored trace of the sampled items can be reused ({reason})"[:200]`, with the reason of the first sampled item (6.2); or the `same_outputs` text; or `f"the re-judge failed ({message})"[:200]`; or `no re-judged row`.
+- When `rejudge_items > 0` and the pre-check left `k` of the `m` sampled items out: the note is `f"{k} of {m} sampled item(s) not measured: the stored trace cannot be reused"`. Else the note is `""`.
 - `train_room = score_room(values, spec)`.
 - `noise_adjusted_wins = statistics_lib.noise_adjusted_wins(redrive_rate, len(values), train_room, alpha)`, or None with no rate.
+- **Overflow** (architecture ruling 6, and 2.4): when that call raises `OverflowError`, `noise_adjusted_wins` is None and the job's `warnings` get `f"{eval_id}/{score_key}: noise-adjusted wins could not be computed: the exact test does not take this many changed pairs"`. The row gets no other warning. The job goes on.
 
-**Warnings.** None unless `redrive_changed > 0` and `train_room > 0`. With `n = len(values)`, `best = fewest_significant_wins(test, n, train_room, alpha)` and `each_way = noise_changes_each_way(redrive_rate, n)`:
+**Warnings.** None unless `redrive_changed > 0` and `train_room > 0`, and none for a row with the overflow warning above. With `n = len(values)`, `best = fewest_significant_wins(test, n, train_room, alpha)` and `each_way = noise_changes_each_way(redrive_rate, n)`:
 
 ```
 head = f"{eval_id}/{score_key}: {redrive_rate:.0%} of items change between two runs of the same config — about {each_way} change(s) each way on the {n}-item train split"
@@ -318,14 +354,15 @@ best is None or wins > best      -> f"{head}; a win on it needs about {noise_adj
 
 ### 6.5 Spend
 
-`spend_usd` is the cost that the job's own records carry, each record once:
+`spend_usd` is HT's figure exactly (architecture ruling 7): the task run usage and the judge usage of the job's own calls, each record once:
 
-- every `TaskRun` whose `output.source.run_config_id` is the temporary run config: `usage.cost` plus `synthetic_user_usage.cost`;
+- every `TaskRun` whose `output.source.run_config_id` is the temporary run config: `usage.cost`;
 - every `EvalRun` of the temporary run config under a default judge config: `eval_usage.cost`; for a legacy config, which stores no task run, also `task_run_usage.cost`;
-- every `EvalRun` of a judge copy: `eval_usage.cost`;
-- every task run that 6.6 step 3 removes: as the first bullet.
+- every `EvalRun` of a judge copy: `eval_usage.cost`.
 
-A missing cost counts as 0. A drive shared by two evals is one `TaskRun`, so it is counted once. A model call that failed left no record, so `spend_usd` is a lower bound when `errors` is not empty. The sum is taken before the clean-up, from the same lists that the clean-up deletes. See open point 10.7.
+`synthetic_user_usage.cost` is not added: HT's figure and the estimate formula (5.3) both read the task run usage only. For a multi-turn task the money spent is then above `spend_usd` by the cost of the simulated user.
+
+A missing cost counts as 0. A drive shared by two evals is one `TaskRun`, so it is counted once. A model call that failed left no record, so `spend_usd` is a lower bound when `errors` is not empty. The sum is taken before the clean-up, from the same lists that the clean-up deletes. A job that fails or is cancelled returns no result, so it reports no spend (6.1).
 
 ### 6.6 Clean-up: `noise_cleanup.delete_job_objects(task, temp_rc_ids, judge_copies)`
 
@@ -335,35 +372,40 @@ It runs in the `finally` of step 9, on success, failure and cancel. It deletes o
 |---|---|---|
 | 1 | The eval runs of the temporary run config | Every `EvalRun` with `task_run_config_id == temp_rc_id`, over every config of every eval of the task |
 | 2 | The task runs of the second drive | Every run of `task.runs(readonly=True, include_intermediate_runs=True, include_eval_generated=True)` with `output.source.run_config_id == temp_rc_id`. `include_eval_generated` is meant for the eval runner; the clean-up is a deliberate second user, because it must see eval traces |
-| 3 | A task run that a second judgment drove (rare) | For each judge copy: a `scored_run_id` of the copy's runs whose `TaskRun.created_at >= copy.created_at`, and that no `EvalRun` of a config without the prefix names. A stored baseline trace is older than the copy, and a baseline row names it, so it is never taken (open point 10.5) |
-| 4 | Each judge copy | `EvalConfig.from_id_and_parent_path(copy_id, eval.path)`. Its folder holds its eval runs, so they go with it |
-| 5 | The temporary run config | `TaskRunConfig.from_id_and_parent_path(temp_rc_id, task.path)`. Only when steps 1 and 2 had no failure |
+| 3 | Each judge copy | `EvalConfig.from_id_and_parent_path(copy_id, eval.path)`. Its folder holds its eval runs, so they go with it |
+| 4 | The temporary run config | `TaskRunConfig.from_id_and_parent_path(temp_rc_id, task.path)`. Only when steps 1 and 2 had no failure |
 
-- **Why this order.** The temporary run config is deleted last because its id is the only way to find the objects of steps 1 and 2. If the app dies in the middle, what is left still has a `NOISE-CHECK` object that the sweep finds.
-- **When one delete fails.** The exception is caught inside the block, logged with `logger.exception`, written with `ctx.report_error(..., cleanup=True)`, and added to `warnings` as `clean-up could not delete <kind> <id>: <error>`. The other deletes go on. The job does not fail. The object stays for the sweep. No exception leaves the block, because `GitSyncManager.atomic_write` rolls back every write of the block on an exception. When the block itself fails (the write lock, or the push), the roll-back restores the deleted files; the failure is logged and reported in the same way, and the sweep does the work later.
+- **Never a task run of the measured run config** (architecture ruling 5). Step 2 takes a task run only when its `output.source.run_config_id` is the temporary run config. No step looks for a task run of the measured run config. The second judgment makes none (6.2).
+- **Why this order.** The temporary run config is deleted last because its id is the only way to find the objects of steps 1 and 2. If the app dies in the middle, what is left still has an object with a generated name that the sweep finds.
+- **When one delete fails.** The exception is caught inside the block, logged with `logger.exception`, written with `ctx.report_error(..., cleanup=True)`, and added to `warnings` as `clean-up could not delete <kind> <id>: <error>`. The other deletes go on. The job does not fail. The object stays for the sweep, which takes it when it is more than 24 hours old (6.7). No exception leaves the block, because `GitSyncManager.atomic_write` rolls back every write of the block on an exception. When the block itself fails (the write lock, or the push), the roll-back restores the deleted files; the failure is logged and reported in the same way, and the sweep does the work later.
 - **Git sync.** With auto sync, each save of the job is a commit and a push, as for an eval job, so other clones see the temporary objects while the job runs. The clean-up is one more commit, with the context `noise check job <id>`. The objects stay in the git history.
 
 ### 6.7 The sweep of left-overs
 
-A left-over is a `TaskRunConfig` or an `EvalConfig` whose name starts with `NOISE-CHECK ` and that no live job owns.
+A left-over is a `TaskRunConfig` or an `EvalConfig` for which all three lines hold:
 
-- **Ownership.** The name is `NOISE-CHECK <job id>`. The owner id is the text after the prefix, up to the next space. The object is owned when the job registry holds a job of type `eval_noise_check` with that id whose status is not terminal: `{j.id for j in job_registry.list_jobs(type_name="eval_noise_check") if not j.status.is_terminal}`. The job's own id is in that set while it runs, so a job never sweeps itself, and two jobs on one task do not touch each other. A name with no id that matches is not owned.
-- **`sweep_task(task, live_job_ids) -> int`** lists `task.run_configs(readonly=True)` and each eval's `configs(readonly=True)`. With no left-over it reads nothing else. Else it calls `delete_job_objects` with the left-over ids, under the same rules as 6.6.
-- **When.** (a) Step 2 of every noise job, for the job's task. (b) App start: `desktop_server.lifespan` starts `asyncio.create_task(sweep_all_projects(...))` after `_start_background_syncs()`, keeps the task on `app.state`, and cancels and awaits it at shutdown. `sweep_all_projects` loads each path of `Config.shared().projects`, and for each task calls `sweep_task` in a thread, inside `save_context_for_project(project.id, context="noise check sweep")`. A project or task that does not load is skipped. An error is logged and never stops the start. At app start the registry is empty, so every prefixed object is a left-over. See open points 10.3 and 10.4.
+1. **The generated name form.** Its name matches `NOISE_NAME_RE = r"^NOISE-CHECK (j_[a-z2-7]{12}) (run config|judge config)$"` in full. This is the form that `noise_object_name` makes (6.2). The bare prefix is not enough: an object that a person names `NOISE-CHECK notes` is never a left-over (architecture ruling 4).
+2. **No live job owns it.** The owner id is group 1 of the match. The object is owned when the job registry holds a job of type `eval_noise_check` with that id whose status is not terminal: `{j.id for j in job_registry.list_jobs(type_name="eval_noise_check") if not j.status.is_terminal}`. The job's own id is in that set while it runs, so a job never sweeps itself, and two jobs on one task do not touch each other.
+3. **It is more than 24 hours old.** `now - object.created_at > SWEEP_MIN_AGE`, with `SWEEP_MIN_AGE = timedelta(hours=24)` (architecture ruling 3). A job record is in the memory of one process. With git auto sync, the temporary objects are pushed, and a second machine that pulls them has no such job. Without the age test, that machine would delete the objects of a job that still runs elsewhere. The 24 hours are far above the run time of a noise check on a sample.
+
+- **The name is not reserved.** No create or rename route refuses the prefix, and no existing route changes (architecture ruling 4).
+- **`sweep_task(task, live_job_ids, now) -> int`** lists `task.run_configs(readonly=True)` and each eval's `configs(readonly=True)`. With no left-over it reads nothing else. Else it calls `delete_job_objects` with the left-over ids, under the same rules as 6.6. `now` is a parameter so that a test sets the clock.
+- **When.** (a) Step 2 of every noise job, for the job's task. (b) App start: `desktop_server.lifespan` starts `asyncio.create_task(sweep_all_projects(...))` after `_start_background_syncs()`, keeps the task on `app.state`, and cancels and awaits it at shutdown. `sweep_all_projects` loads each path of `Config.shared().projects`, and for each task calls `sweep_task` in a thread, inside `save_context_for_project(project.id, context="noise check sweep")`. A project or task that does not load is skipped. An error is logged and never stops the start. At app start the registry is empty, so line 2 holds for every object, and lines 1 and 3 decide.
+- So an object that a dead app left stays in the project, and is visible in the app, for at least 24 hours.
 
 ### 6.8 Cancel
 
-`POST /api/jobs/{id}/cancel` cancels the supervising task. The loop body of steps 6 and 7 has no suspension point of its own (`ctx.report_progress` does not suspend), so the `CancelledError` arrives inside `runner.run()`. `AsyncJobRunner.run` then cancels and awaits its item workers in its own `finally`, before the exception reaches the job. So no item is still writing when the clean-up starts [U]. The runner is also wrapped in `contextlib.aclosing`. The clean-up is protected from a second cancel: it runs as a task that the `finally` awaits through `asyncio.shield`, in a loop that goes on until the task is done. The cancel request returns after the clean-up, because the registry awaits the task. The job ends as `cancelled`, with no result. The error log keeps what was reported.
+`POST /api/jobs/{id}/cancel` cancels the supervising task. The loop body of steps 6 and 7 has no suspension point of its own (`ctx.report_progress` does not suspend), so the `CancelledError` arrives inside `runner.run()`. `AsyncJobRunner.run` then cancels and awaits its item workers in its own `finally`, before the exception reaches the job. So no item is still writing when the clean-up starts [U]. The runner is also wrapped in `contextlib.aclosing`. The clean-up is protected from a second cancel: it runs as a task that the `finally` awaits through `asyncio.shield`, in a loop that goes on until the task is done. The cancel request returns after the clean-up, because the registry awaits the task. The job ends as `cancelled`, with no result, so it reports no spend (architecture ruling 8). The error log keeps what was reported.
 
-### 6.9 Tests (`jobs/workers/test_noise_check.py`, `eval_power/test_noise_compare.py`, `test_noise_cleanup.py`)
+### 6.9 Tests (`jobs/workers/test_noise_check.py`, `eval_power/test_noise_compare.py`, `test_trace_reuse.py`, `test_noise_cleanup.py`)
 
 All with fake model adapters and a real project in `tmp_path`. Six train items with scores `[0, 0, 1, 1, 1, 1]`.
 
 | Case | Pinned from `HT tests/test_noise.py` |
 |---|---|
 | Second drive gives `[1, 0, 1, 0, 1, 1]`: `items == 6`, `redrive_changed == 2`, `redrive_rate == 1/3`, `rejudge_items == 6`, `rejudge_changed == 0`. The measured run config file and its eval runs are byte-identical after the job, and `current_config_id` is unchanged | `test_the_redrive_is_a_clone_and_the_baseline_is_never_touched` |
-| The judge copy has the default's `config_type`, properties and model, and a name with the prefix; one flipped judgment gives `rejudge_changed == 1`, `rejudge_rate == 1/6`, `redrive_changed == 0` | `test_the_judge_copy_is_a_non_default_copy_of_the_default_config` |
-| Copy rows that name other task runs: `rejudge_changed is None`, and `not separable` is in the note | `test_a_copy_that_drove_again_is_not_judge_noise` |
+| The judge copy has the default's `config_type`, properties and model, and the name `NOISE-CHECK <job id> judge config`; one flipped judgment gives `rejudge_changed == 1`, `rejudge_rate == 1/6`, `redrive_changed == 0` | `test_the_judge_copy_is_a_non_default_copy_of_the_default_config` |
+| Copy rows that name other task runs (built by hand, in `test_noise_compare.py`): `same_outputs` is false, `rejudge_changed is None`, and `not separable` is in the note | `test_a_copy_that_drove_again_is_not_judge_noise` |
 | Legacy config, code eval: no copy is made, the notes hold `legacy judge config` and `deterministic`, `items == 6` | `test_judge_noise_is_skipped_where_a_copy_cannot_measure_it` |
 | `spend_usd == 6 * 0.01 + 6 * 0.002 + 6 * 0.002` | `test_the_estimate_is_printed_before_any_spend_and_the_spend_is_booked` |
 | `max_usd` under the estimate: `skipped` is set, no object is made, the fake adapter has no call, `spend_usd == 0` | `test_an_estimate_past_the_run_budget_skips_the_check` |
@@ -371,30 +413,40 @@ All with fake model adapters and a real project in `tmp_path`. Six train items w
 | No stored row: `skipped` text, nothing made | `test_no_stored_rows_means_no_spend` |
 
 - **Leaves nothing.** After success, after a failing adapter, and after a cancel in the middle of each pass: the set of files under the project folder equals the set before the job. A second cancel during the clean-up does not stop it. `test_the_judge_copy_leaves_the_project_after_use` is the HT origin.
+- **The second judgment never drives** (`test_trace_reuse.py`, and one job test for each case). One sampled item gets, in turn: a baseline record with no `scored_run_id`; a deleted trace file; a trace of another run config; a newer trace of the same item and run config; an episode whose recorded reset differs from the item's reset; an environment that cannot be reached. In each case: the item is in `not_measured` with the reason of 6.2; the fake adapter has no drive call for the measured run config; `rejudge_items == 5` and the note is `1 of 6 sampled item(s) not measured: the stored trace cannot be reused`; and the task runs of the measured run config are the same files before and after the job. With all six items not reusable: no judge copy is made, `rejudge_changed is None`, and the note starts with `not measured: no stored trace of the sampled items can be reused`.
 - One eval whose adapter raises a provider error: the job succeeds, the other eval has rows, `errors` holds the provider's text whole, and `GET /api/jobs/{id}/errors` holds it too.
-- A shared item of two V2 evals is driven once (count the adapter calls), and `spend_usd` counts it once.
-- A delete that raises (patched): the other objects are deleted, the temporary run config stays, `warnings` names the object, and the job succeeds. The next `sweep_task` removes the rest.
-- Sweep: a left-over run config with eval runs and task runs, and a left-over judge copy, are removed; an object whose job is live in the registry is kept; an object with another name is never touched; a task with no left-over causes no read of runs.
+- A shared item of two V2 evals is driven once (count the adapter calls), and `spend_usd` counts it once. A multi-turn item whose task run has a `synthetic_user_usage` cost: that cost is not in `spend_usd`.
+- A job that is cancelled, and a job that fails at its start, have no result.
+- `statistics_lib.noise_adjusted_wins` patched to raise `OverflowError`: the row has `noise_adjusted_wins is None`, `warnings` holds the overflow text of 6.4 and no other line for that row, and the job succeeds.
+- A delete that raises (patched): the other objects are deleted, the temporary run config stays, `warnings` names the object, and the job succeeds. A `sweep_task` with `now` 23 hours later removes nothing. One with `now` 25 hours later removes the rest.
+- Sweep, with `now` 25 hours after the objects were made: a left-over run config with eval runs and task runs, and a left-over judge copy, are removed; an object whose job is live in the registry is kept; an object named `NOISE-CHECK notes`, and one named `NOISE-CHECK j_k3v7qa2mzx4b` with no kind, are never touched; a task with no left-over causes no read of runs. `noise_object_name(_new_job_id(), kind)` matches `NOISE_NAME_RE` for both kinds, and passes Kiln's name validator.
 - `POST /api/jobs/eval_noise_check` is refused with the `create_path` text. The create route gives 404 for an unknown run config or eval id, and 422 for `items_per_eval=0`. `flip_rate` pools binary rows only, and is None with no compared item.
 
 ## 7. Scores by split
 
-Each of the four routes gets the same query parameter: `split: Annotated[EvalSplitName, Query(description="Which of the eval's dataset splits to summarise: train, val or test. Default test.")] = "test"`.
+Each of the four routes gets the same query parameter: `split: Annotated[EvalSplitName, Query(description="Which of the eval's dataset splits to summarise: train, val or test. Default test.")] = "test"`. The three task-wide routes add one sentence to the description (below).
 
 | Route | Handler | Change |
 |---|---|---|
 | `GET …/evals/{eval_id}/eval_config/{eval_config_id}/score_summary` | `get_eval_config_score_summary` | `resolved_split_or_422(task, eval, "test")` becomes `(task, eval, split)`. The 400 text for an empty split names the split: `This eval's {split} split is empty. Add items matching the {split} split's filter — …`. With `test` the text is the same as today |
-| `GET …/tasks/{task_id}/eval_results_summary` | `get_eval_results_summary` | `_cached_test_split(task, eval, cache)` becomes `_cached_split(task, eval, split, cache)`, which reads `eval.splits.get(split)` and calls `resolve_split(task, eval, split)` |
+| `GET …/tasks/{task_id}/eval_results_summary` | `get_eval_results_summary` | `_cached_test_split(task, eval, cache)` becomes `_cached_split(task, eval, split, cache)`, which reads `eval.splits.get(split)` and calls `resolve_split(task, eval, split)`. The `if … is None: continue` after it stays |
 | `GET …/run_configs/{run_config_id}/eval_scores` | `get_run_config_eval_scores` | Passes `split` to `run_config_eval_scores(task, run_config_ids, split)` |
 | `GET …/run_configs/eval_scores` | `get_all_run_configs_eval_scores` | The same |
 
-`run_config_eval_scores` gets `split: EvalSplitName = "test"`, and its `resolve_split(task, eval, "test")` becomes `resolve_split(task, eval, split)`. No response model changes. `dataset_size` is the size of the split asked for. **422:** `score_summary` works on one eval, so a missing split gives the results route's text from `resolved_split_or_422`: `Eval '<id>' has no '<split>' split.` The three other routes work on every eval of the task: see open point 10.2.
+`run_config_eval_scores` gets `split: EvalSplitName = "test"`, and its `resolve_split(task, eval, "test")` becomes `resolve_split(task, eval, split)`. No response model changes. `dataset_size` is the size of the split asked for.
+
+**An eval that has no such split** (architecture ruling 2):
+
+- `score_summary` works on one eval. A missing split is a 422 with the results route's text, from `resolved_split_or_422`: `Eval '<id>' has no '<split>' split.`
+- The three other routes work on every eval of the task, and the train and val splits of an eval are optional. An eval that has no such split is left out of the answer. The call does not fail. The code does this today for a missing test split (`if test_split is None: continue`, in `get_eval_results_summary` and in `run_config_eval_scores`), and the same line now reads the split asked for. With a split that no eval of the task has, the answer has no eval.
+- The parameter description of the three routes ends with: `An eval that has no such split is left out.`
 
 **Tests** (`test_eval_api.py`), on a fixture whose train, val and test splits hold different items with different scores:
 
 - For each of the four routes: the body with no `split` equals the body with `split=test`, and equals a body recorded from the code before the change. The existing tests of the four routes pass unchanged.
 - `split=train` and `split=val` give that split's means and `dataset_size`.
 - `score_summary` with a split that the eval does not have: 422 with the text. A value that is not a split name: 422 from FastAPI. The empty-split 400 names the split.
+- Each of the three task-wide routes with `split=val`, on a task where one of two evals has no val split: status 200, the eval with a val split is in the answer, and the other eval is absent.
 
 ## 8. Paired comparison
 
@@ -420,7 +472,7 @@ Each of the four routes gets the same query parameter: `split: Annotated[EvalSpl
 
 ### 8.2 Algorithm
 
-Two functions in `eval_api.py`, beside `compute_score_summary`. They port `HT/analysis.py:compare_rows` and `_stats_row`.
+Two functions in `eval_api.py`, beside `compute_score_summary`. They port `HT/analysis.py:compare_rows` and `_stats_row`. They import `rows_by_item` and `comparable_scores` from `eval_power/stored_rows.py`, so build step 6 needs step 3 (architecture section 8).
 
 `compare_run_configs(eval, eval_config, split, candidate_id, baseline_id) -> RunConfigComparison`:
 
@@ -429,6 +481,7 @@ Two functions in `eval_api.py`, beside `compute_score_summary`. They port `HT/an
 3. `comparable_scores(eval)`. Its skipped entries go to `skipped`.
 4. **Pairing**, per score: the items, sorted by key, where both sides have a non-null value. With none: `SkippedScore(reason="no paired items")`, and no row.
 5. `compare_score(spec, values_a, values_b)`, with `a` the baseline and `b` the candidate.
+6. **Overflow** (architecture ruling 6, and 2.4): when `compare_score` raises `OverflowError` (a binary score with more than about 1,030 changed pairs), the score gets `SkippedScore(reason="the exact test cannot be computed for this many changed pairs")`, and no row. The other scores keep their rows. The arithmetic is not changed.
 
 `compare_score(spec, values_a, values_b, confidence=0.95) -> RunConfigComparisonRow`. It calls the library functions that the two statistics operations call. It does not call `_op_mcnemar_paired` or `_op_compare_paired`, which round.
 
@@ -453,7 +506,7 @@ HT's tests of this code run against a fake statistics answer, so they pin behavi
 | `compare_score` with a hand-built `lower_is_better` rating spec, baseline 4 and candidate 2: `delta == 2.0`, and the CI ends are swapped and negated | `test_ci_is_sign_normalized_with_the_delta_on_lower_is_better` |
 | A rating score with fewer than 5 non-zero differences: `p_value is None`, and `significant` follows the interval | `test_compare_paired_small_n_uses_the_ci_when_wilcoxon_is_omitted` |
 
-Also: `split=test` is 422 and reads nothing; a missing val split is 422; an unknown baseline is 404; the response body holds no item id of the fixture (search the JSON text); items outside the split are not paired; an informational score has no row.
+Also: `split=test` is 422 and reads nothing; a missing val split is 422; an unknown baseline is 404; the response body holds no item id of the fixture (search the JSON text); items outside the split are not paired; an informational score has no row; `mcnemar_exact_p` patched to raise `OverflowError` gives a `skipped` entry with the overflow reason, no row for that score, and status 200.
 
 ## 9. Policies and generated files
 
@@ -475,27 +528,30 @@ Every route here is allowed for MCP: none gets an `x-mcp-policy` tag, and absent
 4. `make api_docs` (`uv run python -m app.desktop.skill_api_reference generate`): regenerates the API reference of Kiln's skill [U].
 5. Commit the generated files with the code. Run `uv run ./checks.sh --agent-mode`.
 
-## 10. Conflicts and open points
+## 10. Accepted limits
 
-These are not decided by this document. Each has the evidence and a proposal. Where the design above needs an answer to be buildable, it uses the proposal, and the owner can overrule it. Points 3 and 4 are not built in: the sweep is as decision 6 says.
+Each of these is settled. Nothing here waits for a decision.
 
-1. **`n = 0` on the statistics route.** The functional spec lists 422 for a negative number only. The shared field `n` has `ge=1` today (`statistics_api.py`, used by `proportion_ci`), so `n = 0` is a 422. Proposed: keep the constraint, because no existing behaviour may change. HT's pinned `fewest_wins(0, 0) is None` is then tested on the library function, which the detectability read calls directly.
-2. **`split` on the three task-wide summary routes.** The functional spec says "422 when the eval has no such split". `eval_results_summary` and the two `eval_scores` routes cover every eval of the task, and train and val splits are optional. A 422 would fail the whole call when one eval has no val split. Proposed: such an eval is left out of the answer, which is what the code already does for a missing test split (`if test_split is None: continue`).
-3. **The sweep and a second Kiln.** Decision 6 says the sweep removes what no live job owns. A job record is in memory of one process (`JobRecord`, "never persisted"). With git auto sync, the temporary objects are pushed (`atomic_write` commits and pushes each save). A second machine that pulls them has no such job, so its app start, or its next noise job, deletes the objects of a job that still runs elsewhere. Proposed: the sweep also skips an object whose `created_at` is less than 24 hours old. This needs a ruling, because it changes when a left-over goes.
-4. **The prefix is reserved but not enforced.** A run config or judge config that a person names `NOISE-CHECK …` is deleted by the sweep, with its eval runs. Proposed: the create and rename routes of run configs and judge configs refuse the prefix with a 422. This touches existing routes.
-5. **A second judgment that drives.** When the stored trace of a baseline row cannot be reused (it was deleted, or the item's environment version changed), the runner drives the measured run config again. The new task run is under the measured run config, and it becomes the newest trace of its key. The runner does not say which traces it generated (`TraceIndex.get_or_create` returns `was_generated`, and `EvalRunner._trace` drops it). The rule of 6.6 step 3 finds such a run without a runner change, but it can also remove a drive that another job made in the same seconds and that nothing has scored yet. The smallest runner change that makes it exact: `EvalRunner` records the runs it generates in a judged run, as `driven_runs` does for a drive-only run. Not required; flagged.
-6. **The exact test fails above about 1,030 changed pairs.** `mcnemar_exact_p(600, 700)` raises `OverflowError: int too large to convert to float` [V]. HT's `binomial_two_sided_p` has the same limit. It is reached by `noise_adjusted_wins` on a large, noisy train split (`n = 2000`, rate 0.5 [V]) and by the compare route. Proposed, with no change to the arithmetic: the statistics route maps `OverflowError` to a 422; the noise job gives `noise_adjusted_wins = None` for that row with a warning that says the value could not be computed; the compare route puts the score in `skipped`. The existing `mcnemar_paired` operation has the same failure today: its handler catches `ValueError` and `TypeError` only.
-7. **`spend_usd` and the synthetic user.** 6.5 adds `synthetic_user_usage.cost`, because it is money the job spent. HT's own figure, and the estimate formula, read `task_run_usage.cost` only, which leaves it out. For a multi-turn task the spend is then above the estimate. The other choice is HT's figure exactly.
-8. **Build order.** The compare route imports `eval_power/stored_rows.py`. The architecture says steps 2 to 9 are free in order except "4 needs 3". So step 6 also needs step 3, or whichever is built first creates that file.
-9. **Convention E17.** `eval_power/api.py` and the worker import `task_run_config_from_id` and `eval_from_id` from `eval_api.py`, as `jobs/api.py` and `workers/eval.py` do today. The rule says routers do not import each other. The fix is to move the lookups to a service module, which is outside this spec. It is reported under rule H24.
-10. **"One line" for scores by split.** Two of the four changes are more than one line: the empty-split message, and the split cache helper.
-11. **Dead branches.** `skipped` is always empty, and `lower_is_better` never occurs, on a project that loads today. Both are kept because the functional spec names them.
+1. **Temporary objects are visible while a job runs.** The temporary run config and judge copies show in the app, and git auto sync pushes them. They stay in the git history after the clean-up (decision 6).
+2. **A left-over stays for 24 hours.** The sweep takes an object only when it is more than 24 hours old, so that it never takes the objects of a job on another machine (ruling 3).
+3. **The name is not reserved.** No route refuses the prefix. A person's object is swept only if its name has the full generated form, no live job has that id, and it is 24 hours old (ruling 4).
+4. **Some sampled items are not measured by the second judgment.** An item whose stored trace cannot be reused is left out, with a note (ruling 5). The pre-check is strict, so it can leave out an item that the runner would have reused.
+5. **A trace that goes away after the pre-check.** The runner then drives the measured run config for that item. `same_outputs` drops the copied rows. The job does not delete the driven task run, so one task run of the measured run config stays in the project (ruling 5).
+6. **The exact test overflows above about 1,030 changed pairs.** The statistics route answers 422, a noise row gets a null `noise_adjusted_wins` with a warning, and the comparison skips the score (ruling 6). The existing `mcnemar_paired` operation has the same failure today and is not changed.
+7. **`spend_usd` leaves out the simulated user.** For a multi-turn task the money spent is above `spend_usd` (ruling 7). It is also a lower bound when `errors` is not empty.
+8. **A cancelled or failed job reports no spend** (ruling 8).
+9. **Dead branches.** `skipped` is always empty, and `lower_is_better` never occurs, on a project that loads today. Both are kept because the functional spec names them.
 
-## 11. Unverified
+## 11. Open points
+
+None.
+
+## 12. Not verified
 
 - `make api_docs` and the `app/mcp` tree are on the build branch, not in this checkout.
 - That a cancel always arrives inside `runner.run()` (6.8). It follows from asyncio's rules and the code read; the cancel test of 6.9 proves it.
 - That a drive writes nothing in the project folder besides its `TaskRun` and `EvalRun`, for multi-turn and environment items. The "leaves nothing" test must have one item of each kind.
 - That work in a worker thread inside `atomic_write` is safe. The eval runner saves on the event loop inside it.
+- That the five lines of the pre-check (6.2) are the runner's own reuse test in every case, and that the environment's version can be read with the shared session manager outside a runner. The "never drives" tests of 6.9 prove the cases that they list.
 - What HT's `Analyzer.judge_items` returns when only some items fail. 6.4 compares the items that have a row.
 - That `resolve_split` and HT's on-disk reader give the same train count for every eval; `unscored` depends on it. Also the order of `eval_config.runs()`: HT keeps the last record of a replicate set in served order; 1.2 uses the newest by `created_at`.
