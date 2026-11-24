@@ -100,7 +100,8 @@ Checks a run config for the five smells that code can detect. Free, pure code, n
 Four summary routes are fixed to the test split today: the judge config's `score_summary`, the task's `eval_results_summary`, and the two `eval_scores` routes of run configs.
 
 - Each gets an optional `split` parameter: `train`, `val` or `test`. The default stays `test`, so existing callers see no change.
-- 422 when the eval has no such split, with the same text the results route uses today.
+- The judge config's `score_summary` is about one eval: it returns a 422 when the eval has no such split, with the same text the results route uses today.
+- The other three routes cover every eval of the task. An eval that has no such split is left out of the answer, as happens today for an eval with no test split.
 
 ### 3.8 Paired comparison of two run configs
 
@@ -261,7 +262,7 @@ Notes:
 
 ### 5.7 What HT removes
 
-- The knowledge copy, the code that loads, checks and indexes it, its maintenance skill for coding agents, and its backlog file. Fixes to the knowledge are made in Kiln from then on.
+- The knowledge copy, the code that loads, checks and indexes it, its maintenance skill for coding agents, and the knowledge entries of its backlog file. Backlog entries about HT's own code stay. Fixes to the knowledge are made in Kiln from then on.
 - The `kiln-api` reference docs.
 - `kiln_api_mcp`: the package, its console script and its tests.
 - The model catalogue, and the `--no-model-catalog` option.
@@ -282,17 +283,17 @@ HT checks both ways at start-up, before any spend:
 - HT's minimum is raised with every Kiln feature it starts to depend on. This spec raises it once.
 - Today's feature probes of Kiln's OpenAPI document are removed once the minimum version covers them.
 
-### 5.9 `harness-tuner-install-agents --dest`
+### 5.9 `harness-tuner-install-agents`
 
 Loop sessions never get `kiln_api_mcp`: every loop tool set denies it by name. It is used in one place only. The command `harness-tuner-install-agents --dest DIR` puts HT's skills into a person's own project for interactive sessions, and for Claude Code it also adds the `kiln_api_mcp` server to that project.
 
-After this spec, HT has only role skills, the gateway skill and no `kiln_api_mcp`. None of them is of use in a person's own project. So the `--dest` form of the command is removed. A person who works with an agent by hand connects Kiln's own MCP server, which carries Kiln's skill.
+After this spec, HT has only role skills, the gateway skill and no `kiln_api_mcp`. None of them is of use in a person's own project. `--dest` is the command's only form, so the whole command is removed. A person who works with an agent by hand connects Kiln's own MCP server, which carries Kiln's skill.
 
 ### 5.10 Docs and command line
 
 
 - The docs that name removed parts are updated: install, command line, architecture, agents, limitations, and the contributor guide.
-- Two console scripts and one option go (5.7). The command-line reference and its tests follow.
+- Three console scripts and one option go (5.7, 5.9). The command-line reference and its tests follow.
 
 ## 6. Tests
 

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Component: Harness Tuner's Switch to Kiln's APIs, the Removals and the Proof

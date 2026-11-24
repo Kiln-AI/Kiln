@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Component: Kiln smell check, skill bundles, version, skill text and contract test

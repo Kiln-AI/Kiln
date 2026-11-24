@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Component: How Harness Tuner Reads Kiln's Skill, and Its Role Entry Files
