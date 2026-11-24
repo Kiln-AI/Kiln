@@ -13,6 +13,8 @@ status: canceled
 >
 > But it is huge and risky. It puts scope checks through the core of Kiln's eval and data APIs, and it changes the raw API default. Harness-tuner would get a weaker fence and a much larger API than its gateway gives it today. So we chose the simpler plan: harness-tuner keeps its gateway, and moves onto Kiln's skill and shared APIs.
 >
+> One more goal belongs to this spec, if it is ever taken up again: harness-tuner's role procedures become prompts that it sends when it starts a sub-agent. That removes its skill-copying code. The replacement spec keeps the role skills as they are.
+>
 > Scopes for MCP callers are still wanted, as a later P2 project. The decisions reached here are its starting point: this overview, and [scope_decisions.md](scope_decisions.md).
 >
 > Only this overview and the decisions file were written. There is no functional spec.

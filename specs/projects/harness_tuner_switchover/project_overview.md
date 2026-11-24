@@ -61,10 +61,10 @@ In the harness-tuner repo:
 
 [research/harness_tuner_switchover_requirements.md](research/harness_tuner_switchover_requirements.md) was written during the build of spec one. It lists what to watch for in the switchover (SR1 to SR18). The functional spec must work each one in, or say why not.
 
-## Open
+## Decided
 
-- **How loop agents read Kiln's skill.** Either the gateway passes `kiln_skill` through to the running Kiln, so the skill always matches the app version, or harness-tuner copies the skill files from a pinned Kiln version.
-- **Where the role procedures live.** Either they become prompts that harness-tuner sends when it starts a sub-agent, which removes the skill-copying code, or harness-tuner keeps its role skills as they are.
+- **How loop agents read Kiln's skill.** The gateway passes `kiln_skill` through to the running Kiln, so the skill always matches the app version and nothing is copied. Harness-tuner's own code reads the knowledge through the same call.
+- **Where the role procedures live.** Harness-tuner keeps its role skills as they are, with their links re-pointed at Kiln's skill. Turning them into prompts sent at sub-agent start is left for later; it is recorded as a goal in the canceled spec.
 
 ## Not in this spec
 
