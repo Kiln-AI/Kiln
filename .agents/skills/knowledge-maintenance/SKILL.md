@@ -211,7 +211,11 @@ The port was last brought up to date with Kiln Harness Tuner at commit
    names the split rule names `references/knowledge/train_val_test.md`.
    In the knowledge trees, the check bans the gateway operation names, the
    role names, the loop words and a few other words of the tuner
-   (`gateway`, `the tuner`, `scratch folder`).
+   (`gateway`, `the tuner`, `scratch folder`). A record string in
+   `HARNESS_TUNER_RECORD_STRINGS` of
+   `app/mcp/kiln_mcp_server/skill_checks/tree_check.py` can hold
+   a loop word. When a port quotes a new record string with a loop word,
+   add it there.
 3. Finish (section 9).
 4. Change the recorded commit above to the head that you ported.
 

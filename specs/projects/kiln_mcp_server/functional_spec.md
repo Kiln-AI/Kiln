@@ -15,7 +15,7 @@ The server has exactly two tools, the same for every agent:
 
 Every capability is a REST endpoint. New capabilities are added as endpoints, not as more tools.
 
-This is spec one of two. Fencing, and everything else harness-tuner needs, is [harness_tuner_port](../harness_tuner_port/project_overview.md). This spec builds none of that, but must leave room for it (section 13).
+This is spec one of two. What harness-tuner needs is spec two, [harness_tuner_switchover](../harness_tuner_switchover/project_overview.md). Scopes for MCP connections (fencing) are a later P2 project. This spec builds none of that, but must leave room for it (section 13).
 
 ## 2. Goals and non-goals
 
@@ -29,7 +29,7 @@ Goals:
 
 Non-goals (this spec):
 
-- Fencing or scoping a connection (spec two).
+- Fencing or scoping a connection (a later project).
 - Any change to harness-tuner.
 - Replacing or changing the Kiln Assistant. It stays as it is. Sharing one skill between the Assistant and this MCP is P2.
 - More tools, typed per-feature tools, MCP prompts or MCP resources.
@@ -208,7 +208,7 @@ references/
 
 - **Kiln Assistant's skill** → `SKILL.md`, `references/modes/`, `references/knowledge/`, `references/docs/`. It comes from a private repo as a filtered export that a person has reviewed.
 - **Harness-tuner knowledge** (`kiln-harness-tuner-knowledge`) → `references/levers/` and `references/improving_agents/` (`techniques/`, `smells/`, `playbooks/`).
-  - The five role entry files (`planner.md`, `builder.md`, `analyzer.md`, `report.md`, `smells.md`) are not ported. They stay in harness-tuner; their final home is an open question in spec two.
+  - The five role entry files (`planner.md`, `builder.md`, `analyzer.md`, `report.md`, `smells.md`) are not ported. They stay in harness-tuner, in a new home among its own skills (spec two, section 5.3).
   - In their place, the knowledge is wired into the skill's modes, mainly "improve a task".
 - **API reference** → `references/knowledge/api_docs/`, generated from Kiln's OpenAPI document with `openapi2skill`, the OSS generator that already produces the Assistant's API docs. Its file names are kept as generated.
 
@@ -353,12 +353,12 @@ Kiln has several MCP features. The docs name each one and say what it is for:
 - **Remote and local MCP tool servers:** give the agents you build in Kiln tools from an MCP server.
 - **An MCP tool as a task:** run a remote agent over MCP as a Kiln task.
 
-## 13. Room for spec two
+## 13. Room for later projects
 
-- Spec two scopes a connection by its URL path. `/mcp` in this spec is the open default and keeps that meaning.
-- Spec two adds no tools and changes no skill files. A scoped connection gets the same two tools and the same API, and clear errors when it goes outside its scope. So `call_kiln_api` has one place where a per-connection policy can be applied later. In this spec that place applies only the MCP block tag.
-- The server is stateless here, and spec two relies on that.
-- `save_to_tmpfile` will need a folder a fenced agent can read. Tracked in spec two.
+- A later project may scope a connection by its URL path. `/mcp` in this spec is the open default and keeps that meaning.
+- Scoping adds no tools and changes no skill files. A scoped connection gets the same two tools and the same API, and clear errors when it goes outside its scope. So `call_kiln_api` has one place where a per-connection policy can be applied later. In this spec that place applies only the MCP block tag.
+- The server is stateless here, and scoping relies on that.
+- `save_to_tmpfile` will need a folder a fenced agent can read.
 - Harness-tuner will use the model info endpoints (section 8) and add its own model policy on top.
 
 ## 14. Constraints

@@ -35,7 +35,7 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 **SR2 — HT copies the Kiln skill files into its agents folder.** (`CT-4`)
 - Until the fence exists (SR8), HT does not give a loop session the Kiln MCP to read the skill. That would also hand the session an unfenced `call_kiln_api`.
 - `install_agents.py` copies the Kiln skill tree from a pinned Kiln version into each agent CLI's skills folder, as it copies HT's own skills today.
-- HT checks the Kiln version against its minimum expected version, and Kiln returns `min_supported_harness_tuner_version`. Both checks come from the fencing project (`specs/projects/harness_tuner_switchover/project_overview.md`, "Version alignment"). Neither exists at `25157f3` (`contract.md`, bottom line).
+- HT checks the Kiln version against its minimum expected version, and Kiln returns `min_supported_harness_tuner_version`. Both checks come from spec two (`specs/projects/harness_tuner_switchover/project_overview.md`, "Version alignment"). Neither exists at `25157f3` (`contract.md`, bottom line).
 
 **SR3 — HT's copy of the knowledge goes only after SR1, SR4 and SR5 hold.** (`CT-2`, `HS-H3`)
 - If HT deletes `kiln-harness-tuner-knowledge` first, `load()` raises and `_smell_titles` returns None.

@@ -10,7 +10,7 @@ This is the contract audit of Kiln Harness Tuner (HT, b49f159) against Kiln at 2
 - **API:** all of HT's REST calls still work. None is MCP-blocked, and none of the phase 12 changes breaks a check HT makes.
 - **Skill:** the break is in the skill contract. HT's role prompts name files, a skill and a layout that are not in Kiln's skill. The ported knowledge was also reworded to send the agent to REST endpoints, where HT's loop agents have only gateway operations.
 - **Memory:** a few format differences already hurt when HT and a Kiln agent work on the same task.
-- **Fencing spec:** none of the items in `specs/projects/harness_tuner_port/project_overview.md` exists at 25157f3, though its front matter says `status: complete`. That means no fence, no `/version`, no `min_supported_harness_tuner_version` and no "create skill from a folder" route.
+- **Fencing spec:** none of the items in `specs/projects/harness_tuner_port/project_overview.md` exists at 25157f3. That means no fence, no `/version`, no `min_supported_harness_tuner_version` and no "create skill from a folder" route.
 
 HT paths below are under `src/kiln_harness_tuner/`. Kiln paths are under `app/mcp/kiln_mcp_server/skill/` unless they are given in full.
 

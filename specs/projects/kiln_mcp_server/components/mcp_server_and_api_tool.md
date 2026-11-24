@@ -332,7 +332,7 @@ class TmpFileStore:
 
 ```
 # three frozen dataclasses
-class ConnectionScope:      kind: Literal["open"] = "open"       # spec two adds scoped kinds and their data
+class ConnectionScope:      kind: Literal["open"] = "open"       # a later scopes project adds scoped kinds and their data
 class ApiCall:
     method: str; url_path: str                                   # normalised method and concrete path
     route: RouteEntry; path_params: Mapping[str, str]
@@ -345,7 +345,7 @@ class ConnectionPolicy:
     def check(self, call: ApiCall, scope: ConnectionScope) -> PolicyDecision
 ```
 
-In this project `check` returns `PolicyDecision(False, <text 4>)` when `call.route.mcp_blocked`, else `ALLOWED`. It is the only place that decides "is this call allowed on this connection", and `run_api_call` asks it before every REST call (step 5). Spec two reads a token from `request.path_params` in `scope_for_request` and adds rules in `check`; `ApiCall` already carries what a scope rule needs (path parameters, query, body), so neither signature nor the pipeline changes. A call that matches no route never reaches the policy: step 3 refuses it.
+In this project `check` returns `PolicyDecision(False, <text 4>)` when `call.route.mcp_blocked`, else `ALLOWED`. It is the only place that decides "is this call allowed on this connection", and `run_api_call` asks it before every REST call (step 5). A later scopes project reads a token from `request.path_params` in `scope_for_request` and adds rules in `check`; `ApiCall` already carries what a scope rule needs (path parameters, query, body), so neither signature nor the pipeline changes. A call that matches no route never reaches the policy: step 3 refuses it.
 
 ## 6. `x-mcp-policy`, the route index and the block list
 

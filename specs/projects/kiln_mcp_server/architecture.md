@@ -88,8 +88,8 @@ Exact file lists are in the component docs. Files that more than one component c
 ## 3. Decisions that cut across components
 
 1. **MCP library.** The locked `mcp` 1.30. No bump in this project. SDK imports are limited to the modules that the server component doc lists (its section 1); that list is the only one.
-2. **Stateless Streamable HTTP with SSE responses.** Stateless so nothing binds a client to server memory (spec two depends on this). SSE so progress updates can reach the client during a long call.
-3. **One policy seam.** Before every REST call, `call_kiln_api` asks one policy object whether the call is allowed. Here it knows only the MCP block tag. Spec two adds a per-connection scope, read from the URL path, in the same place. The seam's signature already takes a connection context so callers do not change later.
+2. **Stateless Streamable HTTP with SSE responses.** Stateless so nothing binds a client to server memory (a later scopes project depends on this). SSE so progress updates can reach the client during a long call.
+3. **One policy seam.** Before every REST call, `call_kiln_api` asks one policy object whether the call is allowed. Here it knows only the MCP block tag. A later scopes project adds a per-connection scope, read from the URL path, in the same place. The seam's signature already takes a connection context so callers do not change later.
 4. **MCP policy is a separate tag.** `x-mcp-policy` beside the existing `x-agent-policy`. Absent means allowed. The tool reads it from the app's route objects, not from the OpenAPI document, which is slow to build.
 5. **The block list** (owner-approved; 30 operations). The exact rows are in the server component doc, section 6.3. Every row is in one of these groups:
    - every route under `/api/git_sync/`: the OAuth steps (one returns a token), the setup steps, and the per-project sync config, its read included (one simple rule);
@@ -177,7 +177,8 @@ The components depend on each other in this order; the implementation plan follo
 - Tooling to read the noise of an eval. This project adds none, and no guidance of its own on noise.
 - Model info: a short cache for the availability check; a hint field for a search that finds nothing under the default filters; a person reads the models.dev terms of use for a desktop app that fetches the file.
 - Web UI: an icon of its own for the Connect callout.
-- Spec two: fencing, and everything harness-tuner needs.
+- Spec two ([harness_tuner_switchover](../harness_tuner_switchover/project_overview.md)): harness-tuner moves onto Kiln's skill and shared APIs.
+- Scopes for MCP connections (fencing): a later P2 project.
 
 ## 9. Shared files
 
