@@ -10101,6 +10101,11 @@ export interface components {
              * @description Number of tokens served from prompt cache. None if not reported.
              */
             cached_tokens?: number | null;
+            /**
+             * Cache Write Tokens
+             * @description Number of input tokens written to the prompt cache, which providers bill above the normal input price. None if not reported.
+             */
+            cache_write_tokens?: number | null;
         };
         /** ModelDetails */
         ModelDetails: {
@@ -14350,6 +14355,11 @@ export interface components {
              * @description Number of tokens served from prompt cache. None if not reported.
              */
             cached_tokens?: number | null;
+            /**
+             * Cache Write Tokens
+             * @description Number of input tokens written to the prompt cache, which providers bill above the normal input price. None if not reported.
+             */
+            cache_write_tokens?: number | null;
             /**
              * Total Llm Latency Ms
              * @description Total time spent waiting on LLM API calls in milliseconds. Sum of per-call latencies, excludes tool execution time.
