@@ -12387,6 +12387,11 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="tencent/Hy4",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Hy4 Flash is Tencent's lower-cost Hy4 variant. OpenRouter lists no reasoning efforts for it, so it has no thinking levels.
@@ -13261,6 +13266,12 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="thinkingmachines/Inkling-2-Small",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/inkling-2-small",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
