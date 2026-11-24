@@ -24,7 +24,7 @@ The order follows [architecture.md](architecture.md) section 6. Each phase names
 - [x] Phase 14: Manual sanity check with real agents, and the fixes it leads to. Decide whether phase 15 is needed. (functional spec section 16)
 - [x] Phase 15 (optional): a "load the endpoint doc first" check that keeps the server stateless. Only if phase 14 shows agents calling endpoints wrongly because they skipped the docs. (functional spec section 5.9) Not needed: owner decision after phase 14.
 - [ ] Phase 17: Revert and revisit phase 8 — requires owner approval. ([phase_8_revisit](phase_8_revisit.md))
-- [ ] Phase 18: Harness Tuner alignment fixes outside the knowledge trees. ([phase_18 plan](phase_plans/phase_18.md); [decisions](harness_tuner_alignment_decisions.md))
+- [x] Phase 18: Harness Tuner alignment fixes outside the knowledge trees. ([phase_18 plan](phase_plans/phase_18.md); [decisions](harness_tuner_alignment_decisions.md))
 - [ ] **Phase 16: Backlog.** Review open backlog items with the user, then close or dismiss each through the standard phase flow.
 
 ## Notes

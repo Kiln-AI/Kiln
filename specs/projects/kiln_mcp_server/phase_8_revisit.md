@@ -223,6 +223,8 @@ The 74 files are not rewritten for MCP agents. `index.md`, the entry point of th
 > - A record line that Kiln Harness Tuner writes, such as `— REJECTED AT VAL`: read it, and never write it (`references/knowledge/memory.md`).
 > - A Kiln Harness Tuner tool that Kiln does not have (the skill installer, the screening): tell the user it needs Kiln Harness Tuner.
 
+The section also gets the playbook-step flow, which the owner moved here from Phase 18's one-off guide (row M11 of its content list, `HS-M11`; HT `kiln-harness-tuner-knowledge/references/planner.md` 13–42): the smells of the present baseline first, and a smell that blocks other work before the rest; steps in order, each with a condition; Landed → the next step only if the issue is still open; Refuted → the next step; Capped → run again; Inconclusive → the step stays open and the next can run in parallel; an idea of your own is marked "not in the knowledge".
+
 The section also fixes `KT-B14` ("as the stop rules and the val gate judge it"): it points to `references/knowledge/run_an_experiment.md` for how an MCP agent judges. HT's role prompts tell HT agents to skip it (switchover SR6).
 
 ### 5.5 Checks

@@ -4,7 +4,7 @@ status: complete
 
 # Harness Tuner alignment: owner decisions
 
-Recorded 2026-11-23 in three rounds (sections 1–7 first; sections 8 and 9, then section 10, the same day), on branch `claude/kiln-mcp-server-impl` at `7af37d1`, after the three Harness Tuner alignment audits in `research/harness_tuner_alignment_audit/` (`knowledge_tree.md`, `ht_skills.md` with `ht_skills_maps/`, `contract.md`). The audits compare Kiln Harness Tuner (HT) at `b49f159` with Kiln at `25157f3`.
+Recorded 2026-11-23 in three rounds (sections 1–7 first; sections 8 and 9, then section 10, the same day), and on 2026-11-24 (section 11), on branch `claude/kiln-mcp-server-impl` at `7af37d1`, after the three Harness Tuner alignment audits in `research/harness_tuner_alignment_audit/` (`knowledge_tree.md`, `ht_skills.md` with `ht_skills_maps/`, `contract.md`). The audits compare Kiln Harness Tuner (HT) at `b49f159` with Kiln at `25157f3`.
 
 These decisions override the audits where the two differ. An audit "Fix" line that adds a branch, a lane, or a write step for a code-owned record is overridden by the decisions below.
 
@@ -97,6 +97,23 @@ The owner approved the manager's recommendations:
 One question stays open, and Phase 18 asks it (question 9): does the follow-up project's removal of MCP read access to val and test cover all of val, summary metrics included, or only val rows? If all of val, the val parts of M1, M4, M6 and M21 say "confirming on val needs Kiln Harness Tuner" instead.
 
 *Where it goes:* Phase 18 ([phase_plans/phase_18.md](phase_plans/phase_18.md)), item 5 and its questions. M11 goes to Phase 17 ([phase_8_revisit.md](phase_8_revisit.md)), whose files Phase 18 does not edit.
+
+## 11. Answers to the questions of Phase 18 (2026-11-24)
+
+The owner answered the nine questions of [phase_plans/phase_18.md](phase_plans/phase_18.md). The owner's words are quoted where the owner gave them.
+
+1. **Writable kinds.** `constraint`: yes, for the restrictions the user states. `hypothesis`: "reserved for harness-tuner". Kiln Harness Tuner reads it, so the docs must say this clearly.
+2. **`memory.md`'s size.** `memory.md` stays short. The read-only formats move out of it into a folder with one small file per format, `references/knowledge/memory_formats/`, so that an agent's context is not flooded. `memory.md` links to the files and says which file covers what. The formats are for reading, not for writing, and they must match Kiln Harness Tuner's code exactly (`contract.md` section 3).
+   - **Correction (same day):** "memory.md needs to link to docs individually or an index. There's no folder list tool." `memory.md` names each file by its full path, and never tells the agent to look in or list the folder.
+3. **`OPEN: ` answers.** Allowed: a `constraint` that cites the `OPEN: ` record's id. But "don't really suggest this like it's common. Not a recommended flow, don't want to write a bunch about it and make it happen." At most one short line, phrased as a rare case.
+4. **One-off records.** No `experiment` records from MCP agents. A one-off's lasting results are `lesson`, `dead_end`, `issue` (and `constraint`).
+5. **B14.** Yes: porting the exact cost/speed rule (Phase 18 item 3, row M1) replaces the earlier "keep as is".
+6. **Project files** (`HS-M13`). Add the sentence now, in `working_with_project_files.md`: the project tree holds val and test items, and reading their rows counts as reading val or test data.
+7. **B19.** Yes, the proposed text of Phase 18 item 6 is approved: never change the task's default run config on your own initiative, only when the user asks. Both files say so.
+8. **B13.** Resolved by allowing MCP agents to read the `val` memory record, which holds only summary metrics. Close B13. No extra fence is needed for the val record.
+9. **What the val fence covers.** The follow-up project's val and test fence covers only rows; val summary metrics stay readable. So the val parts of M1, M4, M6 and M21 stay as written, with no "needs Kiln Harness Tuner" wording.
+
+*Where it goes:* Phase 18 ([phase_plans/phase_18.md](phase_plans/phase_18.md)), items 1 to 8.
 
 ## Related
 

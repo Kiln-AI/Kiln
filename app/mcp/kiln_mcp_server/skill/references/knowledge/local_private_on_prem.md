@@ -93,7 +93,7 @@ Plan and run a set of experiments using open-weight models. Read `references/imp
 
 ### Select New Default
 
-If the user has a new winner, offer to make it their new default run config.
+If the user has a new winner, tell them it can become the task's default run config, and that they can set it. Do not change the default yourself, unless the user asks you to.
 
 ### Explain Next Steps
 

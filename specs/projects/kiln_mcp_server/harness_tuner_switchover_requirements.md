@@ -122,8 +122,8 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 
 **SR10 — HT's memory writers keep HT's exact formats.** (`CT-§3`, `HS-H1`, `HS-H4`; `map_memory M27`, `M71`; decisions section 4)
 - HT's code stays the writer of the records it owns: `baseline`, `val`, `FIXED: `/`WONT_FIX: `/reopen, `OPEN: `, experiment opening, verdict and state suffixes, `SCREEN …`, `PROBE …`, and the setup head above the delimiter.
-- **Kiln counterpart:** Phase 18 item 1 rewrites `memory.md` so that it lists these records as read-only for MCP agents, with HT's formats string for string.
-- **Acceptance:** the switchover project adds a test in HT that checks each format string in `memory.md` against `memory_schema.py`. Then a change on either side that breaks the other is caught.
+- **Kiln counterpart:** Phase 18 item 1 rewrites `memory.md` so that it lists these records as read-only for MCP agents. HT's formats, string for string, are in the files of `references/knowledge/memory_formats/`, which `memory.md` names.
+- **Acceptance:** the switchover project adds a test in HT that checks each format string in the `memory_formats/` files against `memory_schema.py`. Kiln's `HARNESS_TUNER_FORMATS` in `skill_checks/test_shipped_skill.py` lists the strings. Then a change on either side that breaks the other is caught.
 
 **SR11 — The `— RUNNING` janitor touches only HT's own records.** (`CT-6`)
 - At startup, `memory.py:1183-1199` marks every `— RUNNING` experiment in the task scope `— ABANDONED (orchestrator restart MM-DD)`. That includes a record opened by an MCP agent in another live session.

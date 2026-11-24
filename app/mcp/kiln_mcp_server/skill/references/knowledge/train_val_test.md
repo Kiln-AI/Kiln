@@ -97,8 +97,17 @@ levers repeat them as hard limits:
 - **No value from a train item goes into a change**: no item id, number,
   sentence, input or expected value. Search each change for copies before
   you measure it.
-- **No text copied from an eval, a judge or a spec**: no passage of a judge
-  prompt, a spec or an eval description, and no name of an eval. State a
-  rule in new words, from what the task needs.
+- **No rule that games the measurement**: no rule case by case, and no
+  wording aimed at a grader. A general rule that a new input of the same
+  kind also follows is fine. Naming a tool or a skill is fine.
+- **No text copied from an eval, a judge or a spec**: no run of 8 or more
+  words from a judge prompt, an eval config, a spec or an eval
+  description, and no eval's full name. Search the whole change: the
+  prompt, and every file of its skills and code tools. Text that the
+  baseline's prompt or the task's instructions already carry is exempt
+  (for a skill or a code-tool file, the baseline's whole text). The parent
+  is not exempt: a phrase that an earlier candidate put in its prompt is
+  found in every candidate built on that prompt. State a rule in new
+  words, from what the task needs.
 - **An example in a change uses invented values**, never the values of an
   item.

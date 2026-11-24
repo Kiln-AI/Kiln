@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Phase 18: Harness Tuner alignment fixes outside the knowledge trees
@@ -23,7 +23,7 @@ Kiln paths are from `app/mcp/kiln_mcp_server/skill/`. RX = `references/knowledge
 
 ## Status
 
-Draft. Items 1 to 4, 6 and 7 can start once the owner has answered the questions at the end. The owner set item 5's file and its content list on 2026-11-23; its val parts wait on question 9. Phase 17 needs approval, but this phase does not wait for it: the two phases share no file. Item 8 is the only overlap: both phases change section 9 of `skill_and_content.md`, in different rows.
+The owner set item 5's file and its content list on 2026-11-23, and answered the nine questions of this plan on 2026-11-24 ([decisions](../harness_tuner_alignment_decisions.md) section 11). The steps below carry the answers. Phase 17 needs approval, but this phase does not wait for it: the two phases share no file. Item 8 is the only overlap: both phases change section 9 of `skill_and_content.md`, in different rows.
 
 ## Steps
 
@@ -36,9 +36,15 @@ Draft. Items 1 to 4, 6 and 7 can start once the owner has answered the questions
   - Kiln Harness Tuner's code writes most records, with exact formats that its code parses, and HT's `memory_schema.py` is the authority on them;
   - an MCP agent reads those records and writes only the kinds marked writable.
 - **The tag table:** the column "Write when" becomes "Who writes".
-  - **MCP agents write:** `lesson`, `dead_end`, a new `issue` (open, bound with `eval_<eval_id>`), and the kinds the owner adds (question 1: `constraint` without `OPEN: `, and `hypothesis`).
+  - **MCP agents write:** `lesson`, `dead_end`, a new `issue` (open, bound with `eval_<eval_id>`), and `constraint` for the restrictions the user states (not `OPEN: `).
+  - **`hypothesis` is reserved for Kiln Harness Tuner**, which reads it. The tag row says so: an MCP agent writes none, and tells the user an idea it does not act on now.
+  - **No `experiment` record from an MCP agent.** A one-off's lasting results are `lesson`, `dead_end`, `issue` (and `constraint`).
   - **Kiln Harness Tuner's code writes, read-only for an MCP agent:** `baseline`; `val`; the issue prefixes `FIXED: `, `WONT_FIX: `, `UNMEASURED: `, `UNMEASURABLE: ` and the reopen line; `OPEN: ` records; every `experiment` record (opening, verdict and state suffixes); `SCREEN …` and `PROBE …` records; the setup head above the delimiter; the priority tags of the issues HT seeds.
-- **A read-only section of formats**, string for string as HT's code writes them (`CT-§3`). It is for readers, and says so. Each string is checked against HT's code at `b49f159`; where the HT repository cannot be read, the contract audit's file and line is the source, and the phase notes say so.
+- **The read-only formats**, string for string as HT's code writes them (`CT-§3`), in a folder with one small file per format, `references/knowledge/memory_formats/`, so that MEM stays short and an agent loads only the format it reads:
+  - `experiment_records.md`, `issue_records.md`, `open_questions.md`, `baseline_and_val_records.md`, `screening_and_probe_records.md`;
+  - each says that it is for reading, never for writing, and that HT's code is the authority;
+  - MEM names each file by its full path, in a table of one line per format (the `kiln_skill` tool cannot list a folder). MEM never tells the agent to look in or list the folder. The links make each file reachable from `SKILL.md`;
+  - each string is checked against HT's code at `b49f159` (`memory_schema.py`, `memory.py`).
   - **Ids:** `EXP <MMDD>-w<k>-<n>`, which replaces the examples `EXP 0715-1` and `EXP 0723-2` at MEM 66 and 131.
   - **Experiment overviews:**
     - the opening `EXP <id> (<technique>): <hypothesis> — RUNNING`;
@@ -70,12 +76,13 @@ Draft. Items 1 to 4, 6 and 7 can start once the owner has answered the questions
   - `UNMEASURABLE: ` also covers an eval that left the active set, and it is never a close;
   - priority tags on HT's issues are owned by their source, and HT's re-sync replaces them;
   - HT's smell and audit issues are bound to no eval on purpose: do not bind them, and do not report a missing eval for them.
-- **The prefix and suffix paragraphs** (MEM 114–145) become part of the read-only section. A sentence that tells an agent to set a prefix or a suffix goes. "Do not reopen … ask the user" (MEM 120–121) becomes "an MCP agent never changes an issue's state; tell the user".
+- **The prefix and suffix paragraphs** (MEM 114–145) move to the format files. A sentence that tells an agent to set a prefix or a suffix goes. "Do not reopen … ask the user" (MEM 120–121) becomes "an MCP agent never changes an issue's state; tell the user".
 - **The front matter and Orientation:**
   - the description drops "before an experiment, which records its result there";
-  - Orientation step 1 drops "record the constraints that the user states", unless question 1 makes `constraint` writable;
+  - Orientation step 1 keeps "record the constraints that the user states" (`constraint` is writable);
   - step 3 keeps the `baseline` read for MCP agents. HT's train-side roles are kept from it by their own prompts (switchover SR6 f).
-- **Size.** MEM is at about 11,997 characters, and its batch 10 row caps it at 12,000. The format list does not fit. Question 2 asks whether to raise the cap, or to move the read-only formats to a new `references/knowledge/memory_formats.md` that MEM names.
+- **`OPEN: ` answers.** One short line in MEM, phrased as a rare case: when the user answers an `OPEN: ` question in the chat, the agent may record the answer as a `constraint` that cites the `OPEN: ` record's id. Nothing more is written about it.
+- **Size.** MEM stays under its 12,000-character cap; the formats are not in it.
 
 ### 2. Remove the write steps for code-owned records from the glue files
 
@@ -84,12 +91,12 @@ Draft. Items 1 to 4, 6 and 7 can start once the owner has answered the questions
 | Where | Today | Becomes |
 |---|---|---|
 | RX 44–47, "Words" | "write the `baseline` record" | The baseline is the run config of the `baseline` record when there is one. Otherwise it is the task's default run config, else the newest: say which. Never write the record |
-| RX 66–68, "Before you start" | "record each answer as a `constraint`" | Tell the user what you assume. Record it only if `constraint` is writable (question 1) |
+| RX 66–68, "Before you start" | "record each answer as a `constraint`" | Tell the user what you assume. Record a restriction that the user states as a `constraint` |
 | RX 75, "The hypothesis" | "Write it before you build, as an `experiment` memory ending `— RUNNING`" | Write the hypothesis in the candidate's name, description and `provenance` (as RX 107–109 already say), and tell the user. No `— RUNNING` record, which also ends the janitor clash for new records (`CT-6`) |
-| RX 181–186, "Confirm on val" | "Record the answer in the `OPEN: ` record" | Ask the user, and decide on the answer. The `OPEN: ` record is read-only; question 3 asks how an answer reaches HT |
-| RX 210–218, "Keep or discard" | "Update the `baseline` record, and the `val` record …"; "Close the target issue with `FIXED: `"; the reopen line | Tell the user which run config won, that they can make it the task's default (item 6), whether the target issue looks fixed, and any `FIXED: ` issue that got worse on val. No record write |
-| RX 229–233, "Record and report" | "One record per experiment, written as you go … the suffix `— PROMOTED` or `— REJECTED AT VAL`" | Record what lasts: a `lesson`, a `dead_end` for a refuted approach (with the run config ids), and a new `issue` for a new problem. The outcome goes to the user. Question 4 asks whether a one-off ever writes an `experiment` record |
-| `SKILL.md:107` | "what to record and how. Read it before you read or write a memory" | "what to read, what you may record, and the formats that Kiln Harness Tuner writes" |
+| RX 181–186, "Confirm on val" | "Record the answer in the `OPEN: ` record" | Ask the user, and decide on the answer. The `OPEN: ` record is read-only (MEM has the one rare-case line of item 1) |
+| RX 210–218, "Keep or discard" | "Update the `baseline` record, and the `val` record …"; "Close the target issue with `FIXED: `"; the reopen line | Tell the user which run config won, that it can become the task's default (item 6), whether the target issue looks fixed, and any `FIXED: ` issue that got worse on val. No record write |
+| RX 229–233, "Record and report" | "One record per experiment, written as you go … the suffix `— PROMOTED` or `— REJECTED AT VAL`" | Record what lasts: a `lesson`, a `dead_end` for a refuted approach (with the run config ids), and a new `issue` for a new problem. The outcome goes to the user. A one-off writes no `experiment` record |
+| `SKILL.md:107` | "what to record and how. Read it before you read or write a memory" | "what you may record, and the formats that Kiln Harness Tuner writes" |
 | `references/modes/improve_task.md:95` | "to record each finding" | "to record lessons, dead ends and new issues" |
 
 Lines 2 and 3 of this step are also part of the guide (item 5), and are made there in the same edit.
@@ -111,7 +118,7 @@ RX 194–198 say that "Kiln Harness Tuner defines both halves exactly … that e
   - no single eval is down more than max(1, round(0.10 × its items)) net items.
 - **Choosing:** the fastest (cheapest) eligible candidate wins. A speed tie goes to the higher pooled net, then the better p90.
 
-This replaces the Phase 16 batch 3 decision on B14 ("keep as is"), on the basis of decisions 3 and 9. The owner confirms that in question 5. The same branch in `playbooks/cheaper-or-faster.md` is Phase 17's.
+This replaces the Phase 16 batch 3 decision on B14 ("keep as is"), on the basis of decisions 3 and 9; the owner confirmed it (decision 11). `backlog.md` B14 gets a line that says so. The same branch in `playbooks/cheaper-or-faster.md` is Phase 17's.
 
 ### 4. Any other branch in the glue files
 
@@ -139,7 +146,7 @@ A search at `7af37d1` for "Kiln Harness Tuner" outside the knowledge trees and `
 - **Body:** the by-hand procedure stays (before you start, the hypothesis, cost, build, measure on train, confirm on val, keep or discard, record and report, variants). Items 2 and 3 apply to it, and each included row below is added in the part that the table names.
 - **Size.** RX is about 13.5k characters (backlog B15, accepted). With the included rows it may come near the hard limit of 30,000 body characters (`test_no_file_over_body_limit`). The rule is to split a hand-written file, never to list it. If it goes over, the split is proposed to the owner first.
 
-**Content list: the shared method rules carried as key lessons.** The "Include / leave out" column is the owner's (2026-11-23). "Include, short form" carries the rule with the parts the cell names left out. If question 9 finds that the follow-up project fences all of val, the val parts of M1, M4, M6 and M21 say "confirming on val needs Kiln Harness Tuner" instead. HT paths are under `src/kiln_harness_tuner/agent_files/skills/`.
+**Content list: the shared method rules carried as key lessons.** The "Include / leave out" column is the owner's (2026-11-23). "Include, short form" carries the rule with the parts the cell names left out. The follow-up project's val and test fence covers only rows, and val summary metrics stay readable (decision 11), so the val parts of M1, M4, M6 and M21 stay as written. HT paths are under `src/kiln_harness_tuner/agent_files/skills/`.
 
 How to read the table:
 - **"#":** `M` numbers are the `HS-M` items of `ht_skills.md`, and `S` rows are smaller rules from the maps.
@@ -174,7 +181,7 @@ How to read the table:
 - **Playbook-step flow** (M11): the owner moved it to the "How to read" section of `references/improving_agents/index.md`, which is Phase 17's file. This phase does not edit it; Phase 17 carries it.
 - **Memory rules** (`HS-M20`, `HS-L2`) are item 1.
 - **Lanes and the val-record read** (`HS-M2`, `HS-M3`): cut (decision 5), and B13 is item 7.
-- **Project files** (`HS-M13`): the follow-up project removes MCP read access to val and test. Until then, `working_with_project_files.md` could say that the tree holds val and test items, and that reading them counts as reading val or test data. Question 6.
+- **Project files** (`HS-M13`): `working_with_project_files.md` ("Reading files directly is fine") says now that the tree holds val and test items, and that reading their rows counts as reading val or test data, under the rules of `train_val_test.md` (decision 11).
 - **Skill bundles and code trust for HT** (`HS-M14`, `HS-M23`): the switchover project (SR18, SR6 e).
 - **Small `kiln-task-setup` and API items** (`HS-L2`): `turn_mode` is frozen; `call_kiln_api` is hidden from the UI pickers; "No other resource paths exist" in `adding_skills.md`; the HTML-body tell at `SKILL.md` 37. These are not experiment method. A backlog entry for each, if the owner wants them.
 
@@ -182,46 +189,43 @@ How to read the table:
 
 `references/knowledge/local_private_on_prem.md` ("Select New Default", line 96) says: "If the user has a new winner, offer to make it their new default run config." RX 217–218 and HT (`map_analysis_promote_build P21`, `E23`) say that the procedure never changes the task's default run config.
 
-The decision line (Phase 16 batch 2) says "approved; do in the Phase 16 batch as proposed", but `backlog.md` does not record the proposal. Proposed text, for the owner to confirm as the approved one (question 7):
-> If the user has a new winner, tell them it can become the task's default run config, and that they can set it. Do not change the default yourself.
+The owner approved this text (decision 11): never change the task's default run config on your own initiative, only when the user asks, and both files say so.
+- `local_private_on_prem.md`: "If the user has a new winner, tell them it can become the task's default run config, and that they can set it. Do not change the default yourself, unless the user asks you to."
+- RX "Keep or discard": "Never change the task's default run config on your own initiative; tell the user that it can become the default, and change it only when the user asks."
+
 
 ### 7. B13: when the `val` memory record may be read
 
-Proposed: **close as superseded.** Lanes are cut (decision 5), and the owner's follow-up project removes MCP read access to val and test, so the question of when an MCP agent may read val data goes away.
-
-One gap, for the owner to confirm (question 8): the `val` memory record is read through the Memory endpoints, not the eval endpoints. If the follow-up does not fence it, MEM's present rule stays: read it when you confirm on val and when you report, never while you design or build a change. HT's role prompts keep HT's rules (switchover SR6 f).
+**Close B13** (decision 11): MCP agents may read the `val` memory record, which holds only summary metrics, and no extra fence is needed for it. MEM's `val` row matches HT's interactive orientation: read it at orientation when you need the numbers behind the promotions, when you confirm on val and when you report; nothing in it goes into a change (`train_val_test.md`). HT's role prompts keep HT's rules for its train-side roles (switchover SR6 f).
 
 ### 8. Spec and docs
 
 - `components/skill_and_content.md`:
-  - section 9 row 10 (memory): the read-only records and the size cap of question 2;
+  - section 3 (the layout): the `memory_formats/` folder;
+  - section 9 row 10 (memory): the read-only records, the format files and the size cap;
   - row 13a: drop "Where the by-hand form cannot do what the loop does, the file says that the rule applies when running Kiln Harness Tuner";
   - section 9.3: the parts of the guide and its first line.
   
   Section 4.5 and row 8 are Phase 17's.
 - `GLUE_FILE_PARTS` in `skill_checks/test_shipped_skill.py` follows any change to the parts of RX.
 - Run the `docs-sync` skill for the paths and the wording this phase changes.
-- `backlog.md`: close B13 (if question 8 agrees) and B19, each with a `Closed:` line.
+- `backlog.md`: close B13 and B19, each with a `Closed:` line; B14 gets a line that the exact rule replaces "keep as is".
+- `harness_tuner_alignment_decisions.md`: a section 11 with the owner's answers of 2026-11-24.
+- `phase_8_revisit.md`: M11 (playbook-step flow) is noted for the "How to read" section of `references/improving_agents/index.md`.
+- `harness_tuner_switchover_requirements.md` SR10: the formats are in the `memory_formats/` files, not in MEM (a fact this phase changes).
 
 ## Tests
 
-- `test_the_glue_files_have_their_parts`: the new parts of RX, if any.
+- `test_the_glue_files_have_their_parts`: RX's new part "A quick check", after "The hypothesis".
 - `test_run_an_experiment_opens_with_the_two_paths`: still passes. A new assertion checks that the first body line is the Kiln Harness Tuner line of item 5.
-- A new `test_memory_lists_harness_tuner_formats`: MEM, or the formats file of question 2, holds each string of item 1's list, taken from test data that cites `contract.md` section 3.
+- A new `test_memory_lists_harness_tuner_formats`: each `memory_formats/` file holds each string of item 1's list for its records, taken from test data that cites `contract.md` section 3.
+- A new `test_the_memory_formats_are_one_file_each`: the folder holds exactly the five files of that test data.
+- A new `test_memory_names_each_format_file`: MEM's formats section names each file of the folder by its full path.
+- A new `test_the_setup_delimiter_is_on_a_line_of_its_own`.
 - A new `test_glue_files_have_no_harness_tuner_branch`: no glue file says "applies when running" or "when running Kiln Harness Tuner".
 - A new `test_glue_files_do_not_write_code_owned_records`: RX, `SKILL.md` and `improve_task.md` carry none of a list of write phrases. Examples: "write the `baseline` record", "Update the `baseline` record", "ending `— RUNNING`", "Close the target issue with `FIXED: `", "in the `OPEN: ` record".
 - The full checks: `uv run python -m kiln_mcp_server.skill_checks check`, `test_shipped_skill.py`, `test_no_file_over_body_limit`, and `misspell`.
 
-## Questions for the owner
+## Owner answers
 
-1. **Writable kinds.** Besides `lesson`, `dead_end` and a new `issue`, may an MCP agent write a `constraint` (not `OPEN: `), for the user's stated restrictions, and a `hypothesis`?
-2. **MEM's size.** Raise MEM's 12,000-character cap, or put the read-only formats in a new `references/knowledge/memory_formats.md`?
-3. **`OPEN: ` answers.** When the user answers an HT `OPEN: ` question in an MCP chat, how does HT learn the answer? For example, a writable `constraint` that cites the `OPEN: ` record's id, or nothing until the switchover.
-4. **One-off records.** May a one-off ever write an `experiment` record? Or are its lasting results only `lesson`, `dead_end` and `issue` records?
-5. **B14.** Confirm that porting the exact cost/speed rule (item 3) replaces the Phase 16 batch 3 decision on B14 ("keep as is").
-6. **Project files** (`HS-M13`). Add the sentence now, or leave it to the follow-up project?
-7. **B19.** Is the proposed text of item 6 the proposal you approved?
-8. **B13.** Close it as superseded? Does the follow-up project also fence the `val` memory record?
-9. **What the val fence covers.** Does the follow-up project's removal of MCP read access to val and test cover all of val, summary metrics included, or only val rows? If all of val, the val parts of M1, M4, M6 and M21 in item 5 say "confirming on val needs Kiln Harness Tuner" instead.
-
-Answered on 2026-11-23 ([harness_tuner_alignment_decisions.md](../harness_tuner_alignment_decisions.md) section 10): the guide's file (RX reshaped in place, name kept) and the content list of item 5.
+The nine questions this plan asked were answered on 2026-11-24. The answers are in [harness_tuner_alignment_decisions.md](../harness_tuner_alignment_decisions.md) section 11, and the steps above carry them. The guide's file and its content list were set on 2026-11-23 (section 10).

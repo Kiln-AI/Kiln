@@ -104,7 +104,7 @@ The knowledge files list the pages of their own areas.
 - `references/improving_agents/index.md` — what to try to make an agent better: the smells, the playbooks and the techniques, and how to read them.
 - `references/knowledge/run_an_experiment.md` — how to measure a change to an agent, judge it and keep it, and when to recommend Kiln Harness Tuner in place of a one-off. Read it before any experiment or comparison of run configs.
 - `references/knowledge/train_val_test.md` — the split rule for improving an agent, which call reads which split, and the leak rules. Read it before you measure or compare run configs.
-- `references/knowledge/memory.md` — the project's durable memory: what to read at the start of Kiln work, what to record and how. Read it before you read or write a memory.
+- `references/knowledge/memory.md` — the project's durable memory: what to read at the start of Kiln work, what you may record, and the formats that Kiln Harness Tuner writes. Read it before you read or write a memory.
 - `references/knowledge/working_with_project_files.md` — the project's files on disk: read them when that is faster than the API; write only through the API; never change a prompt, skill or run config in place.
 - `references/knowledge/model_work.md` — models: which to choose, their prices, providers and capabilities, through the model info endpoints.
 

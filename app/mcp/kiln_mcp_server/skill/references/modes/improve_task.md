@@ -92,7 +92,7 @@ When the request changes to creating project resources that are not about an imp
 | `references/knowledge/diagnose_an_agent.md` | The calls that read the agent, its train scores and its failing items: before you choose a playbook |
 | `references/knowledge/run_an_experiment.md` | The two paths, and how to measure, judge and keep a change: before any experiment or comparison |
 | `references/knowledge/train_val_test.md` | Which split may decide what, which call reads which split, the leak rules: before you measure or change anything |
-| `references/knowledge/memory.md` | The project's durable memory: at the start of work, and to record each finding |
+| `references/knowledge/memory.md` | The project's durable memory: at the start of work, and to record lessons, dead ends and new issues |
 | `references/knowledge/working_with_project_files.md` | The project's files on disk: before you read or change one |
 
 **Run configs, models, prompts**

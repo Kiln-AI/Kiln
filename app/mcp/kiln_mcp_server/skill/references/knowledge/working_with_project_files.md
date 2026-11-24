@@ -36,6 +36,10 @@ and does not store as a file in that form: scores and summaries, eval
 progress, the rendered prompt, model and provider details, the state of a
 job.
 
+The tree holds the items and runs of every split, val and test included.
+Reading the rows of a val or test item counts as reading val or test data:
+the rules of `references/knowledge/train_val_test.md` apply.
+
 A file that you read can change under you: the app, a background job or a
 teammate's git pull may write it. Read it again before you rely on an old
 read.

@@ -14,6 +14,7 @@ from kiln_mcp_server.skill_checks.docs_index import (
     DOCS_INDEX_RULE,
     render_docs_index,
 )
+from kiln_mcp_server.skill_checks.front_matter import read_front_matter
 from kiln_mcp_server.skill_checks.knowledge_check import KNOWLEDGE_RULES, check
 from kiln_mcp_server.skill_checks.knowledge_index import read_block, render_blocks
 from kiln_mcp_server.skill_checks.knowledge_load import load
@@ -252,6 +253,7 @@ GLUE_FILE_PARTS = {
         "Words",
         "Before you start",
         "The hypothesis",
+        "A quick check",
         "Cost before you spend",
         "Build the candidate",
         "Measure on train, and judge",
@@ -285,10 +287,254 @@ def test_the_glue_files_have_their_parts(path):
     assert tuple(sections) == GLUE_FILE_PARTS[path]
 
 
+HARNESS_TUNER_FIRST_LINE = (
+    "If you are Kiln Harness Tuner, follow your system prompt. "
+    "It has similar concepts, but better enforcement."
+)
+
+
 def test_run_an_experiment_opens_with_the_two_paths():
-    two_paths = _sections(read_file(RUN_AN_EXPERIMENT, get_index()))["Two paths"]
+    text = read_file(RUN_AN_EXPERIMENT, get_index())
+    body = read_front_matter(text).body
+    assert body.strip().splitlines()[0] == HARNESS_TUNER_FIRST_LINE
+    two_paths = _sections(text)["Two paths"]
     assert "Kiln Harness Tuner" in two_paths
     assert "one-off" in two_paths
+
+
+# --- memory: the records Kiln Harness Tuner's code writes ---------------------
+
+MEMORY = "references/knowledge/memory.md"
+MEMORY_FORMATS = "references/knowledge/memory_formats/"
+
+# The strings Kiln Harness Tuner's code writes and parses back, by the file
+# that lists them for readers. The source is its `memory_schema.py` and
+# `memory.py` at b49f159, as section 3 of
+# `specs/projects/kiln_mcp_server/research/harness_tuner_alignment_audit/contract.md`
+# lists them. Placeholders in `<>` stand for the values its code fills in.
+HARNESS_TUNER_FORMATS: dict[str, tuple[str, ...]] = {
+    "experiment_records.md": (
+        "EXP <MMDD>-w<k>-<n>",
+        "EXP <id> (<technique>): <hypothesis> — RUNNING",
+        " — REFUTED",
+        " — FAILED (infra: <error class>)",
+        " — ABANDONED (<why>)",
+        " — DEAD END (<why>)",
+        " — NOT LANDED (<detail>)",
+        "`<k>/<n> targets fixed`",
+        "`<k>/<n> fixed, <b>/<g> guards broke`",
+        "`stopped at n=<n> by <rule>: <numbers>`",
+        "`capped at <n> items: …`",
+        " — CAPPED (<detail>)",
+        # Kiln Harness Tuner writes a minus sign (U+2212) here, not a hyphen.
+        "`capped at $<x> after <n> items: inconclusive — net +<a>/\u2212<b> so far`",
+        "`capped at $<x> after <n> items: inconclusive — lost <k> of <n> baseline passes so far`",
+        "`capped by the run budget ($<x> left) after <n> items: …`",
+        " — PROMOTED <MM-DD>",
+        " — REJECTED AT VAL <MM-DD>",
+        " — HELD (constraint <id>) <MM-DD>",
+        "- ingredient: <memory id> (rc <run config id>)",
+        "- rejected at the val gate <MM-DD> vs baseline <run config id> — ",
+        "passed over: not promoted; rc <run config id> was promoted instead.",
+        "an eval dropped at val: down beyond doubt on eval ",
+        "no gain at val: no targeted eval improved.",
+        "a gain at val, not clear: a targeted eval improved, but not beyond doubt.",
+        "not promoted at val; details in the run report.",
+        "— did not beat it; details in the run report.",
+        "- held at the val gate <MM-DD> on OPEN constraint <id> — not judged on its numbers; resubmit this rc unchanged (existing_rc_id) once answered.",
+        "- blocked at the val gate <MM-DD>: ",
+        "`bundle cost`",
+        *(
+            f"`{key}`"
+            for key in (
+                "hypothesis",
+                "predicted effect",
+                "parent rc",
+                "eval",
+                "issue",
+                "technique",
+                "head_to_head_group",
+                "reused rc",
+                "wildcard",
+                "merge of",
+                "conflict flags",
+                "rc",
+                "change",
+                "generality",
+                "judge copy",
+                "reference check",
+            )
+        ),
+    ),
+    "issue_records.md": (
+        "[<STATE>: ]issue: <one line>",
+        "`UNMEASURED: `",
+        "`UNMEASURABLE: `",
+        "`FIXED: `",
+        "`WONT_FIX: `",
+        "eval: <eval id> (<eval name>, <config kind>)",
+        "priority: p<n> (source: spec <spec id>)",
+        "status: <state> at sync · fp: <hex> · synced <YYYY-MM-DD>",
+        "- eval: <eval id> (built <MM-DD>, reproduced)",
+        "- eval: <eval id> (linked by kiln-harness-tuner setup <MM-DD>)",
+        "- fixed <MM-DD> by <citation>",
+        "- reopened when promoting baseline <run config id>. Issue repros on <run config id>.",
+        "`smell`",
+        "`smell_<smell id>`",
+        "`baseline_audit`",
+        "`baseline_judge_copy`",
+        "`audited_rc_<run config id>`",
+    ),
+    "open_questions.md": (
+        "OPEN: <question>",
+        "question: ",
+        "default: ",
+        "gates: ",
+        "source: assumption",
+        "re-ask when: ",
+        "`human`",
+    ),
+    "baseline_and_val_records.md": (
+        "`rc_<run config id>`",
+        "Validation metrics for each baseline promotion (val-grade; the numbers are in content, never here)",
+        "<new run config id> (<MM-DD>, <EXP label>) ← <old run config id> — <rationale>",
+    ),
+    "screening_and_probe_records.md": (
+        "SCREEN SURVIVOR: <label> — <passed>/<judged> vs baseline <b>",
+        "SCREEN SURVIVOR: <label> — lost <k> of <n> baseline passes, no loss rate above <X>% at 95%",
+        "SCREEN DEAD END: <label> — <reason>",
+        "SCREEN CAPPED: <label> — ",
+        "PROBE <item>: <question> → YES",
+        "`→ NO`",
+        "`→ UNCLEAR`",
+        "`probe`",
+        "`screen`",
+        *(
+            f"`{key}`"
+            for key in (
+                "candidate",
+                "run config",
+                "label",
+                "overrides",
+                "parent rc",
+                "round",
+                "round no",
+                "items",
+                "screened on evals",
+                "verdict",
+                "reason",
+                "quality",
+                "measured",
+                "run",
+                "date",
+                "baseline rc",
+                "result",
+                "question",
+                "answer",
+                "method",
+                "evidence",
+                "drives",
+                "ephemeral rcs",
+                "for idea",
+                "notes",
+            )
+        ),
+    ),
+}
+
+# Matched by Kiln Harness Tuner's code as a whole line.
+SETUP_DELIMITER = "— setup wrote everything above; lines below belong to the loop —"
+
+
+def _memory_format_files() -> list[str]:
+    return sorted(key for key in get_index().files if key.startswith(MEMORY_FORMATS))
+
+
+def test_the_memory_formats_are_one_file_each():
+    assert _memory_format_files() == sorted(
+        MEMORY_FORMATS + name for name in HARNESS_TUNER_FORMATS
+    )
+
+
+@pytest.mark.parametrize("name", sorted(HARNESS_TUNER_FORMATS))
+def test_memory_lists_harness_tuner_formats(name):
+    text = read_file(MEMORY_FORMATS + name, get_index())
+    assert "Kiln Harness Tuner's code" in text
+    missing = [string for string in HARNESS_TUNER_FORMATS[name] if string not in text]
+    assert missing == []
+
+
+@pytest.mark.parametrize("name", sorted(HARNESS_TUNER_FORMATS))
+def test_each_memory_format_file_says_it_is_read_only(name):
+    front = read_front_matter(read_file(MEMORY_FORMATS + name, get_index()))
+    assert str(front.data["description"]).startswith("Read-only")
+    assert "so that you can read" in " ".join(front.body.split())
+
+
+def test_the_setup_delimiter_is_on_a_line_of_its_own():
+    text = read_file(MEMORY_FORMATS + "issue_records.md", get_index())
+    assert SETUP_DELIMITER in text.splitlines()
+
+
+def test_memory_names_each_format_file():
+    # The skill tool cannot list a folder, so each file is named by its path.
+    formats = _sections(read_file(MEMORY, get_index()))[
+        "The formats that Kiln Harness Tuner writes"
+    ]
+    for key in _memory_format_files():
+        assert f"`{key}`" in formats, key
+
+
+# --- the glue files: no branch, no write of a code-owned record ---------------
+
+# The knowledge trees are left out: they are the knowledge, not glue.
+NOT_GLUE = (
+    "references/levers/",
+    "references/improving_agents/",
+    "references/knowledge/api_docs/",
+    "references/docs/",
+)
+HARNESS_TUNER_BRANCHES = ("applies when running", "when running Kiln Harness Tuner")
+
+
+def test_glue_files_have_no_harness_tuner_branch():
+    index = get_index()
+    hits = [
+        (key, phrase)
+        for key in index.files
+        if key.endswith(".md") and not key.startswith(NOT_GLUE)
+        for phrase in HARNESS_TUNER_BRANCHES
+        if phrase in " ".join(read_file(key, index).split())
+    ]
+    assert hits == []
+
+
+CODE_OWNED_WRITES = (
+    "and write the `baseline` record",
+    "Update the `baseline` record",
+    "ending `— RUNNING`",
+    "as an `experiment` memory",
+    "Close the target issue with `FIXED: `",
+    "in the `OPEN: ` record",
+    "One record per experiment",
+    "record each finding",
+    "record each answer",
+    "follow the formats below exactly",
+    "offer to make it their new default",
+)
+WRITERS_OF_RECORDS = (
+    ROOT_FILE,
+    RUN_AN_EXPERIMENT,
+    MEMORY,
+    "references/modes/improve_task.md",
+    "references/knowledge/local_private_on_prem.md",
+)
+
+
+@pytest.mark.parametrize("path", WRITERS_OF_RECORDS)
+def test_glue_files_do_not_write_code_owned_records(path):
+    text = " ".join(read_file(path, get_index()).split())
+    assert [phrase for phrase in CODE_OWNED_WRITES if phrase in text] == []
 
 
 # --- the overlap groups --------------------------------------------------------

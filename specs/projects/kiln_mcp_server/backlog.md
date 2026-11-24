@@ -40,13 +40,16 @@
   `.agents/skills/knowledge-maintenance/SKILL.md` 4.6 step 2 lists only some rewrite patterns; add the ones batch 8 used: loop inputs and outputs become "ask the user" or "report it to the user"; the noise inputs become "Kiln Harness Tuner measures it; the rule applies when running it"; "code checks" becomes "check … yourself"; reason codes become the outcome in words; leak-rule sentences name `references/knowledge/train_val_test.md`. Also `architecture.md` step 9 lists only `code_tools.md` and `judge_types.md` for the sandbox review; `levers/new_tool.md` belongs there too (the owner's doc).
   Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
   Moved to Phase 17 (revert and revisit phase 8).
-- [ ] **B13 — Owner decision: when the `val` memory record may be read**
+- [x] **B13 — Owner decision: when the `val` memory record may be read**
   `app/mcp/kiln_mcp_server/skill/references/knowledge/memory.md` (the Orientation steps and the `val` row) allows a read of the `val` record only when confirming on val or reporting. Harness-tuner's `memory` skill also allows it for human or interactive orientation. This narrows the source beyond C11: keep it, or widen it to match.
   Decision (owner, Phase 16 batch 3): pending: owner asked for more explanation.
   Moved to Phase 18.
+  Decision (owner, 2026-11-24): resolved by allowing MCP agents to read the `val` memory record, which holds only summary metrics; no extra fence for it.
+  Closed: the `val` row of `memory.md` allows the read at orientation, when the numbers behind the promotions are needed, as Kiln Harness Tuner's memory skill allows interactive sessions, and when confirming on val and reporting; nothing in it goes into a change.
 - [x] **B14 — Owner decision: the exact cost or speed rule on val (relates to B8)**
   `references/knowledge/run_an_experiment.md` ("Confirm on val") keeps a plain-words rule (clearly cheaper or faster, no worse on quality) and says that Kiln Harness Tuner's exact rule applies when running it. Port the exact rule instead? It is: a paired sign test on the same items, median ratio below 1, no significant p90 regression; no eval down significantly, pooled net item change ≥ 0 with weights p0=4, p1=3, p2=2, p3=1, none=1, and no single eval down more than max(1, round(0.10 × items)) net items.
   Decision (owner, Phase 16 batch 3): keep as is.
+  Superseded (owner, 2026-11-24): the exact rule is ported into `run_an_experiment.md` ("Confirm on val"), and the "applies when running Kiln Harness Tuner" sentence is gone (Phase 18 item 3).
 - [x] **B15 — Content sizes over their targets**
   `references/modes/improve_task.md` (about 10.8k body characters against "about 8,000") and `references/knowledge/run_an_experiment.md` (about 13.5k against "about 10,000") are well over their targets; `references/knowledge/memory.md` sits at about 11,997 of a hard 12,000. Revisit in phase 10's text tuning or the owner's read.
   Decision (owner, Phase 16 batch 3): accept the sizes.
@@ -59,10 +62,12 @@
 - [x] **B18 — The two lists of what Kiln covers differ**
   `SERVER_INSTRUCTIONS` in `app/mcp/kiln_mcp_server/texts.py` lists "tasks, prompts, run configs, models, evals, synthetic data, fine-tuning, tools, skills and RAG"; the `description` of the skill's `SKILL.md` lists "projects, tasks, prompts, run configs, models, evals, synthetic data, fine-tuning, tools and RAG". Make the two lists match.
   Decision (owner, Phase 16 batch 2): approved: align the two lists. Use one list in both `SERVER_INSTRUCTIONS` (`texts.py`) and the `description` of `SKILL.md`, naming both projects and skills: projects, tasks, prompts, run configs, models, evals, synthetic data, fine-tuning, tools, skills and RAG (and keep `SKILL.md` line 8 consistent).
-- [ ] **B19 — Owner decision: offering a new default run config**
+- [x] **B19 — Owner decision: offering a new default run config**
   `references/knowledge/local_private_on_prem.md` ("Select New Default") offers to make the winner the task's default run config, while `references/knowledge/run_an_experiment.md` says the procedure never changes the default.
   Decision (owner, Phase 16 batch 2): approved; do in the Phase 16 batch as proposed.
   Moved to Phase 18.
+  Decision (owner, 2026-11-24): approved the text of Phase 18 item 6: never change the task's default run config on your own initiative, only when the user asks; both files say so.
+  Closed: both files say to never change the task's default run config on the agent's own initiative, and to change it only when the user asks. `local_private_on_prem.md` ("Select New Default") tells the user that the winner can become the default and that they can set it; `run_an_experiment.md` ("Keep or discard") says the same.
 - [x] **B20 — Spec alignment: the eval playbooks of `create_spec.md` and `judge_types.md`**
   skill_and_content 9.2 gives `create_spec.md` and `judge_types.md` only the wrong-eval and saturated-eval playbooks; group 8 of 9.1, which the code follows, gives them all four eval playbooks. Align 9.2.
   Decision (owner, Phase 16 batch 1): approved; do in the Phase 16 batch as proposed.
