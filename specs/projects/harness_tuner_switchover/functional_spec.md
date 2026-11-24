@@ -23,7 +23,8 @@ A line marked **Proposed** is a call made while drafting. The owner can overrule
 | API reference, `call_kiln_api` server | HT ships both | Removed. Interactive sessions use Kiln's MCP server |
 | Model information | HT fetches its own catalogue per run | HT calls Kiln's model info endpoints, and keeps its model policy |
 | Installing a skill | HT writes into the project folder | HT calls Kiln's skill bundle API |
-| Noise, detectability, significance floor | HT code | Kiln APIs, called by HT and open to any MCP client |
+| Detectability, significance floor | HT code | Kiln APIs, called by HT and open to any MCP client |
+| The noise check | HT code, behind `--noise-check`, off by default | Unchanged. It is not ported |
 | The five code-detected smells | HT code | One Kiln API |
 | The gateway, role skills, model policy, screening, promotion rules | HT | HT, unchanged |
 
@@ -42,16 +43,16 @@ Nothing in this spec is built until spec one is done. The first phase of the imp
 - All are additive. No existing route changes its default behaviour.
 - Each is a standard REST route. Any MCP client reaches it through `call_kiln_api`. No new MCP tools.
 - Every number and definition is HT's, unchanged. Where HT has a test that pins a value, Kiln gets a test with the same value.
-- **Train only means train only.** The detectability read, the noise-check estimate and the noise-check job read and drive train items. **Proposed:** in these three, an item that is also in a val or test split of any eval of the task is left out, and the response says how many were left out. HT's own train set works this way, and without the rule these routes could touch items HT holds out.
-- Each of the three takes an optional `eval_ids` list. The default is every eval that is not archived and has a default judge config. HT passes its own active set.
-- A route that spends money says so in its description, and carries the same approval note for the Kiln Assistant as the eval job does.
+- **Train only means train only.** The detectability read reads train items. **Proposed:** an item that is also in a val or test split of any eval of the task is left out, and the response says how many were left out. HT's own train set works this way, and without the rule the route could count items HT holds out.
+- The detectability read takes an optional `eval_ids` list. The default is every eval that is not archived and has a default judge config. HT passes its own active set.
+- None of the new routes spends money.
 
 ### 3.2 Significance floor
 
 A new operation, `significance_floor`, on the existing `POST /api/statistics`. Pure arithmetic: it reads nothing from a project.
 
-- **In:** `test` (`mcnemar_paired` for pass/fail scores, `compare_paired` for rating scores), `confidence` (default 0.95), and optionally `n` (paired items), `room` (items not at the best value) and `noise_rate` (share of items that change between two runs of one config).
-- **Out:** `floor` (the fewest changed items, all one way, that the test can call significant; 6 for pass/fail at 0.95), `fewest_wins`, `best_case_change`, `interval_wins`, `interval_best_case`, `noise_each_way`, `noise_adjusted_wins`, and a one-sentence `interpretation` like the other operations. A value that cannot be computed from what was given is null.
+- **In:** `test` (`mcnemar_paired` for pass/fail scores, `compare_paired` for rating scores), `confidence` (default 0.95), and optionally `n` (paired items) and `room` (items not at the best value).
+- **Out:** `floor` (the fewest changed items, all one way, that the test can call significant; 6 for pass/fail at 0.95), `fewest_wins`, `best_case_change`, `interval_wins`, `interval_best_case`, and a one-sentence `interpretation` like the other operations. A value that cannot be computed from what was given is null.
 - **Errors:** 422 for `room > n`, a negative number, or an unknown `test`.
 
 ### 3.3 Detectability of a run config
@@ -67,30 +68,13 @@ Answers: can this task's evals show an improvement of this run config at all? Fr
 - An eval with no stored train row gives rows with `n = 0`. An eval with no default judge config is left out. Neither is an error.
 - HT keeps the decision: whether to refuse an underpowered run is its own rule.
 
-### 3.4 Noise check: the estimate
+### 3.4 The noise check is not ported
 
-`POST /api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/noise_check_estimate`
+HT's noise check stays in HT as it is: behind `--noise-check`, off by default. Kiln gets no noise route. HT's `noise.py` is not changed, and the functions it imports from HT's detectability code stay.
 
-Says what a noise check would sample and cost, before anything is spent. Free. It is a POST because its body is the same object that starts the job.
+Reason: the check works by copying the run config and running it again. A proper noise feature in Kiln would not be built that way. It would more likely save extra runs for an existing run config in a structured way, which is a later design.
 
-- **In:** `items_per_eval` (required, at least 1), `eval_ids`, `confidence`.
-- **Out:** `estimate_usd`, `drive_usd_per_item`, `judge_usd_per_item`, `distinct_items`, and per eval the sampled `item_ids`, whether its judge is checked again, and why not when it is not. `skipped` is set when there is no stored train row to compare with.
-- The estimate comes from the cost recorded on stored rows. A stored row with no cost counts as zero, so an old baseline gives a low estimate; the response says how many rows had no cost.
-
-### 3.5 Noise check: the job
-
-`POST /api/jobs/evals/noise_check`
-
-Measures run-to-run noise: it drives the sampled train items again and judges them again, then compares with the stored results. It costs money.
-
-- **In:** `project_id`, `task_id`, `run_config_id`, the estimate's fields, `max_usd` (optional) and `concurrency` (optional).
-- With `max_usd`, the job computes the estimate again when it starts. Above the cap, it makes no model call and succeeds with `skipped` set.
-- The caller follows it with the existing job routes (wait, status, errors, cancel).
-- **Result:** `estimate_usd`, `spend_usd`, `rows`, `warnings`, `skipped`, `errors`, and the pooled `flip_rate`. Each row is one eval score, with HT's field names: the sample size, how many results changed on a second drive, how many changed on a second judgment alone, the rates, `noise_adjusted_wins` and `train_room`.
-- **It leaves nothing behind.** When the job ends, by success, failure or cancel, the project holds no run config, judge config, eval run or task run that the job made. The measured run config, its stored results and its traces are unchanged. How the server does this is an architecture decision.
-- A pass that fails on one eval does not fail the job. The failure is in `errors` with the provider's own text, because HT must tell a dead key from a noisy eval.
-- Train only, by construction. There is no `split` parameter.
-- **Proposed:** nothing is stored for reuse. Noise moves with the provider and the day.
+Section 3.5 is not used.
 
 ### 3.6 Smell check
 
@@ -171,7 +155,7 @@ No new work in Kiln. The endpoints are built in spec one. Section 5.6 says how H
 
 The skill is still changing on the build branch. Each item below says what must be true. The place is found when the work is done: "find the right place to integrate".
 
-- **A statistics file.** One file that explains noise, detectability and the significance floor, and names the call for each (3.2 to 3.5, and 3.8). The run-experiments doc links to it. It adds the calls to HT's method; it does not change the method.
+- **A statistics file.** One file that explains detectability and the significance floor, and names the call for each (3.2, 3.3 and 3.8). It adds no call for noise: measuring noise stays with Kiln Harness Tuner. The run-experiments doc links to it. It adds the calls to HT's method; it does not change the method.
 - **The five smell documents** that code can detect name the smell check call, in place of telling the reader to measure by hand.
 - **The skill lever and the skill techniques** say today that a skill with reference files "is built when running Kiln Harness Tuner". They name the skill bundle routes as the way for every agent.
 - **`using_harness_tuner`.** Tells a coding agent with `kiln_skill` how to run the HT command line, in place of running a large experiment itself. It covers: when to use it; the checks to make first; install; the non-interactive command and the options that matter; cost and time, and asking the user before starting a paid run; starting it in the background, watching it and stopping it; reading the result; what to do when the start refuses; limits.
@@ -266,9 +250,8 @@ Notes on the two ported skills:
 | Skill bundle create | The install tool of the skill installer becomes a gateway tool that calls the API | The check that the folder is inside the agent's scratch folder |
 | Skill bundle read | The export tool becomes a gateway tool that writes the files into scratch; loop code that reads a skill's files for its checks | — |
 | Model info | The gateway's model tools, and the catalogue fetch at run start | The model policy, and the `blocked_by_policy` status it adds to each answer |
-| Significance floor | The floor and fewest-wins arithmetic | — |
-| Detectability | The train-side read | The refusal of an underpowered run, and the val side |
-| Noise-check estimate and job | The sampling, the clone run config, the judge copy and the comparison | The budget decision, booking the spend, and the stop rule that reads the rows |
+| Significance floor | Nothing in loop code. Roles can call it through the gateway's statistics tool | Its own floor arithmetic, which the noise check and the val side use |
+| Detectability | The train-side read | The refusal of an underpowered run, the val side, and the helper functions the noise check imports |
 | Smell check | The five detectors and their limits | The baseline review step, and how findings are recorded and reported |
 | Version | The start-up check | — |
 
@@ -285,7 +268,7 @@ Notes:
 - `kiln_api_mcp`: the package, its console script and its tests.
 - The model catalogue, and the `--no-model-catalog` option.
 - The skill installer: the package, its console script and its tests.
-- The noise, detectability and significance-floor code that moved, and the five smell detectors with their limits.
+- The train-side detectability read that moved, and the five smell detectors with their limits.
 - The memory skill, the code tool authoring skill, `experiment-costing` and `kiln-task-setup` (5.5).
 
 The knowledge copy goes last, after the pass-through, the entry files and the re-pointed links all work.
@@ -364,7 +347,7 @@ No reference run exists, runs differ each time, and the skills change. So the pr
 | SR11 the start-up clean-up | Not in this spec. It is not caused by the switchover. Listed as a risk (section 9) |
 | SR12 reading other writers' records | No change. Listed as a risk (section 9) |
 | SR13 priorities and smell issues | No HT change |
-| SR14 tools that come over | Changed: only noise, detectability, the significance floor and the smells move. The rest stay in HT |
+| SR14 tools that come over | Changed: only detectability, the significance floor and the smells move. The rest stay in HT, the noise check included |
 | SR15 the `message` key | Not a break, and not in this spec. The claim was wrong: the model preflight already reads the key |
 | SR16 job limits and 404 texts | Verified: nothing to do |
 | SR17 unique tool function names | The claim is wrong: HT has no such rule. The sentence goes with the removed code tool skill |

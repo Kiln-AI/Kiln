@@ -6,7 +6,7 @@ status: draft
 
 This document fixes the technical decisions for the [functional spec](functional_spec.md). The detail of each part is in a component doc:
 
-- [components/kiln_measurement_apis.md](components/kiln_measurement_apis.md): the significance floor, detectability, the noise check, scores by split, and the paired comparison.
+- [components/kiln_measurement_apis.md](components/kiln_measurement_apis.md): the significance floor, detectability, scores by split, and the paired comparison.
 - [components/kiln_smells_skills_version.md](components/kiln_smells_skills_version.md): the smell check, the skill bundle routes, the version route, and the additions to Kiln's skill.
 - [components/ht_skill_reading_and_roles.md](components/ht_skill_reading_and_roles.md): how harness-tuner reads Kiln's skill, and what changes in its role skills and prompts.
 - [components/ht_api_switch_and_removals.md](components/ht_api_switch_and_removals.md): the harness-tuner code that switches to Kiln's APIs, the removals, the tests and the proof.
@@ -36,8 +36,7 @@ The one new kind of connection is the call to `kiln_skill`. Everything else is t
 | Part | Location |
 |---|---|
 | `significance_floor` operation | `libs/server/kiln_server/statistics_api.py` (request and route) and `statistics_lib.py` (the arithmetic), beside the four existing operations |
-| Detectability read, noise-check estimate | New package `app/desktop/studio_server/eval_power/`: `detectability.py`, `noise_sample.py`, `api.py` (`connect_eval_power_api(app)`) |
-| Noise-check job | New worker `app/desktop/studio_server/jobs/workers/noise_check.py`, registered like the eval worker, with its own create path |
+| Detectability read | New package `app/desktop/studio_server/eval_power/`: `detectability.py`, `api.py` (`connect_eval_power_api(app)`) |
 | Scores by split, paired comparison | `app/desktop/studio_server/eval_api.py`, beside the routes they extend |
 | Smell check | New `app/desktop/studio_server/smell_check.py` (the five checks and their limits) and `smell_check_api.py` |
 | Skill bundle routes | `app/desktop/studio_server/skill_api.py` (routes) and new `skill_bundle.py` (the folder rules and the staged write) |
@@ -62,7 +61,7 @@ Paths are under `src/kiln_harness_tuner/`.
 |---|---|
 | The `kiln_skill` client | New `kiln_skill.py` |
 | The new gateway tools | `gateway/ops.py` (`OPS`, `ROLE_OPS`), `gateway/models.py` |
-| Calls to the new routes | `kiln.py` (the REST client), and the callers: `detectability.py`, `noise.py`, `smells/run.py`, `gateway/model_info.py`, `onboarding/kiln_check.py`, `contract.py` |
+| Calls to the new routes | `kiln.py` (the REST client), and the callers: `detectability.py`, `smells/run.py`, `gateway/model_info.py`, `onboarding/kiln_check.py`, `contract.py` |
 | Role entry files | Inside each role skill, as a reference file (section 5.3) |
 | Fakes for tests | `tests/fake_kiln.py` |
 
@@ -72,15 +71,15 @@ Paths are under `src/kiln_harness_tuner/`.
 2. **One reader, one interface.** `kiln_skill.py` holds `SkillReader` with `async read(path: str) -> str`, and raises `KilnSkillError` with a plain message. The gateway and the loop code both use it. Tests replace it with a fake that reads a small folder of fixture files. Nothing else in HT knows about MCP client code.
 3. **Caching.** A `SkillReader` caches each file for the life of its process. A gateway process lives for one agent session. Loop code holds one reader per run.
 4. **The gateway tool returns plain text.** The `kiln_skill` gateway tool returns the file's text as its content, not wrapped in JSON, so markdown is not escaped. The gateway's size cap on an answer still applies. Kiln's own check keeps every skill file under 30,000 characters, which is under the cap.
-5. **The noise job reuses the eval job's machinery and then removes what it made.** It does the check the way HT does today: a temporary copy of the run config for the second drive, and a temporary copy of each judge config for the second judgment. It then deletes those copies, their eval runs and the task runs it drove. It does not add a "store nothing" path to the eval runner. Reasons: the method stays HT's exactly, and the core eval runner is not changed.
-6. **Left-overs are found by name.** Every temporary object's name starts with `NOISE-CHECK `. The job deletes its objects in a `finally` step on success, failure and cancel. If the app dies mid-job, objects are left; the next noise job on the task, and app start, sweep any object with that prefix that no live job owns. While a job runs, its temporary run config is visible in the app. This is accepted.
-7. **"Train" in the three train-only routes** is one helper, used by all three: the items of the eval's train split, minus any item that is also in a val or test split of any eval of the task. It lives in `eval_power/` and uses Kiln's existing split resolution. The response of each route carries `left_out_held_out`, the count removed.
+5. **The noise check is not ported.** It stays in HT as it is, behind `--noise-check`, off by default. Kiln gets no noise route, no new job and no temporary objects. HT's `noise.py` is not changed. It imports `comparable_specs`, `fewest_wins` and `score_room` from HT's `detectability.py`, so those functions and the floor arithmetic under them stay in HT.
+6. *(Not used.)*
+7. **"Train" in the detectability read** is one helper: the items of the eval's train split, minus any item that is also in a val or test split of any eval of the task. It lives in `eval_power/` and uses Kiln's existing split resolution. The response carries `left_out_held_out`, the count removed.
 8. **The arithmetic is not copied.** `significance_floor` calls the functions `statistics_lib.py` already has (the exact McNemar test, the Wilcoxon test, the Wilson and Newcombe intervals). The one exception is deliberate: the bootstrap rule stays HT's closed form, `((n − k) / n)^n < alpha / 2`, and does not call the server's seeded draw. A comment and a test say so, so that nobody "fixes" it.
 9. **Rounding.** New routes return unrounded p values, and their `significant` flag reads the unrounded value, as the statistics route does today. HT keeps its own rounding where its own code decides.
 10. **Model release dates** for the old-model smell come from the model info module that spec one built. The smell check does not fetch anything itself. If model info has no data yet, the smell check waits for it under that module's own rules, and reports the model as "release date not known" when there is none.
 11. **Skill bundle writes go through Kiln's datamodel**, staged in a folder beside the skills and moved into place in one rename, with the skill's model file written last. Ids, `created_by`, provenance checks and git sync are then Kiln's own. `SKILL.md` is written as the bytes given, not rebuilt from the name and description.
 12. **The version constant is hand-edited.** `MIN_SUPPORTED_HARNESS_TUNER_VERSION` is in `compat.py`, which the packaging script does not rewrite. The app version comes from the existing `_version.py`.
-13. **Policies.** Every new route is allowed for MCP (the default). For the Kiln Assistant's policy: the free reads are allowed; the noise job needs approval, with the same kind of text as the eval job; the skill bundle create follows the existing skill create route.
+13. **Policies.** Every new route is allowed for MCP (the default). For the Kiln Assistant's policy: the free reads are allowed; the skill bundle create follows the existing skill create route.
 14. **Generated files.** New routes change the OpenAPI document. The web client schema and the skill's generated API reference are regenerated and committed in the same phase as each route, because CI checks both.
 15. **Tool names in HT.** The two skill tools keep their names, `install_skill_bundle` and `export_skill_bundle`, and move from the separate installer server to the gateway. Role skills change only the server prefix they name.
 16. **HT's old-version behaviour.** Every Kiln change here is additive, so an HT from before the switch still runs against the new Kiln. `MIN_SUPPORTED_HARNESS_TUNER_VERSION` therefore starts at the lowest HT version that works today. HT's own minimum Kiln version is raised to the first Kiln release that has all of this spec.
@@ -146,12 +145,11 @@ A failure in 1 to 4 stops the run before any spend, with one message that names 
 ## 6. Error handling
 
 - **Kiln routes** follow Kiln's existing rules: 404 for an unknown id with the "not found, check the id or list" text; 422 for a bad value with the field named; no 500 for a caller's mistake. A route that reports several problems at once (the skill bundle create) returns them as a list in one 422.
-- **The noise job** never fails for one bad eval. It records the failure and goes on. It fails only when it cannot start at all. Provider error text is kept whole.
 - **HT** treats a missing route, field or skill path as a start-up error, never a mid-run surprise. A `KilnSkillError` in a gateway tool goes back to the agent as a tool error. In loop code it is logged and the documented fallback is used.
 
 ## 7. Testing
 
-- **Kiln:** pytest beside each module, as the repo does today. Where HT pins a value (the floors, the Wilcoxon p values, the interval ends, the noise-adjusted wins), the same value is pinned in Kiln's test, and the test names HT's test it came from. The noise job is tested with fake model adapters: sampling, the comparison, the cap, the clean-up on success, failure and cancel, and the sweep.
+- **Kiln:** pytest beside each module, as the repo does today. Where HT pins a value (the floors, the Wilcoxon p values, the interval ends), the same value is pinned in Kiln's test, and the test names HT's test it came from.
 - **Kiln's contract test** reads the shipped skill tree and the JSON list.
 - **HT:** the suite stays offline. `tests/fake_kiln.py` gains the new routes. `SkillReader` is faked from fixture files. Tests that read HT's knowledge copy are removed with it or rewritten against the fakes (functional spec, section 6).
 - **No test in either repo calls the other repo.** The live checks are HT's start-up check and the demo run.
@@ -162,8 +160,8 @@ The implementation plan turns this into phases.
 
 1. Pre-flight: spec one is merged; every named skill path exists; the costing method is in Kiln's skill.
 2. Kiln: `significance_floor`.
-3. Kiln: the train helper, detectability, the noise-check estimate.
-4. Kiln: the noise-check job.
+3. Kiln: the train helper, detectability.
+4. *(Not used: the noise check is not ported.)*
 5. Kiln: the smell check.
 6. Kiln: scores by split, the paired comparison.
 7. Kiln: the skill bundle routes.
@@ -173,16 +171,15 @@ The implementation plan turns this into phases.
 11. HT: entry files, re-pointed links, the shared rules, the map.
 12. HT: skill bundle tools; the installer is removed.
 13. HT: model info; the catalogue is removed.
-14. HT: detectability, noise and smells call Kiln; their code is removed.
+14. HT: detectability and smells call Kiln; their code is removed. The noise check is not touched.
 15. HT: the remaining removals (the knowledge copy last), docs and command line.
 16. The audit.
 17. The demo run.
 
-Steps 2 to 9 can be built in any order after step 1, except that 4 and 6 need 3. Steps 10 to 15 need a Kiln build with 2 to 9.
+Steps 2 to 9 can be built in any order after step 1, except that 6 needs 3. Steps 10 to 15 need a Kiln build with 2 to 9.
 
 ## 9. Risks
 
-- **The noise job deletes objects.** Kiln has no delete for a run config or a judge config today. The job deletes only objects it created, found by id, and the sweep deletes only by the reserved name prefix. The component doc lists the exact delete order and what happens when a delete fails.
 - **An MCP client call per file.** If the session handshake against a stateless server misbehaves, HT cannot read the skill at all. It is the first thing step 10 proves, against a real Kiln, before any other HT work.
 - **The skill moves between Kiln releases.** Guarded by section 4.
 - **Two repositories, one change.** HT's switch cannot merge before a Kiln release has steps 2 to 9. The implementation plan puts a release point between the two halves.
@@ -195,24 +192,24 @@ The component docs were written at the same time, and each listed its open point
 
 1. **`n = 0` on the statistics route** stays a 422, because the shared field already requires at least 1.
 2. **`split` on the three task-wide summary routes:** an eval that has no such split is left out of the answer, as the code does today for a missing test split. The single-eval route returns the 422.
-3. **Git sync pushes the noise job's temporary objects.** A second machine that pulls them has no such job. So the sweep removes a left-over only when it is more than 24 hours old.
-4. **The name prefix is not enforced on other routes.** Temporary names have the form `NOISE-CHECK <job id> …`, and the sweep matches that generated form only, not the bare prefix. No existing route changes.
-5. **The second judgment never drives.** Before it runs, the job checks that each sampled item's stored trace can be reused. An item whose trace cannot be reused is "not measured", with a note. The job never deletes a task run that belongs to the measured run config. The core eval runner is not changed.
-6. **The exact test overflows above about 1,030 changed pairs.** The arithmetic is not changed. The statistics route returns a 422, a noise row gets a null `noise_adjusted_wins` with a warning, and the comparison lists the score as skipped.
-7. **`spend_usd` is HT's figure exactly:** the task run usage and the judge usage of the job's own calls. It does not add the simulated user's cost.
-8. **A cancelled or failed noise job reports no spend.** This is the same as today.
+3. *(Not used: the noise check is not ported.)*
+4. *(Not used.)*
+5. *(Not used.)*
+6. **The exact test overflows above about 1,030 changed pairs.** The arithmetic is not changed. The statistics route returns a 422, and the comparison lists the score as skipped.
+7. *(Not used.)*
+8. *(Not used.)*
 9. **One unreadable skill** stops the skill-description check for every skill of the run config. This is HT's behaviour, kept.
 10. **The source strings of the smell limits** say "a Kiln default" where HT says "a default of the tuner". The numbers are unchanged.
 11. **Guards on the skill bundle create route** that HT's installer did not need are kept: stray root entries are not walked, reads are bounded by the size limits, a folder has at most 1,000 entries, and the sweep of old staging folders removes one only when it is more than one hour old. The age test protects a write that another Kiln process has in progress.
 12. **`MIN_SUPPORTED_HARNESS_TUNER_VERSION` starts at `0.6.0`.**
-13. **Skill text.** "Find the right place to integrate" includes the files that say today that noise and room are measured only by Kiln Harness Tuner, that tell the reader to measure a smell by hand, or that list the skill routes. The component doc names them as they are now; the list is checked again at pre-flight.
+13. **Skill text.** "Find the right place to integrate" includes the files that say today that an eval's room is measured only by Kiln Harness Tuner, that tell the reader to measure a smell by hand, or that list the skill routes. Text that says noise is measured by Kiln Harness Tuner stays true and is not changed. The component doc names the files as they are now; the list is checked again at pre-flight.
 14. **The contract test** also checks that each smell id of the list is in the Smells table of the index, written as its backticked path. HT's code reads the ids from that table.
 
 ### Harness-tuner
 
 15. **`harness-tuner-install-agents` is removed whole.** `--dest` is its only form, so nothing is left of it. Three console scripts go, not two.
 16. **A binary asset is not copied by the skill export.** The export's answer names each asset it skipped. Kiln's skill runtime reads assets as text only, so a binary asset was of no use to the agent.
-17. **HT's held-out rule by tag name is not in Kiln's train helper.** Before it starts a noise job, HT checks the estimate's sample against its own train set, and skips the check with a clear note when an item is not in it. Detectability counts can differ from today's on a task that has such tags. Accepted.
+17. **HT's held-out rule by tag name is not in Kiln's train helper.** Detectability counts can differ from today's on a task that has such tags. Accepted.
 18. **`specs/backlog.md` in HT** loses its knowledge entries, which live in Kiln now. Entries that are about HT's own code stay.
 19. **Tests that bind HT's code to knowledge text** are more than the three the functional spec names. Each becomes a review item of the audit.
 20. **`has_thinking_levels` in a model list row** can be true because of a provider entry that HT's policy then drops. The model details answer is exact. Accepted.
