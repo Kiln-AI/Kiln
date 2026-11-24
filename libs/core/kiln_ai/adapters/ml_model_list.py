@@ -85,6 +85,10 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_6_2_astra_pro = "gpt_6_2_astra_pro"
+    gpt_6_2_astra = "gpt_6_2_astra"
+    gpt_6_2_sol_pro = "gpt_6_2_sol_pro"
+    gpt_6_2_sol = "gpt_6_2_sol"
     gpt_6_1_sol_pro = "gpt_6_1_sol_pro"
     gpt_6_1_sol = "gpt_6_1_sol"
     gpt_6_1_terra_pro = "gpt_6_1_terra_pro"
@@ -611,7 +615,8 @@ GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
     "Max": "max",
 }
 
-# GPT-6.1 Sol on OpenAI direct. The model page lists `max` as well, but
+# GPT-6.1 Sol, GPT-6.2 Sol and GPT-6.2 Astra on OpenAI direct. The 6.1 Sol
+# model page lists `max` as well, but
 # /v1/chat/completions (which Kiln uses) rejects it with a 400; only
 # /v1/responses accepts it. `none` and `minimal` are rejected on both.
 # https://developers.openai.com/api/docs/models/gpt-6.1-sol
@@ -990,6 +995,204 @@ QWEN_3P8_CLOUDFLARE_THINKING_LEVELS = {
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 6.2 Astra Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_astra_pro,
+        friendly_name="GPT-6.2 Astra Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.2 Astra with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. The first Astra Pro model in Kiln, above GPT-6.2 Astra.\n"
+            "Same weights: GPT-6.2 Astra is the standard version; Astra Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-astra-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.2 Astra
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_astra,
+        friendly_name="GPT-6.2 Astra",
+        agent_notes=(
+            "Description: OpenAI's top-tier model in the GPT-6.2 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Astra is the top tier, above GPT-6.2 Sol. Replaced GPT-6 Astra.\n"
+            "Same weights: GPT-6.2 Astra Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task.\n"
+            "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
+        ),
+        tags=["current", "recommended"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-6.2-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                openai_reasoning_summary="auto",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.2 Sol Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_sol_pro,
+        friendly_name="GPT-6.2 Sol Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.2 Sol with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6.1 Sol Pro.\n"
+            "Same weights: GPT-6.2 Sol is the standard version; Sol Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-sol-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.2 Sol
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_sol,
+        friendly_name="GPT-6.2 Sol",
+        agent_notes=(
+            "Description: OpenAI's balanced high-tier model in the GPT-6.2 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A step down from GPT-6.2 Astra, above GPT-6.1 Terra. Replaced GPT-6.1 Sol.\n"
+            "Same weights: GPT-6.2 Sol Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task.\n"
+            "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
+        ),
+        tags=["current", "recommended", "top_value"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-6.2-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                openai_reasoning_summary="auto",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 6.1 Sol Pro
     KilnModel(
         family=ModelFamily.gpt,
@@ -997,9 +1200,10 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-6.1 Sol Pro",
         agent_notes=(
             "Description: Pro-compute variant of GPT-6.1 Sol with extended reasoning.\n"
-            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6 Sol Pro."
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6 Sol Pro.\n"
+            "Superseded by: GPT-6.2 Sol Pro, the Pro variant at the Sol level in the GPT-6.2 generation."
         ),
-        tags=["current", "top_writing"],
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1038,9 +1242,10 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: OpenAI's balanced high-tier model in the GPT-6.1 generation.\n"
             "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A step down from GPT-6 Astra, much stronger than GPT-6.1 Terra. Replaced GPT-6 Sol.\n"
+            "Superseded by: GPT-6.2 Sol, the Sol-level model of the GPT-6.2 generation.\n"
             "Strengths: Steady quality in multi-turn tool use; near GPT-6 Astra on reasoning."
         ),
-        tags=["current", "recommended", "top_writing"],
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1200,9 +1405,10 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: OpenAI's most capable model, the top of the GPT-6 lineup.\n"
             "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Astra is the top tier, above GPT-6.1 Sol.\n"
+            "Superseded by: GPT-6.2 Astra, the Astra-level model of the GPT-6.2 generation.\n"
             "Strengths: Leads on hard reasoning and computer use among OpenAI models."
         ),
-        tags=["current", "recommended", "top_writing"],
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
