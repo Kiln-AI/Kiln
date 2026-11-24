@@ -47,6 +47,12 @@ The one new kind of connection is the call to `kiln_skill`. Everything else is t
 
 Each new `connect_*_api(app)` is called from `desktop_server.make_app()` before `connect_webhost`.
 
+Three small changes to existing code are allowed, and no others:
+
+- `libs/core/kiln_ai/utils/validation.py` gains `skill_name_errors`, which returns every failure of a skill name. The existing validator calls it, so its behaviour does not change.
+- The lookups `task_run_config_from_id` and `eval_from_id` move out of `eval_api.py` into a service module, as a pure move, in the first phase that needs them. New modules import them from there, because Kiln's conventions forbid one router importing another.
+- Spec one's model info module returns its service object from its connect function, and the service gains a read of a model's release date. The smell check uses it and builds no second catalogue.
+
 ### 2.2 Harness-tuner
 
 Paths are under `src/kiln_harness_tuner/`.
@@ -107,7 +113,7 @@ One place: the known-smell list for the baseline review. It reads `references/im
 
 ### 5.3 Role entry files
 
-Each entry file moves into the role skill that uses it, as `references/knowledge.md`:
+Each entry file moves into the role skill that uses it, as `references/knowledge-entry.md`. The name is chosen so that it cannot be mistaken for Kiln's own `references/knowledge/` folder:
 
 | Entry file today | New home |
 |---|---|
@@ -171,7 +177,7 @@ The implementation plan turns this into phases.
 16. The audit.
 17. The demo run.
 
-Steps 2 to 9 can be built in any order after step 1, except that 4 needs 3. Steps 10 to 15 need a Kiln build with 2 to 9.
+Steps 2 to 9 can be built in any order after step 1, except that 4 and 6 need 3. Steps 10 to 15 need a Kiln build with 2 to 9.
 
 ## 9. Risks
 
@@ -179,3 +185,36 @@ Steps 2 to 9 can be built in any order after step 1, except that 4 needs 3. Step
 - **An MCP client call per file.** If the session handshake against a stateless server misbehaves, HT cannot read the skill at all. It is the first thing step 10 proves, against a real Kiln, before any other HT work.
 - **The skill moves between Kiln releases.** Guarded by section 4.
 - **Two repositories, one change.** HT's switch cannot merge before a Kiln release has steps 2 to 9. The implementation plan puts a release point between the two halves.
+
+## 10. Rulings on points the component docs raised
+
+The component docs were written at the same time, and each listed its open points. These rulings settle them. A component doc that differs from a ruling is wrong.
+
+### Kiln
+
+1. **`n = 0` on the statistics route** stays a 422, because the shared field already requires at least 1.
+2. **`split` on the three task-wide summary routes:** an eval that has no such split is left out of the answer, as the code does today for a missing test split. The single-eval route returns the 422.
+3. **Git sync pushes the noise job's temporary objects.** A second machine that pulls them has no such job. So the sweep removes a left-over only when it is more than 24 hours old.
+4. **The name prefix is not enforced on other routes.** Temporary names have the form `NOISE-CHECK <job id> …`, and the sweep matches that generated form only, not the bare prefix. No existing route changes.
+5. **The second judgment never drives.** Before it runs, the job checks that each sampled item's stored trace can be reused. An item whose trace cannot be reused is "not measured", with a note. The job never deletes a task run that belongs to the measured run config. The core eval runner is not changed.
+6. **The exact test overflows above about 1,030 changed pairs.** The arithmetic is not changed. The statistics route returns a 422, a noise row gets a null `noise_adjusted_wins` with a warning, and the comparison lists the score as skipped.
+7. **`spend_usd` is HT's figure exactly:** the task run usage and the judge usage of the job's own calls. It does not add the simulated user's cost.
+8. **A cancelled or failed noise job reports no spend.** This is the same as today.
+9. **One unreadable skill** stops the skill-description check for every skill of the run config. This is HT's behaviour, kept.
+10. **The source strings of the smell limits** say "a Kiln default" where HT says "a default of the tuner". The numbers are unchanged.
+11. **Guards on the skill bundle create route** that HT's installer did not need are kept: stray root entries are not walked, reads are bounded by the size limits, and a folder has at most 1,000 entries.
+12. **`MIN_SUPPORTED_HARNESS_TUNER_VERSION` starts at `0.6.0`.**
+13. **Skill text.** "Find the right place to integrate" includes the files that say today that noise and room are measured only by Kiln Harness Tuner, that tell the reader to measure a smell by hand, or that list the skill routes. The component doc names them as they are now; the list is checked again at pre-flight.
+14. **The contract test** also checks that each smell id of the list is in the Smells table of the index, written as its backticked path. HT's code reads the ids from that table.
+
+### Harness-tuner
+
+15. **`harness-tuner-install-agents` is removed whole.** `--dest` is its only form, so nothing is left of it. Three console scripts go, not two.
+16. **A binary asset is not copied by the skill export.** The export's answer names each asset it skipped. Kiln's skill runtime reads assets as text only, so a binary asset was of no use to the agent.
+17. **HT's held-out rule by tag name is not in Kiln's train helper.** Before it starts a noise job, HT checks the estimate's sample against its own train set, and skips the check with a clear note when an item is not in it. Detectability counts can differ from today's on a task that has such tags. Accepted.
+18. **`specs/backlog.md` in HT** loses its knowledge entries, which live in Kiln now. Entries that are about HT's own code stay.
+19. **Tests that bind HT's code to knowledge text** are more than the three the functional spec names. Each becomes a review item of the audit.
+20. **`has_thinking_levels` in a model list row** can be true because of a provider entry that HT's policy then drops. The model details answer is exact. Accepted.
+21. **Developers.** A Kiln run from source reports the version of its last release, so HT's version check would refuse it. HT reads one environment variable that skips the Kiln version check. The contract checks of section 5.5 still run, so a missing route is still caught.
+22. **The costing port** is a pre-flight item. Until it is in Kiln's skill, HT's `experiment-costing` skill is not removed and the planner's pointer is not changed.
+
