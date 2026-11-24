@@ -124,6 +124,16 @@ class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
     Formatted as `<project_id>:::<tool_id>:::<task_id>:::<run_id>`
     """
 
+    usage: Optional[MessageUsage]
+    """Token usage and cost of the model calls this tool call made.
+
+    Set for Kiln task tools (sub-agents): the sub-task run's total, which
+    already includes its own sub-agent calls. The run that made the call counts
+    it in its `usage` and `cumulative_usage`. Absent for tools that call no
+    model. Older task run files don't carry it on Kiln task tool messages; the
+    usage of those runs holds only their own model calls.
+    """
+
     is_error: Optional[bool]
     """Whether this tool message represents an error result."""
 

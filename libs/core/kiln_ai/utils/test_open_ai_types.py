@@ -70,7 +70,7 @@ def test_assistant_message_param_properties_match():
 def test_tool_message_param_properties_match():
     """
     Test that ChatCompletionToolMessageParamWrapper has all the same properties
-    as OpenAI's ChatCompletionToolMessageParam, plus the kiln_task_tool_data property.
+    as OpenAI's ChatCompletionToolMessageParam, plus the Kiln-only properties.
 
     This will catch any changes to the OpenAI types that we haven't updated our wrapper for.
     """
@@ -82,7 +82,12 @@ def test_tool_message_param_properties_match():
     openai_properties = set(openai_annotations.keys())
     kiln_properties = set(kiln_annotations.keys())
 
-    kiln_extra_properties = {"kiln_task_tool_data", "is_error", "error_message"}
+    kiln_extra_properties = {
+        "kiln_task_tool_data",
+        "usage",
+        "is_error",
+        "error_message",
+    }
     for prop in kiln_extra_properties:
         assert prop in kiln_properties, f"Kiln should have {prop}"
         kiln_properties.remove(prop)

@@ -99,15 +99,22 @@ class TaskRun(
     )
     usage: Usage | None = Field(
         default=None,
-        description="Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used.",
+        description=(
+            "Usage information for the task run: the tokens and cost of its own "
+            "model calls plus those of the Kiln task tools (sub-agents) it called, "
+            "nested ones included. `total_llm_latency_ms` covers only this run's "
+            "own model calls. Runs whose trace has no `usage` on its Kiln task "
+            "tool messages hold only their own model calls."
+        ),
     )
     cumulative_usage: MessageUsage | None = Field(
         default=None,
         description=(
             "Sum of per-message token usage and cost across the entire trace, "
-            "including any seeded prior trace. None on records created before "
-            "this field existed. For a fresh (non-seeded) run, the token / "
-            "cost fields equal those of `usage`."
+            "including any seeded prior trace: model calls (assistant messages) "
+            "and sub-agent calls (Kiln task tool messages). None on records "
+            "created before this field existed. For a fresh (non-seeded) run, "
+            "the token / cost fields equal those of `usage`."
         ),
     )
     synthetic_user_usage: Usage | None = Field(

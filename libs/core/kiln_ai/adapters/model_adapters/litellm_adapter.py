@@ -372,8 +372,10 @@ class LiteLlmAdapter(BaseAdapter):
                     tool_call_messages,
                 ) = await self.process_tool_calls(tool_calls)
 
-                # Add tool call results to messages
                 messages.extend(tool_call_messages)
+                # A tool that called models (a sub-agent) reports that spend on
+                # its tool message; it is part of what this run cost.
+                usage += MessageUsage.from_trace(tool_call_messages)
 
                 # If task_response tool was called, we're done
                 if assistant_message_from_toolcall is not None:
@@ -1160,7 +1162,7 @@ class LiteLlmAdapter(BaseAdapter):
                 f"Error: tool '{tool_name}' failed unexpectedly and couldn't complete this call.",
             )
 
-        return ChatCompletionToolMessageParamWrapper(
+        tool_message = ChatCompletionToolMessageParamWrapper(
             role="tool",
             tool_call_id=tool_call.id,
             content=result.output,
@@ -1170,6 +1172,9 @@ class LiteLlmAdapter(BaseAdapter):
             is_error=result.is_error if result.is_error else None,
             error_message=result.error_message if result.error_message else None,
         )
+        if result.usage is not None:
+            tool_message["usage"] = result.usage
+        return tool_message
 
     def litellm_message_to_trace_message(
         self,

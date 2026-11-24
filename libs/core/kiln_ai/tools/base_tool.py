@@ -7,6 +7,7 @@ from typing_extensions import NotRequired, TypedDict
 
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
+from kiln_ai.utils.usage import MessageUsage
 
 
 class ToolFunction(TypedDict):
@@ -65,6 +66,10 @@ class ToolCallResult(BaseModel):
     timed_out: bool = Field(
         default=False,
         description="Whether the error was the tool hitting its execution time limit. Carried structurally so callers can classify timeouts without parsing output text.",
+    )
+    usage: MessageUsage | None = Field(
+        default=None,
+        description="Token usage and cost of the model calls the tool made while running. The adapter adds it to the usage of the run that called the tool. None for tools that call no model.",
     )
 
 
