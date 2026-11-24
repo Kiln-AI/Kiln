@@ -111,21 +111,20 @@ def prompt_cache_injection_points(
 ) -> list[dict[str, Any]]:
     """The LiteLLM ``cache_control_injection_points`` for one model call.
 
-    The system prompt of a Claude model is marked, so calls that share only the
-    system prompt and tools (two runs of one task) share a cache entry. The last
-    message is marked when a later call re-sends these messages: the caller
-    expects one (a tool loop, the next turn of a conversation), or the messages
-    already hold a model reply.
+    Only a Claude model gets any. Its system prompt is marked, so calls that share
+    only the system prompt and tools (two runs of one task) share a cache entry.
+    The last message is marked when a later call re-sends these messages: the
+    caller expects one (a tool loop, the next turn of a conversation), or the
+    messages already hold a model reply.
     """
-    points: list[dict[str, Any]] = []
     # Claude reads the cache only at a position an earlier request marked. Other
-    # providers cache a shared prefix unasked, and LiteLLM answers a marked Gemini
-    # system prompt by creating a separately billed cachedContents object.
-    if (
-        "claude" in litellm_model_id.lower()
-        and messages
-        and messages[0].get("role") == "system"
-    ):
+    # providers cache a shared prefix unasked, and a marker LiteLLM forwards to them
+    # has side effects: a separately billed cachedContents object on Gemini, an
+    # unknown message field on OpenAI-compatible servers.
+    if "claude" not in litellm_model_id.lower():
+        return []
+    points: list[dict[str, Any]] = []
+    if messages and messages[0].get("role") == "system":
         points.append({"location": "message", "index": 0})
     # A cache write costs more than plain input, so it only pays for itself on
     # messages that a later call reads back.

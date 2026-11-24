@@ -315,9 +315,16 @@ SECOND_TURN_MESSAGES = [
         pytest.param(
             "gemini/gemini-2.5-flash",
             SECOND_TURN_MESSAGES,
-            False,
-            [LAST_MESSAGE_MARK],
-            id="gemini_messages_hold_a_model_reply",
+            True,
+            [],
+            id="gemini_second_turn_with_later_call_expected",
+        ),
+        pytest.param(
+            "openai/llama3.2",
+            SECOND_TURN_MESSAGES,
+            True,
+            [],
+            id="openai_compatible_second_turn_with_later_call_expected",
         ),
     ],
 )

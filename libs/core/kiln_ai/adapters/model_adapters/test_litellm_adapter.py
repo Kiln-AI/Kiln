@@ -3007,32 +3007,49 @@ ADD_TOOL_DEFINITION = {
 }
 
 
+CLAUDE_MODEL_ID = "anthropic/claude-sonnet-4-5"
+SECOND_TURN = [
+    {"role": "user", "content": "Hello"},
+    {"role": "assistant", "content": "Hi"},
+    {"role": "user", "content": "And now?"},
+]
+
+
 @pytest.mark.parametrize(
-    ("messages", "tools", "expected_points"),
+    ("model_id", "messages", "tools", "expected_points"),
     [
         pytest.param(
-            [{"role": "user", "content": "Hello"}], [], None, id="one_shot_call"
+            CLAUDE_MODEL_ID,
+            [{"role": "user", "content": "Hello"}],
+            [],
+            None,
+            id="one_shot_call",
         ),
         pytest.param(
+            CLAUDE_MODEL_ID,
             [{"role": "user", "content": "Hello"}],
             [ADD_TOOL_DEFINITION],
             [{"location": "message", "index": -1}],
             id="model_can_call_tools",
         ),
         pytest.param(
-            [
-                {"role": "user", "content": "Hello"},
-                {"role": "assistant", "content": "Hi"},
-                {"role": "user", "content": "And now?"},
-            ],
+            CLAUDE_MODEL_ID,
+            SECOND_TURN,
             [],
             [{"location": "message", "index": -1}],
             id="messages_hold_a_model_reply",
         ),
+        pytest.param(
+            "openai/test-model",
+            SECOND_TURN,
+            [ADD_TOOL_DEFINITION],
+            None,
+            id="not_a_claude_model",
+        ),
     ],
 )
 async def test_build_completion_kwargs_with_automatic_prompt_caching(
-    config, mock_task, messages, tools, expected_points
+    config, mock_task, model_id, messages, tools, expected_points
 ):
     adapter = LiteLlmAdapter(
         config=config,
@@ -3045,7 +3062,7 @@ async def test_build_completion_kwargs_with_automatic_prompt_caching(
 
     with (
         patch.object(adapter, "model_provider", return_value=mock_provider),
-        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "litellm_model_id", return_value=model_id),
         patch.object(adapter, "build_extra_body", return_value={}),
         patch.object(adapter, "response_format_options", return_value={}),
         patch.object(adapter, "litellm_tools", AsyncMock(return_value=tools)),
