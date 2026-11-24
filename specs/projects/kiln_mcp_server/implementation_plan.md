@@ -26,6 +26,7 @@ The order follows [architecture.md](architecture.md) section 6. Each phase names
 - [x] Phase 17: Revert and revisit phase 8. ([phase_8_revisit](phase_8_revisit.md); [phase_17 plan](phase_plans/phase_17.md))
 - [x] Phase 18: Harness Tuner alignment fixes outside the knowledge trees. ([phase_18 plan](phase_plans/phase_18.md); [decisions](harness_tuner_alignment_decisions.md))
 - [x] Phase 19: Bring back the two shared Kiln Harness Tuner skills that were not ported: experiment-costing (close to as is) and kiln-task-setup (its knowledge into the right Kiln files, or a new knowledge file). ([deep_pr_goals](deep_pr_goals.md) section 8)
+- [x] Phase 20: Deep review fixes. Re-check every "Kiln Harness Tuner must change" claim against its code; port memory.md, code_tool_authoring.md and SKILL.md's API rules again from Kiln Harness Tuner's text; two small spec fixes. ([deep_pr_goals](deep_pr_goals.md) section 1; [phase_20 plan](phase_plans/phase_20.md))
 - [x] **Phase 16: Backlog.** Review open backlog items with the user, then close or dismiss each through the standard phase flow.
 
 ## Notes

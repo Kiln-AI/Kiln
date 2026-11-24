@@ -118,6 +118,7 @@ When the method and path match no endpoint of the API, the tool says so and poin
 - Blocked endpoints do not appear in the skill's API reference.
 - Blocks are rare. Endpoints that return secrets (such as provider API keys) are the first category. The list is settled in the architecture step: start from the endpoints the Assistant is denied today, review each one, and get the list approved.
 - The MCP adds no approval step. A call is either allowed or blocked. The agent's own permission prompts are the user's control.
+- The block covers direct calls of the MCP tool only. A task run whose tools include Kiln's built-in `call_kiln_api` tool reaches every blocked endpoint, because that core tool checks no policy, and a direct call through the MCP can start such a run. The follow-up scopes project (P2) enforces it; this spec does not.
 
 ### 5.6 `body_limit` (MCP only)
 

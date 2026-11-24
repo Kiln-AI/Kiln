@@ -23,18 +23,21 @@ record (`references/knowledge/memory.md`).
   `(<technique>)`: `EXP 0716-w4-2: retry-skill for 429s — accuracy: +18pp, base=62, cand=80, n=34, p=.04`.
   Several rows are joined by ` | `. A score name ending `↓` is
   `lower_is_better`: its delta is positive when the score falls, so a
-  falling pair of numbers is a gain.
-- **State suffixes**, in place of the verdict or after it:
+  falling pair of numbers is a gain. Inside the Kiln Harness Tuner loop
+  that row's shape is frozen in its experiment-analysis skill, which owns
+  it.
+- **State suffixes** (lifecycle vocabulary — read them), in place of the
+  verdict or after it:
 
 | Suffix | What it means |
 |---|---|
 | ` — RUNNING` | Not measured yet. From a run that has ended, it is abandoned work, not a result |
 | ` — REFUTED` | Measured: the change did not help |
-| ` — FAILED (infra: <error class>)` | Stopped by an infrastructure failure: neither a win nor a dead end |
-| ` — ABANDONED (<why>)` | Stopped part way: no verdict |
+| ` — FAILED (infra: <error class>)` | Killed by infra: neither win nor dead end, retryable |
+| ` — ABANDONED (<why>)` | Aborted mid-run (tripwire, orchestrator restart): no verdict |
 | ` — DEAD END (<why>)` | Ruled out before or during the measurement, for example `(generality: …)` or `(judge copy: …)` |
-| ` — NOT LANDED (<detail>)` | Stopped before train was judged in full. The detail is, for example, `<k>/<n> targets fixed`, `<k>/<n> fixed, <b>/<g> guards broke`, `stopped at n=<n> by <rule>: <numbers>` or `capped at <n> items: …`. Untested, not disproven: another build for the same target is fair; the same run config again is not |
-| ` — CAPPED (<detail>)` | A spend cap was hit: inconclusive, never a dead end. The detail is, for example, `capped at $<x> after <n> items: inconclusive — net +<a>/−<b> so far`, under speed or cost `capped at $<x> after <n> items: inconclusive — lost <k> of <n> baseline passes so far`, or `capped by the run budget ($<x> left) after <n> items: …`. The same run config with a larger cap goes on from its rows |
+| ` — NOT LANDED (<detail>)` | A stop rule of the measurement engine ended the candidate before its train split was judged in full, so the rest was not paid for: `<k>/<n> targets fixed` when a named `target_items` item still failed; `<k>/<n> fixed, <b>/<g> guards broke` from the discriminating block (the parent's failures and a few passes, judged first), with the `residual gate:`, `residual still failing:` and `residual guards broke:` content lines naming the items per eval (below); `stopped at n=<n> by <rule>: <numbers>` for any other rule (clearly worse quality, futility, invalid output, not faster or cheaper); or `capped at <n> items: …`. The lever is untested, not disproven (a different build for the same targets is fair game; the same rc is not) |
+| ` — CAPPED (<detail>)` | The measurement reached the candidate's spending cap: inconclusive, never a dead end or a failure. The detail is, for example, `capped at $<x> after <n> items: inconclusive — net +<a>/−<b> so far`, under speed or cost `capped at $<x> after <n> items: inconclusive — lost <k> of <n> baseline passes so far`, or `capped by the run budget ($<x> left) after <n> items: …`. The rows are kept, and a later candidate on the same rc with a larger cap goes on from them |
 
 - **No suffix on an opening**: an overview in the opening's shape
   (`EXP <id> (<technique>…`) with no state suffix has lost its state. Its
@@ -43,9 +46,19 @@ record (`references/knowledge/memory.md`).
 
 | Stamp | What it means |
 |---|---|
-| ` — PROMOTED <MM-DD>` | Its run config became the baseline |
-| ` — REJECTED AT VAL <MM-DD>` | The confirmation on val passed it over. Never removed. That run config is never submitted again unchanged; it can still be an ingredient of a merge |
-| ` — HELD (constraint <id>) <MM-DD>` | Waiting on the `OPEN: ` record `<id>` (`references/knowledge/memory_formats/open_questions.md`). The same run config goes on, unchanged, once it is answered |
+| ` — PROMOTED <MM-DD>` | Appended when the experiment's rc becomes the baseline |
+| ` — REJECTED AT VAL <MM-DD>` | The confirmation on val compared the experiment's rc and passed it over. Never removed: the rc is never re-submitted unchanged, though it stays eligible as a merge ingredient; the same design re-enters as a new experiment |
+| ` — HELD (constraint <id>) <MM-DD>` | The confirmation on val escalated on that `OPEN: ` record (`references/knowledge/memory_formats/open_questions.md`) instead of judging the numbers. The rc is resubmitted unchanged once the constraint is answered |
+
+## The content
+
+Content fields: hypothesis / lever / run_config ids (code appends
+`rc: <id>` and `change: <summary>` the moment the build lands, and
+`reused rc: <id>` when the candidate measures a prior run's build) / what
+it cost — inside the Kiln Harness Tuner loop that slot is `bundle cost`
+(the loop's one spend figure for an experiment — that label, never a bare
+"spend"; defined in Kiln Harness Tuner's experiment-analysis skill), and
+`spend` everywhere else / result / verdict + why / next.
 
 ## The content lines its code reads back
 
@@ -56,12 +69,19 @@ record (`references/knowledge/memory.md`).
 and `bundle cost: $<n>`. `bundle cost` is the spend of the loop's
 measurement; elsewhere the spend is labelled `spend`.
 
-- `generality:` is the code's leak check of the build, and `judge copy:`
-  its search for eval text in it. Each quotes a finding, or says why it
-  could not check.
+- `generality:` is what the leak check between build and measurement found
+  in the prompt or the skills, or why it could not check; `judge copy:` is
+  its search for eval text in the build, the same way.
 - `reference check:` names a skill or a tool that the build's text uses
   and its run config does not attach. A failure on the items that use that
   name can be the build's breakage, not the lever.
+- The residual lines, after a `NOT LANDED` stop on the discriminating
+  block: the result, the items still failing and the guards broken, as
+  `eval: id, id; eval: id` (or `none`), so that the next plan can read
+  those traces and target them with a different build:
+  - `residual gate: <summary> (needed <required>; seed <seed>)`
+  - `residual still failing: <eval>: <item id>, <item id>; <eval>: <item id>`
+  - `residual guards broke: <eval>: <item id>, <item id>; <eval>: <item id>`
 
 Line prefixes, also read back:
 

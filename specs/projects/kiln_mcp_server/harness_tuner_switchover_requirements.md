@@ -18,7 +18,9 @@ These are the requirements for the **switchover project**, a separate project th
 
 HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths are from the skill root, `app/mcp/kiln_mcp_server/skill/`.
 
-**Kiln-side counterparts.** Some audit items need a change in the Kiln skill as well as in HT. Those changes belong to Phase 17 ([phase_8_revisit](phase_8_revisit.md), the knowledge trees) or Phase 18 ([phase_18](phase_plans/phase_18.md), the glue files and `memory.md`). Each requirement below names its counterpart.
+**Kiln-side counterparts.** Some audit items need a change in the Kiln skill as well as in HT. Those changes were made in Phase 17 ([phase_8_revisit](phase_8_revisit.md), the knowledge trees), Phase 18 ([phase_18](phase_plans/phase_18.md), the glue files and `memory.md`), Phase 19 (the costing and task-setup ports) and Phase 20 (the ports of `memory.md`, `code_tool_authoring.md` and the API rules of `SKILL.md` again from HT's text). Each requirement below names its counterpart.
+
+**Phase 20 re-check.** HT worked with its own skills, so a requirement that HT must change for HT to work holds only where HT's code at `b49f159` proves it. Phase 20 re-checked every requirement against HT's code ([decisions](harness_tuner_alignment_decisions.md) section 14). The requirements it dropped keep their numbers, with a one-line note.
 
 ## 1. Loading the Kiln skill
 
@@ -30,11 +32,11 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 - **Links:** relative to the skill root, not to the file (`resolve_link`).
 - **Done when:**
   - `smells/run.py` (`_smell_titles`) gets a non-empty `known_smells` from the Kiln tree, with no `knowledge_unreadable` log.
-  - `python -m kiln_harness_tuner.knowledge check` passes on the Kiln tree, or HT retires it in favour of Kiln's `skill_checks`.
+  - `python -m kiln_harness_tuner.knowledge check` passes on the Kiln tree, or HT retires it in favour of Kiln's `skill_checks` (the switchover design retires `knowledge/`).
 
-**SR2 — HT copies the Kiln skill files into its agents folder.** (`CT-4`)
+**SR2 — HT reads the Kiln skill files.** (`CT-4`)
 - Until the fence exists (SR8), HT does not give a loop session the Kiln MCP to read the skill. That would also hand the session an unfenced `call_kiln_api`.
-- `install_agents.py` copies the Kiln skill tree from a pinned Kiln version into each agent CLI's skills folder, as it copies HT's own skills today.
+- How HT reads the files is the switchover's design: a live read of `kiln_skill` through one reader that the gateway and the loop code share (`specs/projects/harness_tuner_switchover/architecture.md`, section 3, decisions 1 and 2). Phase 20 dropped this project's earlier "copy a pinned tree into each agent CLI's skills folder", which the switchover does not do.
 - HT checks the Kiln version against its minimum expected version, and Kiln returns `min_supported_harness_tuner_version`. Both checks come from spec two (`specs/projects/harness_tuner_switchover/project_overview.md`, "Version alignment"). Neither exists at `25157f3` (`contract.md`, bottom line).
 
 **SR3 — HT's copy of the knowledge goes only after SR1, SR4 and SR5 hold.** (`CT-2`, `HS-H3`)
@@ -45,7 +47,7 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 
 **SR4 — HT keeps its role entry files and role skills, for HT only, and points them into the Kiln skill.** (`KT-A2`, `CT-1`, `HS-H3`; decisions section 2)
 - **Entry files:** `references/planner.md`, `builder.md`, `analyzer.md`, `smells.md`, `report.md` and `technique-index.md` stay in HT. Each one names the Kiln paths it reads: `references/improving_agents/index.md` (its Smells, Goals, Order of work, Failure patterns, Eval problems, Design, Techniques and Dormant techniques sections) and `references/levers/index.md`.
-- **Role prompt templates:** they name HT's own entry files, not Kiln paths that do not exist. Today they name missing files: `agents/batch_plan.md:8`, `create_experiment_rc.md:7-8`, `baseline_review.md:5`, `analyze_experiment_results.md:5` and `report_writer.md:6`.
+- **Role prompt templates:** they name HT's own entry files, not Kiln paths that do not exist. Today they name the files of the `kiln-harness-tuner-knowledge` skill, which the switchover deletes: `agents/batch_plan.md:8`, `create_experiment_rc.md:7-8`, `baseline_review.md:5`, `analyze_experiment_results.md:5` and `report_writer.md:6`.
 - **What the entry files keep,** because the Kiln skill does not hold it:
   - the planner's "How to use the knowledge" steps 4–5 (technique = lever id; "not in the knowledge");
   - the smells review procedure, with its "Detected by" column. Kiln's Smells table has no such column, so HT keeps the code-detected list itself;
@@ -57,7 +59,8 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
   - the BatchPlan, PromotionDecision and RcBuildResult conventions;
   - `merging.md`, `skill-authoring.md` and the gateway catalogue.
   - Not `experiment-costing` and `kiln-task-setup`: Phase 19 ports both into the Kiln skill (SR5), and the role skills that load them name those Kiln files.
-  - HT's `experiment-costing` is wrong for Kiln's code in two places, and Kiln's port is corrected ([decisions](harness_tuner_alignment_decisions.md) section 13): the synthetic user's usage is on the scored TaskRun, not on the eval row, and Kiln has no `custom`-score metric eval. HT's role skills that rely on either read Kiln's port instead. The gateway's `get_task_run` answer (`TaskRunView`, `gateway/models.py:341-353`) carries `usage` only; it must also carry `synthetic_user_usage` and `cumulative_usage`, or the port's lane 2 cannot be read in a loop session.
+  - HT's `experiment-costing` is wrong for Kiln's code in two places, and Kiln's port is corrected ([decisions](harness_tuner_alignment_decisions.md) section 13): the synthetic user's usage is on the scored TaskRun, not on the eval row, and Kiln has no `custom`-score metric eval. HT's role skills that rely on either read Kiln's port instead.
+  - No gateway field is required for the port. HT's own costing text read `eval_usage` and `synthetic_user_usage` off per-item rows that its gateway never returned (`TrainResultRow`, `gateway/models.py:300-315`, has only `task_cost_usd`), and HT worked: its code measures the cost itself. Phase 20 dropped the earlier requirement that `get_task_run` add `synthetic_user_usage` and `cumulative_usage` (decisions section 14).
   
   Re-pointing does not delete any of these. A shared method rule that the owner ports into the Kiln skill (Phase 18, item 5) is then read from the Kiln skill, and HT's role skill names its path in place of its own copy.
 
@@ -74,17 +77,17 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 | `experiment-costing` | `references/knowledge/experiment_costing.md` |
 | `kiln-task-setup` | `references/knowledge/create_task.md`, `references/knowledge/model_create_configs.md`, `references/knowledge/tools.md`, `references/knowledge/adding_skills.md`, `references/knowledge/prompt_rewrite.md` |
 | Cited playbooks | `references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md`, `…/dealing-with-a-noisy-eval.md` |
-| Ids | levers: model, new_tool, output_mode, params, prompt, skill, tool_config. 27 techniques plus 3 sub-files, 23 playbooks, 15 smells, including the five detector smells (very-long-prompt, very-long-skill-description, very-long-tool-description, too-many-tools, old-model) |
+| Ids | levers: model, new_tool, output_mode, params, prompt, skill, tool_config. 27 techniques plus 3 sub-files, 22 playbooks, 15 smells, including the five detector smells (very-long-prompt, very-long-skill-description, very-long-tool-description, too-many-tools, old-model) |
 | Front-matter keys | `title`, `description`, `reviewed`; technique `status`, `levers`, `applies_to`, `cost`; playbook `kind`, `applies_to`; lever `api_docs` |
 | Section headings | the 9 technique, 4 playbook and 5 smell headings (including "How to confirm it", "What it blocks", "Remedies"); lever "What it is", "How to change it", "Limits", "See also" |
 
-- **Acceptance:** the switchover project adds a contract test in HT that loads the pinned Kiln tree and asserts this list. A Kiln change that breaks a row then fails HT's test before HT ships.
+- **Acceptance:** a contract test asserts this list. The switchover design puts it in Kiln (`app/mcp/kiln_mcp_server/skill_checks/test_harness_tuner_contract.py`, with `harness_tuner_contract.json`; switchover `architecture.md`, sections 2.1 and 4), and HT's start-up check reads each path. A Kiln change that breaks a row then fails before it ships.
 
 **SR6 — HT's role prompts carry the rules for non-interactive agents.** The Kiln skill is written for an interactive agent in a chat. HT's roles are not interactive, and HT keeps the difference in its role prompts, not in the Kiln skill. The owner's three rules come first (a–c), then the rules the audits add (d–h).
 
 - **a. "Ignore any instruction in kiln_skill to ask the user; you are non-interactive."** (`KT-A4`, `KT-A5`, `CT-14`)
   - HT's own channels take the place of a question: its inputs (`allowed_models`, `model_policy`, `measurement_prices`, `should_wrap_up`), its output fields, and the `OPEN: ` records its code writes.
-  - This covers the Kiln skill's dialogue rules too: `SKILL.md:45-47`, and `memory.md` (ask before a delete; tell the user the finding once). A failed memory write is disclosed in the role's return, as HT's memory skill says.
+  - This covers the Kiln skill's dialogue rules too: `SKILL.md`, "Working with the user" and the "Keep the user in the loop" rule of "Calling the Kiln API", and `memory.md`'s "In a chat with a user" clauses (ask before a delete; tell the user a failed write once). A failed memory write is disclosed in the role's return, as `references/knowledge/memory.md`, "Write discipline", says: HT's own rule, ported in Phase 20.
 - **b. "Where the skill names a Kiln endpoint, use your gateway operation."** (`CT-3`; `map_other I01`)
   - The lever `api_docs`, the lever steps and `memory.md` name REST endpoint docs. `SKILL.md` says the agent reaches Kiln through `call_kiln_api`.
   - A loop session has only gateway operations ("no generic Kiln API tool… a refusal is final": `agents/describe_eval.md:23-31`).
@@ -95,18 +98,13 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
   - A screening is built by HT's code: no builder makes screening run configs.
   - HT's gateway refuses a run config whose model the policy does not allow.
   
-  Phase 17 removes most of these sentences from the trees. This rule covers any that remain, and the glue files.
-- **d. "Where the skill says to report something to the user, use your output field."** (`KT-B11`) The fields are `open_questions`, `rejected_summary`, `rationale` and `build_notes`. The builder writes its reasoning to `build_notes`, not to the `notes` of the tool's `provenance`.
+  Phase 17 removed most of these sentences from the trees. This rule covers any that remain, and the glue files.
+- **d. "Where the skill says to report something to the user, use your output field."** (`KT-B11`) The fields are `open_questions`, `rejected_summary`, `rationale`, `build_notes`, `findings` and the report. The builder writes its reasoning to `build_notes`, not to the `notes` of the tool's `provenance`.
 - **e. Code trust.** (`KT-A5`, `HS-M23`) HT grants trust with its own `trust_code_tools` operation, once per run. The skill's steps do not apply to HT roles: explain what will run, give the user the trust page link, and confirm with `GET …/add_code_trust`.
   
   To verify: backlog B23, which came after the audit, made `POST /api/projects/{project_id}/add_code_trust` MCP-blocked. HT's code calls it over REST, which the MCP block does not cover. The switchover project confirms that this call still works.
-- **f. Train-side roles never read the `baseline` or the `val` record,** although `memory.md` "Orientation" step 3 tells an agent to read `tags=baseline`. (`CT-13`, `HS-H2`; `map_memory M15`, `M63`)
-  - HT's gateway enforces only the `val` tag (`gateway/ops.py:811-812`), so the role prompt states both rules.
-  - Train-side roles use the gateway's memory operations and make discovery writes only: `lesson`, `dead_end` and new `issue`.
-- **g. HT roles follow their own role skills, not the Kiln skill's procedure files.** (`HS-M4`, `HS-M5`)
-  - `references/knowledge/run_an_experiment.md` and `references/modes/improve_task.md` are the MCP agent's by-hand procedure. They are not HT's planner, builder, analyzer or promote steps.
-  - Phase 18 item 5 reshapes `run_an_experiment.md` into the one-off guide for MCP clients. Its first line already tells HT to follow its system prompt.
-  - Where they differ from HT's role skills (for example the keep rule on val, and the guard evals on train), the role skill wins.
+- **f. Dropped in Phase 20.** It asked the role prompts to state that train-side roles never read `baseline` or `val`. HT's memory text states both rules, and `memory.md` carries them again since Phase 20 ("Orientation" step 3, the `baseline` and `val` rows).
+- **g. Dropped in Phase 20.** No HT change is needed: HT's role skills hold its procedure, and no HT text names `references/knowledge/run_an_experiment.md` or `references/modes/`. The trees link to `run_an_experiment.md`, and its first line already tells HT to follow its system prompt.
 - **h. HT roles do not read the project tree from disk.** (`HS-M13`) `references/knowledge/working_with_project_files.md` says that reading files directly is fine. The tree holds every split's inputs and results, and HT fences it today. The fence stays (SR8).
 
 ## 3. Gateway and fence
@@ -126,22 +124,16 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 
 **SR10 — HT's memory writers keep HT's exact formats.** (`CT-§3`, `HS-H1`, `HS-H4`; `map_memory M27`, `M71`; decisions section 4)
 - HT's code stays the writer of the records it owns: `baseline`, `val`, `FIXED: `/`WONT_FIX: `/reopen, `OPEN: `, experiment opening, verdict and state suffixes, `SCREEN …`, `PROBE …`, and the setup head above the delimiter.
-- **Kiln counterpart:** Phase 18 item 1 rewrites `memory.md` so that it lists these records as read-only for MCP agents. HT's formats, string for string, are in the files of `references/knowledge/memory_formats/`, which `memory.md` names.
+- **Kiln counterpart:** Phase 18 item 1 and Phase 20 made `memory.md` list these records as read-only for chat clients. HT's formats, string for string, are in the files of `references/knowledge/memory_formats/`, which `memory.md` names.
 - **Acceptance:** the switchover project adds a test in HT that checks each format string in the `memory_formats/` files against `memory_schema.py`. Kiln's `HARNESS_TUNER_FORMATS` in `skill_checks/test_shipped_skill.py` lists the strings. Then a change on either side that breaks the other is caught.
 
-**SR11 — The `— RUNNING` janitor touches only HT's own records.** (`CT-6`)
-- At startup, `memory.py:1183-1199` marks every `— RUNNING` experiment in the task scope `— ABANDONED (orchestrator restart MM-DD)`. That includes a record opened by an MCP agent in another live session.
-- After Phase 18, MCP agents no longer open `— RUNNING` records. Older ones, and records by other writers, can still be there.
-- **Requirement:** the janitor rewrites only records that HT wrote. It tells them apart by HT's id shape `EXP <MMDD>-w<k>-<n>` (`memory_schema.py:37`), or by a marker that HT adds. Any other `— RUNNING` record is left as it is.
+**SR11 — Dropped in Phase 20.** It asked that the `— RUNNING` janitor (`memory.py:1183-1199`) spare other writers' records. No other writer exists: chat clients never write `experiment` records ([decisions](harness_tuner_alignment_decisions.md) section 11.4), and no released Kiln skill told them to.
 
-**SR12 — HT reads records that other writers made without harm.** (`CT-7`, `CT-8`, `CT-9`)
-- A `constraint` with an `OPEN: ` prefix and no `question:` line cannot be deduplicated. HT then posts a second record for the same question. HT should match such a record by its overview, or leave it alone.
-- An experiment overview in another shape reads as `UNKNOWN`. Examples are one that keeps `(technique)`, has no suffix, or has a stamp with a full date such as `— PROMOTED 2026-11-23`. HT treats it as another writer's record: never a verdict, and never lost state of its own.
-- This matters for records written before Phase 18, and for records that a future decision lets MCP agents write.
+**SR12 — Dropped in Phase 20.** It asked HT to read other writers' `OPEN: ` and experiment records without harm. Chat clients write neither (decisions sections 4, 11.3 and 11.4).
 
 **SR13 — Priorities and smell issues keep HT's ownership rules.** (`CT-11`, `CT-12`; `HS-M20`)
 - HT's re-sync owns the priority tags of the issues it seeds, from `spec.priority`. HT's smell and audit issues are deliberately bound to no eval.
-- No HT change is needed. **Kiln counterpart:** Phase 18 item 1 tells MCP agents not to change those priorities or bind those issues.
+- No HT change is needed. **Kiln counterpart:** `memory.md` (Phase 18 item 1, Phase 20) tells chat clients not to change those priorities or bind those issues.
 
 ## 5. HT's tools come over
 
@@ -158,20 +150,14 @@ The owner named: noise, detectability, screening, model preflight, integrity, ju
 | `integrity.py`, `judge_copy.py`, `reference_check.py`, `generality.py` | Reward hacking, copied judge text (a run of 8 or more words), dangling references, leaks | None; `train_val_test.md` tells the agent to check by hand |
 
 The contract audit's table also lists `latency.py`, `objective.py`, `budget.py`, `probes.py`, `levers.py`, the five smell detectors and model age. The switchover project decides each with the ones above. For each tool it decides:
-- **Where it runs:** in HT's code calling Kiln, or as a Kiln endpoint that MCP agents can use too.
+- **Where it runs:** in HT's code calling Kiln, or as a Kiln endpoint that chat clients can use too.
 - **Which Kiln text changes:** the knowledge text that names the tool (after Phase 17) and the glue files. For example, once Kiln measures noise, the text no longer says that the noise is not known without HT.
 
-**SR15 — HT's model preflight reads Kiln's `message` key.** (`CT-17`)
-- Since phase 12, a provider that is not connected answers 400 with `{"message": "…\nConnect it in the Kiln app…"}`, where it used to answer 500.
-- HT's `kiln.py:41-58` reads only `error_messages` and `detail`. So the preflight marks the model "untested" with a repr of the body as its reason.
-- HT reads `message` too.
+**SR15 — Dropped in Phase 20.** It asked HT's model preflight to read Kiln's `message` key. It already does: its text comes from `job_drives.error_text`, which reads `message` first (`job_drives.py:153`; `model_preflight.py:72,313`).
 
-**SR16 — HT's calls stay inside Kiln's current limits.** (`CT-18`, `CT-19`, `CT-21`)
-- `POST /api/jobs/wait` refuses extra fields and a `timeout` above 3600.
-- HT matches 404 answers by status, not by text: the texts are now "`<Kind> not found. ID: <id>. Check the ID, or list…`".
-- HT's own `kiln-api` reference (290 docs, 49 stale) is replaced by `references/knowledge/api_docs/`.
+**SR16 — Dropped in Phase 20.** It asked HT's calls to stay inside Kiln's limits. They do: `POST /api/jobs/wait` gets only `ids` and a `timeout` within Kiln's cap of 3600 (1800 in `job_drives.py:61,365`; 3600 in `analysis.py:98,1568`), and HT matches 404 by status (`setup.py:342`; `gateway/ops.py:937`). The replacement of HT's `kiln-api` reference is SR5's `kiln-api` row.
 
-**SR17 — HT keeps its stricter uniqueness rule for tool function names.** (`KT-B18`) HT refuses a function name that a non-archived tool already uses. Kiln refuses two tools with one name in a run config or an allowlist, and `levers/new_tool.md` states Kiln's rule. HT's gateway keeps enforcing its own rule, and the builder's role prompt states it.
+**SR17 — Dropped in Phase 20.** It said HT's gateway keeps a stricter function-name rule. HT's gateway has no such rule. HT's sentence "Duplicate non-archived function names are rejected (400)" is wrong for Kiln, and `references/knowledge/code_tool_authoring.md` states Kiln's rule (decisions section 14).
 
 ## 6. The skill-bundle API
 
@@ -209,12 +195,12 @@ HT today (`skill_installer/bundle.py`, `skill_installer/mcp_server.py`, `prompt_
 - **Read every file of a skill:** `prompt_text.py` reads every reference file and every text asset of attached skills, and code-tool files, for the generality and integrity checks.
 - **Effect:** with both, HT can stop reading the project tree from disk.
 
-**Kiln counterpart:** once the API exists, the skill lever, the four skill techniques (`KT-B1`) and `references/knowledge/adding_skills.md` ("`references/*` files have NO API", in "Workflow: create + wire") name it as the route for every agent. Until then, Phase 17 decides what they tell an MCP agent (its question 8).
+**Kiln counterpart:** once the API exists, the skill lever, the four skill techniques (`KT-B1`) and `references/knowledge/adding_skills.md` ("`references/*` files have NO API", in "Workflow: create + wire") name it as the route for every agent. Until then they tell a chat client that the work needs Kiln Harness Tuner (Phase 17, question 7).
 
 ## 7. Acceptance for the switchover project
 
-- SR1 and SR5: HT's knowledge loader and its contract test pass on the pinned Kiln tree.
+- SR1 and SR5: HT reads the Kiln tree, and the contract test passes.
 - SR4: every role's first instruction resolves to a file that exists.
-- SR6: a dry HT run on a seeded project produces no agent turn that asks a user, calls a REST path from a loop session, measures again a smell that code detected, builds a screening run config, or reads `tags=baseline` or `tags=val` from a train-side role.
-- SR10: the memory format test passes. SR11: an HT restart beside a live MCP session leaves that session's records untouched.
+- SR6: a dry HT run on a seeded project produces no agent turn that asks a user, calls a REST path from a loop session, measures again a smell that code detected, or builds a screening run config.
+- SR10: the memory format test passes.
 - SR18: HT installs a skill with reference files through the Kiln API, and reads it back whole.

@@ -9,7 +9,8 @@ Kiln Harness Tuner's code seeds an `issue` for each eval, writes every
 state prefix and appends the lines below. Its code parses these strings
 back and is the authority on them. They are here so that you can read
 them. What you may write on an issue is in
-`references/knowledge/memory.md` ("Issues belong to evals").
+`references/knowledge/memory.md` (the `issue` row of "Tags", and "Issues
+are derived children of evals").
 
 ## The overview
 
@@ -18,11 +19,17 @@ Kiln Harness Tuner writes; its code does not require it when it reads.
 
 | Prefix | What it means |
 |---|---|
-| none | Open |
-| `UNMEASURED: ` | Nobody has checked yet whether the baseline fails its eval |
-| `UNMEASURABLE: ` | None of its evals is left, or each has left the active set. A status, never a close: the finding can still be true |
-| `FIXED: ` | Closed by a fix. Never reopened by an agent |
-| `WONT_FIX: ` | Closed by a decision, or not reproduced. Never reopened by an agent |
+| none | Open: the default (a priority tag, nothing more) |
+| `UNMEASURED: ` | Seeded from an eval but nobody has checked yet whether the baseline actually fails it (setup seeds every active eval one; measuring it is the planner's spend decision) |
+| `UNMEASURABLE: ` | The eval it binds to is gone or has left the active set, so it cannot be experimented on at all — a status, never a decision and never a close (the finding may still be true; the cause line says which). Only when *none* of its bindings is active |
+| `FIXED: ` | A landed fix front-loads it onto the overview, with a content one-liner citing it (`fixed 07-15 by rc_207, EXP 0715-w3-1`). A terminal state: the loop does not un-close it |
+| `WONT_FIX: ` | Deliberate decision or not reproduced, reason in content (cite which). A terminal state: the loop does not un-close it |
+
+One prefix at a time: setting a new one strips the old. Reopened = strip
+the prefix + append the provenance line
+(`- reopened when promoting baseline rc_213. Issue repros on rc_213.`) —
+never a duplicate memory; a human re-opens a `FIXED:` or `WONT_FIX:` issue
+this way.
 
 A list returns closed issues too: skip them by their prefix.
 
@@ -46,8 +53,10 @@ The content has two owners, split by this line, on a line of its own:
 — setup wrote everything above; lines below belong to the loop —
 ```
 
-Above it, the head, which Kiln Harness Tuner rewrites when the eval
-changes:
+Above it: the description, eval identity, priority and its source, and a
+`status: … fp: … synced …` line (a sync-time snapshot; the overview prefix
+is the authoritative state). Setup replaces that whole block when the
+eval's rubric, config, spec or priority changes:
 
 ```
 <description>
@@ -56,10 +65,12 @@ priority: p<n> (source: spec <spec id>)
 status: <state> at sync · fp: <hex> · synced <YYYY-MM-DD>
 ```
 
-With no spec, the source is `default`. The `status:` line is a
-snapshot: the overview prefix is the state. Never edit above the line.
-Below it is history, appended only. An issue with no such line is all
-history.
+With no spec, the source is `default`. The delimiter and everything below
+are loop-owned and append-only: setup preserves them byte-for-byte and
+never parses them for meaning. **Never edit above the delimiter by hand** —
+the next sync overwrites it; findings and history go below. A record with
+**no delimiter** (legacy, or written by an agent) is treated as entirely
+loop-owned: setup prepends its head and touches nothing else.
 
 The lines its code appends below it, with the date as `MM-DD`:
 

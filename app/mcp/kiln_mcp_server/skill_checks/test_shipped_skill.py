@@ -405,6 +405,9 @@ HARNESS_TUNER_FORMATS: dict[str, tuple[str, ...]] = {
         "— did not beat it; details in the run report.",
         "- held at the val gate <MM-DD> on OPEN constraint <id> — not judged on its numbers; resubmit this rc unchanged (existing_rc_id) once answered.",
         "- blocked at the val gate <MM-DD>: ",
+        "residual gate: <summary> (needed <required>; seed <seed>)",
+        "residual still failing: ",
+        "residual guards broke: ",
         "`bundle cost`",
         *(
             f"`{key}`"
@@ -545,6 +548,102 @@ def test_memory_names_each_format_file():
     ]
     for key in _memory_format_files():
         assert f"`{key}`" in formats, key
+
+
+# The rules of Kiln Harness Tuner's `memory/SKILL.md` at b49f159 that a
+# rewrite once lost, each as a phrase of its port.
+MEMORY_RULES = (
+    # A failed write: the return field, once, a summary, exempt from budgets.
+    "disclose it in your return",
+    "A disclosure rides **once**",
+    "exempt from any length budget on that field",
+    "In a chat with a user: tell the user the finding once.",
+    # A missing eval: the loop's path, then the chat case.
+    "the loop's `eval_only` item build the eval and bind the issue via `link_eval`",
+    "It never guesses a binding.",
+    "build it only when the user agrees (`references/knowledge/create_spec.md`)",
+    # Priorities.
+    "`p2` — real but minor; picked up when nothing above it remains.",
+    "no intent to work it in this project",
+    "Priority tags are **never removed**, even on close",
+    "priority is **source-owned**",
+    # Experiments and dead ends.
+    "small n gives direction, never validation",
+    "merge-eligible wins = verdicts since the last promotion without `— PROMOTED`",
+    "citing the experiment id; in a chat with a user, where no experiment record is written, the run config ids",
+    # The train-side read rules.
+    "Kiln Harness Tuner train-side loop agents skip this read",
+    "⛔ **Never on a train-side lane**",
+    # Who writes a hypothesis.
+    "No agent writes one: Kiln Harness Tuner's code records each hypothesis in its experiment record",
+)
+
+
+@pytest.mark.parametrize("phrase", MEMORY_RULES)
+def test_memory_keeps_harness_tuners_rules(phrase):
+    assert phrase in " ".join(read_file(MEMORY, get_index()).split())
+
+
+def test_the_baseline_record_says_how_it_is_seeded():
+    text = " ".join(
+        read_file(MEMORY_FORMATS + "baseline_and_val_records.md", get_index()).split()
+    )
+    for phrase in (
+        "the task's `default_run_config_id` if it has one, else the most recently created rc",
+        "zero run configs is an instructive fatal",
+        "the loop never sets the human-facing `default` rc flag",
+    ):
+        assert phrase in text, phrase
+
+
+# The call and retry discipline of Kiln Harness Tuner's `kiln-api/SKILL.md`.
+API_RULES = (
+    "These rules apply if you have the `call_kiln_api` tool. If you do not, you need not read them.",
+    "Take them from the catalogue row exactly as printed",
+    "Do not guess a body from an endpoint's name.",
+    "One extra read costs less than one wrong call.",
+    "Filter every call down to the fields you actually need",
+    "Never write `.items[]` unless the documented shape has that key.",
+    "A failed call is a **reading** problem, not a phrasing problem.",
+    "an aggregate snapshot is not the full entity list",
+    "A retry without that cite is a violation",
+    "A second guess from memory is banned, and so is abandoning this tool for a shell after one failure.",
+)
+
+
+@pytest.mark.parametrize("phrase", API_RULES)
+def test_the_api_rules_keep_harness_tuners_discipline(phrase):
+    section = _sections(read_file(ROOT_FILE, get_index()))["Calling the Kiln API"]
+    assert phrase in " ".join(section.split())
+
+
+CODE_TOOL_AUTHORING = "references/knowledge/code_tool_authoring.md"
+# The sections of Kiln Harness Tuner's code-tool-authoring skill, in its
+# order, with the Kiln names of the ones that named its gateway or roles.
+CODE_TOOL_AUTHORING_PARTS = (
+    "When the tool lever is the right lever",
+    "What you can build",
+    "Wrapper templates — bake it into code first",
+    "The one hard rule: allowlist hygiene",
+    "Prerequisites",
+    "Contract",
+    "The calls",
+    "Build discipline (the experiment deltas)",
+    "Worked example — a composite wrapper, complete",
+    "Related",
+    "See also",
+)
+
+
+def test_the_authoring_guide_keeps_harness_tuners_sections():
+    text = read_file(CODE_TOOL_AUTHORING, get_index())
+    assert tuple(_sections(text)) == CODE_TOOL_AUTHORING_PARTS
+    (example,) = PYTHON_FENCE_RE.findall(_sections(text)[CODE_TOOL_AUTHORING_PARTS[8]])
+    module = ast.parse(example)
+    assert [node.name for node in module.body if isinstance(node, ast.FunctionDef)] == [
+        "_parse",
+        "run",
+    ]
 
 
 # --- the glue files: no branch, no write of a code-owned record ---------------

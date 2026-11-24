@@ -4,7 +4,7 @@ status: complete
 
 # Harness Tuner alignment: owner decisions
 
-Recorded 2026-11-23 in three rounds (sections 1–7 first; sections 8 and 9, then section 10, the same day), and on 2026-11-24 (sections 11 and 12), on branch `claude/kiln-mcp-server-impl` at `7af37d1`, after the three Harness Tuner alignment audits in `research/harness_tuner_alignment_audit/` (`knowledge_tree.md`, `ht_skills.md` with `ht_skills_maps/`, `contract.md`). The audits compare Kiln Harness Tuner (HT) at `b49f159` with Kiln at `25157f3`.
+Recorded 2026-11-23 in three rounds (sections 1–7 first; sections 8 and 9, then section 10, the same day), and on 2026-11-24 (sections 11 to 14), on branch `claude/kiln-mcp-server-impl` at `7af37d1`, after the three Harness Tuner alignment audits in `research/harness_tuner_alignment_audit/` (`knowledge_tree.md`, `ht_skills.md` with `ht_skills_maps/`, `contract.md`). The audits compare Kiln Harness Tuner (HT) at `b49f159` with Kiln at `25157f3`.
 
 These decisions override the audits where the two differ. An audit "Fix" line that adds a branch, a lane, or a write step for a code-owned record is overridden by the decisions below.
 
@@ -54,7 +54,7 @@ The decisions are copied as the owner gave them. Lines marked *Where it goes* ar
 
 > Audit `ht_skills.md` M-items: keep rule on val, exact cost/speed rule, integrity checks at keep, leak/judge-copy definitions, costing lanes and the third-party-operator rule, the quick-check definition, reading results/report wording, the lean-target guard default, merging, build hygiene, playbook-step flow, and the smaller ones. Decided **case by case** by the owner.
 
-*Where it goes:* superseded by decision 9 below. The case-by-case table is replaced by one guide for MCP clients.
+*Where it goes:* superseded by decision 9 below. The case-by-case table is replaced by one guide for chat clients.
 
 ## 8. Confirmations (2026-11-23, second round)
 
@@ -63,7 +63,7 @@ The owner answered "ok" to three of the decisions above:
 - **The Phase 8 revert-and-revisit phase** (section 6), which needs the owner's approval before any work: "ok". The approach itself, and the questions in [phase_8_revisit.md](phase_8_revisit.md) section 7, were answered on 2026-11-24 (section 12).
 - **Lanes cut** (section 5): "ok".
 
-## 9. One guide for MCP clients in place of the case-by-case table (2026-11-23, second round)
+## 9. One guide for chat clients in place of the case-by-case table (2026-11-23, second round)
 
 The owner's words:
 
@@ -106,11 +106,11 @@ The owner answered the nine questions of [phase_plans/phase_18.md](phase_plans/p
 2. **`memory.md`'s size.** `memory.md` stays short. The read-only formats move out of it into a folder with one small file per format, `references/knowledge/memory_formats/`, so that an agent's context is not flooded. `memory.md` links to the files and says which file covers what. The formats are for reading, not for writing, and they must match Kiln Harness Tuner's code exactly (`contract.md` section 3).
    - **Correction (same day):** "memory.md needs to link to docs individually or an index. There's no folder list tool." `memory.md` names each file by its full path, and never tells the agent to look in or list the folder.
 3. **`OPEN: ` answers.** Allowed: a `constraint` that cites the `OPEN: ` record's id. But "don't really suggest this like it's common. Not a recommended flow, don't want to write a bunch about it and make it happen." At most one short line, phrased as a rare case.
-4. **One-off records.** No `experiment` records from MCP agents. A one-off's lasting results are `lesson`, `dead_end`, `issue` (and `constraint`).
+4. **One-off records.** No `experiment` records from chat clients. A one-off's lasting results are `lesson`, `dead_end`, `issue` (and `constraint`).
 5. **B14.** Yes: porting the exact cost/speed rule (Phase 18 item 3, row M1) replaces the earlier "keep as is".
 6. **Project files** (`HS-M13`). Add the sentence now, in `working_with_project_files.md`: the project tree holds val and test items, and reading their rows counts as reading val or test data.
 7. **B19.** Yes, the proposed text of Phase 18 item 6 is approved: never change the task's default run config on your own initiative, only when the user asks. Both files say so.
-8. **B13.** Resolved by allowing MCP agents to read the `val` memory record, which holds only summary metrics. Close B13. No extra fence is needed for the val record.
+8. **B13.** Resolved by allowing chat clients to read the `val` memory record, which holds only summary metrics. Close B13. No extra fence is needed for the val record.
 9. **What the val fence covers.** The follow-up project's val and test fence covers only rows; val summary metrics stay readable. So the val parts of M1, M4, M6 and M21 stay as written, with no "needs Kiln Harness Tuner" wording.
 
 **The one-off headline (2026-11-24).** Owner decision: the one-off headline is eval-level, how many evals the candidate is ahead on by summary scores, the target eval included; Kiln Harness Tuner's item-level mean win rate is the loop's version.
@@ -130,13 +130,13 @@ The owner answered the questions in section 7 of [phase_8_revisit.md](phase_8_re
 7. **Keep list.** The table of section 5.2 there is the full list of changes to re-apply after the revert. Nothing else since batch 7 touches the trees.
 
 Decided with them:
-- **Noise and detectability.** Say plainly that Kiln Harness Tuner has a noise check and a detectability check. For MCP agents, the document's rule for an absent input applies: the flip rate of 10% for noise, and the floor of 6 wins for detectability.
+- **Noise and detectability.** Say plainly that Kiln Harness Tuner has a noise check and a detectability check. For chat clients, the document's rule for an absent input applies: the flip rate of 10% for noise, and the floor of 6 wins for detectability.
 - **Screening and skill bundles.** "Tell the user it needs Kiln Harness Tuner", for now. The bundle API comes in the next project.
 - **Memory.** The record lines that Kiln Harness Tuner writes are read-only (Phase 18).
-- **"The tuner"** (option B, decided after the code review): an approved rename. Where "the tuner" is the subject of a rule that limits what may be changed (the task, an eval, a fine-tune, a RAG config), the subject becomes "an experiment" or "this lever"; everywhere else, "the tuner" becomes "you". The owner's reason: Kiln Harness Tuner's agents act only through experiments, so for them the meaning is the same; for MCP agents it limits the rule to experiments, so an agent does not refuse a user who asks it to change a task or an eval.
+- **"The tuner"** (option B, decided after the code review): an approved rename. Where "the tuner" is the subject of a rule that limits what may be changed (the task, an eval, a fine-tune, a RAG config), the subject becomes "an experiment" or "this lever"; everywhere else, "the tuner" becomes "you". The owner's reason: Kiln Harness Tuner's agents act only through experiments, so for them the meaning is the same; for chat clients it limits the rule to experiments, so an agent does not refuse a user who asks it to change a task or an eval.
 - **B7.** Drop "Smell: an old model" from `app/mcp/knowledge_backlog.md`. Keep the renames "A repeat measurement on request" and "A quick check for room to improve", each with a Kiln Harness Tuner example line.
 - **B11.** The revert brings back the `output_mode` sentence on the test call with no tools attached and the `params` wording. Add `post_api_projects_project_id_skills.md` to the `api_docs` of `levers/skill.md`. Close B11.
-- **B12.** Close it as moot. Instead, `.agents/skills/knowledge-maintenance/SKILL.md` 4.6 describes the new rules: Kiln Harness Tuner's text is ported as written, with only the mechanical changes and the approved renames, and the index section explains its inputs, code checks, outputs and tools to MCP agents.
+- **B12.** Close it as moot. Instead, `.agents/skills/knowledge-maintenance/SKILL.md` 4.6 describes the new rules: Kiln Harness Tuner's text is ported as written, with only the mechanical changes and the approved renames, and the index section explains its inputs, code checks, outputs and tools to chat clients.
 
 *Where it goes:* Phase 17 ([phase_plans/phase_17.md](phase_plans/phase_17.md)).
 
@@ -164,6 +164,52 @@ Kiln's text, corrected to the code, with HT's clauses restored:
 - **`structured_output_mode` is required.** The run config example of `references/knowledge/create_task.md` sets it.
 
 *Where it goes:* Phase 19 ([phase_plans/phase_19.md](phase_plans/phase_19.md)).
+
+## 14. Phase 20 (2026-11-24)
+
+The owner's principle: Kiln Harness Tuner (HT) worked with its own skills. A claim that the Kiln skill, or HT, must change for HT to work is presumed wrong unless HT's code at `b49f159` proves it. HT's own text is the source of truth for what HT's agents need. The full evidence table is in [phase_plans/phase_20.md](phase_plans/phase_20.md), "Step 0". HT paths are under HT's `src/kiln_harness_tuner/`.
+
+**Kept, with code evidence.** Every correction of section 13 holds: the synthetic user's usage on the TaskRun (`task_run.py:113`; HT's own code reads it there, `job_drives.py:396`); no `custom`-score metric eval (`eval.py:926-931`); the schema 400 (`task_api.py:136-140`); `id::` prompt ids and generator names (`prompt_api.py:117`, `eval_api.py:2545-2596`). The live model-price read and the dropped `kiln_api_mcp` are not requirements on HT: the switchover removes HT's model catalogue and `kiln_api_mcp` itself (`harness_tuner_switchover/project_overview.md:55`, `functional_spec.md:285`). In the requirements, SR1, SR3, SR4 (role files), SR5, SR6 a–e and h, SR7–SR10, SR13, SR14 and SR18 stay.
+
+**Dropped.** Each has a one-line note in [harness_tuner_switchover_requirements.md](harness_tuner_switchover_requirements.md), so the numbers hold:
+- The SR4 gateway fields (`synthetic_user_usage`, `cumulative_usage` on `get_task_run`) and the review's further gateway fields. HT's costing text read the same fields off rows its gateway never returned (`TrainResultRow`, `gateway/models.py:300-315`), and HT worked.
+- SR2's "copy a pinned tree": the switchover reads the skill live (its `architecture.md`, section 3, decisions 1 and 2). The need to read the Kiln skill stays.
+- SR6f (HT's memory text states the train-side read rules, and `memory.md` carries them again). SR6g: no HT change is needed; HT's role skills hold its procedure, and `run_an_experiment.md`, which the trees link to, opens with "If you are Kiln Harness Tuner, follow your system prompt".
+- SR11 and SR12: no other writer of `— RUNNING`, `OPEN: ` or experiment records exists.
+- SR15: HT's preflight already reads `message` (`job_drives.py:153`, `model_preflight.py:72,313`). SR16: HT's calls already fit Kiln's limits (`job_drives.py:61,365`; `setup.py:342`). SR17: HT's gateway has no function-name rule.
+- The review's claim that HT's agents write `hypothesis` records: HT's code records each hypothesis in the `experiment` record (`schemas.py:188`, `memory_schema.py:1182-1184`), and its roles make discovery writes only (`kiln-harness-tuner-batch-selection/SKILL.md:79-81`). Section 11.1's "reserved for Kiln Harness Tuner" becomes the `hypothesis` row of `memory.md`: no agent writes one; HT's code records each hypothesis in its experiment record; in a chat with a user, tell the user an idea you do not act on now. No requirement.
+- The review's claim that `code_tool_authoring.md` added "put that line in the tool's description": HT's skill has it (code-tool-authoring `SKILL.md:22-24`).
+
+Fixed facts in the requirements: 22 playbooks, not 23 (SR5); the role prompts name files of `kiln-harness-tuner-knowledge`, which exist at `b49f159` (SR4); the contract test lives in Kiln, as the switchover designs it (SR5); SR6a names `memory.md`, "Write discipline"; SR6d adds `findings` and the report.
+
+**The three ports, again from HT's text.** `references/knowledge/memory.md` with `memory_formats/` (from HT's `memory/SKILL.md`), `references/knowledge/code_tool_authoring.md` (from `kiln-harness-tuner-code-tool-authoring/SKILL.md` and `references/wrappers/README.md`), and `SKILL.md`, "Calling the Kiln API" (from `kiln-api/SKILL.md`, beside the rules from the Assistant's skill). Each HT sentence is verbatim, mechanical (paths, endpoint docs in place of gateway operations, file names, approved renames), changed under a decision, corrected by Kiln's code, or dropped because it is only about HT's own tooling. Where an agent in a chat with a user acts differently, an "In a chat with a user: …" clause sits beside HT's sentence, which stays the main text. Owner rule (same day): condition a branch on the real condition (a chat with a user; having a tool or an operation), never on the client's name, and add no "if you are Kiln Harness Tuner" label where the sentence's own words (your role's return field, your input) show who it is for. `SKILL.md`'s API section opens with "These rules apply if you have the `call_kiln_api` tool. If you do not, you need not read them.", the condition HT's own text uses. Sentence maps (a script, run on the two texts) gave:
+
+| Port | HT sentences | Verbatim | Mechanical | Decision | Correction | Dropped | Verbatim before this phase |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `memory` | 185 | 126 | 44 | 10 | 1 | 4 | 1 |
+| code-tool authoring | 88 | 58 | 20 | 7 | 1 | 2 | 7 |
+| `kiln-api` | 47 | 13 | 24 | 0 | 4 | 6 | 0 |
+
+The decisions applied: sections 4 and 11 (one reference; code-written records read-only, their formats in `memory_formats/`; chat clients write lessons, dead ends, new issues and user-stated constraints, never `hypothesis`, `experiment`, `baseline`, `val` or `OPEN: `; the rare `constraint` answer to an `OPEN: ` record); section 3 (no HT-only heading on a shared rule: "The one hard rule", "the experiment deltas", "In an experiment the old tool stays live"); backlog B23 and `HS-M23` (in a chat with a user only the user grants code trust; an agent with a trust operation uses it); component skill_and_content section 9, row 11 (an agent that can run code on its own machine can run a tool's module with a stub first); and the standing rule (no name of the Assistant's skill's source: "for an agent that works on Kiln itself").
+
+Corrections, where HT's text is wrong for Kiln's code:
+- **Function names** (`code_tool_authoring.md`, build discipline 2). HT: "Duplicate non-archived function names are rejected (400)". Code: names may repeat in a project (`libs/core/kiln_ai/tools/tool_registry.py:236-246`); Kiln rejects an allowlist with two tools of one name (`app/desktop/studio_server/code_tool_api.py:257`) and a run whose tools share one fails (`libs/core/kiln_ai/adapters/model_adapters/base_adapter.py:838-845`).
+- **The HTML-body 404 tell** (`SKILL.md`). HT: "Nothing stops you getting this wrong. A `url_path` carrying a `?` is forwarded as-is … the studio web page". Code: Kiln's tool refuses `?` and `#` in `url_path` (`libs/core/kiln_ai/tools/built_in_tools/kiln_api_call_tool.py:101-105`), and the MCP pipeline refuses an unknown route (`app/mcp/kiln_mcp_server/api_tool/pipeline.py:102-108`). Four sentences dropped.
+- **`hypothesis`** (`memory.md`, the tag row's "Write when"), as above.
+
+Dropped as HT-only tooling (none is an instruction an HT role needs from the Kiln skill):
+- `memory`: "Those links are Claude-Code-side …" and "drop or repoint the links if this file is ever promoted into a Kiln skill tree" (notes on HT's own file layout, done by the port itself); "Keep the two in step: a new prefix, suffix or code-read line lands in both" (a maintainer rule for HT's repository; its Kiln-side home is the format test of SR10); the clause "that's what makes these conventions portable between Claude Code and the Kiln assistant".
+- Code-tool authoring: "each tested by `tests/test_wrapper_templates.py` against a stub of `kiln.tools`", in the skill and in the README (HT's test suite, which the switchover moves to Kiln or removes: `harness_tuner_switchover/components/ht_api_switch_and_removals.md:318`).
+- `kiln-api`: the four sentences of the generated reference's header (265 endpoints in 25 catalogs; the hand-removed Judge Feedback Batches endpoints and the `spec_sha256` note; "the control surface of a Kiln workspace"), which describe HT's own copy of the reference that the switchover deletes, and whose Kiln counterpart is the generated `api_index.md`; "Everything below the routing index is a file you `Read`. You load this skill once; after that you never invoke a skill again to reach an endpoint" (how HT's agents load that skill; `SKILL.md`, "Reading skill files", says how the Kiln skill's files are read). The tool name `mcp__kiln_api_mcp__call_kiln_api` is a mechanical change: HT's `kiln_api_mcp`, which loop sessions never get, goes in the switchover (its `functional_spec.md:285,306`).
+- Names of HT's gateway operations and of its gateway skill, in all three: mechanical (the approved rename "gateway operation → endpoint doc path", section 12, item 2), since SR6 b gives HT's roles the map from endpoint doc to operation, and the gateway skill stays in HT.
+
+**Words (owner rule, same day).** HT reads the skill over MCP too, so "MCP client", "MCP agent(s)" and "over MCP" never mean the interactive client. The distinction is chat clients (interactive agents such as Claude Code or Codex, working with a user) versus Kiln Harness Tuner (a non-interactive agent with its own instructions). Phase 20 applies it to the files it changes; a later phase sweeps the rest. Owner quotes above keep their words.
+
+**Two spec fixes.** `architecture.md` section 3, decision 10, now says "The source of the Assistant's skill stays outside the repository". Its decision 3 and `functional_spec.md` section 5.5 now say that the `x-mcp-policy` deny list covers direct calls through the MCP only: a task run whose tools include Kiln's built-in `call_kiln_api` reaches every blocked endpoint, because the core tool checks no policy. The follow-up scopes project (`project_overview.md`, P2) enforces that route. No code changes.
+
+Not in this phase: the owner is redesigning where the guidance for chat clients lives (the "How to read these documents over MCP" section of `references/improving_agents/index.md`, and SR4's stale reason for keeping the planner's steps 4–5), in a phase of its own.
+
+*Where it goes:* Phase 20 ([phase_plans/phase_20.md](phase_plans/phase_20.md)).
 
 ## Related
 
