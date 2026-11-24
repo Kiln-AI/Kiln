@@ -74,6 +74,7 @@ from app.desktop.studio_server.eval_builder_api import (
     run_judge_with_retry,
 )
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
+from app.desktop.studio_server.services.eval_grounding import NoGroundingServerError
 from app.desktop.studio_server.utils.copilot_utils import (
     find_multi_turn_chain_leaves,
     find_single_turn_batch_runs,
@@ -86,6 +87,7 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
     run_judge_for_trace,
 )
 
+EVAL_BUILDER_API = "app.desktop.studio_server.eval_builder_api"
 BUILD_CLAIMS_URL = "/api/projects/p1/tasks/t1/eval_builder/build_claims"
 
 
@@ -2332,6 +2334,26 @@ class TestJudgeTracesSingleTurn:
             # The transcript carries the answer; it no longer IS the answer.
             assert "answer " in call.args[3]
 
+    def test_grounded_run_is_judged_with_its_guidance_and_episode(
+        self, client, judge_traces_request, judge_traces_single_turn_seams
+    ):
+        stored = judge_traces_single_turn_seams["loader"].return_value
+        resp = client.post(
+            JUDGE_TRACES_URL,
+            json={**judge_traces_request, "judge_guidance": ["facts 0", None]},
+        )
+
+        assert resp.status_code == 200
+        calls = {
+            call.args[2]: call.kwargs
+            for call in judge_traces_single_turn_seams["judge"].call_args_list
+        }
+        assert calls["question 0"]["judge_guidance"] == "facts 0"
+        assert calls["question 1"]["judge_guidance"] is None
+        assert (
+            calls["question 0"]["openenv_episode"] is stored["leaf-0"].openenv_episode
+        )
+
     def test_traceless_run_still_judges(
         self, client, judge_traces_request, judge_traces_single_turn_seams
     ):
@@ -2572,6 +2594,101 @@ class TestSingleTurnPipeline:
             # stays the REQUEST's string, which is what the saved eval reads
             # back from its own item.
             assert call.kwargs["trace"] is not None
+
+    def test_ungrounded_inputs_start_no_chosen_episode(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        client.post(SINGLE_TURN_URL, json=single_turn_request)
+        assert [
+            inv["adapter_config"].openenv_reset_kwargs
+            for inv in single_turn_seams["invocations"]
+        ] == [None, None]
+        for call in single_turn_seams["judge"].await_args_list:
+            assert call.kwargs["judge_guidance"] is None
+
+    def test_grounded_inputs_run_in_their_episode_and_judge_reads_guidance(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        groundings = [
+            {
+                "openenv_reset": {
+                    "openenv_server_id": "srv_1",
+                    "reset_kwargs": {"fixture": f"fixture_{i}"},
+                },
+                "judge_guidance": f"## Starting point\nShop {i}.",
+            }
+            for i in range(2)
+        ]
+        with (
+            patch(f"{EVAL_BUILDER_API}.project_from_id") as project_mock,
+            patch(f"{EVAL_BUILDER_API}.check_grounded_servers") as check_mock,
+        ):
+            resp = client.post(
+                SINGLE_TURN_URL, json={**single_turn_request, "groundings": groundings}
+            )
+
+        assert resp.status_code == 200, resp.text
+        (check_call,) = check_mock.call_args_list
+        assert check_call.args[0] is project_mock.return_value
+        assert check_call.args[2] == ["srv_1", "srv_1"]
+        kwargs_by_input = {
+            inv["input"]: inv["adapter_config"].openenv_reset_kwargs
+            for inv in single_turn_seams["invocations"]
+        }
+        inputs = single_turn_request["inputs"]
+        assert kwargs_by_input == {
+            inputs[0]: {"fixture": "fixture_0"},
+            inputs[1]: {"fixture": "fixture_1"},
+        }
+        runs = single_turn_seams["runs_by_input"]
+        judged = {
+            call.args[2]: call.kwargs
+            for call in single_turn_seams["judge"].await_args_list
+        }
+        for i, input_text in enumerate(inputs):
+            assert (
+                judged[input_text]["judge_guidance"] == f"## Starting point\nShop {i}."
+            )
+            assert (
+                judged[input_text]["openenv_episode"]
+                is runs[input_text].openenv_episode
+            )
+
+    def test_grounded_input_on_another_server_is_400(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        groundings = [
+            {
+                "openenv_reset": {"openenv_server_id": "srv_other", "reset_kwargs": {}},
+                "judge_guidance": "facts",
+            }
+        ] * 2
+        with (
+            patch(f"{EVAL_BUILDER_API}.project_from_id"),
+            patch(
+                f"{EVAL_BUILDER_API}.check_grounded_servers",
+                side_effect=NoGroundingServerError("Input 0 is grounded elsewhere."),
+            ),
+        ):
+            resp = client.post(
+                SINGLE_TURN_URL, json={**single_turn_request, "groundings": groundings}
+            )
+
+        assert resp.status_code == 400
+        assert resp.json()["message"]["code"] == "openenv_server_mismatch"
+        assert single_turn_seams["invocations"] == []
+
+    def test_groundings_must_match_inputs(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        grounding = {
+            "openenv_reset": {"openenv_server_id": "srv_1", "reset_kwargs": {}},
+            "judge_guidance": "facts",
+        }
+        resp = client.post(
+            SINGLE_TURN_URL, json={**single_turn_request, "groundings": [grounding]}
+        )
+        assert resp.status_code == 422
 
     def test_runs_are_saved_once_by_the_pipeline_not_the_adapter(
         self, client, single_turn_request, single_turn_seams

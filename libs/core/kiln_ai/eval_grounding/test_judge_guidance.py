@@ -10,26 +10,26 @@ from kiln_ai.eval_grounding.models import Evidence, Fact, GroundedReference
 
 def _reference(**overrides) -> GroundedReference:
     fields = {
-        "starting_point": "Two open work orders belong to the technician.",
+        "starting_point": "Two open tickets belong to the support agent.",
         "facts": [
             Fact(
-                text="Work order 7 is open.",
+                text="Ticket 7 is open.",
                 evidence=Evidence(
-                    tool="get_work_order",
+                    tool="get_ticket",
                     args={"id": 7},
                     result_excerpt='{"id": 7, "status": "open"}',
                 ),
             ),
             Fact(
-                text="Work order 9 is assigned to Dana.",
+                text="Ticket 9 is assigned to Dana.",
                 evidence=Evidence(
-                    tool="list_work_orders",
+                    tool="list_tickets",
                     args={"assignee": "Dana", "status": "open"},
                     result_excerpt="9: Pump check\n12: Valve swap",
                 ),
             ),
         ],
-        "expected_outcome": "Work order 7 is on hold. Work order 9 is unchanged.",
+        "expected_outcome": "Ticket 7 is on hold. Ticket 9 is unchanged.",
     }
     fields.update(overrides)
     return GroundedReference(**fields)
@@ -38,16 +38,16 @@ def _reference(**overrides) -> GroundedReference:
 def test_renders_every_section_in_order():
     assert render_judge_guidance(_reference()) == (
         "## Starting point\n"
-        "Two open work orders belong to the technician.\n\n"
+        "Two open tickets belong to the support agent.\n\n"
         "## Facts\n"
-        "- Work order 7 is open.\n"
-        '  Checked with `get_work_order` ({"id": 7}): {"id": 7, "status": "open"}\n'
-        "- Work order 9 is assigned to Dana.\n"
-        '  Checked with `list_work_orders` ({"assignee": "Dana", "status": "open"}): '
+        "- Ticket 7 is open.\n"
+        '  Checked with `get_ticket` ({"id": 7}): {"id": 7, "status": "open"}\n'
+        "- Ticket 9 is assigned to Dana.\n"
+        '  Checked with `list_tickets` ({"assignee": "Dana", "status": "open"}): '
         "9: Pump check\n"
         "  12: Valve swap\n\n"
         "## Expected outcome\n"
-        "Work order 7 is on hold. Work order 9 is unchanged."
+        "Ticket 7 is on hold. Ticket 9 is unchanged."
     )
 
 

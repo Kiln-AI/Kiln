@@ -8,6 +8,7 @@ import logging
 from collections.abc import AsyncGenerator, Sequence
 
 from kiln_ai.adapters.retry_classification import unwrap_kiln_run_error
+from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -76,6 +77,23 @@ def grounding_server(
     return openenv_server
 
 
+def check_grounded_servers(
+    project: Project,
+    run_config: KilnAgentRunConfigProperties,
+    openenv_server_ids: Sequence[str],
+) -> None:
+    """Check that every grounded input names the one OpenEnv server the run config's
+    tools reach. Raises NoGroundingServerError otherwise: an input run on another
+    server would start an episode its tools never touch."""
+    server = grounding_server(project, run_config)
+    for position, server_id in enumerate(openenv_server_ids):
+        if server_id != server.id:
+            raise NoGroundingServerError(
+                f"Input {position} is grounded in OpenEnv server {server_id}, but "
+                f"the run config's tools reach OpenEnv server {server.id}."
+            )
+
+
 async def grounding_frames(
     *,
     task: Task,
@@ -84,13 +102,16 @@ async def grounding_frames(
     session_manager: OpenEnvSessionManager,
     model: GroundingModelApi,
     specification: str,
-    synthetic_user_guide: str | None,
+    data_guide: str | None,
+    example_input: str | None,
     cases: Sequence[GroundCaseApi],
 ) -> AsyncGenerator[GroundingFrame, None]:
     """Ground every case, one frame per finished case, between grounding_started and
-    grounding_finished. An error that isn't a case's fault ends the frames with
-    grounding_failed instead. Closing the iterator early cancels the cases still
-    running, and each ends its episode."""
+    grounding_finished. A single-turn task grounds in single-turn mode: the agent
+    writes each input, matching the task's input schema when it has one. An error that
+    isn't a case's fault ends the frames with grounding_failed instead. Closing the
+    iterator early cancels the cases still running, and each ends its episode."""
+    single_turn = task.turn_mode != TurnMode.multiturn
     yield GroundingStartedEvent(total=len(cases))
     try:
         target_tools = await _target_tools(task, run_config, session_manager)
@@ -106,7 +127,10 @@ async def grounding_frames(
             eval_context=EvalContext(
                 specification=specification,
                 target_task_prompt=task.instruction,
-                data_guide=synthetic_user_guide or None,
+                data_guide=data_guide or None,
+                mode="single_turn" if single_turn else "multi_turn",
+                input_schema=task.input_json_schema if single_turn else None,
+                example_input=(example_input or None) if single_turn else None,
             ),
             openenv_server=openenv_server,
             session_manager=session_manager,
@@ -161,19 +185,15 @@ def _case_frame(
             drop_reason=outcome.drop_reason,
             drop_detail=outcome.drop_detail,
         )
-    if (
-        outcome.openenv_reset is None
-        or outcome.seed_prompt is None
-        or outcome.synthetic_user_info is None
-        or outcome.reference is None
-    ):
-        raise ValueError("A grounded case is missing its reset, user or reference.")
+    if outcome.openenv_reset is None or outcome.reference is None:
+        raise ValueError("A grounded case is missing its reset or reference.")
     return CaseGroundedEvent(
         case_index=item.case_index,
         scenario_index=scenario_index,
         openenv_reset=outcome.openenv_reset,
         seed_prompt=outcome.seed_prompt,
         synthetic_user_info=outcome.synthetic_user_info,
+        input=outcome.input,
         judge_guidance=render_judge_guidance(outcome.reference),
     )
 

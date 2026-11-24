@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import random
+from collections.abc import Sequence
 from http import HTTPStatus
 from typing import Annotated
 
@@ -23,7 +24,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnDriveConfig,
 )
 from kiln_ai.datamodel.json_schema import validate_schema
-from kiln_ai.datamodel.openenv import OpenEnvServer
+from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.spec import (
     Spec,
@@ -124,6 +125,7 @@ from app.desktop.studio_server.data_gen_api import (
     _resolve_task_runtime_prompt,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
+    GroundedSaveCase,
     GroundedSaveError,
     SingleTurnDataset,
     build_multi_turn_eval_inputs,
@@ -260,6 +262,19 @@ class SingleTurnCaseApi(BaseModel):
         "is not minted. Empty when the pipeline recorded no run, which can "
         "never have been reviewed.",
     )
+    openenv_reset: OpenEnvReset | None = Field(
+        default=None,
+        description="The OpenEnv episode the input was grounded in and runs in. "
+        "Saved on the minted EvalInput, so every eval run starts the same "
+        "episode. Set on every case of a save with an openenv_server_id, and "
+        "on none otherwise.",
+    )
+    judge_guidance: str | None = Field(
+        default=None,
+        description="The case's judge guidance: the facts of its episode the "
+        "judge reads beside the rubric. Saved as the minted EvalInput's "
+        "reference. Set exactly when openenv_reset is.",
+    )
 
 
 class SingleTurnSaveInfo(BaseModel):
@@ -287,6 +302,13 @@ class SingleTurnSaveInfo(BaseModel):
         description="The cases the batch actually ran. Each unreviewed one "
         "becomes an EvalInput the runner executes fresh per run config at "
         "eval time; a reviewed one is golden instead.",
+    )
+    openenv_server_id: str | None = Field(
+        default=None,
+        description="The OpenEnv server the inputs were grounded in, saved on the "
+        "Eval. Every case's openenv_reset must name it. Omit when the build's "
+        "run config used no OpenEnv server; no case may then carry a reset or "
+        "judge guidance.",
     )
 
     @field_validator("inputs")
@@ -684,30 +706,32 @@ def validate_reviewed_refs(
 
 
 def validate_grounded_save(
-    task: Task, multi_turn: MultiTurnSaveInfo, reviewed_leaf_ids: set[str]
+    task: Task,
+    cases: Sequence[GroundedSaveCase],
+    openenv_server_id: str | None,
+    reviewed_leaf_ids: set[str],
 ) -> dict[str, dict[str, JsonValue]]:
-    """Check a multi-turn save's cases against the OpenEnv server it names, and
-    return each reviewed case's judge guidance reference by leaf run id (empty when
-    the save names no server). Raises HTTPException(400) when they disagree."""
+    """Check a builder save's cases, on either arm, against the OpenEnv server it
+    names, and return each reviewed case's judge guidance reference by leaf run id
+    (empty when the save names no server). Raises HTTPException(400) when they
+    disagree."""
     try:
-        validate_grounded_cases(multi_turn.cases, multi_turn.openenv_server_id)
+        validate_grounded_cases(cases, openenv_server_id)
     except GroundedSaveError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    if multi_turn.openenv_server_id is None:
+    if openenv_server_id is None:
         return {}
     project = task.parent_project()
     if (
         project is None
-        or OpenEnvServer.from_id_and_parent_path(
-            multi_turn.openenv_server_id, project.path
-        )
+        or OpenEnvServer.from_id_and_parent_path(openenv_server_id, project.path)
         is None
     ):
         raise HTTPException(
             status_code=400,
-            detail=f"OpenEnv server {multi_turn.openenv_server_id} wasn't found.",
+            detail=f"OpenEnv server {openenv_server_id} wasn't found.",
         )
-    references = golden_references(multi_turn.cases, reviewed_leaf_ids)
+    references = golden_references(cases, reviewed_leaf_ids)
     missing = sorted(reviewed_leaf_ids - references.keys())
     if missing:
         raise HTTPException(
@@ -1233,7 +1257,7 @@ def connect_copilot_api(app: FastAPI):
         batch_leaves: list[TaskRun] = []
         reviewed_refs: list[ReviewedChainApi] = []
         reviewed_leaf_ids: set[str] = set()
-        # Set on a multi-turn save whose cases were grounded in an OpenEnv server.
+        # Set on a builder save whose cases were grounded in an OpenEnv server.
         openenv_server_id: str | None = None
         golden_refs: dict[str, dict[str, JsonValue]] = {}
         if request.multi_turn is not None:
@@ -1254,7 +1278,10 @@ def connect_copilot_api(app: FastAPI):
             )
             openenv_server_id = request.multi_turn.openenv_server_id
             golden_refs = validate_grounded_save(
-                task, request.multi_turn, reviewed_leaf_ids
+                task,
+                request.multi_turn.cases,
+                openenv_server_id,
+                reviewed_leaf_ids,
             )
         if request.single_turn is not None:
             batch_leaves = find_single_turn_batch_runs(
@@ -1271,6 +1298,13 @@ def connect_copilot_api(app: FastAPI):
             reviewed_refs = request.single_turn.reviewed_runs
             reviewed_leaf_ids = validate_reviewed_refs(
                 reviewed_refs, batch_leaves, request.single_turn.batch_tag
+            )
+            openenv_server_id = request.single_turn.openenv_server_id
+            golden_refs = validate_grounded_save(
+                task,
+                request.single_turn.inputs,
+                openenv_server_id,
+                reviewed_leaf_ids,
             )
 
         # Every model is built and validated before anything is saved.
@@ -1309,12 +1343,7 @@ def connect_copilot_api(app: FastAPI):
                     [case.input for case in request.single_turn.inputs],
                 )
             batch_eval_inputs = build_single_turn_batch_eval_inputs(
-                [
-                    case.input
-                    for case in cases_to_mint(
-                        request.single_turn.inputs, reviewed_leaf_ids
-                    )
-                ],
+                cases_to_mint(request.single_turn.inputs, reviewed_leaf_ids),
                 request.single_turn.batch_tag,
                 task,
                 eval_tag,

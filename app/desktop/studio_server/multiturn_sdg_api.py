@@ -423,13 +423,15 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         task_id: Annotated[
             str,
             Path(
-                description=("ID of the target task. Must be a multi-turn task."),
+                description=(
+                    "ID of the target task. A single-turn task takes each "
+                    "case's seed prompt as its input."
+                ),
             ),
         ],
         input: GenerateCasesApiInput,
     ) -> GenerateCasesApiOutput:
         task = task_from_id(project_id, task_id)
-        guard_multiturn(task)
 
         api_key = get_copilot_api_key()
         client = SyntheticUserClient(api_key=api_key)

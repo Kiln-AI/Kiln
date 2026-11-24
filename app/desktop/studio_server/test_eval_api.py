@@ -9757,9 +9757,9 @@ def test_run_config_eval_scores_counts_a_run_missing_a_score_as_incomplete(
 
 
 class TestRunComparisonOpenEnvFit:
-    """A grounded eval's cases only make sense in its OpenEnv server: a hand-picked run
-    config without that server's tools is refused, and Run All leaves such run configs out
-    and says so in the stream."""
+    """A grounded eval's cases run in its OpenEnv server, or against a run config's own
+    tools when it has no OpenEnv tools. A hand-picked run config on another server is
+    refused, and Run All leaves such run configs out and says so in the stream."""
 
     URL = "/api/projects/project1/tasks/task1/evals/eval_v2/eval_config/v2_config/run_comparison"
 
@@ -9849,21 +9849,20 @@ class TestRunComparisonOpenEnvFit:
             if line and line != "data: complete"
         ]
 
-    def test_refuses_a_hand_picked_run_config_without_the_servers_tools(
+    def test_runs_a_hand_picked_run_config_without_openenv_tools(
         self, client, task, grounded_eval, grounded_input
     ):
         self._run_config(task, "plain", [])
 
-        with patch.object(EvalRunner, "run") as run:
+        async def one_progress():
+            yield Mock(complete=1, total=1, errors=0)
+
+        with patch.object(EvalRunner, "run", return_value=one_progress()):
             response = client.get(self.URL, params={"run_config_ids": ["plain"]})
 
-        assert response.status_code == 400
-        message = response.json()["message"]
-        assert (
-            "Run config 'plain name' has none of the tools of OpenEnv server 'World', "
-            f"where these eval inputs run: {grounded_input.id}." in message
-        )
-        run.assert_not_called()
+        assert response.status_code == 200
+        (frame,) = self._frames(response)
+        assert frame == {"progress": 1, "total": 1, "errors": 0}
 
     def test_refuses_a_hand_picked_run_config_with_another_servers_tools(
         self, client, task, grounded_eval, grounded_input
@@ -9880,7 +9879,7 @@ class TestRunComparisonOpenEnvFit:
             in (response.json()["message"])
         )
 
-    def test_run_all_skips_run_configs_that_dont_fit(
+    def test_run_all_skips_run_configs_on_another_server(
         self,
         client,
         task,
@@ -9893,7 +9892,10 @@ class TestRunComparisonOpenEnvFit:
             "fits",
             [build_openenv_tool_id(openenv_server.id, "append_note")],
         )
-        self._run_config(task, "plain", [])
+        plain = self._run_config(task, "plain", [])
+        self._run_config(
+            task, "foreign", [build_openenv_tool_id("other", "append_note")]
+        )
 
         async def one_progress():
             yield Mock(complete=1, total=1, errors=0)
@@ -9907,28 +9909,32 @@ class TestRunComparisonOpenEnvFit:
 
         assert response.status_code == 200
         run_configs = runner_class.call_args.kwargs["run_configs"]
-        assert [rc.id for rc in run_configs] == [fits.id]
+        # A run config with no OpenEnv tools runs; only the other server's is left out.
+        assert sorted(rc.id for rc in run_configs) == sorted([fits.id, plain.id])
         (frame,) = self._frames(response)
         assert frame["skipped_run_configs"] == [
             {
-                "id": "plain",
-                "name": "plain name",
+                "id": "foreign",
+                "name": "foreign name",
                 "reason": "This eval's cases run in OpenEnv server 'World'; "
-                "run config 'plain name' has none of its tools.",
+                "run config 'foreign name' uses tools from another OpenEnv server.",
             }
         ]
 
     def test_run_all_refuses_when_no_run_config_fits(
         self, client, task, grounded_eval, grounded_input
     ):
-        self._run_config(task, "plain", [])
+        self._run_config(
+            task, "foreign", [build_openenv_tool_id("other", "append_note")]
+        )
 
         response = client.get(self.URL, params={"all_run_configs": True})
 
         assert response.status_code == 400
         assert response.json()["message"] == (
             "No run config can run this eval's cases. This eval's cases run in OpenEnv "
-            "server 'World'; run config 'plain name' has none of its tools."
+            "server 'World'; run config 'foreign name' uses tools from another OpenEnv "
+            "server."
         )
 
     def test_an_ungrounded_eval_runs_every_run_config_without_skips(

@@ -359,7 +359,6 @@ def test_load_prepared_joins_users_to_their_scenarios(tmp_path):
         ("scenario 0", "hello 0"),
     ]
     assert prepared.reset_schema == PREPARED_SCHEMA
-    assert prepared.readme == PREPARED_README
     assert prepared.eval_context == EvalContext(
         specification=PREPARED_SPEC,
         target_task_prompt="Help members with notes.",
@@ -566,7 +565,7 @@ def test_ground_runs_claude_with_only_the_grounding_tools(
     assert "<data_guide>\nMembers ask to add notes.\n</data_guide>" in call["stdin"]
     assert "<case_scenario>\nscenario 0\n</case_scenario>" in call["stdin"]
     assert "- append_note:" in call["stdin"]
-    assert PREPARED_README in call["stdin"]
+    assert PREPARED_README not in call["stdin"]
 
     config = read_json(Path(argv[argv.index("--mcp-config") + 1]))
     server = config["mcpServers"]["grounding"]

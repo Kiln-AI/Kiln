@@ -37,7 +37,11 @@ from app.desktop.studio_server.eval_builder_api import (
     _grounding_sse,
     connect_eval_builder_api,
 )
-from app.desktop.studio_server.services.eval_grounding import grounding_frames
+from app.desktop.studio_server.services.eval_grounding import (
+    NoGroundingServerError,
+    check_grounded_servers,
+    grounding_frames,
+)
 
 GROUND_URL = "/api/projects/p1/tasks/t1/eval_builder/ground_cases"
 API = "app.desktop.studio_server.eval_builder_api"
@@ -117,9 +121,12 @@ def _request(server: OpenEnvServer, **overrides: Any) -> dict[str, Any]:
         "target_run_config": _run_config(
             [build_openenv_tool_id(server.id, "read_notes")]
         ).model_dump(mode="json"),
-        "judge_model": {"model_name": "claude_opus_4_5", "model_provider": "anthropic"},
+        "grounding_model": {
+            "model_name": "claude_opus_4_5",
+            "model_provider": "anthropic",
+        },
         "specification": "The agent closes the right ticket.",
-        "synthetic_user_guide": "Support leads triaging tickets.",
+        "data_guide": "Support leads triaging tickets.",
         "cases": [_case(0), _case(1)],
         **overrides,
     }
@@ -228,6 +235,7 @@ class TestGroundCasesRoute:
         }
         assert grounded["seed_prompt"] == "Close ticket 7 please."
         assert grounded["synthetic_user_info"] == USER_INFO
+        assert grounded["input"] is None
         assert grounded["judge_guidance"].startswith(
             "## Starting point\nTicket 7 is open."
         )
@@ -247,6 +255,7 @@ class TestGroundCasesRoute:
         assert context.specification == "The agent closes the right ticket."
         assert context.target_task_prompt == "You help with tickets."
         assert context.data_guide == "Support leads triaging tickets."
+        assert context.mode == "multi_turn"
         # The agent under test's tools, read from the server without an episode.
         assert [t["function"]["name"] for t in call["target_tools"]] == ["read_notes"]
 
@@ -319,7 +328,7 @@ class TestGroundCasesRoute:
         )
         body = _request(
             server,
-            judge_model={
+            grounding_model={
                 "model_name": "claude_opus_4_5",
                 "model_provider": "anthropic",
                 "thinking_level": "high",
@@ -334,7 +343,7 @@ class TestGroundCasesRoute:
         _project, _task, server = project_task_server
         body = _request(
             server,
-            judge_model={
+            grounding_model={
                 "model_name": "claude_opus_4_5",
                 "model_provider": "anthropic",
                 "thinking_level": "not_a_level",
@@ -348,13 +357,137 @@ class TestGroundCasesRoute:
         resp = client.post(GROUND_URL, json=_request(server, judge="x"))
         assert resp.status_code == 422
 
-    def test_single_turn_task_is_400(self, client, project_task_server):
+    def _single_turn_request(self, server, **overrides):
+        return _request(
+            server,
+            cases=[{"scenario_index": 0, "scenario": "scenario 0"}],
+            **overrides,
+        )
+
+    def _single_turn_outcome(self, server) -> GroundingOutcome:
+        return _grounded(server).model_copy(
+            update={
+                "seed_prompt": None,
+                "synthetic_user_info": None,
+                "input": '{"q": "Is ticket 7 open?"}',
+            }
+        )
+
+    def test_a_single_turn_task_grounds_in_single_turn_mode(
+        self, client, project_task_server
+    ):
+        project, _task, server = project_task_server
+        single_turn = Task(name="single", instruction="Answer.", parent=project)
+        calls: list[dict[str, Any]] = []
+        fake = _fake_ground_cases(
+            [
+                CaseGrounded(0, self._single_turn_outcome(server)),
+                GroundingFinished(
+                    grounded=1, dropped=0, usage=Usage(), usage_complete=True
+                ),
+            ],
+            calls,
+        )
+        with (
+            patch(f"{API}.task_from_id", return_value=single_turn),
+            patch(f"{SERVICE}.ground_cases", new=fake),
+        ):
+            resp = client.post(
+                GROUND_URL,
+                json=self._single_turn_request(server, example_input="Is it open?"),
+            )
+        assert resp.status_code == 200, resp.text
+        grounded = next(
+            f
+            for f in _frames(resp.text)
+            if isinstance(f, dict) and f["type"] == "case_grounded"
+        )
+        assert grounded["input"] == '{"q": "Is ticket 7 open?"}'
+        assert grounded["seed_prompt"] is None
+        assert grounded["synthetic_user_info"] is None
+        (call,) = calls
+        assert call["cases"][0].mode == "single_turn"
+        context = call["eval_context"]
+        assert context.mode == "single_turn"
+        assert context.example_input == "Is it open?"
+        assert context.input_schema is None
+
+    def test_a_structured_input_task_sends_its_schema(
+        self, client, project_task_server
+    ):
+        project, _task, server = project_task_server
+        schema = '{"type": "object", "properties": {"q": {"type": "string"}}}'
+        structured = Task(
+            name="structured",
+            instruction="Answer.",
+            input_json_schema=schema,
+            parent=project,
+        )
+        calls: list[dict[str, Any]] = []
+        fake = _fake_ground_cases(
+            [
+                CaseGrounded(0, self._single_turn_outcome(server)),
+                GroundingFinished(
+                    grounded=1, dropped=0, usage=Usage(), usage_complete=True
+                ),
+            ],
+            calls,
+        )
+        with (
+            patch(f"{API}.task_from_id", return_value=structured),
+            patch(f"{SERVICE}.ground_cases", new=fake),
+        ):
+            resp = client.post(GROUND_URL, json=self._single_turn_request(server))
+        assert resp.status_code == 200, resp.text
+        (call,) = calls
+        assert call["eval_context"].mode == "single_turn"
+        assert call["eval_context"].input_schema == structured.input_json_schema
+
+    def test_a_single_turn_case_on_a_multi_turn_task_is_422(
+        self, client, project_task_server
+    ):
+        _project, _task, server = project_task_server
+        resp = client.post(GROUND_URL, json=self._single_turn_request(server))
+        assert resp.status_code == 422
+        assert "seed_prompt and synthetic_user_info" in resp.text
+
+    def test_a_drafted_user_on_a_single_turn_task_is_422(
+        self, client, project_task_server
+    ):
         project, _task, server = project_task_server
         single_turn = Task(name="single", instruction="Answer.", parent=project)
         with patch(f"{API}.task_from_id", return_value=single_turn):
             resp = client.post(GROUND_URL, json=_request(server))
-        assert resp.status_code == 400
-        assert resp.json()["message"]["code"] == "task_not_multiturn"
+        assert resp.status_code == 422
+        assert "only its scenario" in resp.text
+
+    def test_an_example_input_on_a_multi_turn_task_is_422(
+        self, client, project_task_server
+    ):
+        _project, _task, server = project_task_server
+        resp = client.post(
+            GROUND_URL, json=_request(server, example_input="Is it open?")
+        )
+        assert resp.status_code == 422
+        assert "single-turn tasks only" in resp.text
+
+
+class TestCheckGroundedServers:
+    def test_inputs_on_the_run_config_server_pass(self, project_task_server):
+        project, _task, server = project_task_server
+        run_config = _run_config([build_openenv_tool_id(server.id, "read_notes")])
+        check_grounded_servers(project, run_config, [server.id, server.id])
+
+    def test_an_input_on_another_server_is_refused(self, project_task_server):
+        project, _task, server = project_task_server
+        run_config = _run_config([build_openenv_tool_id(server.id, "read_notes")])
+        with pytest.raises(NoGroundingServerError, match="Input 1 is grounded"):
+            check_grounded_servers(project, run_config, [server.id, "other"])
+
+    def test_a_run_config_without_a_server_is_refused(self, project_task_server):
+        project, _task, server = project_task_server
+        with pytest.raises(NoGroundingServerError):
+            check_grounded_servers(project, _run_config([]), [server.id])
 
 
 class TestClientAbort:
@@ -386,7 +519,8 @@ class TestClientAbort:
                 model_name="claude_opus_4_5", model_provider=ModelProviderName.anthropic
             ),
             specification="spec",
-            synthetic_user_guide=None,
+            data_guide=None,
+            example_input=None,
             cases=[GroundCaseApi.model_validate(_case(i)) for i in range(2)],
         )
         stream = _grounding_sse(frames)

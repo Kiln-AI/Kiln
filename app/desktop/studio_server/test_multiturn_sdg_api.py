@@ -212,32 +212,25 @@ def _parse_sse(response_text: str) -> list[dict | str]:
 # ───────────────────────── generate_cases ─────────────────────────
 
 
-def test_generate_cases_rejects_single_turn_task_with_400(
+def test_generate_cases_serves_a_single_turn_task(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:
-    patch_task_from_id.return_value = _single_turn_task()
-
-    resp = client.post(
-        "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-        json=_generate_cases_body(),
-    )
-
-    assert resp.status_code == 400
-    assert resp.json()["message"]["code"] == "task_not_multiturn"
-
-
-def test_generate_cases_does_not_call_upstream_when_guard_fails(
-    client: TestClient, patch_task_from_id, patch_api_key
-) -> None:
+    """A single-turn eval grounded in an OpenEnv server takes each case's seed
+    prompt as its input, so its cases are generated the same way."""
     patch_task_from_id.return_value = _single_turn_task()
     with patch(
         "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
     ) as MockClient:
-        client.post(
+        MockClient.return_value.generate = AsyncMock(return_value=_sdk_cases(2))
+        body = _generate_cases_body(num=2)
+        body["case_prompts"] = ["scenario A", "scenario B"]
+        resp = client.post(
             "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-            json=_generate_cases_body(),
+            json=body,
         )
-        MockClient.assert_not_called()
+
+    assert resp.status_code == 200, resp.text
+    assert [c["seed_prompt"] for c in resp.json()["cases"]] == ["seed-0", "seed-1"]
 
 
 def test_generate_cases_server_error_surfaces_with_status(

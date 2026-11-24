@@ -23,6 +23,7 @@ from kiln_ai.datamodel.eval import (
     SingleTurnEvalInputData,
     UserMessage,
 )
+from kiln_ai.datamodel.openenv import OpenEnvReset
 from kiln_ai.datamodel.run_config import as_kiln_agent_run_config
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import (
@@ -393,6 +394,20 @@ class SaveCase(Protocol):
 CaseT = TypeVar("CaseT", bound=SaveCase)
 
 
+class GroundedSaveCase(SaveCase, Protocol):
+    """A save-payload case, on either arm, with the OpenEnv episode it was grounded in
+    and its judge guidance, both None for an ungrounded case."""
+
+    openenv_reset: OpenEnvReset | None
+    judge_guidance: str | None
+
+
+class SingleTurnSaveCase(GroundedSaveCase, Protocol):
+    """A single-turn save-payload case: the input it ran on, as the pipeline ran it."""
+
+    input: str
+
+
 def split_pool_train_eval(pool: list[T], rng: random.Random) -> tuple[list[T], list[T]]:
     """Divide the non-golden pool into (train, eval) at 2:1 — the 50:25 of
     the split. Golden never comes from this pool: it is the human-reviewed
@@ -648,21 +663,26 @@ def build_single_turn_eval_inputs(
 
 
 def build_single_turn_batch_eval_inputs(
-    inputs: list[str],
+    cases: Sequence[SingleTurnSaveCase],
     batch_tag: str,
     task: Task,
     eval_tag: str,
 ) -> list[EvalInput]:
-    """One EvalInput per input a single-turn batch ran, parented to the task.
+    """One EvalInput per case a single-turn batch ran, parented to the task.
 
-    Tagged with `eval_tag` plus the drive batch the input was run in. Built
-    unsaved.
+    Tagged with `eval_tag` plus the drive batch the input was run in. A grounded
+    case keeps its OpenEnv episode and judge guidance, so every eval run starts the
+    same episode and is judged against the same facts. Built unsaved.
     """
     eval_inputs = build_single_turn_eval_inputs(
-        inputs, eval_tag, [f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"]
+        [case.input for case in cases],
+        eval_tag,
+        [f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"],
     )
-    for eval_input in eval_inputs:
+    for eval_input, case in zip(eval_inputs, cases, strict=True):
         eval_input.parent = task
+        eval_input.openenv_reset = case.openenv_reset
+        eval_input.reference = judge_guidance_reference(case.judge_guidance)
     return eval_inputs
 
 
@@ -964,7 +984,7 @@ def judge_guidance_reference(
 
 
 def validate_grounded_cases(
-    cases: list[DrivenSyntheticCaseApi], openenv_server_id: str | None
+    cases: Sequence[GroundedSaveCase], openenv_server_id: str | None
 ) -> None:
     """With a server, every case is grounded in it: it has an openenv_reset naming
     that server and judge guidance. Without one, no case carries either. Raises
@@ -991,7 +1011,7 @@ def validate_grounded_cases(
 
 
 def golden_references(
-    cases: list[DrivenSyntheticCaseApi], reviewed_leaf_ids: set[str]
+    cases: Sequence[GroundedSaveCase], reviewed_leaf_ids: set[str]
 ) -> dict[str, dict[str, JsonValue]]:
     """Each reviewed case's judge guidance reference, by its leaf run id. Reviewed
     cases become golden runs, and calibration judges them against the same answer

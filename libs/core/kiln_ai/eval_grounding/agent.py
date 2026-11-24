@@ -34,6 +34,7 @@ from kiln_ai.eval_grounding.models import (
     DropReason,
     EvalContext,
     GroundingCase,
+    GroundingMode,
     GroundingOutcome,
     GroundingResult,
     result_json_schema,
@@ -54,7 +55,6 @@ from kiln_ai.eval_grounding.session import (
 )
 from kiln_ai.openenv.session_manager import (
     OpenEnvError,
-    OpenEnvMetadata,
     OpenEnvSessionManager,
 )
 from kiln_ai.tools.base_tool import (
@@ -90,7 +90,6 @@ async def ground_case(
     model_provider: ModelProviderName,
     target_tools: list[ToolCallDefinition],
     reset_schema: dict[str, JsonValue] | None,
-    metadata: OpenEnvMetadata,
     thinking_level: str | None = None,
     answer_style: KilnAnswerStyle = "structured_output",
     system_prompt_text: str | None = None,
@@ -105,9 +104,17 @@ async def ground_case(
     raised, unless a `submit_result` call already recorded the result, which is kept.
     An adapter error the model caused (an empty reply, too many tool rounds) drops the
     case. The case's episode is released on every exit, cancellation included."""
+    message = case_message(
+        case,
+        eval_context=eval_context,
+        reset_schema=reset_schema,
+        target_tools=target_tools,
+    )
     session = GroundingSession(openenv_server, session_manager, server_tools, limits)
     submit_tool = (
-        _SubmitResultTool(session) if answer_style == "submit_result" else None
+        _SubmitResultTool(session, eval_context)
+        if answer_style == "submit_result"
+        else None
     )
     adapter = _build_adapter(
         session,
@@ -115,17 +122,11 @@ async def ground_case(
         model_name=model_name,
         model_provider=model_provider,
         thinking_level=thinking_level,
+        mode=eval_context.mode,
         instruction=system_prompt_text
-        or system_prompt(limits, time_limit_s, answer_style),
+        or system_prompt(limits, time_limit_s, answer_style, eval_context.mode),
     )
-    run = _GroundingRun(session, adapter, submit_tool)
-    message = case_message(
-        case,
-        eval_context=eval_context,
-        reset_schema=reset_schema,
-        readme=metadata.readme_content,
-        target_tools=target_tools,
-    )
+    run = _GroundingRun(session, adapter, submit_tool, eval_context)
     try:
         # asyncio.wait_for, not asyncio.timeout: libs/core supports Python 3.10.
         return await asyncio.wait_for(run.ground(message), timeout=time_limit_s)
@@ -148,6 +149,7 @@ def _build_adapter(
     model_name: str,
     model_provider: ModelProviderName,
     thinking_level: str | None,
+    mode: GroundingMode,
     instruction: str,
 ) -> BaseAdapter:
     structured = submit_tool is None
@@ -156,7 +158,8 @@ def _build_adapter(
         description="In-memory grounding agent. Not persisted.",
         instruction=instruction,
         output_json_schema=json.dumps(
-            result_json_schema(args_as_json_string=True), ensure_ascii=False
+            result_json_schema(args_as_json_string=True, mode=mode),
+            ensure_ascii=False,
         )
         if structured
         else None,
@@ -223,10 +226,12 @@ class _GroundingRun:
         session: GroundingSession,
         adapter: BaseAdapter,
         submit_tool: _SubmitResultTool | None,
+        eval_context: EvalContext,
     ) -> None:
         self._session = session
         self._adapter = adapter
         self._submit_tool = submit_tool
+        self._eval_context = eval_context
         self.usage: Usage | None = None
         # Kiln's adapter reports a run's usage only when the run returns, so a run that
         # is cancelled or raises leaves its calls out of `usage`.
@@ -283,11 +288,15 @@ class _GroundingRun:
         if not isinstance(reply.output, dict):
             return None, "The result is not a JSON object."
         try:
-            return GroundingResult.from_model_output(
+            result = GroundingResult.from_model_output(
                 reply.output, args_as_json_string=True
-            ), None
+            )
         except ValueError as e:
             return None, _describe_error(e)
+        problem = result.problem_for(self._eval_context)
+        if problem is not None:
+            return None, problem
+        return result, None
 
     async def _invoke(
         self, input: str, *, prior_trace: list[ChatCompletionMessageParam] | None
@@ -380,14 +389,15 @@ class _SubmitResultTool(UnmanagedKilnTool):
     An accepted result closes the session's tools, so the environment it describes
     can't change afterwards."""
 
-    def __init__(self, session: GroundingSession) -> None:
+    def __init__(self, session: GroundingSession, eval_context: EvalContext) -> None:
         super().__init__(
             build_kiln_unmanaged_tool_id(f"grounding_{SUBMIT_RESULT_TOOL}"),
             SUBMIT_RESULT_TOOL,
             "Hand back your result for this case. Call it once, when you are done.",
-            result_json_schema(args_as_json_string=False),
+            result_json_schema(args_as_json_string=False, mode=eval_context.mode),
         )
         self._session = session
+        self._eval_context = eval_context
         self.result: GroundingResult | None = None
         self.last_error: str | None = None
         self._invalid_calls = 0
@@ -411,21 +421,29 @@ class _SubmitResultTool(UnmanagedKilnTool):
         try:
             result = GroundingResult.model_validate(kwargs)
         except ValidationError as e:
-            self._invalid_calls += 1
-            self.last_error = _describe_error(e)
-            if self.gave_up:
-                await self._session.close_tools()
-                raise ToolCallError(
-                    f"This result can't be used either: {self.last_error} "
-                    "Reply with only the word done."
-                ) from e
-            raise ToolCallError(
-                f"This result can't be used: {self.last_error} Fix it and call "
-                f"{SUBMIT_RESULT_TOOL} again."
-            ) from e
+            raise await self._refuse(_describe_error(e)) from e
+        problem = result.problem_for(self._eval_context)
+        if problem is not None:
+            raise await self._refuse(problem)
         self.result = result
         await self._session.close_tools()
         return ToolCallResult(output="Recorded. Reply with only the word done.")
+
+    async def _refuse(self, error: str) -> ToolCallError:
+        """The error for an invalid result, counting it. Once the agent has given up, the
+        session's tools close and the agent is told to stop."""
+        self._invalid_calls += 1
+        self.last_error = error
+        if self.gave_up:
+            await self._session.close_tools()
+            return ToolCallError(
+                f"This result can't be used either: {error} "
+                "Reply with only the word done."
+            )
+        return ToolCallError(
+            f"This result can't be used: {error} Fix it and call "
+            f"{SUBMIT_RESULT_TOOL} again."
+        )
 
 
 class _ModelMisbehaved(Exception):

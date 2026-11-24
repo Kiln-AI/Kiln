@@ -591,32 +591,51 @@ def _ground(eval_, openenv_server):
 
 
 @pytest.mark.parametrize("tools", ["project", "none"])
-async def test_grounded_eval_refuses_a_run_config_without_its_openenv_tools(
-    project, task, openenv_server, project_tool, eval_, session_manager, tools
+async def test_grounded_eval_runs_a_run_config_without_openenv_tools_on_its_own_tools(
+    project, task, openenv_server, other_tool, eval_, session_manager, tools
 ):
-    """A grounded eval's case run without its server would be judged against an environment
-    it never saw, so the item is an error and nothing runs."""
+    """A grounded eval's case on a run config with no OpenEnv tools runs against the run
+    config's own tools: no session, no episode, the case's reset unused."""
     _ground(eval_, openenv_server)
-    tool_ids = [build_code_tool_id(project_tool.id)] if tools == "project" else []
+    tool_ids = [build_code_tool_id(other_tool.id)] if tools == "project" else []
     run_config = _run_config(task, tool_ids, name="plain rc")
-    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
+    grounded = _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
     cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
-    generator = ToolCallingGenerator(task, build_code_tool_id(project_tool.id))
+    generator = ToolCallingGenerator(task, build_code_tool_id(other_tool.id))
     with (
         patch.object(BaseV2EvalBridge, "run_task", new=generator),
-        patch.object(session_manager, "refresh") as refresh,
+        patch.object(
+            session_manager, "start_episode", wraps=session_manager.start_episode
+        ) as start_episode,
+        _judge_patch(),
     ):
+        await _drain(_runner([cfg], run_config, session_manager))
+    assert grounded.id in generator.outputs
+    start_episode.assert_not_called()
+    (trace,) = _traces(task)
+    assert trace.openenv_episode is None
+    assert session_manager._sessions == {}
+
+
+async def test_grounded_eval_refuses_a_run_config_on_another_openenv_server(
+    project, task, openenv_server, eval_, session_manager
+):
+    """A run config whose tools reach a different server can't run the eval's cases."""
+    _ground(eval_, openenv_server)
+    other_tool = build_openenv_tool_id("server_elsewhere", "append_note")
+    run_config = _run_config(task, [other_tool], name="foreign rc")
+    _input(task, "note", _reset(openenv_server, "a"), id="ei_a")
+    cfg = _config(eval_, ExactMatchProperties(expected_value="x"))
+    generator = ToolCallingGenerator(task, other_tool)
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
         await _expect_job_error(
             _runner([cfg], run_config, session_manager),
-            re.escape(
-                f"eval input ei_a: This eval's cases run in OpenEnv server "
-                f"'{openenv_server.id}'; run config 'plain rc' has none of its tools."
-            ),
+            rf"eval input ei_a runs in OpenEnv server {openenv_server.id}, but run "
+            r"config 'foreign rc' uses OpenEnv server\(s\)",
             session_manager,
             task,
         )
     assert generator.outputs == {}
-    refresh.assert_not_called()
 
 
 async def test_grounded_eval_runs_an_input_without_a_reset_as_before(
@@ -2174,23 +2193,19 @@ async def test_v1_run_task_with_openenv_tools_fails_outside_an_episode(
     start_episode.assert_not_called()
 
 
-def test_openenv_readiness_refuses_a_run_config_without_a_grounded_evals_tools(
+def test_openenv_readiness_passes_a_run_config_without_openenv_tools_on_a_grounded_eval(
     task, offline_openenv_server, eval_
 ):
+    """No OpenEnv tools: the grounded cases run on the run config's own tools, so the
+    server's state (here, offline) doesn't matter."""
     eval_.openenv_server_id = offline_openenv_server.id
     eval_.save_to_file()
     _input(task, "a", _reset(offline_openenv_server, "a"), id="ei_a")
     _input(task, "plain", id="ei_plain")
-    run_config = _run_config(task, [], name="plain rc")
 
-    message = _readiness_error(eval_, [run_config])
-
-    assert (
-        "Run config 'plain rc' has none of the tools of OpenEnv server 'Offline', "
-        "where these eval inputs run: ei_a. Use a run config that lists that OpenEnv "
-        "server's tools." in message
-    )
-    assert "ei_plain" not in message
+    _readiness_runner(
+        eval_, [_run_config(task, [], name="plain rc")]
+    ).validate_openenv_readiness()
 
 
 def test_openenv_readiness_passes_a_run_config_without_openenv_tools_on_an_ungrounded_eval(

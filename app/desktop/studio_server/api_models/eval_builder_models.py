@@ -386,8 +386,7 @@ class PipelineBatchAbortedEvent(BaseModel):
 
 
 class GroundingModelApi(BaseModel):
-    """The model the grounding agent runs on: the build's judge model, at the judge's
-    thinking level."""
+    """The model the grounding agent runs on, at its thinking level."""
 
     model_name: str = Field(min_length=1)
     model_provider: ModelProviderName
@@ -406,17 +405,41 @@ class GroundingModelApi(BaseModel):
 
 
 class GroundCaseApi(BaseModel):
-    """One planned case to ground: its plan item and kiln_server's simulated user."""
+    """One planned case to ground: its plan item and, on a multi-turn task, the
+    simulated user kiln_server drafted for it. A single-turn task's case is its plan
+    item alone: the grounding agent writes its input."""
 
     scenario_index: int = Field(
         ge=0, description="The plan item's position in the approved plan."
     )
     scenario: str = Field(min_length=1, description="The plan item's text.")
-    seed_prompt: str = Field(min_length=1)
-    synthetic_user_info: str = Field(
+    seed_prompt: str | None = Field(
+        default=None,
         min_length=1,
-        description="kiln_server's tagged blob: <persona>, <goal>, optional "
-        "<behavior_guidance>.",
+        description="Multi-turn only: the drafted opening message.",
+    )
+    synthetic_user_info: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Multi-turn only: kiln_server's tagged blob: <persona>, <goal>, "
+        "optional <behavior_guidance>.",
+    )
+
+
+class SingleTurnGroundingApi(BaseModel):
+    """Where a grounded single-turn input runs and what its judge reads: the
+    case's OpenEnv episode and judge guidance, from its case_grounded frame."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    openenv_reset: OpenEnvReset = Field(
+        description="The OpenEnv episode the input runs in. Its server must be "
+        "the one the target run config's tools reach."
+    )
+    judge_guidance: str = Field(
+        min_length=1,
+        description="The case's facts of the environment, which the judge reads "
+        "beside the rubric.",
     )
 
 
@@ -428,7 +451,8 @@ class GroundingStartedEvent(BaseModel):
 
 
 class CaseGroundedEvent(BaseModel):
-    """A case fits the environment. Its simulated user carries real specifics, and
+    """A case fits the environment. A multi-turn case's simulated user carries real
+    specifics; a single-turn case has the input the grounding agent wrote. Either way
     `openenv_reset` and `judge_guidance` go with it to the drive, judge and save."""
 
     type: Literal["case_grounded"] = "case_grounded"
@@ -436,8 +460,16 @@ class CaseGroundedEvent(BaseModel):
     scenario_index: int
     status: Literal["grounded"] = "grounded"
     openenv_reset: OpenEnvReset
-    seed_prompt: str
-    synthetic_user_info: str
+    seed_prompt: str | None = Field(
+        default=None, description="Multi-turn only: the filled-in opening message."
+    )
+    synthetic_user_info: str | None = Field(
+        default=None, description="Multi-turn only: the filled-in simulated user."
+    )
+    input: str | None = Field(
+        default=None,
+        description="Single-turn only: the input the agent under test gets.",
+    )
     judge_guidance: str = Field(
         description="The case's facts of the environment, as markdown: starting "
         "point, facts with the tool call that showed each, expected outcome."

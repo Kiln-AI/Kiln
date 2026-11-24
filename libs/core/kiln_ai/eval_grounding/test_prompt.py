@@ -16,31 +16,31 @@ from kiln_ai.eval_grounding.session import (
 )
 
 CASE = GroundingCase(
-    scenario="A technician asks to put one of their open work orders on hold.",
+    scenario="A support agent asks to put one of their open tickets on hold.",
     seed_prompt="Can you put my pump job on hold?",
-    synthetic_user_info="<persona>A technician</persona>\n<goal>Hold the job</goal>\n",
+    synthetic_user_info="<persona>A support agent</persona>\n<goal>Hold the job</goal>\n",
 )
 
 EVAL_CONTEXT = EvalContext(
-    specification="The agent puts work orders on hold only when asked.",
-    target_task_prompt="Help technicians manage their work orders.",
-    data_guide="Technicians in the field, often on a phone.\n",
+    specification="The agent puts tickets on hold only when asked.",
+    target_task_prompt="Help support agents manage their tickets.",
+    data_guide="Support leads triaging tickets, often between calls.\n",
 )
 
 TARGET_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "list_work_orders",
-            "description": "List work orders.",
+            "name": "list_tickets",
+            "description": "List tickets.",
             "parameters": {"type": "object", "properties": {}},
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "update_work_order",
-            "description": "Change a work order.",
+            "name": "update_ticket",
+            "description": "Change a ticket.",
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -53,40 +53,37 @@ def test_case_message_carries_every_section():
         CASE,
         eval_context=EVAL_CONTEXT,
         reset_schema=schema,
-        readme="# Server\nStart from a fixture.\n",
         target_tools=TARGET_TOOLS,
     )
     assert message == (
         "<specification>\n"
-        "The agent puts work orders on hold only when asked.\n"
+        "The agent puts tickets on hold only when asked.\n"
         "</specification>\n\n"
         "<target_task_prompt>\n"
-        "Help technicians manage their work orders.\n"
+        "Help support agents manage their tickets.\n"
         "</target_task_prompt>\n\n"
-        "<data_guide>\nTechnicians in the field, often on a phone.\n</data_guide>\n\n"
+        "<data_guide>\nSupport leads triaging tickets, often between calls.\n</data_guide>\n\n"
         "<case_scenario>\n"
-        "A technician asks to put one of their open work orders on hold.\n"
+        "A support agent asks to put one of their open tickets on hold.\n"
         "</case_scenario>\n\n"
         "<simulated_user>\n"
         "<seed_prompt>\nCan you put my pump job on hold?\n</seed_prompt>\n"
-        "<persona>A technician</persona>\n<goal>Hold the job</goal>\n"
+        "<persona>A support agent</persona>\n<goal>Hold the job</goal>\n"
         "</simulated_user>\n\n"
         f"<reset_schema>\n{json.dumps(schema, indent=2)}\n</reset_schema>\n\n"
-        "<server_readme>\n# Server\nStart from a fixture.\n</server_readme>\n\n"
         "<target_tools>\n"
-        "- list_work_orders: List work orders.\n"
-        "- update_work_order: Change a work order.\n"
+        "- list_tickets: List tickets.\n"
+        "- update_ticket: Change a ticket.\n"
         "</target_tools>"
     )
 
 
 @pytest.mark.parametrize("data_guide", [None, "", "  "])
-def test_case_message_without_data_guide_schema_readme_or_tools(data_guide):
+def test_case_message_without_data_guide_schema_or_tools(data_guide):
     message = case_message(
         CASE,
         eval_context=EVAL_CONTEXT.model_copy(update={"data_guide": data_guide}),
         reset_schema=None,
-        readme=None,
         target_tools=[],
     )
     assert message.startswith("<specification>\n")
@@ -95,7 +92,7 @@ def test_case_message_without_data_guide_schema_readme_or_tools(data_guide):
         "<reset_schema>\nThe server publishes no reset schema. "
         "Call start_episode with {}.\n</reset_schema>"
     ) in message
-    assert "<server_readme>\n\n</server_readme>" in message
+    assert "server_readme" not in message
     assert "<target_tools>\nNone.\n</target_tools>" in message
 
 
@@ -107,25 +104,125 @@ def test_system_prompt_states_the_limits():
 @pytest.mark.parametrize(
     "answer_style", ["reply_json", "structured_output", "submit_result"]
 )
-def test_system_prompt_names_the_tools_and_every_result_field(answer_style):
-    prompt = system_prompt(answer_style=answer_style)
+@pytest.mark.parametrize(
+    ("mode", "case_fields", "other_fields"),
+    [
+        ("multi_turn", ("seed_prompt", "synthetic_user_info"), ("input",)),
+        ("single_turn", ("input",), ("seed_prompt", "synthetic_user_info")),
+    ],
+)
+def test_system_prompt_names_the_tools_and_every_result_field(
+    answer_style, mode, case_fields, other_fields
+):
+    prompt = system_prompt(answer_style=answer_style, mode=mode)
     assert "Limits: 10 resets, 40 tool calls, 15 minutes." in prompt
     for tool in (START_EPISODE_TOOL, READ_STATE_TOOL):
         assert f"{tool}(" in prompt
     for field in GroundingResult.model_fields:
-        assert f'"{field}"' in prompt
+        if field not in other_fields:
+            assert f'"{field}"' in prompt
+    for field in other_fields:
+        assert f'"{field}"' not in prompt
+    assert all(f'"{field}"' in prompt for field in case_fields)
     for reason in ("no_fit", "unrepresentable", "rehearsal_failed"):
         assert reason in prompt
 
 
 def test_system_prompt_lists_every_case_message_section():
     message = case_message(
-        CASE, eval_context=EVAL_CONTEXT, reset_schema=None, readme=None, target_tools=[]
+        CASE, eval_context=EVAL_CONTEXT, reset_schema=None, target_tools=[]
     )
     prompt = system_prompt()
     for tag in re.findall(r"^<(\w+)>$", message, flags=re.MULTILINE):
         if tag != "seed_prompt":
             assert f"\n<{tag}> " in prompt
+
+
+SINGLE_TURN_CASE = GroundingCase(
+    scenario="A support agent asks which of their tickets are on hold."
+)
+
+SINGLE_TURN_CONTEXT = EVAL_CONTEXT.model_copy(
+    update={
+        "mode": "single_turn",
+        "input_schema": '{"type": "object", "properties": {"q": {"type": "string"}}}',
+        "example_input": '{"q": "Which tickets are mine?"}',
+    }
+)
+
+
+def test_single_turn_case_message_has_no_simulated_user():
+    message = case_message(
+        SINGLE_TURN_CASE,
+        eval_context=SINGLE_TURN_CONTEXT,
+        reset_schema=None,
+        target_tools=TARGET_TOOLS,
+    )
+    assert "<simulated_user>" not in message
+    assert (
+        "<example_input>\n"
+        '{"q": "Which tickets are mine?"}\n'
+        "</example_input>\n\n"
+        "<input_schema>\n"
+        '{"type": "object", "properties": {"q": {"type": "string"}}}\n'
+        "</input_schema>\n\n"
+        "<case_scenario>\n"
+        "A support agent asks which of their tickets are on hold.\n"
+        "</case_scenario>"
+    ) in message
+
+
+def test_single_turn_case_message_leaves_out_what_the_task_lacks():
+    message = case_message(
+        SINGLE_TURN_CASE,
+        eval_context=SINGLE_TURN_CONTEXT.model_copy(
+            update={"input_schema": None, "example_input": None}
+        ),
+        reset_schema=None,
+        target_tools=[],
+    )
+    assert "<example_input>" not in message
+    assert "<input_schema>" not in message
+
+
+def test_single_turn_prompt_lists_every_case_message_section():
+    message = case_message(
+        SINGLE_TURN_CASE,
+        eval_context=SINGLE_TURN_CONTEXT,
+        reset_schema=None,
+        target_tools=[],
+    )
+    prompt = system_prompt(mode="single_turn")
+    for tag in re.findall(r"^<(\w+)>$", message, flags=re.MULTILINE):
+        assert f"\n<{tag}> " in prompt
+
+
+@pytest.mark.parametrize(
+    ("case", "eval_context"),
+    [(CASE, SINGLE_TURN_CONTEXT), (SINGLE_TURN_CASE, EVAL_CONTEXT)],
+)
+def test_a_case_of_the_other_mode_is_refused(case, eval_context):
+    with pytest.raises(ValueError, match="can't be grounded in"):
+        case_message(
+            case, eval_context=eval_context, reset_schema=None, target_tools=[]
+        )
+
+
+def test_single_turn_prompt_asks_for_an_input_not_a_simulated_user():
+    prompt = system_prompt(mode="single_turn")
+    assert "5. Write the input:" in prompt
+    assert (
+        "a JSON object that matches it, written into input as a JSON string" in prompt
+    )
+    for gone in ("simulated user", "persona", "seed_prompt", "what the user answers"):
+        assert gone not in prompt
+
+
+def test_neither_prompt_mentions_server_docs():
+    for mode in ("multi_turn", "single_turn"):
+        prompt = system_prompt(mode=mode)
+        assert "server_readme" not in prompt
+        assert "server docs" not in prompt
 
 
 def test_each_answer_style_says_how_to_hand_back_the_result():

@@ -23,7 +23,7 @@ _LOCAL_REF_PREFIX = "#/$defs/"
 
 RESET_ARGUMENTS_FRAMING = """## The system the agent works on
 
-The agent's tools act on an OpenEnv server: a stand-in for the real system, with its own data. Each conversation in this batch runs in its own fresh copy of that system, called an environment. An environment is started from a set of reset arguments, and some of those arguments choose what the environment starts with: which data is loaded, who the session acts as, and so on.
+The agent's tools act on an OpenEnv server: a stand-in for the real system, with its own data. Each conversation or input in this batch runs in its own fresh copy of that system, called an environment. An environment is started from a set of reset arguments, and some of those arguments choose what the environment starts with: which data is loaded, who the session acts as, and so on.
 
 After you plan, Kiln picks the reset arguments for each scenario and finds what the scenario needs in that environment. You don't pick them, and you can't see the data. What follows tells you what the starting states are like, so your scenarios are plausible for this system and cover the situations it can be in.
 

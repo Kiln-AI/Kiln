@@ -7,19 +7,41 @@ from typing import Any, Literal, get_args
 from pydantic import BaseModel, Field, JsonValue, model_validator
 from typing_extensions import Self
 
+from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.openenv import OpenEnvReset
 from kiln_ai.synthetic_user.parser import parse_synthetic_user_info
 from kiln_ai.utils.usage import Usage
 
+GroundingMode = Literal["multi_turn", "single_turn"]
+"""What the grounding agent hands back for a case. `multi_turn`: it fills in the simulated
+user kiln_server drafted, which then holds a whole conversation with the agent under test.
+`single_turn`: it writes the one input the agent under test answers."""
+
 
 class GroundingCase(BaseModel):
-    """One planned case, as kiln_server drafted it."""
+    """One planned case. A multi-turn case carries the simulated user kiln_server drafted
+    for it; a single-turn case carries only its scenario, since the agent writes its
+    input."""
 
     scenario: str = Field(description="The approved plan item's prompt.")
-    seed_prompt: str
-    synthetic_user_info: str = Field(
-        description="kiln_server's tagged blob: <persona>, <goal>, optional <behavior_guidance>."
+    seed_prompt: str | None = None
+    synthetic_user_info: str | None = Field(
+        default=None,
+        description="kiln_server's tagged blob: <persona>, <goal>, optional <behavior_guidance>.",
     )
+
+    @model_validator(mode="after")
+    def _simulated_user_is_whole(self) -> Self:
+        if (self.seed_prompt is None) != (self.synthetic_user_info is None):
+            raise ValueError(
+                "A case carries both seed_prompt and synthetic_user_info, or neither."
+            )
+        return self
+
+    @property
+    def mode(self) -> GroundingMode:
+        """The mode this case's shape is for: a drafted simulated user is multi-turn."""
+        return "multi_turn" if self.seed_prompt is not None else "single_turn"
 
 
 class EvalContext(BaseModel):
@@ -33,8 +55,33 @@ class EvalContext(BaseModel):
     )
     data_guide: str | None = Field(
         default=None,
-        description="Who uses the agent under test and what they ask. None when the eval has none.",
+        description="The task's Data Guide: who uses the agent under test, what they ask "
+        "and what its inputs look like. None when the task has none.",
     )
+    mode: GroundingMode = Field(
+        default="multi_turn",
+        description="What the agent hands back for each case (see GroundingMode).",
+    )
+    input_schema: str | None = Field(
+        default=None,
+        description="The JSON schema the input must match, when the task's input is "
+        "structured. Single-turn only.",
+    )
+    example_input: str | None = Field(
+        default=None,
+        description="A real input from the task's dataset, for the input's format and "
+        "voice. Single-turn only.",
+    )
+
+    @model_validator(mode="after")
+    def _single_turn_fields(self) -> Self:
+        if self.mode == "multi_turn" and (
+            self.input_schema is not None or self.example_input is not None
+        ):
+            raise ValueError(
+                "input_schema and example_input are for single-turn grounding only."
+            )
+        return self
 
 
 class Evidence(BaseModel):
@@ -111,6 +158,9 @@ class GroundingResult(BaseModel):
     )
     seed_prompt: str | None = None
     synthetic_user_info: str | None = None
+    input: str | None = Field(
+        default=None, description="A single-turn case's input, in place of a user."
+    )
     reference: GroundedReference | None = None
 
     @model_validator(mode="after")
@@ -119,15 +169,37 @@ class GroundingResult(BaseModel):
             self.status,
             drop_reason=self.drop_reason,
             drop_detail=self.drop_detail,
-            grounded_fields={
-                "seed_prompt": self.seed_prompt,
-                "synthetic_user_info": self.synthetic_user_info,
-                "reference": self.reference,
-            },
+            grounded_fields={"reference": self.reference},
+            seed_prompt=self.seed_prompt,
+            synthetic_user_info=self.synthetic_user_info,
+            input=self.input,
         )
         if self.status == "grounded" and self.synthetic_user_info is not None:
             parse_synthetic_user_info(self.synthetic_user_info)
         return self
+
+    def problem_for(self, eval_context: EvalContext) -> str | None:
+        """Why this valid result doesn't fit the run's mode, or None when it does. A
+        single-turn input must match the task's input schema when there is one."""
+        if self.status == "dropped":
+            return None
+        if eval_context.mode == "multi_turn":
+            if self.input is not None:
+                return "A multi-turn case fills seed_prompt and synthetic_user_info, not input."
+            return None
+        if self.input is None:
+            return "A single-turn case fills input, not seed_prompt and synthetic_user_info."
+        if eval_context.input_schema is None:
+            return None
+        try:
+            parsed = json.loads(self.input)
+        except json.JSONDecodeError:
+            return f"{INPUT_SCHEMA_MISMATCH} The input isn't valid JSON."
+        try:
+            validate_schema_with_value_error(parsed, eval_context.input_schema)
+        except ValueError as e:
+            return f"{INPUT_SCHEMA_MISMATCH} {e}"
+        return None
 
     @classmethod
     def from_model_output(
@@ -148,9 +220,16 @@ class GroundingResult(BaseModel):
         )
 
 
-def result_json_schema(*, args_as_json_string: bool) -> dict[str, Any]:
-    """The JSON schema of `GroundingResult` that the model answers in. Written out with
-    every property required and no `$ref`, so it holds under strict structured output.
+INPUT_SCHEMA_MISMATCH = "The input didn't match the task's input schema."
+"""How a single-turn input that breaks the task's input schema is reported."""
+
+
+def result_json_schema(
+    *, args_as_json_string: bool, mode: GroundingMode = "multi_turn"
+) -> dict[str, Any]:
+    """The JSON schema of `GroundingResult` that the model answers in, for `mode`.
+    Written out with every property required and no `$ref`, so it holds under strict
+    structured output.
 
     Strict output closes every object to the properties it lists, which would force the
     free-form `Evidence.args` to `{}`. With `args_as_json_string` it is a string holding
@@ -209,15 +288,26 @@ def result_json_schema(*, args_as_json_string: bool) -> dict[str, Any]:
                 "type": ["string", "null"],
                 "description": "One sentence on why the case was dropped.",
             },
-            "seed_prompt": {
-                "type": ["string", "null"],
-                "description": "The filled-in opening message.",
-            },
-            "synthetic_user_info": {
-                "type": ["string", "null"],
-                "description": "<persona>...</persona><goal>...</goal>, then "
-                "<behavior_guidance>...</behavior_guidance> when the draft had one.",
-            },
+            **(
+                {
+                    "input": {
+                        "type": ["string", "null"],
+                        "description": "The input the agent under test gets.",
+                    }
+                }
+                if mode == "single_turn"
+                else {
+                    "seed_prompt": {
+                        "type": ["string", "null"],
+                        "description": "The filled-in opening message.",
+                    },
+                    "synthetic_user_info": {
+                        "type": ["string", "null"],
+                        "description": "<persona>...</persona><goal>...</goal>, then "
+                        "<behavior_guidance>...</behavior_guidance> when the draft had one.",
+                    },
+                }
+            ),
             "reference": {"anyOf": [reference, {"type": "null"}]},
         }
     )
@@ -258,6 +348,7 @@ class GroundingOutcome(BaseModel):
     openenv_reset: OpenEnvReset | None = None
     seed_prompt: str | None = None
     synthetic_user_info: str | None = None
+    input: str | None = None
     reference: GroundedReference | None = None
     call_log: list[LoggedCall] = Field(default_factory=list)
     usage: Usage | None = Field(
@@ -278,10 +369,11 @@ class GroundingOutcome(BaseModel):
             drop_detail=self.drop_detail,
             grounded_fields={
                 "openenv_reset": self.openenv_reset,
-                "seed_prompt": self.seed_prompt,
-                "synthetic_user_info": self.synthetic_user_info,
                 "reference": self.reference,
             },
+            seed_prompt=self.seed_prompt,
+            synthetic_user_info=self.synthetic_user_info,
+            input=self.input,
         )
         return self
 
@@ -340,6 +432,7 @@ class GroundingOutcome(BaseModel):
             openenv_reset=openenv_reset,
             seed_prompt=result.seed_prompt,
             synthetic_user_info=result.synthetic_user_info,
+            input=result.input,
             reference=result.reference,
             call_log=call_log,
             usage=usage,
@@ -353,11 +446,32 @@ def _check_status_fields(
     drop_reason: object,
     drop_detail: str | None,
     grounded_fields: dict[str, object],
+    seed_prompt: str | None,
+    synthetic_user_info: str | None,
+    input: str | None,
 ) -> None:
+    """A grounded case has `grounded_fields` and one of the two shapes: a simulated user
+    (seed_prompt and synthetic_user_info) or an input. A dropped case has a reason and
+    detail."""
     if status == "grounded":
         missing = [name for name, value in grounded_fields.items() if value is None]
+        if input is None:
+            missing += [
+                name
+                for name, value in (
+                    ("seed_prompt", seed_prompt),
+                    ("synthetic_user_info", synthetic_user_info),
+                )
+                if value is None
+            ]
         if missing:
             raise ValueError(f"A grounded case needs {', '.join(missing)}.")
+        if input is not None and (
+            seed_prompt is not None or synthetic_user_info is not None
+        ):
+            raise ValueError(
+                "A grounded case has an input or a simulated user, not both."
+            )
         if drop_reason is not None or drop_detail is not None:
             raise ValueError("A grounded case has no drop reason or detail.")
         return

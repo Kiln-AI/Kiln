@@ -115,8 +115,8 @@ _MAX_LOST_CAUSES = 1000
 
 _CAPACITY_HINT = (
     " The environment holds max_concurrent_envs sessions at once (OpenEnv's default "
-    "is 1), and Kiln runs up to 25 eval jobs or 10 conversations at once: start the "
-    "server with a larger max_concurrent_envs, then run the ones that failed again."
+    "is 1). Start the server with a larger max_concurrent_envs, or wait for its "
+    "other sessions to end, then try again."
 )
 
 

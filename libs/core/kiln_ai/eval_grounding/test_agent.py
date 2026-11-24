@@ -20,9 +20,14 @@ from kiln_ai.eval_grounding.agent import (
     structured_output_mode,
 )
 from kiln_ai.eval_grounding.conftest import model_reply
-from kiln_ai.eval_grounding.models import DropReason, EvalContext, GroundingCase
+from kiln_ai.eval_grounding.models import (
+    INPUT_SCHEMA_MISMATCH,
+    DropReason,
+    EvalContext,
+    GroundingCase,
+)
 from kiln_ai.eval_grounding.session import TOOLS_CLOSED_MESSAGE, GroundingLimits
-from kiln_ai.openenv.session_manager import OpenEnvMetadata, OpenEnvTransientError
+from kiln_ai.openenv.session_manager import OpenEnvTransientError
 
 CASE = GroundingCase(
     scenario="A clerk asks to add a note.",
@@ -78,7 +83,7 @@ def submit(**fields: Any):
 async def ground(openenv_server, session_manager):
     server_tools = await session_manager.list_tools(openenv_server)
 
-    async def run(**overrides: Any):
+    async def run(case: GroundingCase = CASE, **overrides: Any):
         kwargs: dict[str, Any] = {
             "eval_context": EVAL_CONTEXT,
             "openenv_server": openenv_server,
@@ -88,13 +93,10 @@ async def ground(openenv_server, session_manager):
             "model_provider": ModelProviderName.openai,
             "target_tools": [],
             "reset_schema": None,
-            "metadata": OpenEnvMetadata(
-                name="counter", version="1", description=None, readme_content=None
-            ),
             "time_limit_s": 30,
             **overrides,
         }
-        return await ground_case(CASE, **kwargs)
+        return await ground_case(case, **kwargs)
 
     return run
 
@@ -618,3 +620,129 @@ async def test_a_follow_up_that_keeps_calling_tools_is_a_limit_drop(
     outcome = await ground(limits=GroundingLimits(calls_after_limit=1))
     assert outcome.drop_reason == DropReason.limit
     assert "asked only for its result" in (outcome.drop_detail or "")
+
+
+SINGLE_TURN_CASE = GroundingCase(scenario="A clerk asks to add a note.")
+
+SINGLE_TURN_CONTEXT = EvalContext(
+    specification="The agent adds notes when asked.",
+    target_task_prompt="Help clerks keep notes.",
+    mode="single_turn",
+    input_schema=json.dumps(
+        {
+            "type": "object",
+            "properties": {"note": {"type": "string"}},
+            "required": ["note"],
+        }
+    ),
+)
+
+
+def single_turn_result(*, input: str, args: Any = '{"limit": 5}') -> dict[str, Any]:
+    """A grounded single-turn result as the model returns it: an input, no user."""
+    fields = result(args=args)
+    del fields["seed_prompt"], fields["synthetic_user_info"]
+    return {**fields, "input": input}
+
+
+class TestSingleTurn:
+    async def test_the_agent_writes_the_input(
+        self, ground, scripted_model, built_adapters
+    ):
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(
+                json.dumps(
+                    single_turn_result(input='{"note": "hi"}'), ensure_ascii=False
+                )
+            ),
+        )
+        outcome = await ground(SINGLE_TURN_CASE, eval_context=SINGLE_TURN_CONTEXT)
+
+        assert outcome.status == "grounded"
+        assert outcome.input == '{"note": "hi"}'
+        assert outcome.seed_prompt is None and outcome.synthetic_user_info is None
+        [adapter] = built_adapters
+        schema = json.loads(adapter.task.output_json_schema or "{}")
+        assert "input" in schema["properties"]
+        assert "seed_prompt" not in schema["properties"]
+        system, user = scripted_model.sent[0][:2]
+        assert "5. Write the input:" in system["content"]
+        assert "<input_schema>" in user["content"]
+        assert "<simulated_user>" not in user["content"]
+
+    async def test_an_input_off_the_task_schema_is_retried(
+        self, ground, scripted_model
+    ):
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(
+                json.dumps(
+                    single_turn_result(input='{"text": "hi"}'), ensure_ascii=False
+                )
+            ),
+            model_reply(
+                json.dumps(
+                    single_turn_result(input='{"note": "hi"}'), ensure_ascii=False
+                )
+            ),
+        )
+        outcome = await ground(SINGLE_TURN_CASE, eval_context=SINGLE_TURN_CONTEXT)
+        assert outcome.status == "grounded"
+        follow_up = scripted_model.sent[2][-1]["content"]
+        assert INPUT_SCHEMA_MISMATCH in follow_up
+
+    async def test_an_input_off_the_task_schema_twice_is_dropped(
+        self, ground, scripted_model
+    ):
+        off_schema = json.dumps(
+            single_turn_result(input="not json"), ensure_ascii=False
+        )
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(off_schema),
+            model_reply(off_schema),
+        )
+        outcome = await ground(SINGLE_TURN_CASE, eval_context=SINGLE_TURN_CONTEXT)
+        assert outcome.status == "dropped"
+        assert outcome.drop_reason == DropReason.invalid_output
+        assert INPUT_SCHEMA_MISMATCH in (outcome.drop_detail or "")
+
+    async def test_submit_result_reports_an_input_off_the_task_schema(
+        self, ground, scripted_model
+    ):
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(
+                None, submit(**single_turn_result(input='{"text": "hi"}', args={}))
+            ),
+            model_reply(
+                None, submit(**single_turn_result(input='{"note": "hi"}', args={}))
+            ),
+            model_reply("done"),
+        )
+        outcome = await ground(
+            SINGLE_TURN_CASE,
+            eval_context=SINGLE_TURN_CONTEXT,
+            answer_style="submit_result",
+        )
+        assert outcome.status == "grounded"
+        assert outcome.input == '{"note": "hi"}'
+        error = sent_text(scripted_model.sent[2][-1])
+        assert "can't be used" in error and "input schema" in error
+
+    async def test_a_multi_turn_result_twice_in_single_turn_mode_is_dropped(
+        self, ground, scripted_model
+    ):
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(json.dumps(result(), ensure_ascii=False)),
+            model_reply(json.dumps(result(), ensure_ascii=False)),
+        )
+        outcome = await ground(
+            SINGLE_TURN_CASE,
+            eval_context=SINGLE_TURN_CONTEXT.model_copy(update={"input_schema": None}),
+            answer_style="submit_result",
+        )
+        assert outcome.status == "dropped"
+        assert outcome.drop_reason == DropReason.invalid_output

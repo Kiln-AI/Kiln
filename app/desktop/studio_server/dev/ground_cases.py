@@ -104,7 +104,7 @@ from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
 DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
 
-DATA_GUIDE_FRAMING = """## Who uses this agent
+DATA_GUIDE_FRAMING = """## Data Guide
 
 The user wrote the guide below about who talks to this agent and what they ask. Take the people in your scenarios, and the kinds of requests they make, from it. Where it says how common something is, follow that in the batch. Where it is silent, use your judgment as usual. It describes users, not test goals: the specification above still decides what each scenario stresses."""
 """The planner's framing for the Data Guide text, which follows it in `<data_guide>` tags."""
@@ -262,7 +262,6 @@ class PreparedInputs:
     cases: list[GroundingCase]
     eval_context: EvalContext
     reset_schema: dict[str, JsonValue] | None
-    readme: str | None
 
 
 def load_prepared(in_dir: Path) -> PreparedInputs:
@@ -275,7 +274,6 @@ def load_prepared(in_dir: Path) -> PreparedInputs:
         )
     plan = json.loads((in_dir / "plan.json").read_text(encoding="utf-8"))
     users = json.loads((in_dir / "users.json").read_text(encoding="utf-8"))
-    metadata = json.loads((in_dir / "metadata.json").read_text(encoding="utf-8"))
     prompts: list[str] = plan["prompts"]
     cases = [
         GroundingCase(
@@ -297,7 +295,6 @@ def load_prepared(in_dir: Path) -> PreparedInputs:
             data_guide=data_guide if data_guide.strip() else None,
         ),
         reset_schema=json.loads((in_dir / "schema.json").read_text(encoding="utf-8")),
-        readme=metadata.get("readme_content"),
     )
 
 
@@ -767,7 +764,6 @@ async def _ground_with_claude(
             prepared.cases[case_index],
             eval_context=prepared.eval_context,
             reset_schema=prepared.reset_schema,
-            readme=prepared.readme,
             target_tools=target_tools,
         )
         async with slots:

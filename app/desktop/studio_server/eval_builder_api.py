@@ -55,6 +55,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     TurnMode,
 )
 from kiln_ai.datamodel.openenv import OpenEnvEpisode
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
@@ -105,6 +106,7 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     PreflightModelApiOutput,
     RefineJudgeApiInput,
     RefineJudgeApiOutput,
+    SingleTurnGroundingApi,
 )
 from app.desktop.studio_server.multiturn_sdg_api import (
     RunCasesBatchApiInput,
@@ -116,6 +118,7 @@ from app.desktop.studio_server.multiturn_sdg_api import (
 from app.desktop.studio_server.services.eval_grounding import (
     GroundingFrame,
     NoGroundingServerError,
+    check_grounded_servers,
     grounding_frames,
     grounding_server,
 )
@@ -360,6 +363,14 @@ class SingleTurnPipelineRequest(TargetRunConfigFields, ReplaceBatchTagsField):
         ),
     )
     judge: JudgeConfig
+    groundings: list[SingleTurnGroundingApi] | None = Field(
+        default=None,
+        description=(
+            "Each input's OpenEnv episode and judge guidance, in the order of "
+            "inputs, when the inputs were grounded in the OpenEnv server the "
+            "target run config's tools reach. Omit for ungrounded inputs."
+        ),
+    )
 
     @field_validator("inputs")
     @classmethod
@@ -371,27 +382,39 @@ class SingleTurnPipelineRequest(TargetRunConfigFields, ReplaceBatchTagsField):
                 raise ValueError("inputs must not contain empty entries.")
         return value
 
+    @model_validator(mode="after")
+    def groundings_match_inputs(self) -> Self:
+        if self.groundings is not None and len(self.groundings) != len(self.inputs):
+            raise ValueError("groundings must have one entry per inputs entry.")
+        return self
+
 
 class GroundCasesRequest(TargetRunConfigFields):
-    """The grounding stream's request: the planned cases kiln_server drafted simulated
-    users for, the run config whose OpenEnv server they are checked against, and what
-    the grounding agent reads about the eval. The run config fields are the drive
-    requests' own, so cases are grounded against the config that will drive them."""
+    """The grounding stream's request: the planned cases (with the simulated users
+    kiln_server drafted, on a multi-turn task), the run config whose OpenEnv server they
+    are checked against, and what the grounding agent reads about the eval. The run
+    config fields are the drive requests' own, so cases are grounded against the config
+    that will drive them."""
 
     # forbid: a retired or misspelled field must 422, not be silently dropped.
     model_config = ConfigDict(extra="forbid")
 
-    judge_model: GroundingModelApi = Field(
-        description="The build's judge model. The grounding agent runs on it: it "
-        "writes the answer key the judge grades against."
+    grounding_model: GroundingModelApi = Field(
+        description="The model the grounding agent runs on. It writes the answer key "
+        "the judge grades against and, on a single-turn task, each input."
     )
     specification: str = Field(
         min_length=1, description="The eval's specification: what the eval tests."
     )
-    synthetic_user_guide: str | None = Field(
+    data_guide: str | None = Field(
         default=None,
-        description="Who uses the agent under test and what they ask. Omit when "
-        "the project has none.",
+        description="The task's Data Guide: who uses the agent under test, what they "
+        "ask and what its inputs look like. Omit when the task has none.",
+    )
+    example_input: str | None = Field(
+        default=None,
+        description="Single-turn tasks only: a real input from the task's dataset, "
+        "for the format and voice of the inputs the grounding agent writes.",
     )
     cases: list[GroundCaseApi] = Field(
         min_length=1,
@@ -399,6 +422,32 @@ class GroundCasesRequest(TargetRunConfigFields):
         description="The cases to ground. Frames refer to each by its position "
         "here (case_index).",
     )
+
+
+def _check_cases_fit_turn_mode(task: Task, request: GroundCasesRequest) -> None:
+    """A 422 when the request's cases don't have the task's shape: a multi-turn case
+    carries its drafted simulated user, a single-turn case only its scenario, and only a
+    single-turn task takes an example input."""
+    multi_turn = task.turn_mode == TurnMode.multiturn
+    for position, case in enumerate(request.cases):
+        has_user = case.seed_prompt is not None and case.synthetic_user_info is not None
+        has_none = case.seed_prompt is None and case.synthetic_user_info is None
+        if (multi_turn and not has_user) or (not multi_turn and not has_none):
+            needs = (
+                "seed_prompt and synthetic_user_info"
+                if multi_turn
+                else "only its scenario, no seed_prompt or synthetic_user_info"
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=f"Case {position}: a {'multi' if multi_turn else 'single'}"
+                f"-turn task's case carries {needs}.",
+            )
+    if multi_turn and request.example_input is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="example_input is for single-turn tasks only.",
+        )
 
 
 async def _grounding_sse(
@@ -994,7 +1043,14 @@ class JudgeTracesRun(JudgeStreamBase):
         )
         self._review_tasks.append(
             asyncio.create_task(
-                self._judge_case(case_index, leaf_run_id, trace, 0.0),
+                self._judge_case(
+                    case_index,
+                    leaf_run_id,
+                    trace,
+                    0.0,
+                    judge_guidance=self._judge_guidance[case_index],
+                    openenv_episode=leaf.openenv_episode,
+                ),
                 name=f"judge_case_{case_index}",
             )
         )
@@ -1040,6 +1096,26 @@ def _run_cost(run: TaskRun) -> float:
     if usage is None:
         return 0.0
     return float(getattr(usage, "cost", None) or 0.0)
+
+
+def check_groundings_server(
+    project: Project,
+    run_config: KilnAgentRunConfigProperties,
+    groundings: list[SingleTurnGroundingApi],
+) -> None:
+    """Reject grounded inputs whose OpenEnv server isn't the one the run config's
+    tools reach, before the stream opens."""
+    try:
+        check_grounded_servers(
+            project,
+            run_config,
+            [grounding.openenv_reset.openenv_server_id for grounding in groundings],
+        )
+    except NoGroundingServerError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "openenv_server_mismatch", "message": str(e)},
+        ) from e
 
 
 def guard_single_turn(task: Task) -> None:
@@ -1099,6 +1175,10 @@ class SingleTurnPipelineRun(JudgeStreamBase):
         self._target_run_config, self._target_run_config_id = resolve_target_run_config(
             input, project_id, task_id
         )
+        if input.groundings is not None:
+            check_groundings_server(
+                project_from_id(project_id), self._target_run_config, input.groundings
+            )
         # build_save_context returns None outside a git-synced request; fall
         # back the same way the runner does.
         self._save_context = save_context or default_save_context
@@ -1217,6 +1297,7 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             # with the saved config it came from, exactly as a manual run
             # of that config would. allow_saving=False: the run is saved
             # below, inside the save context.
+            grounding = self._grounding(case_index)
             adapter = adapter_for_task(
                 self._task,
                 self._target_run_config,
@@ -1225,6 +1306,9 @@ class SingleTurnPipelineRun(JudgeStreamBase):
                     skills=skills,
                     task_run_config_id=self._target_run_config_id,
                     default_tags=single_turn_drive_tags(self._batch_tag),
+                    openenv_reset_kwargs=grounding.openenv_reset.reset_kwargs
+                    if grounding is not None
+                    else None,
                 ),
             )
             # No app-level timeout: a hung provider call is bounded by the
@@ -1272,7 +1356,16 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             )
             self._review_tasks.append(
                 asyncio.create_task(
-                    self._judge_case(case_index, run_id, trace, case_cost),
+                    self._judge_case(
+                        case_index,
+                        run_id,
+                        trace,
+                        case_cost,
+                        judge_guidance=grounding.judge_guidance
+                        if grounding is not None
+                        else None,
+                        openenv_episode=run.openenv_episode,
+                    ),
                     name=f"judge_case_{case_index}",
                 )
             )
@@ -1310,6 +1403,10 @@ class SingleTurnPipelineRun(JudgeStreamBase):
                 f"{type(cause).__name__}: {detail}",
                 type(cause).__name__,
             ) from e
+
+    def _grounding(self, case_index: int) -> SingleTurnGroundingApi | None:
+        groundings = self._input.groundings
+        return groundings[case_index] if groundings is not None else None
 
     async def _delete_partial_run(self, run: TaskRun | None) -> None:
         """Bank a failed attempt's spend, and delete its run if it is still
@@ -1567,14 +1664,17 @@ def connect_eval_builder_api(app: FastAPI):
     ) -> CancellableStreamingResponse:
         """Fit each planned case to the run config's OpenEnv server, or drop it.
 
-        For each case, an agent on the judge model picks reset arguments, finds
-        what the case needs in a fresh episode, fills real specifics into the
-        simulated user, and writes the judge guidance. Cases run concurrently.
+        For each case, an agent on the grounding model picks reset arguments, finds
+        what the case needs in a fresh episode, and writes the judge guidance. On a
+        multi-turn task it fills real specifics into the simulated user kiln_server
+        drafted; on a single-turn task it writes the input itself, as JSON matching
+        the task's input schema when there is one. Cases run concurrently.
 
         Emits (all frames `type`-discriminated):
           - grounding_started  { total }
           - case_grounded      { case_index, scenario_index, status: "grounded",
-                                 openenv_reset, seed_prompt, synthetic_user_info,
+                                 openenv_reset, seed_prompt, synthetic_user_info
+                                 (multi-turn), input (single-turn),
                                  judge_guidance }
           - case_dropped       { case_index, scenario_index, drop_reason,
                                  drop_detail }
@@ -1585,11 +1685,12 @@ def connect_eval_builder_api(app: FastAPI):
                                  stopped every case)
         Terminated by `data: complete`. case_index is the position in `cases`.
         Disconnecting cancels the cases still running and ends their episodes.
-        A run config whose tools reach no OpenEnv server, or several, is a 400.
+        A run config whose tools reach no OpenEnv server, or several, is a 400. Cases
+        whose shape doesn't match the task's turn mode are a 422.
         """
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
-        guard_multiturn(task)
+        _check_cases_fit_turn_mode(task, input)
         run_config, _run_config_id = resolve_target_run_config(
             input, project_id, task_id
         )
@@ -1605,9 +1706,10 @@ def connect_eval_builder_api(app: FastAPI):
             run_config=run_config,
             openenv_server=openenv_server,
             session_manager=shared_session_manager(),
-            model=input.judge_model,
+            model=input.grounding_model,
             specification=input.specification,
-            synthetic_user_guide=input.synthetic_user_guide,
+            data_guide=input.data_guide,
+            example_input=input.example_input,
             cases=input.cases,
         )
         return CancellableStreamingResponse(

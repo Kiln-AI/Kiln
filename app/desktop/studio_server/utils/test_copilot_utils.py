@@ -2,6 +2,7 @@
 
 import logging
 import random
+from dataclasses import dataclass
 from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
@@ -16,7 +17,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.eval import MultiTurnDriveConfig
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
-from kiln_ai.datamodel.openenv import OpenEnvServer
+from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.run_config import (
     McpRunConfigProperties,
     MCPToolReference,
@@ -30,6 +31,7 @@ from kiln_ai.datamodel.task_output import (
     TaskOutputRating,
 )
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
+from kiln_ai.eval_grounding.judge_guidance import JUDGE_GUIDANCE_REFERENCE_KEY
 from kiln_ai.openenv.session_manager import OpenEnvSessionManager
 from kiln_ai.openenv.testing import free_port, serve_in_thread
 from kiln_ai.run_context import (
@@ -501,7 +503,10 @@ class TestBuildSingleTurnBatchEvalInputs:
         task.save_to_file()
 
         eval_inputs = build_single_turn_batch_eval_inputs(
-            ["input_0", "input_1"], "batch123", task, "eval_myspec"
+            [_single_turn_case("input_0"), _single_turn_case("input_1")],
+            "batch123",
+            task,
+            "eval_myspec",
         )
         assert len(eval_inputs) == 2
         assert [ei.data.user_message.text for ei in eval_inputs] == [
@@ -515,6 +520,42 @@ class TestBuildSingleTurnBatchEvalInputs:
         assert all(ei.parent is task for ei in eval_inputs)
         # Built unsaved — persistence happens in the save unit of work.
         assert all(ei.path is None for ei in eval_inputs)
+        assert all(ei.openenv_reset is None for ei in eval_inputs)
+        assert all(ei.reference is None for ei in eval_inputs)
+
+    def test_a_grounded_case_keeps_its_episode_and_judge_guidance(self, tmp_path):
+        task = Task(name="T", instruction="i")
+        reset = OpenEnvReset(
+            openenv_server_id="srv_1", reset_kwargs={"fixture": "small"}
+        )
+        (eval_input,) = build_single_turn_batch_eval_inputs(
+            [_single_turn_case("input_0", reset, "## Starting point\nA shop.")],
+            "batch123",
+            task,
+            "eval_myspec",
+        )
+        assert eval_input.openenv_reset == reset
+        assert eval_input.reference == {
+            JUDGE_GUIDANCE_REFERENCE_KEY: "## Starting point\nA shop."
+        }
+
+
+@dataclass
+class _SingleTurnCase:
+    input: str
+    leaf_run_id: str = ""
+    openenv_reset: OpenEnvReset | None = None
+    judge_guidance: str | None = None
+
+
+def _single_turn_case(
+    input_text: str,
+    openenv_reset: OpenEnvReset | None = None,
+    judge_guidance: str | None = None,
+) -> _SingleTurnCase:
+    return _SingleTurnCase(
+        input=input_text, openenv_reset=openenv_reset, judge_guidance=judge_guidance
+    )
 
 
 def _claim_review_api(judge_score: str = "fail") -> ClaimReviewApi:

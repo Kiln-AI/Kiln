@@ -3764,14 +3764,17 @@ export interface paths {
          * Ground Cases in the OpenEnv Server
          * @description Fit each planned case to the run config's OpenEnv server, or drop it.
          *
-         *     For each case, an agent on the judge model picks reset arguments, finds
-         *     what the case needs in a fresh episode, fills real specifics into the
-         *     simulated user, and writes the judge guidance. Cases run concurrently.
+         *     For each case, an agent on the grounding model picks reset arguments, finds
+         *     what the case needs in a fresh episode, and writes the judge guidance. On a
+         *     multi-turn task it fills real specifics into the simulated user kiln_server
+         *     drafted; on a single-turn task it writes the input itself, as JSON matching
+         *     the task's input schema when there is one. Cases run concurrently.
          *
          *     Emits (all frames `type`-discriminated):
          *       - grounding_started  { total }
          *       - case_grounded      { case_index, scenario_index, status: "grounded",
-         *                              openenv_reset, seed_prompt, synthetic_user_info,
+         *                              openenv_reset, seed_prompt, synthetic_user_info
+         *                              (multi-turn), input (single-turn),
          *                              judge_guidance }
          *       - case_dropped       { case_index, scenario_index, drop_reason,
          *                              drop_detail }
@@ -3782,7 +3785,8 @@ export interface paths {
          *                              stopped every case)
          *     Terminated by `data: complete`. case_index is the position in `cases`.
          *     Disconnecting cancels the cases still running and ends their episodes.
-         *     A run config whose tools reach no OpenEnv server, or several, is a 400.
+         *     A run config whose tools reach no OpenEnv server, or several, is a 400. Cases
+         *     whose shape doesn't match the task's turn mode are a 422.
          */
         post: operations["ground_cases_api_projects__project_id__tasks__task_id__eval_builder_ground_cases_post"];
         delete?: never;
@@ -6837,6 +6841,11 @@ export interface components {
          *     generation, never at the output stage. Output behavior is the job of the
          *     task's system prompt, not this guide.
          *
+         *     On a multi-turn task the guide describes the people who talk to the agent
+         *     instead: their roles, what each asks for, and what each can and can't do.
+         *     The eval builder's planner and its OpenEnv grounding agent read it; it is
+         *     free text, with none of the sections below.
+         *
          *     The guide is a single markdown body. Two canonical shapes are supported
          *     depending on origin:
          *
@@ -9294,7 +9303,9 @@ export interface components {
         };
         /**
          * GroundCaseApi
-         * @description One planned case to ground: its plan item and kiln_server's simulated user.
+         * @description One planned case to ground: its plan item and, on a multi-turn task, the
+         *     simulated user kiln_server drafted for it. A single-turn task's case is its plan
+         *     item alone: the grounding agent writes its input.
          */
         GroundCaseApi: {
             /**
@@ -9307,20 +9318,24 @@ export interface components {
              * @description The plan item's text.
              */
             scenario: string;
-            /** Seed Prompt */
-            seed_prompt: string;
+            /**
+             * Seed Prompt
+             * @description Multi-turn only: the drafted opening message.
+             */
+            seed_prompt?: string | null;
             /**
              * Synthetic User Info
-             * @description kiln_server's tagged blob: <persona>, <goal>, optional <behavior_guidance>.
+             * @description Multi-turn only: kiln_server's tagged blob: <persona>, <goal>, optional <behavior_guidance>.
              */
-            synthetic_user_info: string;
+            synthetic_user_info?: string | null;
         };
         /**
          * GroundCasesRequest
-         * @description The grounding stream's request: the planned cases kiln_server drafted simulated
-         *     users for, the run config whose OpenEnv server they are checked against, and what
-         *     the grounding agent reads about the eval. The run config fields are the drive
-         *     requests' own, so cases are grounded against the config that will drive them.
+         * @description The grounding stream's request: the planned cases (with the simulated users
+         *     kiln_server drafted, on a multi-turn task), the run config whose OpenEnv server they
+         *     are checked against, and what the grounding agent reads about the eval. The run
+         *     config fields are the drive requests' own, so cases are grounded against the config
+         *     that will drive them.
          */
         GroundCasesRequest: {
             /**
@@ -9333,18 +9348,23 @@ export interface components {
              * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
              */
             target_run_config_id?: string | null;
-            /** @description The build's judge model. The grounding agent runs on it: it writes the answer key the judge grades against. */
-            judge_model: components["schemas"]["GroundingModelApi"];
+            /** @description The model the grounding agent runs on. It writes the answer key the judge grades against and, on a single-turn task, each input. */
+            grounding_model: components["schemas"]["GroundingModelApi"];
             /**
              * Specification
              * @description The eval's specification: what the eval tests.
              */
             specification: string;
             /**
-             * Synthetic User Guide
-             * @description Who uses the agent under test and what they ask. Omit when the project has none.
+             * Data Guide
+             * @description The task's Data Guide: who uses the agent under test, what they ask and what its inputs look like. Omit when the task has none.
              */
-            synthetic_user_guide?: string | null;
+            data_guide?: string | null;
+            /**
+             * Example Input
+             * @description Single-turn tasks only: a real input from the task's dataset, for the format and voice of the inputs the grounding agent writes.
+             */
+            example_input?: string | null;
             /**
              * Cases
              * @description The cases to ground. Frames refer to each by its position here (case_index).
@@ -9353,8 +9373,7 @@ export interface components {
         };
         /**
          * GroundingModelApi
-         * @description The model the grounding agent runs on: the build's judge model, at the judge's
-         *     thinking level.
+         * @description The model the grounding agent runs on, at its thinking level.
          */
         GroundingModelApi: {
             /** Model Name */
@@ -13015,6 +13034,13 @@ export interface components {
              * @description The id of the TaskRun this input was run in. A case whose run the human reviewed is represented by that rated run and is not minted. Empty when the pipeline recorded no run, which can never have been reviewed.
              */
             leaf_run_id: string;
+            /** @description The OpenEnv episode the input was grounded in and runs in. Saved on the minted EvalInput, so every eval run starts the same episode. Set on every case of a save with an openenv_server_id, and on none otherwise. */
+            openenv_reset?: components["schemas"]["OpenEnvReset"] | null;
+            /**
+             * Judge Guidance
+             * @description The case's judge guidance: the facts of its episode the judge reads beside the rubric. Saved as the minted EvalInput's reference. Set exactly when openenv_reset is.
+             */
+            judge_guidance?: string | null;
         };
         /** SingleTurnEvalInputData */
         SingleTurnEvalInputData: {
@@ -13024,6 +13050,20 @@ export interface components {
              */
             type: "single_turn";
             user_message: components["schemas"]["UserMessage"];
+        };
+        /**
+         * SingleTurnGroundingApi
+         * @description Where a grounded single-turn input runs and what its judge reads: the
+         *     case's OpenEnv episode and judge guidance, from its case_grounded frame.
+         */
+        SingleTurnGroundingApi: {
+            /** @description The OpenEnv episode the input runs in. Its server must be the one the target run config's tools reach. */
+            openenv_reset: components["schemas"]["OpenEnvReset"];
+            /**
+             * Judge Guidance
+             * @description The case's facts of the environment, which the judge reads beside the rubric.
+             */
+            judge_guidance: string;
         };
         /**
          * SingleTurnPipelineRequest
@@ -13070,6 +13110,11 @@ export interface components {
              */
             batch_tag?: string | null;
             judge: components["schemas"]["JudgeConfig"];
+            /**
+             * Groundings
+             * @description Each input's OpenEnv episode and judge guidance, in the order of inputs, when the inputs were grounded in the OpenEnv server the target run config's tools reach. Omit for ungrounded inputs.
+             */
+            groundings?: components["schemas"]["SingleTurnGroundingApi"][] | null;
         };
         /**
          * SingleTurnSaveInfo
@@ -13094,6 +13139,11 @@ export interface components {
              * @description The cases the batch actually ran. Each unreviewed one becomes an EvalInput the runner executes fresh per run config at eval time; a reviewed one is golden instead.
              */
             inputs: components["schemas"]["SingleTurnCaseApi"][];
+            /**
+             * Openenv Server Id
+             * @description The OpenEnv server the inputs were grounded in, saved on the Eval. Every case's openenv_reset must name it. Omit when the build's run config used no OpenEnv server; no case may then carry a reset or judge guidance.
+             */
+            openenv_server_id?: string | null;
         };
         /**
          * SkillContentResponse
@@ -23851,7 +23901,7 @@ export interface operations {
             path: {
                 /** @description ID of the project containing the target task. */
                 project_id: string;
-                /** @description ID of the target task. Must be a multi-turn task. */
+                /** @description ID of the target task. A single-turn task takes each case's seed prompt as its input. */
                 task_id: string;
             };
             cookie?: never;

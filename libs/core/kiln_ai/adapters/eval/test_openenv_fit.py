@@ -64,9 +64,10 @@ def _eval(openenv_server_id: str | None) -> Eval:
 @pytest.mark.parametrize(
     "tool_ids, expected",
     [
-        (None, "no_openenv_tools"),
-        ([], "no_openenv_tools"),
-        ([PROJECT_TOOL], "no_openenv_tools"),
+        # No OpenEnv tools: the cases run against the run config's own tools.
+        (None, None),
+        ([], None),
+        ([PROJECT_TOOL], None),
         ([OWN_TOOL], None),
         ([OWN_TOOL, PROJECT_TOOL], None),
         ([OTHER_TOOL], "other_openenv_server"),
@@ -82,21 +83,17 @@ def test_every_run_config_fits_an_ungrounded_eval(tool_ids):
     assert openenv_misfit(None, _run_config(tool_ids)) is None
 
 
-def test_an_mcp_run_config_has_no_openenv_tools():
+def test_an_mcp_run_config_fits_with_no_openenv_tools():
     run_config = TaskRunConfig(
         name="mcp rc",
         run_config_properties=McpRunConfigProperties(
             tool_reference=MCPToolReference(tool_id="mcp::local::s::t")
         ),
     )
-    assert openenv_misfit(SERVER_ID, run_config) == "no_openenv_tools"
+    assert openenv_misfit(SERVER_ID, run_config) is None
 
 
 def test_openenv_misfit_message():
-    assert openenv_misfit_message("no_openenv_tools", "Plain", "World") == (
-        "This eval's cases run in OpenEnv server 'World'; "
-        "run config 'Plain' has none of its tools."
-    )
     assert openenv_misfit_message("other_openenv_server", "Foreign", "World") == (
         "This eval's cases run in OpenEnv server 'World'; "
         "run config 'Foreign' uses tools from another OpenEnv server."
@@ -115,7 +112,7 @@ def test_openenv_server_label(tmp_path):
     assert openenv_server_label(server.id, None) == server.id
 
 
-def test_split_run_configs_keeps_order_and_names_each_skip():
+def test_split_run_configs_keeps_order_and_skips_only_other_servers():
     fits_a = _run_config([OWN_TOOL], name="a")
     plain = _run_config([PROJECT_TOOL], name="plain")
     fits_b = _run_config([OWN_TOOL, PROJECT_TOOL], name="b")
@@ -125,13 +122,9 @@ def test_split_run_configs_keeps_order_and_names_each_skip():
         _eval(SERVER_ID), [fits_a, plain, fits_b, foreign], "World"
     )
 
-    assert fitting == [fits_a, fits_b]
+    # A run config with no OpenEnv tools fits: it runs the cases on its own tools.
+    assert fitting == [fits_a, plain, fits_b]
     assert skipped == [
-        SkippedRunConfig(
-            id="id_plain",
-            name="plain",
-            reason=openenv_misfit_message("no_openenv_tools", "plain", "World"),
-        ),
         SkippedRunConfig(
             id="id_foreign",
             name="foreign",

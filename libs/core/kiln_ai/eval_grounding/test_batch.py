@@ -95,9 +95,6 @@ async def test_yields_each_case_then_the_totals(batch, session_manager):
         patch.object(
             session_manager, "list_tools", wraps=session_manager.list_tools
         ) as list_tools,
-        patch.object(
-            session_manager, "metadata", wraps=session_manager.metadata
-        ) as metadata,
     ):
         events = [event async for event in batch([case(0), case(1), case(2)])]
 
@@ -113,7 +110,7 @@ async def test_yields_each_case_then_the_totals(batch, session_manager):
         1: outcomes["scenario 1"],
         2: outcomes["scenario 2"],
     }
-    assert list_tools.call_count == 1 and metadata.call_count == 1
+    assert list_tools.call_count == 1
     assert [t.name for t in seen_kwargs[0]["server_tools"]] == [
         "append_note",
         "read_notes",

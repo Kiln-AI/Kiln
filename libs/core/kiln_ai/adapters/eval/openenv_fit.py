@@ -1,5 +1,6 @@
 """Whether a run config can run a grounded eval's cases: the eval's cases were grounded in one
-OpenEnv server, and only a run config that lists that server's tools runs them in it."""
+OpenEnv server. A run config that lists that server's tools runs them in it; one with no
+OpenEnv tools runs them against its own tools; one that lists another server's can't."""
 
 from dataclasses import dataclass
 from typing import Literal
@@ -14,7 +15,7 @@ from kiln_ai.datamodel.tool_id import (
     openenv_and_tool_name_from_id,
 )
 
-OpenEnvMisfit = Literal["no_openenv_tools", "other_openenv_server"]
+OpenEnvMisfit = Literal["other_openenv_server"]
 """Why a run config doesn't fit a grounded eval (see `openenv_misfit`)."""
 
 
@@ -37,14 +38,12 @@ def openenv_misfit(
     eval_openenv_server_id: ID_TYPE | None, run_config: TaskRunConfig
 ) -> OpenEnvMisfit | None:
     """Why the run config can't run the cases of an eval grounded in `eval_openenv_server_id`,
-    or None when it can or the eval isn't grounded. It fits when it lists at least one OpenEnv
-    tool and every OpenEnv tool it lists is served by the eval's server. Only the tools the run
-    config lists directly count, as in the eval runner."""
+    or None when it can or the eval isn't grounded. It fits unless it lists an OpenEnv tool
+    another server serves: a run config with no OpenEnv tools runs the cases against its own
+    tools. Only the tools the run config lists directly count."""
     if eval_openenv_server_id is None:
         return None
     tool_ids = openenv_tool_ids(run_config)
-    if not tool_ids:
-        return "no_openenv_tools"
     if any(
         openenv_and_tool_name_from_id(t)[0] != eval_openenv_server_id for t in tool_ids
     ):
@@ -55,15 +54,10 @@ def openenv_misfit(
 def openenv_misfit_message(
     misfit: OpenEnvMisfit, run_config_name: str, openenv_server_label: str
 ) -> str:
-    """One sentence for a user: where the eval's cases run, and what the run config lacks."""
-    lacks = (
-        "has none of its tools"
-        if misfit == "no_openenv_tools"
-        else "uses tools from another OpenEnv server"
-    )
+    """One sentence for a user: where the eval's cases run, and why the run config can't."""
     return (
         f"This eval's cases run in OpenEnv server '{openenv_server_label}'; "
-        f"run config '{run_config_name}' {lacks}."
+        f"run config '{run_config_name}' uses tools from another OpenEnv server."
     )
 
 

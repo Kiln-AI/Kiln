@@ -2210,6 +2210,96 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
                 json=request_data,
             )
 
+    @staticmethod
+    def _ground(request_data: dict, server_id: str) -> None:
+        """Make every input grounded in the server, as the builder's save sends it."""
+        request_data["single_turn"]["openenv_server_id"] = server_id
+        for i, case in enumerate(request_data["single_turn"]["inputs"]):
+            case["openenv_reset"] = {
+                "openenv_server_id": server_id,
+                "reset_kwargs": {"fixture": f"f{i}"},
+            }
+            case["judge_guidance"] = f"## Starting point\nInput {i}."
+
+    @pytest.fixture
+    def openenv_server(self, project_and_task):
+        project, _ = project_and_task
+        server = OpenEnvServer(name="shop", url="http://127.0.0.1:9", parent=project)
+        server.save_to_file()
+        return server
+
+    def test_grounded_save_writes_resets_guidance_and_server(
+        self,
+        client,
+        project_and_task,
+        batch_runs,
+        single_turn_request_data,
+        openenv_server,
+    ):
+        project, task = project_and_task
+        self._bind_inputs_to_runs(single_turn_request_data, batch_runs)
+        self._ground(single_turn_request_data, openenv_server.id)
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run(batch_runs[0].id, meets_spec=True),
+        ]
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 200, response.text
+        (eval_obj,) = task.evals()
+        assert eval_obj.openenv_server_id == openenv_server.id
+        (config,) = eval_obj.configs()
+        assert isinstance(config.properties, LlmJudgeProperties)
+        assert config.properties.reference_keys == ["judge_guidance"]
+
+        eval_inputs = {ei.data.user_message.text: ei for ei in task.eval_inputs()}
+        assert len(eval_inputs) == 7
+        minted = eval_inputs["input 3"]
+        assert minted.openenv_reset is not None
+        assert minted.openenv_reset.openenv_server_id == openenv_server.id
+        assert minted.openenv_reset.reset_kwargs == {"fixture": "f3"}
+        assert minted.reference == {"judge_guidance": "## Starting point\nInput 3."}
+
+        golden = TaskRun.from_id_and_parent_path(batch_runs[0].id, task.path)
+        assert golden is not None
+        assert golden.reference == {"judge_guidance": "## Starting point\nInput 0."}
+
+    def test_ungrounded_save_names_no_server(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 200, response.text
+        (eval_obj,) = task.evals()
+        assert eval_obj.openenv_server_id is None
+        assert all(ei.openenv_reset is None for ei in task.eval_inputs())
+        assert all(ei.reference is None for ei in task.eval_inputs())
+
+    def test_grounded_input_on_another_server_is_400(
+        self,
+        client,
+        project_and_task,
+        batch_runs,
+        single_turn_request_data,
+        openenv_server,
+    ):
+        project, task = project_and_task
+        self._ground(single_turn_request_data, openenv_server.id)
+        single_turn_request_data["single_turn"]["inputs"][2]["openenv_reset"][
+            "openenv_server_id"
+        ] = "other"
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 400
+        assert (
+            "Case 2 was grounded in OpenEnv server other"
+            in (response.json()["message"])
+        )
+        assert task.evals() == []
+        assert task.eval_inputs() == []
+
     def test_single_turn_save_tags_runs_and_creates_eval(
         self, client, project_and_task, batch_runs, single_turn_request_data
     ):

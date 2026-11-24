@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import JsonValue
 
-from kiln_ai.eval_grounding.models import EvalContext, GroundingCase
+from kiln_ai.eval_grounding.models import EvalContext, GroundingCase, GroundingMode
 from kiln_ai.eval_grounding.session import (
     DEFAULT_LIMITS,
     DEFAULT_TIME_LIMIT_S,
@@ -28,11 +28,10 @@ _SYSTEM_PROMPT_TEMPLATE = """You prepare one eval case so it can run against an 
 You get:
 <specification> what the eval tests
 <target_task_prompt> the instructions the agent under test is given
-<data_guide> who uses that agent and what they ask (only when the eval has one)
+<data_guide> the task's Data Guide: who uses that agent, what they ask and what its inputs look like (only when the task has one)
 <case_scenario> the planned scenario
 <simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags
 <reset_schema> the server's reset arguments, as JSON Schema. Its descriptions are the server owner's notes: what each starting state contains, who a session can act as, and how any setup argument works.
-<server_readme> the server's own docs (may be empty)
 <target_tools> the tools the agent under test will have
 
 Your tools:
@@ -52,7 +51,7 @@ Before you drop a case for no_fit or rehearsal_failed, try at least one other wa
 Steps:
 1. Pick reset arguments whose starting state fits the scenario. A starting state named in the scenario is only a hint. If an argument chooses who the session acts as, pick one whose role matches the persona. Read the argument descriptions to find it; it may have any name. Use the Data Guide for who the user plausibly is (their role, what kind of person they are), but don't override the drafted persona. If the reset schema has a `seed` argument, always pass one (a value the schema allows) so the case replays the same way.
 2. Look at the environment with whatever tools show you its state, and find what the scenario needs: data, objects, a condition. Prefer what the starting state already has. Before setting anything up, try the other starting states whose descriptions suggest they have what the scenario needs. Keep resets in reserve for setup and your final reset. Some environments have nothing to look at, only tools that act. Then go straight to step 4.
-3. If no starting state has what the scenario needs, and a setup argument's description (or the server docs) says what it accepts, write the smallest setup that adds it. If nothing explains how to use it, don't guess: drop the case. What you add must be consistent with what is already there: anything it refers to must exist, and anything the server requires must be filled in. Make it look like the environment's own data, so nothing in it reads as test data to the agent under test: copy an existing item of the same kind and change only what the case needs, and follow the environment's own style for IDs, numbers, names and dates. Before you add a look-alike of something, look for one the environment already has. A new ID looks like the environment's own (the same length and kind of characters) and encodes no meaning. A new or renamed item follows the naming pattern of the items beside it, and its text doesn't repeat the simulated user's words. Write the data the scenario calls for as the scenario describes it. Don't soften, mask or sanitize it to fit the specification: if the scenario needs offensive text in a record, write that text, not a masked version of it, or the case tests something else. Reset with it and check the result.
+3. If no starting state has what the scenario needs, and a setup argument's description says what it accepts, write the smallest setup that adds it. If nothing explains how to use it, don't guess: drop the case. What you add must be consistent with what is already there: anything it refers to must exist, and anything the server requires must be filled in. Make it look like the environment's own data, so nothing in it reads as test data to the agent under test: copy an existing item of the same kind and change only what the case needs, and follow the environment's own style for IDs, numbers, names and dates. Before you add a look-alike of something, look for one the environment already has. A new ID looks like the environment's own (the same length and kind of characters) and encodes no meaning. A new or renamed item follows the naming pattern of the items beside it, and its text doesn't repeat the simulated user's words. Write the data the scenario calls for as the scenario describes it. Don't soften, mask or sanitize it to fit the specification: if the scenario needs offensive text in a record, write that text, not a masked version of it, or the case tests something else. Reset with it and check the result.
 4. Rehearse: do what a well-behaved agent would do for this user, then observe the result. Read it back if a tool can; if not, use the tool results and read_state. This tells you what the right outcome is.
 5. Fill in the simulated user. It was written from the scenario and is good apart from its specifics and the leaks listed below: change only those. If the session acts as someone, put them in the persona. Put real specifics (IDs, names, values) in seed_prompt and goal where the scenario has the user know them. Keep its wording, tone and difficulty. If the scenario is about a user who doesn't know an ID, don't give them one.
    Then remove what a real user wouldn't say and what does the agent's work for it, from seed_prompt, goal and behavior_guidance alike:
@@ -68,7 +67,7 @@ The case is saved with the reset arguments of your last start_episode call. Make
 The reference holds the facts of the environment and nothing else. Don't restate or interpret the specification: the judge has it, and decides what the agent should do with these facts. Write only what the environment shows.
 - starting_point: what the environment holds before the conversation, including anything your setup added. If the environment has a clock or a time zone, give them: dates in the facts and the outcome are read against them.
 - facts: what you found, each with the call that showed it. The call's result must show the whole fact; if it shows only part, make another call or narrow the fact. The call must make sense on its own: if it only reads the saved output of an earlier call, cite the earlier call instead. Never cite a call whose arguments name a saved file or cache path; cite the call that read the environment.
-- expected_outcome: one short paragraph: the correct answer the agent should be able to give, and any change the environment should show at the end. Check in your rehearsal what actually changed, and describe it the way the server records it, including the fields the server set on its own (a timestamp, who made the change) so the judge doesn't count them as extra. You may name a plausible wrong answer as a fact (for example, "the full list has 28 items; a search by title finds only 18"). Don't say how the agent should word its reply or what rule it should follow: no "the agent should ask", "the reply should name", "is wrong" or "is acceptable". Don't label a change as allowed, forbidden, extra or unrequested, and don't decide what the user's words permit: give the facts the judge needs to decide that (for example, "only one user has the technician role") and let the judge apply the specification. Where the right end state depends on what the user answers, give the end state for each answer. When the request fairly matches several items, or can be read two ways that give different answers, give the answer or end state for each reading, and for the agent asking which one is meant before it acts. A reading is one a reasonable person could mean by the user's words; an item that only matched a loose search is a fact, not a reading. Say which reading the simulated user means, without calling it the only correct one. Where the specification allows more than one outcome, give each without saying which is right.
+- expected_outcome: one short paragraph: the correct answer the agent should be able to give, and any change the environment should show at the end. Check in your rehearsal what actually changed, and describe it the way the server records it, including the fields the server set on its own (a timestamp, who made the change) so the judge doesn't count them as extra. You may name a plausible wrong answer as a fact (for example, "the full list has 12 items; a search by title finds only 9"). Don't say how the agent should word its reply or what rule it should follow: no "the agent should ask", "the reply should name", "is wrong" or "is acceptable". Don't label a change as allowed, forbidden, extra or unrequested, and don't decide what the user's words permit: give the facts the judge needs to decide that (for example, "only one account can issue refunds") and let the judge apply the specification. Where the right end state depends on what the user answers, give the end state for each answer. When the request fairly matches several items, or can be read two ways that give different answers, give the answer or end state for each reading, and for the agent asking which one is meant before it acts. A reading is one a reasonable person could mean by the user's words; an item that only matched a loose search is a fact, not a reading. Say which reading the simulated user means, without calling it the only correct one. Where the specification allows more than one outcome, give each without saying which is right.
 
 Name every item the reference talks about the way a person would (its title or number) and by the identifier the environment's state uses for it, so the judge can find it in the final state. That includes look-alike items that must stay unchanged.
 
@@ -94,6 +93,95 @@ _RESULT_SKELETON = """{{
 }}
 A grounded case fills seed_prompt, synthetic_user_info and reference, and leaves drop_reason and drop_detail null. A dropped case fills drop_reason and drop_detail. Leave behavior_guidance out of synthetic_user_info only when the draft had none."""
 
+_SINGLE_TURN_EDITS: tuple[tuple[str, str], ...] = (
+    (
+        "The case was planned and its simulated user drafted without anyone looking at the server's environment. Your job is to make the case true for that environment, or to drop it.",
+        "The case was planned without anyone looking at the server's environment. The agent under test gets one input, a single message, and answers it. Your job is to write that input so the case is true for that environment, or to drop the case.",
+    ),
+    (
+        "<case_scenario> the planned scenario\n<simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags\n",
+        "<example_input> a real input from the task's dataset, for the input's format and voice (only when there is one)\n<input_schema> the JSON schema the input must match (only when the task's input is structured)\n<case_scenario> the planned scenario\n",
+    ),
+    (
+        "The things the scenario and the simulated user name",
+        "The things the scenario names",
+    ),
+    (
+        "use its real name everywhere in the simulated user.",
+        "use its real name in the input.",
+    ),
+    (
+        "pick one whose role matches the persona.",
+        "pick one whose role fits the user the scenario describes.",
+    ),
+    (
+        "(their role, what kind of person they are), but don't override the drafted persona.",
+        "(their role, what kind of person they are).",
+    ),
+    (
+        "its text doesn't repeat the simulated user's words.",
+        "its text doesn't repeat the input's words.",
+    ),
+    (
+        """5. Fill in the simulated user. It was written from the scenario and is good apart from its specifics and the leaks listed below: change only those. If the session acts as someone, put them in the persona. Put real specifics (IDs, names, values) in seed_prompt and goal where the scenario has the user know them. Keep its wording, tone and difficulty. If the scenario is about a user who doesn't know an ID, don't give them one.
+   Then remove what a real user wouldn't say and what does the agent's work for it, from seed_prompt, goal and behavior_guidance alike:
+   - anything that tells the agent what makes the case hard: that items look alike, that there are several matches, that it should look something up or ask
+   - the answer, the figure or the item the agent has to find, and the item it should leave alone. The user can still name the item they mean when the agent asks.
+   - instructions that rescue the agent, such as pointing out what it missed or asking which item it changed
+   - requests for something the specification expects the agent to do without being asked
+   Keep how the user answers questions the agent may ask them.
+""",
+        """5. Write the input: the complete message a real user of this agent would send for the scenario, in one shot. Follow the Data Guide and the example input for its format and voice. When there is an input schema, the input is a JSON object that matches it, written into input as a JSON string. If the session acts as someone, write as them. Put real specifics (IDs, names, values) in it where the scenario has the user know them. If the scenario is about a user who doesn't know an ID, don't give them one.
+   Leave out what a real user wouldn't say and what does the agent's work for it:
+   - anything that tells the agent what makes the case hard: that items look alike, that there are several matches, that it should look something up or ask
+   - the answer, the figure or the item the agent has to find, and the item it should leave alone
+   - requests for something the specification expects the agent to do without being asked
+""",
+    ),
+    (
+        "- starting_point: what the environment holds before the conversation,",
+        "- starting_point: what the environment holds before the agent under test gets the input,",
+    ),
+    (
+        " Where the right end state depends on what the user answers, give the end state for each answer.",
+        "",
+    ),
+    (
+        "Say which reading the simulated user means,",
+        "Say which reading the user means,",
+    ),
+)
+"""How the single-turn prompt differs from the multi-turn one: each pair replaces text
+that occurs exactly once, so a change to the shared text that breaks a pair fails at
+import rather than shipping a half-edited prompt."""
+
+
+def _single_turn_template() -> str:
+    template = _SYSTEM_PROMPT_TEMPLATE
+    for old, new in _SINGLE_TURN_EDITS:
+        if template.count(old) != 1:
+            raise ValueError(
+                f"Single-turn prompt edit doesn't apply once: {old[:60]!r}"
+            )
+        template = template.replace(old, new)
+    return template
+
+
+_SINGLE_TURN_TEMPLATE = _single_turn_template()
+
+_SINGLE_TURN_RESULT_SKELETON = """{{
+  "status": "grounded" | "dropped",
+  "drop_reason": "no_fit" | "unrepresentable" | "rehearsal_failed" | null,
+  "drop_detail": "one sentence on why the case was dropped" | null,
+  "input": "the input the agent under test gets" | null,
+  "reference": {{
+    "starting_point": "what the environment holds before the agent under test gets the input, including any setup you added, in a sentence or two",
+    "facts": [{{"text": "a fact", "evidence": {{"tool": "the tool you called", "args": {args}, "result_excerpt": "the part of its result that shows the fact"}}}}],
+    "expected_outcome": "one short paragraph: the correct answer and any change the environment should show at the end"
+  }} | null
+}}
+A grounded case fills input and reference, and leaves drop_reason and drop_detail null. A dropped case fills drop_reason and drop_detail."""
+
 _FINAL_ANSWER: dict[AnswerStyle, str] = {
     "reply_json": "When you are done, reply with only this JSON object:\n{skeleton}",
     "structured_output": (
@@ -114,13 +202,15 @@ def system_prompt(
     limits: GroundingLimits = DEFAULT_LIMITS,
     time_limit_s: float = DEFAULT_TIME_LIMIT_S,
     answer_style: AnswerStyle = "reply_json",
+    mode: GroundingMode = "multi_turn",
 ) -> str:
-    """The grounding agent's instructions, with the limits it runs under and how it
-    hands back its result."""
-    skeleton = _RESULT_SKELETON.format(
-        args='"{\\"id\\": 7}"' if answer_style == "structured_output" else "{}"
-    )
-    return _SYSTEM_PROMPT_TEMPLATE.format(
+    """The grounding agent's instructions for `mode`, with the limits it runs under and
+    how it hands back its result."""
+    single_turn = mode == "single_turn"
+    skeleton = (
+        _SINGLE_TURN_RESULT_SKELETON if single_turn else _RESULT_SKELETON
+    ).format(args='"{\\"id\\": 7}"' if answer_style == "structured_output" else "{}")
+    return (_SINGLE_TURN_TEMPLATE if single_turn else _SYSTEM_PROMPT_TEMPLATE).format(
         max_resets=limits.max_resets,
         max_tool_calls=limits.max_tool_calls,
         time_limit_minutes=f"{time_limit_s / 60:g}",
@@ -147,11 +237,17 @@ def case_message(
     *,
     eval_context: EvalContext,
     reset_schema: dict[str, JsonValue] | None,
-    readme: str | None,
     target_tools: list[ToolCallDefinition],
 ) -> str:
     """The user message for one case: everything the agent reads before its first call.
-    The eval's sections come first and are the same for every case in a run."""
+    The eval's sections come first and are the same for every case in a run. A
+    multi-turn case carries its drafted simulated user; a single-turn case only its
+    scenario, with the example input and input schema when the task has them."""
+    if case.mode != eval_context.mode:
+        raise ValueError(
+            f"A {case.mode.replace('_', '-')} case can't be grounded in "
+            f"{eval_context.mode.replace('_', '-')} mode."
+        )
     schema_text = (
         json.dumps(reset_schema, indent=2, ensure_ascii=False)
         if reset_schema is not None
@@ -164,22 +260,30 @@ def case_message(
         )
         or "None."
     )
-    eval_sections = [
+    sections = [
         _tagged("specification", eval_context.specification),
         _tagged("target_task_prompt", eval_context.target_task_prompt),
     ]
     if eval_context.data_guide and eval_context.data_guide.strip():
-        eval_sections.append(_tagged("data_guide", eval_context.data_guide))
-    return "\n\n".join(
-        [
-            *eval_sections,
+        sections.append(_tagged("data_guide", eval_context.data_guide))
+    if case.seed_prompt is not None and case.synthetic_user_info is not None:
+        sections += [
             _tagged("case_scenario", case.scenario),
             _tagged(
                 "simulated_user",
                 f"{_tagged('seed_prompt', case.seed_prompt)}\n{case.synthetic_user_info.strip()}",
             ),
+        ]
+    else:
+        if eval_context.example_input and eval_context.example_input.strip():
+            sections.append(_tagged("example_input", eval_context.example_input))
+        if eval_context.input_schema is not None:
+            sections.append(_tagged("input_schema", eval_context.input_schema))
+        sections.append(_tagged("case_scenario", case.scenario))
+    return "\n\n".join(
+        [
+            *sections,
             _tagged("reset_schema", schema_text),
-            _tagged("server_readme", readme.strip() if readme else ""),
             _tagged("target_tools", tools_text),
         ]
     )

@@ -17,6 +17,11 @@ class DataGuide(KilnParentedModel):
     generation, never at the output stage. Output behavior is the job of the
     task's system prompt, not this guide.
 
+    On a multi-turn task the guide describes the people who talk to the agent
+    instead: their roles, what each asks for, and what each can and can't do.
+    The eval builder's planner and its OpenEnv grounding agent read it; it is
+    free text, with none of the sections below.
+
     The guide is a single markdown body. Two canonical shapes are supported
     depending on origin:
 

@@ -94,7 +94,7 @@ async def ground_cases(
     """Ground `cases` at most `concurrency` at a time. Yields a `CaseGrounded` as each
     finishes, in finishing order, then a `GroundingFinished`.
 
-    The server's reset schema, metadata and tools are read once, before the first case.
+    The server's reset schema and tools are read once, before the first case.
     A case that fails with a transient provider or environment error is started over,
     up to `max_retries` times with backoff; its outcome then reports incomplete usage,
     since the failed attempts' model calls are not in it. Any other error from a case
@@ -104,7 +104,6 @@ async def ground_cases(
     if concurrency < 1:
         raise ValueError("concurrency must be at least 1")
     reset_schema = await session_manager.reset_schema(openenv_server)
-    metadata = await session_manager.metadata(openenv_server)
     server_tools = await session_manager.list_tools(openenv_server)
     # None ends the stream once every case has finished.
     queue: asyncio.Queue[CaseGrounded | GroundingCaseError | None] = asyncio.Queue()
@@ -127,7 +126,6 @@ async def ground_cases(
                 thinking_level=thinking_level,
                 target_tools=target_tools,
                 reset_schema=reset_schema,
-                metadata=metadata,
                 answer_style=answer_style,
                 system_prompt_text=system_prompt_text,
                 limits=limits,
