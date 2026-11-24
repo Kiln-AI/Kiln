@@ -9,6 +9,12 @@
     Trace,
   } from "$lib/types"
   import { client } from "$lib/api_client"
+  import {
+    calculate_subtask_usage,
+    has_subtask_calls,
+    type SubtaskReference,
+    type SubtaskUsage,
+  } from "$lib/ui/run_subtask_usage"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { formatDate, formatLatency } from "$lib/utils/formatters"
   import { bounceOut } from "svelte/easing"
@@ -195,95 +201,17 @@
   }
 
   // ---- Subtask usage ----
-  type SubtaskReference = {
-    project_id: string
-    task_id: string
-    run_id: string
+  async function fetch_subtask_run(
+    reference: SubtaskReference,
+  ): Promise<TaskRun | null> {
+    const response = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+      { params: { path: reference } },
+    )
+    return response.error ? null : response.data ?? null
   }
 
-  function extract_subtask_references(trace: Trace): SubtaskReference[] {
-    const references: SubtaskReference[] = []
-    for (const message of trace) {
-      if (
-        "kiln_task_tool_data" in message &&
-        message.kiln_task_tool_data &&
-        typeof message.kiln_task_tool_data === "string"
-      ) {
-        const [project_id, , task_id, run_id] =
-          message.kiln_task_tool_data.split(":::")
-        if (project_id && task_id && run_id) {
-          references.push({ project_id, task_id, run_id })
-        }
-      }
-    }
-    return references
-  }
-
-  async function calculate_subtask_usage(
-    trace: Trace | null | undefined,
-    visited: Set<string> = new Set(),
-  ): Promise<{ cost: number; tokens: number; latency_ms: number }> {
-    if (!trace) return { cost: 0, tokens: 0, latency_ms: 0 }
-
-    const references = extract_subtask_references(trace)
-    let total_cost = 0
-    let total_tokens = 0
-    let total_llm_latency_ms = 0
-
-    for (const ref of references) {
-      const key = `${ref.project_id}:${ref.task_id}:${ref.run_id}`
-      if (visited.has(key)) continue
-      visited.add(key)
-
-      try {
-        const response = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
-          {
-            params: {
-              path: {
-                project_id: ref.project_id,
-                task_id: ref.task_id,
-                run_id: ref.run_id,
-              },
-            },
-          },
-        )
-
-        if (!response.error && response.data) {
-          total_cost += response.data.usage?.cost ?? 0
-          total_tokens += response.data.usage?.total_tokens ?? 0
-          total_llm_latency_ms += response.data.usage?.total_llm_latency_ms ?? 0
-          const subtask_usage = await calculate_subtask_usage(
-            response.data.trace,
-            visited,
-          )
-          total_cost += subtask_usage.cost
-          total_tokens += subtask_usage.tokens
-          total_llm_latency_ms += subtask_usage.latency_ms
-        }
-      } catch (error) {
-        console.warn(
-          "Failed to fetch subtask usage, continuing on error as subtask run may have been deleted.",
-          {
-            project_id: ref.project_id,
-            task_id: ref.task_id,
-            run_id: ref.run_id,
-            error,
-          },
-        )
-      }
-    }
-
-    return {
-      cost: total_cost,
-      tokens: total_tokens,
-      latency_ms: total_llm_latency_ms,
-    }
-  }
-
-  let subtask_cost: number | null = null
-  let subtask_tokens: number | null = null
-  let subtask_latency_ms: number | null = null
+  let subtask_usage: SubtaskUsage | null = null
   let subtask_usage_loading = false
   // Counter to prevent race conditions: when run changes rapidly, multiple async requests
   // may be in flight. We only update state if this request is still the latest one.
@@ -292,11 +220,9 @@
   async function load_subtask_usage(trace: Trace | null | undefined) {
     const request_id = ++subtask_usage_request_id
 
-    if (!trace || extract_subtask_references(trace).length === 0) {
+    if (!has_subtask_calls(trace)) {
       if (request_id === subtask_usage_request_id) {
-        subtask_cost = null
-        subtask_tokens = null
-        subtask_latency_ms = null
+        subtask_usage = null
         subtask_usage_loading = false
       }
       return
@@ -304,17 +230,13 @@
 
     subtask_usage_loading = true
     try {
-      const usage = await calculate_subtask_usage(trace)
+      const usage = await calculate_subtask_usage(trace, fetch_subtask_run)
       if (request_id === subtask_usage_request_id) {
-        subtask_cost = usage.cost
-        subtask_tokens = usage.tokens
-        subtask_latency_ms = usage.latency_ms
+        subtask_usage = usage
       }
     } catch {
       if (request_id === subtask_usage_request_id) {
-        subtask_cost = null
-        subtask_tokens = null
-        subtask_latency_ms = null
+        subtask_usage = null
       }
     } finally {
       if (request_id === subtask_usage_request_id) {
@@ -327,10 +249,8 @@
     base_cost: number,
     base_tokens: number,
     base_latency_ms: number,
-    subtask_cost: number | null,
+    subtask_usage: SubtaskUsage | null,
     subtask_usage_loading: boolean,
-    subtask_tokens: number | null,
-    subtask_latency_ms: number | null,
   ) {
     let properties = []
 
@@ -339,6 +259,9 @@
     const run_cost = base_cost
     const run_tokens = base_tokens
     const run_latency = base_latency_ms
+    const subtask_cost = subtask_usage?.cost ?? 0
+    const subtask_tokens = subtask_usage?.tokens ?? 0
+    const subtask_latency_ms = subtask_usage?.latency_ms ?? 0
 
     if (subtask_usage_loading) {
       properties.push({
@@ -346,7 +269,7 @@
         value: "Loading...",
       })
     } else {
-      const total_cost = run_cost + (subtask_cost ?? 0)
+      const total_cost = run_cost + (subtask_usage?.uncounted_cost ?? 0)
       if (total_cost > 0) {
         properties.push({
           name: label("Cost"),
@@ -360,7 +283,7 @@
         name: "Subtasks Cost",
         value: "Loading...",
       })
-    } else if (subtask_cost && subtask_cost > 0) {
+    } else if (subtask_cost > 0) {
       properties.push({
         name: "Subtasks Cost",
         value: `$${subtask_cost.toFixed(6)}`,
@@ -373,7 +296,7 @@
         value: "Loading...",
       })
     } else {
-      const total_tokens = run_tokens + (subtask_tokens ?? 0)
+      const total_tokens = run_tokens + (subtask_usage?.uncounted_tokens ?? 0)
       if (total_tokens > 0) {
         properties.push({
           name: label("Tokens"),
@@ -387,7 +310,7 @@
         name: "Subtasks Tokens",
         value: "Loading...",
       })
-    } else if (subtask_tokens && subtask_tokens > 0) {
+    } else if (subtask_tokens > 0) {
       properties.push({
         name: "Subtasks Tokens",
         value: subtask_tokens,
@@ -400,7 +323,7 @@
         value: "Loading...",
       })
     } else {
-      const total_latency = run_latency + (subtask_latency_ms ?? 0)
+      const total_latency = run_latency + subtask_latency_ms
       if (total_latency > 0) {
         properties.push({
           name: label("Latency"),
@@ -414,7 +337,7 @@
         name: "Subtasks Latency",
         value: "Loading...",
       })
-    } else if (subtask_latency_ms && subtask_latency_ms > 0) {
+    } else if (subtask_latency_ms > 0) {
       properties.push({
         name: "Subtasks Latency",
         value: formatLatency(subtask_latency_ms),
@@ -445,11 +368,12 @@
     return total
   }
 
-  // Base (non-subtask) usage for the Usage panel. Multiturn shows the whole
-  // conversation via the run's cumulative_usage (sum across every turn in the
-  // trace, including seeded prior turns); single-turn shows the run's own
-  // usage. cumulative_usage can be null on records predating the field, so
-  // fall back to the run's usage.
+  // Base usage for the Usage panel. Multiturn shows the whole conversation via
+  // the run's cumulative_usage (sum across every turn in the trace, including
+  // seeded prior turns); single-turn shows the run's own usage. Both hold the
+  // cost and tokens of subtasks whose tool message carries `usage`; older runs
+  // get theirs added from subtask_usage. cumulative_usage can be null on
+  // records predating the field, so fall back to the run's usage.
   $: base_cost = is_multiturn
     ? run?.cumulative_usage?.cost ?? run?.usage?.cost ?? 0
     : run?.usage?.cost ?? 0
@@ -464,10 +388,8 @@
     base_cost,
     base_tokens,
     base_latency_ms,
-    subtask_cost,
+    subtask_usage,
     subtask_usage_loading,
-    subtask_tokens,
-    subtask_latency_ms,
   )
 
   // ---- Feedback ----
