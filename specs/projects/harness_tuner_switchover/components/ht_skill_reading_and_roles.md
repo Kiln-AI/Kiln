@@ -38,7 +38,7 @@ class SkillReader:                                  # implements SkillSource
     async def read(self, path: str) -> str          # cached; raises KilnSkillError
 ```
 
-- `read("")` and `read("  ")` raise `KilnSkillError("give a path")`. HT never reads the root file.
+- `read("")` and `read("  ")` raise `KilnSkillError("give a path")`. HT's own code never asks for the root file.
 - `SkillSource` is the type that the gateway and the loop code hold. Tests pass a fake (1.7).
 
 ### 1.2 The MCP client calls
@@ -58,6 +58,7 @@ HT's lock file has `mcp` 1.30.0. One uncached read does this, in this order:
 - `streamable_http_client` is used, not `streamablehttp_client`, which is deprecated in 1.30.0.
 - `pyproject.toml` raises the floor from `mcp>=1.10.1,<2` to `mcp>=1.30,<2`. The version that first has `streamable_http_client` was not checked, so the floor is the locked version. The `<2` ceiling stays: `gateway/server.py` imports `mcp.server.fastmcp`.
 - Kiln's server is stateless and answers POST only (`server.py`, `McpEndpoint`). The SDK opens its GET stream only when it holds a session id (`streamable_http.py:285`), and a stateless server gives none. `terminate_on_close=False` states that no DELETE is sent.
+- One read is four POST requests: `initialize`, the `notifications/initialized` notice, `tools/call`, and a `tools/list` that the SDK sends after the call to check the result against the tool's schema.
 
 ### 1.3 From the tool result to text, and errors
 
@@ -65,12 +66,13 @@ HT's lock file has `mcp` 1.30.0. One uncached read does this, in this order:
 |---|---|
 | `result.isError` is false | The text is `"\n".join(block.text for block in result.content if isinstance(block, mcp.types.TextContent))`. Kiln sends one text block (`skill_tool.py`, `_text_result`). An empty text raises `KilnSkillError("Kiln's skill gave an empty answer for <path>")` |
 | `result.isError` is true | `KilnSkillError(<the joined text>)`. The text is Kiln's own message, for example ``No skill file at `x`.`` with the files of the nearest folder (`skill_files.py`, `_not_found_message`) |
-| The connection fails, or times out | `KilnSkillError("Kiln's skill could not be read: Kiln did not answer at <url> (<reason>)")` |
-| HTTP 404 or 405 on `<url>` | `KilnSkillError("Kiln's skill could not be read: this Kiln has no MCP server at <url>. Update Kiln.")` |
-| HTTP 421 | `KilnSkillError("Kiln's skill could not be read: Kiln refused the Host header of <url>. Give --kiln-host a loopback address, for example http://localhost:<port>.")` |
+| The leaf exception is an `httpx.TransportError` (connect, timeout), or the whole call times out | `KilnSkillError("Kiln's skill could not be read: Kiln did not answer at <url> (<reason>)")` |
+| The leaf is `mcp.McpError` with the text `Session terminated` | The SDK reports HTTP 404 this way. `KilnSkillError("Kiln's skill could not be read: this Kiln has no MCP server at <url>. Update Kiln.")` |
+| The leaf is `httpx.HTTPStatusError` with status 421 | `KilnSkillError("Kiln's skill could not be read: Kiln refused the Host header of <url>. Give --kiln-host a loopback address, for example http://localhost:<port>.")` |
+| The leaf is `httpx.HTTPStatusError` with another status | `KilnSkillError("Kiln's skill could not be read: HTTP <status> from <url>")` |
 | Any other exception | `KilnSkillError("Kiln's skill could not be read: <type>: <text>")`, cut to 500 characters |
 
-- The transport runs in an anyio task group, so a failure can arrive as an `ExceptionGroup`. `read` catches `Exception` (an `ExceptionGroup` is one), takes the first leaf exception, and maps it with the table. `asyncio.CancelledError` is not caught.
+- The transport runs in an anyio task group, so every transport failure arrives as an `ExceptionGroup`. `read` catches `Exception` (an `ExceptionGroup` is one), takes the first leaf exception, and maps it with the table. `asyncio.CancelledError` is not caught.
 - A `KilnSkillError` is never cached.
 
 ### 1.4 The URL and the Host header
@@ -88,7 +90,9 @@ HT's lock file has `mcp` 1.30.0. One uncached read does this, in this order:
 
 ### 1.6 What must be proved first, against a real Kiln
 
-This is the first task of step 10. No other HT work starts before it passes. Run a 20-line script against a Kiln build of spec one:
+This is the first task of step 10. No other HT work starts before it passes. Run a 20-line script against a Kiln build of spec one.
+
+A first check was made for this document, with `mcp` 1.30.0 in HT's environment, against a stand-in server built the way Kiln builds its own (`FastMCP(stateless_http=True, json_response=False)`, POST only). Steps 1 to 6 returned the text, an `isError` result carried its message, the errors surfaced as 1.3 says, and 93 reads at 8 at a time took about 2 seconds. It is not a proof against Kiln: the mount, the Host check and the real tool were not in it. The proofs:
 
 | # | Proof |
 |---|---|
@@ -130,7 +134,7 @@ class FakeSkillReader:                              # implements SkillSource
 | No path | `GatewayError("give a path: name one file of Kiln's skill, for example references/improving_agents/index.md. Your role skill names the file to read.")` |
 | The answer | The file's text, not JSON (decision 4). `dispatch` returns a `str` result as it is when `len(text) <= ANSWER_MAX_CHARS` (40,000) |
 | Over the cap | `dispatch` calls `gateway.capped(text)`. The answer is then the existing `AnswerPart` JSON, and `get_answer_part` gives the rest. The largest file today is 27,177 characters |
-| An error | `gateway/server.py:_tool`: for an op in `PLAIN_TEXT_OPS`, a `GatewayError` is raised as `mcp.server.fastmcp.exceptions.ToolError(str(exc))`, so the MCP result has `isError` true. Every other tool keeps today's `{"error": …}` text |
+| An error | `gateway/server.py:_tool`: for an op in `PLAIN_TEXT_OPS`, a `GatewayError` is raised as `mcp.server.fastmcp.exceptions.ToolError(str(exc))`, so the MCP result has `isError` true. FastMCP puts `Error executing tool kiln_skill: ` before the message. Every other tool keeps today's `{"error": …}` text |
 | Path limits | None. The whole skill is passed through. `path="SKILL.md"` reads the root file |
 
 ### 2.1 Roles
@@ -518,7 +522,7 @@ New tests:
 ## 10. Conflicts and open points
 
 1. **The costing port is not in Kiln's skill.** The fresh copy at `5522a7b9` has no port of `experiment-costing` (5.2). The planner's pointer (three places) and one contract entry wait for it. The functional spec makes this a pre-flight item; HT's copy is not removed before it.
-2. **The Smells table format is a dependency that the contract JSON cannot hold.** `smell_ids` needs each row's first cell to be the backticked path. The JSON shape has paths, ids, headings and keys only. HT guards it: the start-up check runs `smell_ids` and stops when it finds no id. Request to the Kiln contract test: also assert that each `ids.smells` entry is in the "Smells" section as that backticked path. Per the Kiln component doc.
+2. **The Smells table format is a dependency that the contract JSON cannot hold.** `smell_ids` needs each row's first cell to be the backticked path. The JSON shape has paths, ids, headings and keys only. HT guards it: the start-up check runs `smell_ids` and stops when it finds no id. Request to the Kiln contract test: also assert that each `ids.smells` entry is in the "Smells" section as that backticked path. The sibling draft [kiln_smells_skills_version.md](kiln_smells_skills_version.md) (section 8) does not have this assertion; its four keys are the shape used here.
 3. **Two kinds of path look alike.** The architecture fixes the entry file name `references/knowledge.md`. Kiln's own files are under `references/knowledge/`. The fixed paragraph of section 4, the block of section 6 and one test keep them apart. An agent can still mix them up; the audit and the demo run will show it.
 4. **More than three tests bind HT's code to knowledge text.** The functional spec (section 6) names three. The code has these too: the `playbook` case of `test_the_val_rejection_readers_quote_every_reason_code_writes` (Kiln's playbook paraphrases the reason lines today, so that case would fail on Kiln's text); the read of `levers/new_tool.md` for the wrapper templates; `test_the_output_contract_playbook_ranks_every_kiln_mode`; `test_the_output_mode_lever_is_what_the_code_does`. This document treats each as a review item of the audit, like the two the spec names.
 5. **`memory.md` tells its reader not to write a `hypothesis` record and to read the `baseline` record.** Both are right for a chat agent. Rules 5 and 6 override them for a loop agent. Nothing in code enforces rule 6 for the `baseline` record (the gateway hides only `val`), as today.
@@ -526,8 +530,7 @@ New tests:
 
 ## 11. Not verified
 
-- Everything in 1.6. No call was made to a real Kiln. In particular: that the SDK client works against the stateless server, how a failure surfaces, and the time of 93 reads.
-- That FastMCP turns a raised `ToolError` into a result with `isError` true and the message.
+- Everything in 1.6 against a real Kiln. The check that was made used a stand-in server (1.6).
 - The `mcp` version that first has `streamable_http_client`.
 - That Kiln's check keeps every skill file under 30,000 characters (architecture decision 4). `skill_checks/knowledge_schema.py` has limits for the knowledge kinds only (`MAX_CHARS`). The over-cap rule of section 2 does not depend on it.
 - That the five memory format files hold every format that HT's `memory` skill stated. The files were listed and their headers read; they were not compared line by line.
