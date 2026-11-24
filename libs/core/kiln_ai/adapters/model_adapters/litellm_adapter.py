@@ -113,14 +113,12 @@ def prompt_cache_injection_points(
 
     Only a Claude model gets any. Its system prompt is marked, so calls that share
     only the system prompt and tools (two runs of one task) share a cache entry.
-    The last message is marked when a later call re-sends these messages: the
-    caller expects one (a tool loop, the next turn of a conversation), or the
-    messages already hold a model reply.
+    The last message is marked when ``expects_later_call`` says a later call
+    re-sends these messages (a tool loop, the next turn of a conversation).
     """
-    # Claude reads the cache only at a position an earlier request marked. Other
-    # providers cache a shared prefix unasked, and a marker LiteLLM forwards to them
-    # has side effects: a separately billed cachedContents object on Gemini, an
-    # unknown message field on OpenAI-compatible servers.
+    # Claude reads the cache only at a marked position. Other providers cache a
+    # shared prefix unasked, and a marker forwarded to them has side effects: a
+    # billed cachedContents object on Gemini, an unknown field on other servers.
     if "claude" not in litellm_model_id.lower():
         return []
     points: list[dict[str, Any]] = []
@@ -128,9 +126,7 @@ def prompt_cache_injection_points(
         points.append({"location": "message", "index": 0})
     # A cache write costs more than plain input, so it only pays for itself on
     # messages that a later call reads back.
-    if expects_later_call or any(
-        message.get("role") == "assistant" for message in messages
-    ):
+    if expects_later_call:
         points.append({"location": "message", "index": -1})
     return points
 
@@ -944,10 +940,13 @@ class LiteLlmAdapter(BaseAdapter):
             completion_kwargs["tool_choice"] = "auto"
 
         if self.base_adapter_config.automatic_prompt_caching:
+            # skip_response_format marks a turn that is not the run's last, such as
+            # the thinking call of a chain-of-thought run.
             injection_points = prompt_cache_injection_points(
                 self.litellm_model_id(),
                 messages,
-                expects_later_call=has_tools
+                expects_later_call=skip_response_format
+                or has_tools
                 or self.task.turn_mode == TurnMode.multiturn,
             )
             if injection_points:

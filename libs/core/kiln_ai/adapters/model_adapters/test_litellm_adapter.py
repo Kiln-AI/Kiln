@@ -3016,12 +3016,13 @@ SECOND_TURN = [
 
 
 @pytest.mark.parametrize(
-    ("model_id", "messages", "tools", "expected_points"),
+    ("model_id", "messages", "tools", "skip_response_format", "expected_points"),
     [
         pytest.param(
             CLAUDE_MODEL_ID,
             [{"role": "user", "content": "Hello"}],
             [],
+            False,
             None,
             id="one_shot_call",
         ),
@@ -3029,6 +3030,7 @@ SECOND_TURN = [
             CLAUDE_MODEL_ID,
             [{"role": "user", "content": "Hello"}],
             [ADD_TOOL_DEFINITION],
+            False,
             [{"location": "message", "index": -1}],
             id="model_can_call_tools",
         ),
@@ -3036,20 +3038,30 @@ SECOND_TURN = [
             CLAUDE_MODEL_ID,
             SECOND_TURN,
             [],
+            True,
             [{"location": "message", "index": -1}],
-            id="messages_hold_a_model_reply",
+            id="turn_is_not_the_last_of_the_run",
+        ),
+        pytest.param(
+            CLAUDE_MODEL_ID,
+            SECOND_TURN,
+            [],
+            False,
+            None,
+            id="last_call_after_a_model_reply",
         ),
         pytest.param(
             "openai/test-model",
             SECOND_TURN,
             [ADD_TOOL_DEFINITION],
+            True,
             None,
             id="not_a_claude_model",
         ),
     ],
 )
 async def test_build_completion_kwargs_with_automatic_prompt_caching(
-    config, mock_task, model_id, messages, tools, expected_points
+    config, mock_task, model_id, messages, tools, skip_response_format, expected_points
 ):
     adapter = LiteLlmAdapter(
         config=config,
@@ -3068,7 +3080,10 @@ async def test_build_completion_kwargs_with_automatic_prompt_caching(
         patch.object(adapter, "litellm_tools", AsyncMock(return_value=tools)),
     ):
         kwargs = await adapter.build_completion_kwargs(
-            mock_provider, messages, top_logprobs=None
+            mock_provider,
+            messages,
+            top_logprobs=None,
+            skip_response_format=skip_response_format,
         )
 
     assert kwargs.get("cache_control_injection_points") == expected_points

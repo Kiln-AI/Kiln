@@ -18,7 +18,7 @@ from kiln_ai.adapters.model_adapters.test_paid_utils import (
     skip_if_missing_provider_keys,
 )
 from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode, TurnMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
 
@@ -26,13 +26,16 @@ from kiln_ai.utils.config import Config
 CACHE_SEED_SYSTEM_PROMPT = ("You are a helpful assistant. " * 1000).strip()
 
 
-def build_caching_test_task(tmp_path) -> Task:
+def build_caching_test_task(
+    tmp_path, turn_mode: TurnMode = TurnMode.single_turn
+) -> Task:
     project = Project(name="test", path=tmp_path / "test.kiln")
     project.save_to_file()
     task = Task(
         parent=project,
         name="caching test",
         instruction=CACHE_SEED_SYSTEM_PROMPT,
+        turn_mode=turn_mode,
     )
     task.save_to_file()
     return task
@@ -85,7 +88,7 @@ async def test_prompt_caching_cache_hit(
 ):
     skip_if_missing_provider_keys(provider_name)
 
-    task = build_caching_test_task(tmp_path)
+    task = build_caching_test_task(tmp_path, TurnMode.multiturn)
 
     adapter = adapter_for_task(
         task,
@@ -230,13 +233,14 @@ def offline_adapter(
     provider_name: ModelProviderName,
     model_name: str,
     automatic_prompt_caching: bool,
+    prompt_id: str = "simple_prompt_builder",
 ) -> BaseAdapter:
     return adapter_for_task(
         task,
         KilnAgentRunConfigProperties(
             model_name=model_name,
             model_provider_name=provider_name,
-            prompt_id="simple_prompt_builder",
+            prompt_id=prompt_id,
             structured_output_mode=StructuredOutputMode.default,
         ),
         base_adapter_config=AdapterConfig(
@@ -249,14 +253,33 @@ def request_bodies(route: respx.Route) -> list[dict]:
     return [json.loads(call.request.content) for call in route.calls]
 
 
+def marked_message_texts(anthropic_request: dict) -> list[str]:
+    """The text of each message whose last content block carries a cache marker."""
+    return [
+        message["content"][-1]["text"]
+        for message in anthropic_request["messages"]
+        if isinstance(message["content"], list)
+        and "cache_control" in message["content"][-1]
+    ]
+
+
 @pytest.fixture
-def offline_task(tmp_path, monkeypatch) -> Task:
-    """A long-prompt task whose model calls can only reach respx routes."""
+def offline_providers(monkeypatch) -> None:
+    """Model calls can only reach respx routes, with fake provider keys."""
     # LiteLLM sends through aiohttp by default, which respx can't intercept.
     monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
     Config.shared().anthropic_api_key = "sk-ant-test-key"
     Config.shared().gemini_api_key = "test-gemini-key"
+
+
+@pytest.fixture
+def offline_task(tmp_path, offline_providers) -> Task:
     return build_caching_test_task(tmp_path)
+
+
+@pytest.fixture
+def offline_multi_turn_task(tmp_path, offline_providers) -> Task:
+    return build_caching_test_task(tmp_path, TurnMode.multiturn)
 
 
 ONE_SHOT_MESSAGES = [
@@ -302,8 +325,8 @@ SECOND_TURN_MESSAGES = [
             "anthropic/claude-sonnet-4-5-20250929",
             SECOND_TURN_MESSAGES,
             False,
-            [SYSTEM_MARK, LAST_MESSAGE_MARK],
-            id="claude_messages_hold_a_model_reply",
+            [SYSTEM_MARK],
+            id="claude_no_later_call_expected_after_a_model_reply",
         ),
         pytest.param(
             "anthropic/claude-sonnet-4-5-20250929",
@@ -375,26 +398,44 @@ async def test_single_turn_claude_run_caches_system_prompt(offline_task):
 
 
 @respx.mock
-async def test_multi_turn_claude_run_marks_system_prompt_and_new_turn(offline_task):
+async def test_multi_turn_claude_task_marks_system_prompt_and_each_new_turn(
+    offline_multi_turn_task,
+):
     route = respx.post(ANTHROPIC_URL).mock(
         side_effect=[anthropic_reply(CACHE_WRITE), anthropic_reply(CACHE_READ)]
     )
     adapter = offline_adapter(
-        offline_task, ModelProviderName.anthropic, "claude_sonnet_4_5", True
+        offline_multi_turn_task, ModelProviderName.anthropic, "claude_sonnet_4_5", True
     )
 
     first_turn = await adapter.invoke("What is 2+2?")
     await adapter.invoke("What is 3+3?", prior_trace=first_turn.trace)
 
-    second_request = request_bodies(route)[1]
-    assert second_request["system"][-1]["cache_control"] == EPHEMERAL
-    marked_messages = [
-        message["content"][-1]["text"]
-        for message in second_request["messages"]
-        if isinstance(message["content"], list)
-        and "cache_control" in message["content"][-1]
-    ]
-    assert marked_messages == ["What is 3+3?"]
+    first_request, second_request = request_bodies(route)
+    for request in (first_request, second_request):
+        assert request["system"][-1]["cache_control"] == EPHEMERAL
+    assert marked_message_texts(first_request) == ["What is 2+2?"]
+    assert marked_message_texts(second_request) == ["What is 3+3?"]
+
+
+@respx.mock
+async def test_chain_of_thought_run_marks_only_the_call_that_is_resent(offline_task):
+    route = respx.post(ANTHROPIC_URL).mock(
+        side_effect=[anthropic_reply(CACHE_WRITE), anthropic_reply(CACHE_READ)]
+    )
+    adapter = offline_adapter(
+        offline_task,
+        ModelProviderName.anthropic,
+        "claude_sonnet_4_5",
+        True,
+        prompt_id="simple_chain_of_thought_prompt_builder",
+    )
+
+    await adapter.invoke("What is 2+2?")
+
+    thinking_request, final_request = request_bodies(route)
+    assert len(marked_message_texts(thinking_request)) == 1
+    assert marked_message_texts(final_request) == []
 
 
 @respx.mock
