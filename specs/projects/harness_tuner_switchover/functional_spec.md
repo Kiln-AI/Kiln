@@ -23,7 +23,7 @@ A line marked **Proposed** is a call made while drafting. The owner can overrule
 | API reference, `call_kiln_api` server | HT ships both | Removed. Interactive sessions use Kiln's MCP server |
 | Model information | HT fetches its own catalogue per run | HT calls Kiln's model info endpoints, and keeps its model policy |
 | Installing a skill | HT writes into the project folder | HT calls Kiln's skill bundle API |
-| Detectability, significance floor | HT code | Kiln APIs, called by HT and open to any MCP client |
+| Detectability, significance floor | HT code | Kiln APIs for MCP clients. HT keeps its own code, unchanged, and does not call them |
 | The noise check | HT code, behind `--noise-check`, off by default | Unchanged. It is not ported |
 | The five code-detected smells | HT code | One Kiln API |
 | The gateway, role skills, model policy, screening, promotion rules | HT | HT, unchanged |
@@ -43,8 +43,8 @@ Nothing in this spec is built until spec one is done. The first phase of the imp
 - All are additive. No existing route changes its default behaviour.
 - Each is a standard REST route. Any MCP client reaches it through `call_kiln_api`. No new MCP tools.
 - Every number and definition is HT's, unchanged. Where HT has a test that pins a value, Kiln gets a test with the same value.
-- **Train only means train only.** The detectability read reads train items. **Proposed:** an item that is also in a val or test split of any eval of the task is left out, and the response says how many were left out. HT's own train set works this way, and without the rule the route could count items HT holds out.
-- The detectability read takes an optional `eval_ids` list. The default is every eval that is not archived and has a default judge config. HT passes its own active set.
+- **Train only means train only.** The detectability read reads train items. **Proposed:** an item that is also in a val or test split of any eval of the task is left out, and the response says how many were left out. HT's own train set works this way.
+- The detectability read takes an optional `eval_ids` list. The default is every eval that is not archived and has a default judge config.
 - None of the new routes spends money.
 
 ### 3.2 Significance floor
@@ -66,7 +66,7 @@ Answers: can this task's evals show an improvement of this run config at all? Fr
 - With `include_val_size`, each row adds a `val` object: the size of the val split, an estimate of its room, and the best-case change. It reads the size of the val split only. It never reads a val or test result.
 - **Reads:** the run config's stored train rows on each eval's default judge config, and the train split's size. **Writes:** nothing.
 - An eval with no stored train row gives rows with `n = 0`. An eval with no default judge config is left out. Neither is an error.
-- HT keeps the decision: whether to refuse an underpowered run is its own rule.
+- The route returns facts only. Whether a result is too weak to act on is the caller's decision.
 
 ### 3.4 The noise check is not ported
 
@@ -250,8 +250,6 @@ Notes on the two ported skills:
 | Skill bundle create | The install tool of the skill installer becomes a gateway tool that calls the API | The check that the folder is inside the agent's scratch folder |
 | Skill bundle read | The export tool becomes a gateway tool that writes the files into scratch; loop code that reads a skill's files for its checks | — |
 | Model info | The gateway's model tools, and the catalogue fetch at run start | The model policy, and the `blocked_by_policy` status it adds to each answer |
-| Significance floor | Nothing in loop code. Roles can call it through the gateway's statistics tool | Its own floor arithmetic, which the noise check and the val side use |
-| Detectability | The train-side read | The refusal of an underpowered run, the val side, and the helper functions the noise check imports |
 | Smell check | The five detectors and their limits | The baseline review step, and how findings are recorded and reported |
 | Version | The start-up check | — |
 
@@ -259,7 +257,7 @@ Notes:
 
 - Kiln pages the model list before HT applies its policy. HT reads every page and pages again, so its counts stay right.
 - The per-run model snapshot goes. Model information becomes a live read, and the run log records the Kiln version.
-- Scores by split and the paired comparison are not used by HT's loop (3.8).
+- Four of the new Kiln routes are not used by HT at all: the significance floor, the detectability read, scores by split and the paired comparison. They are for MCP clients. HT's detectability code, its noise check, its comparison code and the gateway's statistics tool are not changed.
 
 ### 5.7 What HT removes
 
@@ -268,7 +266,7 @@ Notes:
 - `kiln_api_mcp`: the package, its console script and its tests.
 - The model catalogue, and the `--no-model-catalog` option.
 - The skill installer: the package, its console script and its tests.
-- The train-side detectability read that moved, and the five smell detectors with their limits.
+- The five smell detectors with their limits.
 - The memory skill, the code tool authoring skill, `experiment-costing` and `kiln-task-setup` (5.5).
 
 The knowledge copy goes last, after the pass-through, the entry files and the re-pointed links all work.
@@ -347,7 +345,7 @@ No reference run exists, runs differ each time, and the skills change. So the pr
 | SR11 the start-up clean-up | Not in this spec. It is not caused by the switchover. Listed as a risk (section 9) |
 | SR12 reading other writers' records | No change. Listed as a risk (section 9) |
 | SR13 priorities and smell issues | No HT change |
-| SR14 tools that come over | Changed: only detectability, the significance floor and the smells move. The rest stay in HT, the noise check included |
+| SR14 tools that come over | Changed: only the smells move. Kiln also gains the significance floor and the detectability read for MCP clients, but HT keeps its own code for both. The rest stay in HT, the noise check included |
 | SR15 the `message` key | Not a break, and not in this spec. The claim was wrong: the model preflight already reads the key |
 | SR16 job limits and 404 texts | Verified: nothing to do |
 | SR17 unique tool function names | The claim is wrong: HT has no such rule. The sentence goes with the removed code tool skill |

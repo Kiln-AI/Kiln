@@ -21,6 +21,7 @@ With this spec, harness-tuner drops the copies and reads Kiln's. Its general too
 - **The gateway.** It is the loop's fence: per-role typed tools, train-only reads, frozen evals. It works, it is tested, and nothing in Kiln replaces it.
 - The role procedures (planner, builder, analyst and the others), and the baseline review step that looks for the smells code cannot detect.
 - The model policy: which models a run may use.
+- Its detectability and significance code, unchanged. Kiln gains the same two calculations as APIs for MCP clients (Part 1), but harness-tuner keeps using its own.
 - **The noise check**, as it is: behind its `--noise-check` option, off by default. It is not ported. It works by making a copy of the run config and running it again, and a proper noise feature in Kiln would not be built that way. It would more likely save extra runs for an existing run config in a structured way. That is a later design, not this spec.
 - The loop's own policy: refusing an underpowered run, the stop rules, the promotion rules, and the CLI options.
 
@@ -28,7 +29,7 @@ With this spec, harness-tuner drops the copies and reads Kiln's. Its general too
 
 All additive. Each is a standard Kiln API that any MCP client reaches through `call_kiln_api`. No new MCP tools.
 
-- **Significance and detectability**, with every number and definition kept as harness-tuner has it:
+- **Significance and detectability**, for MCP clients, with every number and definition kept as harness-tuner has it:
   - a significance-floor calculation on the existing statistics route;
   - a detectability read for a run config: can its evals show an improvement at all.
 - **Smell check.** One API checks a run config for the five smells that harness-tuner detects in code today: a very long prompt, a very long tool description, a very long skill description, too many tools, and an old model. It returns what it found, with each limit and its source. The limits move with it.
@@ -52,7 +53,7 @@ In the harness-tuner repo:
 - It reads Kiln's skill in place of its own `kiln-harness-tuner-knowledge` copy.
 - Its role prompts are updated for the switch: they know about `kiln_skill`, every link to a skill or knowledge file points at the file's new place, and they carry the rules a non-interactive agent needs when it reads a skill written for a chat.
 - It removes its duplicates: the knowledge copy, the `kiln-api` reference docs, `kiln_api_mcp`, the model catalogue and the skill installer.
-- Its gateway tools and loop code call the new Kiln APIs where one exists, and its own copies of that code go: the detectability read and the smell detectors.
+- Its gateway tools and loop code call the new Kiln APIs where one exists, and its own copies of that code go: the smell detectors.
 - It checks versions both ways.
 - **A phase that audits the result from the harness-tuner side**, and checks for regressions to core harness-tuner concepts.
 

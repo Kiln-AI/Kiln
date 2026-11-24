@@ -61,7 +61,7 @@ Paths are under `src/kiln_harness_tuner/`.
 |---|---|
 | The `kiln_skill` client | New `kiln_skill.py` |
 | The new gateway tools | `gateway/ops.py` (`OPS`, `ROLE_OPS`), `gateway/models.py` |
-| Calls to the new routes | `kiln.py` (the REST client), and the callers: `detectability.py`, `smells/run.py`, `gateway/model_info.py`, `onboarding/kiln_check.py`, `contract.py` |
+| Calls to the new routes | `kiln.py` (the REST client), and the callers: `smells/run.py`, `gateway/model_info.py`, `onboarding/kiln_check.py`, `contract.py` |
 | Role entry files | Inside each role skill, as a reference file (section 5.3) |
 | Fakes for tests | `tests/fake_kiln.py` |
 
@@ -71,7 +71,7 @@ Paths are under `src/kiln_harness_tuner/`.
 2. **One reader, one interface.** `kiln_skill.py` holds `SkillReader` with `async read(path: str) -> str`, and raises `KilnSkillError` with a plain message. The gateway and the loop code both use it. Tests replace it with a fake that reads a small folder of fixture files. Nothing else in HT knows about MCP client code.
 3. **Caching.** A `SkillReader` caches each file for the life of its process. A gateway process lives for one agent session. Loop code holds one reader per run.
 4. **The gateway tool returns plain text.** The `kiln_skill` gateway tool returns the file's text as its content, not wrapped in JSON, so markdown is not escaped. The gateway's size cap on an answer still applies. Kiln's own check keeps every skill file under 30,000 characters, which is under the cap.
-5. **The noise check is not ported.** It stays in HT as it is, behind `--noise-check`, off by default. Kiln gets no noise route, no new job and no temporary objects. HT's `noise.py` is not changed. It imports `comparable_specs`, `fewest_wins` and `score_room` from HT's `detectability.py`, so those functions and the floor arithmetic under them stay in HT.
+5. **Noise and detectability stay in HT, unchanged.** The noise check is not ported: Kiln gets no noise route, no new job and no temporary objects. Kiln does get the significance floor and the detectability read, but they are for MCP clients, and HT does not call them. HT's `noise.py`, `detectability.py` and the gateway's statistics tool are not changed.
 6. *(Not used.)*
 7. **"Train" in the detectability read** is one helper: the items of the eval's train split, minus any item that is also in a val or test split of any eval of the task. It lives in `eval_power/` and uses Kiln's existing split resolution. The response carries `left_out_held_out`, the count removed.
 8. **The arithmetic is not copied.** `significance_floor` calls the functions `statistics_lib.py` already has (the exact McNemar test, the Wilcoxon test, the Wilson and Newcombe intervals). The one exception is deliberate: the bootstrap rule stays HT's closed form, `((n − k) / n)^n < alpha / 2`, and does not call the server's seeded draw. A comment and a test say so, so that nobody "fixes" it.
@@ -171,7 +171,7 @@ The implementation plan turns this into phases.
 11. HT: entry files, re-pointed links, the shared rules, the map.
 12. HT: skill bundle tools; the installer is removed.
 13. HT: model info; the catalogue is removed.
-14. HT: detectability and smells call Kiln; their code is removed. The noise check is not touched.
+14. HT: the smell check calls Kiln; the detectors are removed. Detectability and the noise check are not touched.
 15. HT: the remaining removals (the knowledge copy last), docs and command line.
 16. The audit.
 17. The demo run.
@@ -209,7 +209,7 @@ The component docs were written at the same time, and each listed its open point
 
 15. **`harness-tuner-install-agents` is removed whole.** `--dest` is its only form, so nothing is left of it. Three console scripts go, not two.
 16. **A binary asset is not copied by the skill export.** The export's answer names each asset it skipped. Kiln's skill runtime reads assets as text only, so a binary asset was of no use to the agent.
-17. **HT's held-out rule by tag name is not in Kiln's train helper.** Detectability counts can differ from today's on a task that has such tags. Accepted.
+17. *(Not used: HT does not call the detectability read.)*
 18. **`specs/backlog.md` in HT** loses its knowledge entries, which live in Kiln now. Entries that are about HT's own code stay.
 19. **Tests that bind HT's code to knowledge text** are more than the three the functional spec names. Each becomes a review item of the audit.
 20. **`has_thinking_levels` in a model list row** can be true because of a provider entry that HT's policy then drops. The model details answer is exact. Accepted.
