@@ -1,6 +1,7 @@
-// Grounding a multi-turn build's planned cases in its OpenEnv server: the
-// request the ground_cases stream takes, the frames it sends back, and how
-// they fold into the grounded cases and the drops the builder shows.
+// Grounding a build's planned cases in its OpenEnv server: the request the
+// ground_cases stream takes, the frames it sends back, how they fold into the
+// grounded cases and the drops the builder shows, and how a single-turn build
+// runs grounded cases as its inputs.
 
 import type { components } from "$lib/api_schema"
 import type { ModelChoice } from "$lib/eval/default_judge"
@@ -29,8 +30,12 @@ export type GroundingFrame =
       scenario_index: number
       status: "grounded"
       openenv_reset: OpenEnvReset
-      seed_prompt: string
-      synthetic_user_info: string
+      // Multi-turn: the filled-in simulated user. Null on single-turn.
+      seed_prompt: string | null
+      synthetic_user_info: string | null
+      // Single-turn: the task input the grounding agent wrote. Null on
+      // multi-turn.
+      input: string | null
       judge_guidance: string
     }
   | {
@@ -72,14 +77,31 @@ function plan_row(case_wire: SyntheticUserCaseWire, position: number): number {
   return case_wire.scenario_index ?? position
 }
 
-// The request's cases: each generated case with the plan text it came from,
-// which the grounding agent reads as the scenario to keep testing.
+// A single-turn build's cases before grounding: one per plan row, with no
+// drafted message. The grounding agent writes each input from the row.
+export function plan_row_cases(
+  plan_prompts: string[],
+): SyntheticUserCaseWire[] {
+  return plan_prompts.map((_, i) => ({
+    seed_prompt: "",
+    synthetic_user_info: "",
+    scenario_index: i,
+  }))
+}
+
+// The request's cases: each case with the plan text it came from, which the
+// grounding agent reads as the scenario to keep testing. A single-turn case
+// sends only that: the grounding agent writes its input.
 export function grounding_request_cases(
   cases: SyntheticUserCaseWire[],
   plan_prompts: string[],
+  single_turn: boolean = false,
 ): GroundCaseApi[] {
   return cases.map((c, i) => {
     const row = plan_row(c, i)
+    if (single_turn) {
+      return { scenario_index: row, scenario: plan_prompts[row]?.trim() ?? "" }
+    }
     return {
       scenario_index: row,
       // The route requires a scenario. A case whose row is missing from the
@@ -92,22 +114,25 @@ export function grounding_request_cases(
   })
 }
 
-// The model the grounding agent runs on: the judge model, at the judge's
-// thinking level (null runs it at the model's default).
+// The model the grounding agent runs on (Generation Settings' Test Case
+// Model), at its thinking level (null runs it at the model's default).
 export type GroundingModel = ModelChoice & { thinking_level?: string | null }
 
-// The ground_cases request body. A blank synthetic user guide is sent as
-// null, so the grounding agent reads no guide rather than an empty one.
+// The ground_cases request body. A blank Data Guide is sent as null, so the
+// grounding agent reads no guide rather than an empty one; so is a blank
+// example input.
 export function ground_cases_request(args: {
   target_run_config_id: string
-  judge_model: GroundingModel
+  grounding_model: GroundingModel
   specification: string
   cases: GroundCaseApi[]
-  synthetic_user_guide: string
+  data_guide: string
+  example_input?: string | null
 }): GroundCasesRequest {
   return {
     ...args,
-    synthetic_user_guide: args.synthetic_user_guide.trim() || null,
+    data_guide: args.data_guide.trim() || null,
+    example_input: args.example_input?.trim() || null,
   }
 }
 
@@ -155,8 +180,10 @@ export function apply_grounding_frame(
           [frame.case_index]: {
             ...original,
             scenario_index: request_case.scenario_index,
-            seed_prompt: frame.seed_prompt,
-            synthetic_user_info: frame.synthetic_user_info,
+            // A single-turn case keeps its input where a multi-turn case
+            // keeps its opening message: both are what the drive sends first.
+            seed_prompt: frame.input ?? frame.seed_prompt ?? "",
+            synthetic_user_info: frame.synthetic_user_info ?? "",
             openenv_reset: frame.openenv_reset,
             judge_guidance: frame.judge_guidance,
           },
@@ -250,31 +277,64 @@ export function dropped_notice_drops(
   return cache.drops.length > 0 ? cache.drops : null
 }
 
-// The review start screen's warning, when some planned conversations dropped
-// and the rest were driven. planned is the plan's size.
-export function dropped_notice(dropped: number, planned: number): string {
+// What a grounded batch's items are called in the drops messages.
+export type PlannedNoun = "conversation" | "input"
+
+// Which way the review start screen leans after drops. Up to 15% dropped,
+// Continue leads. Above that, Refine Plan leads and Continue says how many it
+// keeps. At half or more, too little is left to make a useful eval, so Refine
+// Plan is the only way on.
+export type DropsAction = "continue_first" | "refine_first" | "refine_only"
+
+const REFINE_FIRST_SHARE = 0.15
+const REFINE_ONLY_SHARE = 0.5
+
+export function drops_action(dropped: number, planned: number): DropsAction {
+  if (planned <= 0) return "refine_only"
+  const share = dropped / planned
+  if (share >= REFINE_ONLY_SHARE) return "refine_only"
+  if (share > REFINE_FIRST_SHARE) return "refine_first"
+  return "continue_first"
+}
+
+// The review start screen's warning, when some planned items dropped and the
+// rest were driven, few enough to continue with (drops_action isn't
+// refine_only). planned is the plan's size.
+export function dropped_notice(
+  dropped: number,
+  planned: number,
+  noun: PlannedNoun,
+): string {
   const one = dropped === 1
-  return `${dropped} of ${planned} planned conversations ${
+  return `${dropped} of ${planned} planned ${noun}s ${
     one ? "was" : "were"
   } dropped when Kiln checked ${
     one ? "it" : "them"
   } against your OpenEnv server. Continue with the ones that fit, or refine the plan and generate again.`
 }
 
-// Step 4's message when every planned conversation dropped, so nothing was
-// driven.
-export function all_dropped_message(planned: number): string {
-  return planned === 1
-    ? "The planned conversation didn't fit your OpenEnv server. The row below says why."
-    : `None of the ${planned} planned conversations fit your OpenEnv server. Each row says why.`
+// The refine screen's one sentence: none of the plan fit, or too little of it
+// for a useful eval. Refine Plan passes what didn't fit to the planner.
+export function drops_refine_text(
+  dropped: number,
+  planned: number,
+  noun: PlannedNoun,
+): string {
+  const counted =
+    dropped >= planned
+      ? planned === 1
+        ? `The planned ${noun} didn't fit your OpenEnv server.`
+        : `None of the ${planned} planned ${noun}s fit your OpenEnv server.`
+      : `${dropped} of ${planned} planned ${noun}s didn't fit your OpenEnv server, too many for a useful eval.`
+  return `${counted} Refine the plan, and Kiln will plan around what didn't fit.`
 }
 
 // The OpenEnv server a batch's cases were grounded in, or null for an
 // ungrounded batch. Every case of a grounded batch names the same server: the
 // build has one, and the save refuses cases that disagree with it.
-export function grounded_server_id(
-  cases: SyntheticUserCaseWire[],
-): string | null {
+export function grounded_server_id<
+  T extends { openenv_reset?: OpenEnvReset | null },
+>(cases: T[]): string | null {
   return (
     cases.find((c) => c.openenv_reset)?.openenv_reset?.openenv_server_id ?? null
   )
@@ -324,4 +384,68 @@ export function flatten_reset_arguments(
     walk(value, key)
   }
   return rows
+}
+
+// A grounded single-turn input's episode and the facts its judge reads, as
+// the single_turn_pipeline request takes them.
+export type SingleTurnGrounding = {
+  openenv_reset: OpenEnvReset
+  judge_guidance: string
+}
+
+// One input a single-turn drive runs: the task input, and where it runs when
+// it was grounded in the build's OpenEnv server.
+export type SingleTurnItem = {
+  input: string
+  grounding: SingleTurnGrounding | null
+}
+
+export function ungrounded_single_turn_items(
+  inputs: string[],
+): SingleTurnItem[] {
+  return inputs.map((input) => ({ input, grounding: null }))
+}
+
+// A grounded case runs as a single-turn input: its opening message is the
+// task input, run in the case's episode and judged against its guidance.
+// Throws on a case the grounding stream didn't ground, which would run in no
+// episode.
+export function single_turn_items_from_cases(
+  cases: SyntheticUserCaseWire[],
+): SingleTurnItem[] {
+  return cases.map((c, i) => {
+    if (!c.openenv_reset || !c.judge_guidance) {
+      throw new KilnError(`Case ${i} has no OpenEnv episode to run in.`)
+    }
+    return {
+      input: c.seed_prompt,
+      grounding: {
+        openenv_reset: c.openenv_reset,
+        judge_guidance: c.judge_guidance,
+      },
+    }
+  })
+}
+
+// The single_turn_pipeline request's inputs and their groundings, which are
+// omitted when no input is grounded.
+export function single_turn_pipeline_inputs(items: SingleTurnItem[]): {
+  inputs: string[]
+  groundings: SingleTurnGrounding[] | null
+} {
+  const inputs = items.map((item) => item.input)
+  if (items.every((item) => item.grounding === null)) {
+    return { inputs, groundings: null }
+  }
+  return {
+    inputs,
+    groundings: items.map((item, i) => {
+      if (item.grounding === null) {
+        throw new KilnError(
+          `Input ${i} isn't grounded, but other inputs in the batch are.`,
+        )
+      }
+      return item.grounding
+    }),
+  }
 }

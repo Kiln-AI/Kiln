@@ -29,6 +29,22 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
 }
 
 describe("DataGuideOffer — the shared 'Create a Data Guide' offer", () => {
+  it("shows a caller's own paragraphs in place of the default ones", () => {
+    const { container } = render(DataGuideOffer, {
+      props: {
+        surface: "builder",
+        on_set_up: vi.fn(),
+        on_skip: vi.fn(),
+        description_paragraphs: ["Who talks to your agent.", "Their roles."],
+      },
+    })
+    expect(container.textContent).toContain("Who talks to your agent.")
+    expect(container.textContent).toContain("Their roles.")
+    expect(container.textContent).not.toContain(
+      "A Data Guide tells us what realistic inputs",
+    )
+  })
+
   it("renders the offer copy both surfaces share", () => {
     const { container } = setup()
     expect(container.textContent).toContain("Create a Data Guide")

@@ -29,8 +29,19 @@
   import SavedRunConfigsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import { load_task } from "$lib/stores"
+  import { load_task, get_task_composite_id } from "$lib/stores"
+  import {
+    load_task_run_configs,
+    run_configs_by_task_composite_id,
+  } from "$lib/stores/run_configs_store"
+  import { get } from "svelte/store"
+  import GenerationSettingsTrigger from "../../../../generate/[project_id]/[task_id]/data_guide_setup/generation_settings_trigger.svelte"
+  import {
+    pick_entry_run_config,
+    run_config_world_name,
+  } from "./entry_run_config"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
   import DesiredBehaviourIcon from "$lib/ui/icons/spec_types/desired_behaviour_icon.svelte"
@@ -148,6 +159,43 @@
   let save_config_error: KilnError | null = null
   let set_default_error: KilnError | null = null
 
+  // The saved run config "Write My Eval" goes ahead with, shown above the
+  // button where it can be changed. Null when the task has none saved (or
+  // they couldn't be read): the button then asks with the dialog.
+  let entry_run_config: TaskRunConfig | null = null
+
+  // The OpenEnv server the summary's run config starts on, shown under its
+  // name. Each lookup checks it is still the latest before writing, so a slow
+  // answer for an earlier config can't overwrite a newer one.
+  let entry_world_name: string | null = null
+  let entry_world_request = 0
+  $: void load_entry_world_name(entry_run_config)
+  async function load_entry_world_name(rc: TaskRunConfig | null) {
+    const request = ++entry_world_request
+    // Only an agent run config has tools; an MCP one reaches no OpenEnv.
+    const props = rc?.run_config_properties
+    const name =
+      props?.type === "kiln_agent"
+        ? await run_config_world_name(
+            project_id,
+            task_id,
+            props.tools_config?.tools ?? [],
+          )
+        : null
+    if (request === entry_world_request) entry_world_name = name
+  }
+
+  // The same for the dialog, following the tools as they're picked there.
+  let dialog_tools: string[] = []
+  let dialog_world_name: string | null = null
+  let dialog_world_request = 0
+  $: void load_dialog_world_name(dialog_tools)
+  async function load_dialog_world_name(tool_ids: string[]) {
+    const request = ++dialog_world_request
+    const name = await run_config_world_name(project_id, task_id, tool_ids)
+    if (request === dialog_world_request) dialog_world_name = name
+  }
+
   onMount(async () => {
     try {
       task = await load_task(project_id, task_id)
@@ -157,7 +205,40 @@
       // before this page asked at all.
       task = null
     }
+    if (!task) return
+    try {
+      await load_task_run_configs(project_id, task_id)
+      const key = get_task_composite_id(project_id, task_id)
+      entry_run_config = pick_entry_run_config(
+        get(run_configs_by_task_composite_id)[key] ?? [],
+        task.default_run_config_id,
+      )
+    } catch (e) {
+      console.warn("Could not read the task's run configs:", e)
+      entry_run_config = null
+    }
   })
+
+  // The primary: straight into the builder on the run config shown above it,
+  // or the dialog when there is none to show.
+  function write_my_eval() {
+    if (!description.trim()) return
+    if (entry_run_config?.id) {
+      goto_builder(entry_run_config.id)
+      return
+    }
+    open_run_config_dialog()
+  }
+
+  // The run config summary's own action: the dialog, opened on the config the
+  // summary shows.
+  // Works before a description is typed: the dialog then only changes the
+  // config shown here, and Write My Eval goes ahead with it later.
+  function change_run_config() {
+    if (entry_run_config?.id) target_run_config_id = entry_run_config.id
+    run_config_error = null
+    run_config_dialog?.show()
+  }
 
   // The dropdown's own save path, so its "Save current options" action and
   // Continue below save the same way.
@@ -226,7 +307,6 @@
   // first, which names it the way saving from the run page does.
   async function continue_with_description() {
     const text = description.trim()
-    if (!text) return
     run_config_error = null
     run_config_submitting = true
     try {
@@ -238,6 +318,17 @@
       }
       if (!run_config_id) {
         throw new Error("The saved run config has no id.")
+      }
+      // Opened from the summary before a description was typed: keep the
+      // choice for Write My Eval rather than starting the builder.
+      if (!text) {
+        const key = get_task_composite_id(project_id, task_id)
+        entry_run_config =
+          (get(run_configs_by_task_composite_id)[key] ?? []).find(
+            (rc) => rc.id === run_config_id,
+          ) ?? entry_run_config
+        run_config_dialog?.close()
+        return
       }
       goto_builder(run_config_id)
     } catch (e) {
@@ -311,10 +402,25 @@
                  group: someone who already knows the template they want
                  jumps to the list below instead of describing anything. -->
             <div class="flex flex-col items-end gap-1">
+              {#if entry_run_config}
+                <!-- The summary pulls the next row up 16px for a form's 24px
+                     gap; this column's gap is 4px, so the wrapper gives that
+                     back plus the gap the Data Guide form leaves. -->
+                <div class="pb-6 w-64">
+                  <GenerationSettingsTrigger
+                    label="Run Config"
+                    model_name={entry_run_config.name}
+                    provider={entry_world_name
+                      ? `OpenEnv Server: ${entry_world_name}`
+                      : ""}
+                    open={change_run_config}
+                  />
+                </div>
+              {/if}
               <button
-                class="btn btn-primary min-w-48"
+                class="btn btn-primary min-w-64"
                 disabled={!description.trim()}
-                on:click={open_run_config_dialog}
+                on:click={write_my_eval}
               >
                 Write My Eval
               </button>
@@ -372,8 +478,18 @@
     title="Choose Run Config"
     subtitle="Choose how your task will be run for generating examples in the eval builder."
   >
+    <!-- Above the form: an outlined Warning brings its own bottom margin,
+         which inside the form would add to the form's row gap. -->
+    {#if task && dialog_world_name}
+      <Warning
+        warning_color="success"
+        warning_icon="info"
+        outline={true}
+        warning_message="Your eval runs in the {dialog_world_name} OpenEnv server, which this run config's tools use."
+      />
+    {/if}
     <FormContainer
-      submit_label="Continue"
+      submit_label={description.trim() ? "Continue" : "Use This Run Config"}
       bind:submitting={run_config_submitting}
       error={run_config_error}
       on:submit={continue_with_description}
@@ -391,6 +507,7 @@
         />
         <RunConfigComponent
           bind:this={run_config_component}
+          bind:tools={dialog_tools}
           {project_id}
           current_task={task}
           bind:selected_run_config_id={target_run_config_id}

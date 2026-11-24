@@ -69,11 +69,12 @@ export type CachedGroundedCases = {
   prompts_json: string
   spec_text: string
   openenv_server_id: string
-  // model_choice_key of the judge model the grounding agent ran on.
-  judge_model: string
-  // The trimmed synthetic user guide the grounding agent read, "" for none.
-  // Missing on older drafts, which grounded without one.
-  synthetic_user_guide?: string
+  // model_choice_key of the model the grounding agent ran on. Older drafts
+  // keyed this on the judge model, under another name, and so ground again.
+  grounding_model: string
+  // The trimmed Data Guide the grounding agent read, "" for none. Missing on
+  // older drafts, which ground again.
+  data_guide?: string
   cases: SyntheticUserCaseWire[]
   // How many cases grounding dropped. The drive counts them as planned-for,
   // not failed, so the shortfall it reports is only its own.
@@ -100,12 +101,12 @@ export function restore_cached_grounded_cases(
 
 export type CaseGroundingKey = {
   openenv_server_id: string
-  judge_model: string
-  synthetic_user_guide: string
+  grounding_model: string
+  data_guide: string
 }
 
 // The cached grounded set iff it came from EXACTLY this plan and spec and was
-// grounded in this server by this judge model under this synthetic user guide.
+// grounded in this server by this model under this Data Guide.
 export function reusable_grounded_cases(
   cache: CachedGroundedCases | null,
   approved_prompts: string[],
@@ -116,8 +117,8 @@ export function reusable_grounded_cases(
   if (cache.spec_text !== spec) return null
   if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
   if (cache.openenv_server_id !== key.openenv_server_id) return null
-  if (cache.judge_model !== key.judge_model) return null
-  if ((cache.synthetic_user_guide ?? "") !== key.synthetic_user_guide) {
+  if (cache.grounding_model !== key.grounding_model) return null
+  if (cache.data_guide === undefined || cache.data_guide !== key.data_guide) {
     return null
   }
   return cache
@@ -307,16 +308,21 @@ export type BuilderDraft = {
   // The judge's thinking level from Generation Settings. Null runs the judge at
   // its model's default; drafts written before this key restore that way.
   judge_thinking_level: string | null
+  // The model the grounding agent runs on (OpenEnv builds), and its thinking
+  // level. Null on drafts written before the lane existed: the dialog then
+  // starts it on the judge model.
+  grounding_model?: ModelChoice | null
+  grounding_thinking_level?: string | null
   // The Generation Settings conversation length (multi-turn). Persisted for
   // the same reason as the lanes above: a reload should not silently put the
   // drive back on the default length. Null means no choice on record — drafts
   // written before this key restore that way — and the page falls back to its
   // default turn count.
   turns_per_case: number | null
-  // The Generation Settings guide to who talks to the agent under test
-  // (multi-turn), as the user wrote it. "" when none; older drafts lack the
-  // key and restore through restore_synthetic_user_guide.
-  synthetic_user_guide: string
+  // The Generation Settings box that preceded the task's Data Guide (who
+  // talks to the agent). Only older drafts have it; restore_synthetic_user_guide
+  // reads it to start the Data Guide dialog with that text.
+  synthetic_user_guide?: string
   // The run config the entry page chose for this eval. Persisted so a reload
   // keeps evaluating the same thing; drafts written before the entry page
   // asked restore this as null, which reads as "nothing chosen" and leaves
@@ -371,7 +377,8 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   judge_model: null,
   judge_thinking_level: null,
   turns_per_case: null,
-  synthetic_user_guide: "",
+  grounding_model: null,
+  grounding_thinking_level: null,
   target_run_config_id: null,
   openenv_server_lookup: null,
   landed_plan_steer: "",

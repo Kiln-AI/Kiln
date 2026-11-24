@@ -155,6 +155,26 @@ export function judge_thinking_level_refused(
   return !Object.values(details.available_thinking_levels ?? {}).includes(level)
 }
 
+// The level the judge dropdown shows, prefilled like the run page's: a blank
+// level takes the model's default, and so does one the model doesn't offer.
+// `keep_blank` holds a blank the user already committed for this same model:
+// the committed level is part of the grounded cases' cache key, so turning a
+// committed blank into the default would ground every case again.
+export function prefilled_judge_thinking_level(
+  level: string | null,
+  details: {
+    available_thinking_levels?: Record<string, string> | null
+    default_thinking_level?: string | null
+  } | null,
+  keep_blank: boolean,
+): string | null {
+  if (details === null) return level
+  const fallback = details.default_thinking_level ?? null
+  if (judge_thinking_level_refused(level, details)) return fallback
+  if (level === null && !keep_blank) return fallback
+  return level
+}
+
 // ── Top-off drive planning ────────────────────────────────────────────────
 //
 // A retry after a partial drive must fill the batch, not replace it: the

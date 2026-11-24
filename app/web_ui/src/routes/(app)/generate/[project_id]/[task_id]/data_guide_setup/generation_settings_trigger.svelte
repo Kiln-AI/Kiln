@@ -7,6 +7,9 @@
   export let provider: string = ""
   // Opens the generation-settings dialog.
   export let open: () => void
+  // The eyebrow over the button. The eval entry page uses this summary for
+  // its run config.
+  export let label: string = "Generation Settings"
 </script>
 
 <!-- Fixed width + right-aligned to match the compact (min-w-64, right-aligned)
@@ -18,7 +21,7 @@ gap-6 (24px) row gap to the Continue button; use -mb-6 to close it fully. -->
     <div
       class="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5"
     >
-      Generation Settings
+      {label}
     </div>
     <!-- `btn` (no color modifier) is the app's default gray button — same
     height/shape/hover as the primary Continue button below. -->

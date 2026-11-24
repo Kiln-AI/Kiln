@@ -302,7 +302,10 @@ describe("the turns knob", () => {
   // that only exist when there are conversations to run.
   const multi_turn_branch = (() => {
     const start = drive_settings_dialog.indexOf("{#if is_multi_turn}")
-    const end = drive_settings_dialog.indexOf("{:else}", start)
+    const end = drive_settings_dialog.indexOf(
+      "{:else if !grounds_single_turn}",
+      start,
+    )
     if (start < 0 || end < 0) {
       throw new Error("the drive dialog's arm branch was not found")
     }
@@ -311,7 +314,9 @@ describe("the turns knob", () => {
   // The single-turn half of the same branch, so the negatives below are about
   // THIS dialog's other arm rather than the whole page.
   const single_turn_branch = (() => {
-    const start = drive_settings_dialog.indexOf("{:else}")
+    const start = drive_settings_dialog.indexOf(
+      "{:else if !grounds_single_turn}",
+    )
     const end = drive_settings_dialog.indexOf("{/if}", start)
     if (start < 0 || end < 0) {
       throw new Error("the drive dialog's single-turn arm was not found")
@@ -488,9 +493,7 @@ describe("Generation Settings dialog", () => {
         'info_description="Stands in for a real user in each test conversation. Your agent replies to it."',
       ),
     ).toBe(true)
-    expect(contains('label="Model that writes the user\'s messages"')).toBe(
-      true,
-    )
+    expect(contains('label="Synthetic User Model"')).toBe(true)
     expect(
       contains(
         'model_info_description="Writes the input for each dataset item. Your run config then produces the output that the judge scores."',
@@ -596,12 +599,8 @@ describe("Generation Settings dialog", () => {
 
   it("names the judge lane once and explains it per arm", () => {
     expect(contains('label="Judge Model"')).toBe(true)
-    expect(
-      contains(`"Checks each conversation against your eval's criteria."`),
-    ).toBe(true)
-    expect(contains(`"Checks each result against your eval's criteria."`)).toBe(
-      true,
-    )
+    expect(contains(`"Grades each conversation against your eval."`)).toBe(true)
+    expect(contains(`"Grades each result against your eval."`)).toBe(true)
   })
 
   it("puts the cost warning immediately before the submit", () => {
@@ -723,18 +722,10 @@ describe("Refine Plan dialog", () => {
   })
 
   it("sends the committed steer, never the dialog's draft", () => {
-    // Both arms' guidance: the single-turn compose in on_plan_batch, and the
-    // multi-turn one built in multi_turn_plan_guidance.
-    for (const request of [
-      region(
-        "compose_plan_guidance(\n            single_turn",
-        "planned_count(batch_size),",
-      ),
-      function_body("async function multi_turn_plan_guidance("),
-    ]) {
-      expect(request).toMatch(/\bpending_plan_steer\b/)
-      expect(request).not.toMatch(/(?<!pending_)\bplan_steer\b/)
-    }
+    // Both arms' guidance is built in plan_guidance.
+    const request = function_body("async function plan_guidance(")
+    expect(request).toMatch(/\bpending_plan_steer\b/)
+    expect(request).not.toMatch(/(?<!pending_)\bplan_steer\b/)
   })
 
   it("keeps the steer through a failed attempt and drops it once a plan lands", () => {
@@ -889,9 +880,9 @@ describe("progress screens carry their counts under the bar, never in a string",
   })
 
   it("routes every waiting screen's bar through the one readout component", () => {
-    // Minting, grounding, both drive arms, both claims gates, and the
-    // re-check.
-    expect(normalized.split("<ProgressCount").length - 1).toBe(7)
+    // Minting, grounding on each arm, both drive arms, both claims gates,
+    // and the re-check.
+    expect(normalized.split("<ProgressCount").length - 1).toBe(8)
   })
 
   it("counts the cases dropped from the review on both claims gates", () => {
@@ -1237,33 +1228,42 @@ describe("the stopped-drive screen", () => {
 // logic lives in grounding_flow.ts and its tests; these pin the page wiring.
 describe("grounding a build's cases in its OpenEnv server", () => {
   const drive = function_body("async function on_drive_multi_turn() {")
+  const resolve_cases = function_body("async function cases_for_plan(")
 
-  it("asks the judge lane for tool support only on an OpenEnv build", () => {
-    expect(normalize(drive_settings_dialog)).toContain(
+  it("asks for a tool-calling Environment Setup Model on an OpenEnv build, apart from the judge", () => {
+    const d = normalize(drive_settings_dialog)
+    expect(d).toContain(
+      '{#if build_openenv_server_id !== null} <AvailableModelsDropdown label="Environment Setup Model"',
+    )
+    expect(d).toContain("requires_tool_support: true,")
+    expect(d).not.toContain(
       "requires_tool_support: build_openenv_server_id !== null,",
     )
   })
 
   it("grounds freshly generated cases after generating them, before driving", () => {
-    const generating = drive.indexOf(
+    const generating = resolve_cases.indexOf(
       "generated_cases_for_plan(approved_prompts)",
     )
-    const grounding = drive.indexOf('generation_phase = "grounding_cases"')
-    const driving = drive.indexOf('generation_phase = "running_pipeline"')
+    const grounding = resolve_cases.indexOf(
+      'generation_phase = "grounding_cases"',
+    )
     expect(generating).toBeGreaterThan(0)
     expect(grounding).toBeGreaterThan(generating)
-    expect(driving).toBeGreaterThan(grounding)
+    expect(
+      drive.indexOf('generation_phase = "running_pipeline"'),
+    ).toBeGreaterThan(drive.indexOf("await cases_for_plan("))
   })
 
-  it("reuses the grounded set only for the same server, judge model and thinking level", () => {
-    expect(normalize(drive)).toContain(
+  it("reuses the grounded set only for the same server, model, thinking level and guide", () => {
+    expect(normalize(resolve_cases)).toContain(
       "reusable_grounded_cases( cached_grounded_cases, approved_prompts, spec_text(), grounding_key, )",
     )
     expect(normalize(drive)).toContain(
-      "const grounding_model: GroundingModel = { ...chosen_judge_model, thinking_level: judge_thinking_level, }",
+      "const grounding_model: GroundingModel = { ...(grounding_lane_model ?? chosen_judge_model), thinking_level: grounding_lane_model ? grounding_thinking_level : judge_thinking_level, }",
     )
     expect(normalize(drive)).toContain(
-      "judge_model: model_choice_key(grounding_model),",
+      "grounding_model: model_choice_key(grounding_model), data_guide: grounding_guide_text,",
     )
   })
 
@@ -1276,8 +1276,8 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     expect(generated).toContain(
       "reusable_cached_cases( cached_su_cases, approved_prompts, spec_text(), )",
     )
-    expect(normalize(drive)).toContain(
-      "cases = await generated_cases_for_plan(approved_prompts)",
+    expect(normalize(resolve_cases)).toContain(
+      "const cases = grounding_key && !is_multi_turn ? plan_row_cases(approved_prompts) : await generated_cases_for_plan(approved_prompts)",
     )
   })
 
@@ -1288,18 +1288,21 @@ describe("grounding a build's cases in its OpenEnv server", () => {
   })
 
   it("drives the cases that fit, keeping the drops with the grounded set", () => {
-    const d = normalize(drive)
-    expect(d).toContain(
-      "if (outcome.grounded.length === 0) { grounding_all_dropped = outcome.drops return }",
+    const r = normalize(resolve_cases)
+    expect(r).toContain(
+      "if (outcome.grounded.length === 0) { grounding_all_dropped = outcome.drops return null }",
     )
-    expect(d).toContain("cases = outcome.grounded")
-    expect(d).toContain("drive_grounding_drops = outcome.drops.length")
-    expect(d).toContain(
+    expect(r).toContain(
+      "return { cases: outcome.grounded, grounding_drops: outcome.drops.length }",
+    )
+    expect(r).toContain(
       "grounding_dropped: outcome.drops.length, drops: outcome.drops, drops_notice_seen: false,",
     )
     // Only the all-dropped case stops, and it stops before anything is
     // committed, so the previous drive's results stay as they were.
-    expect(d.indexOf("grounding_all_dropped = outcome.drops")).toBeLessThan(
+    const d = normalize(drive)
+    expect(d).toContain("if (resolved === null) return")
+    expect(d.indexOf("await cases_for_plan(")).toBeLessThan(
       d.indexOf("drive_committed = true"),
     )
     // The drops count as planned-for, not failed, so no stop screen follows.
@@ -1309,15 +1312,15 @@ describe("grounding a build's cases in its OpenEnv server", () => {
   })
 
   it("shows the checking progress with the dropped count", () => {
-    expect(contains('noun="cases checked"')).toBe(true)
+    expect(contains('noun="cases ready"')).toBe(true)
     expect(contains('failed_label="dropped"')).toBe(true)
-    expect(contains("Checking Cases Against Your Environment")).toBe(true)
+    expect(contains("Preparing Your Test Cases")).toBe(true)
   })
 
-  it("keeps Step 4 on the reasons when every case dropped", () => {
+  it("sends Step 4 back to planning when every case dropped", () => {
     expect(
       contains(
-        '{all_dropped_message(batch_plan.prompts.length)} </div> <div class="w-full max-w-2xl mt-4"> <DroppedCasesList drops={grounding_all_dropped} />',
+        "<DropsRefineScreen dropped={batch_plan.prompts.length} planned={batch_plan.prompts.length} noun={planned_noun}",
       ),
     ).toBe(true)
     expect(
@@ -1364,12 +1367,20 @@ describe("grounding a build's cases in its OpenEnv server", () => {
         "dropped_notice_drops(cached_grounded_cases, driven_prompts_json)",
       )
       expect(
-        contains("dropped_notice(notice_drops.length, driven_plan_size)"),
+        contains(
+          "dropped_notice(notice_drops.length, driven_plan_size, planned_noun)",
+        ),
       ).toBe(true)
       expect(
-        contains("{#if !review_intro_dismissed || drops_warning} <ReviewIntro"),
+        contains(
+          "{:else if !review_intro_dismissed || drops_warning} <ReviewIntro",
+        ),
       ).toBe(true)
-      expect(contains("{drops_warning} on_start={start_review}")).toBe(true)
+      expect(
+        contains(
+          "{drops_warning} drops_action={review_drops_action} kept_count={trace_claims.length} on_start={start_review}",
+        ),
+      ).toBe(true)
     })
 
     it("is marked seen on Continue and on Refine Plan, on the drafted grounded set", () => {
@@ -1423,18 +1434,61 @@ describe("grounding a build's cases in its OpenEnv server", () => {
   })
 
   it("adds the reset arguments and dropped cases sections to the plan", () => {
-    const guidance = normalize(
-      function_body("async function multi_turn_plan_guidance("),
-    )
+    const guidance = normalize(function_body("async function plan_guidance("))
     expect(guidance).toContain("reset_arguments_section(")
     expect(guidance).toContain("dropped_cases_section(pending_retry_drops)")
     const guide = guidance.indexOf(
-      "synthetic_user_guide_section(synthetic_user_guide)",
+      "data_guide_section(use_data_guide ? data_guide_text : null)",
     )
     expect(guide).toBeGreaterThan(guidance.indexOf("reset_arguments_section("))
     expect(guide).toBeLessThan(guidance.indexOf("dropped_cases_section("))
-    expect(guidance).toContain("openenv: openenv_server_id !== null")
+    expect(guidance).toContain("const openenv = openenv_server_id !== null")
+    expect(guidance).toContain(
+      "multiturn_plan_guidance(spec_text(), { openenv }) : single_turn_plan_guidance(spec_text(), { openenv }),",
+    )
     expect(guidance).toContain("pending_plan_steer,")
+  })
+
+  describe("on a single-turn build", () => {
+    const single_drive = function_body(
+      "async function on_drive_single_turn() {",
+    )
+
+    it("runs grounded cases as its inputs instead of minting them", () => {
+      const d = normalize(single_drive)
+      expect(d).toContain(
+        "const openenv_server_id = await ensure_openenv_server( drive_config.tool_ids, )",
+      )
+      expect(d).toContain(
+        "items = single_turn_items_from_cases(resolved.cases) planned_inputs -= resolved.grounding_drops",
+      )
+      expect(d.indexOf("await cases_for_plan(")).toBeLessThan(
+        d.indexOf("drive_committed = true"),
+      )
+      expect(d).toContain("...single_turn_pipeline_inputs(drive_plan.items),")
+    })
+
+    it("asks for no input generation model when it grounds its inputs", () => {
+      expect(
+        contains("{:else if !grounds_single_turn} <RunConfigComponent"),
+      ).toBe(true)
+      expect(
+        contains(
+          "$: grounds_single_turn = !is_multi_turn && build_openenv_server_id !== null",
+        ),
+      ).toBe(true)
+    })
+
+    it("saves each input's episode and guidance with the server", () => {
+      expect(
+        contains("openenv_server_id: grounded_server_id(trace_claims),"),
+      ).toBe(true)
+      expect(contains("openenv_reset: tc.openenv_reset ?? null,")).toBe(true)
+    })
+
+    it("shows the checking progress in inputs", () => {
+      expect(contains('noun="inputs ready"')).toBe(true)
+    })
   })
 
   it("passes each case's guidance to the claims build and the re-judge", () => {
@@ -1458,5 +1512,53 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     expect(mirror).not.toContain("reset_arguments_brief")
     expect(mirror).toContain("landed_plan_steer,")
     expect(mirror).toContain("cached_grounded_cases,")
+  })
+})
+
+describe("the task's Data Guide on a multi-turn build", () => {
+  it("offers the guide on multi-turn too, and writes it in a dialog", () => {
+    expect(
+      normalize(function_body("async function plan_or_offer_data_guide(")),
+    ).not.toContain("if (is_multi_turn)")
+    expect(normalize(function_body("function set_up_data_guide("))).toContain(
+      "if (is_multi_turn) { data_guide_text_dialog?.show(legacy_guide_prefill) return }",
+    )
+    expect(contains("on_saved={on_multi_turn_guide_saved}")).toBe(true)
+  })
+
+  it("plans under the guide once it is saved", () => {
+    const saved = normalize(
+      function_body("function on_multi_turn_guide_saved("),
+    )
+    expect(saved).toContain("use_data_guide = data_guide_text !== null")
+    expect(saved).toContain("if (data_guide_text !== null) on_plan_batch()")
+  })
+
+  it("offers the guide's own words on multi-turn", () => {
+    expect(
+      contains(
+        "{...is_multi_turn ? { description_paragraphs: MULTI_TURN_GUIDE_OFFER } : {}}",
+      ),
+    ).toBe(true)
+  })
+
+  it("no longer asks who uses the agent in Generation Settings", () => {
+    expect(contains('label="Who uses this agent"')).toBe(false)
+  })
+
+  it("links the task's guide from the page header when there is one", () => {
+    expect(
+      contains(
+        '...(data_guide_text !== null ? [ { label: "Data Guide", href: with_data_guide_caller( `/generate/${project_id}/${task_id}/data_guide`, "builder", ), }, ] : []),',
+      ),
+    ).toBe(true)
+  })
+})
+
+describe("a task with a JSON input schema on an OpenEnv build", () => {
+  it("grounds it like any single-turn task: the grounding agent writes JSON inputs", () => {
+    expect(
+      normalize(function_body("async function on_drive_single_turn() {")),
+    ).not.toContain("task?.input_json_schema")
   })
 })

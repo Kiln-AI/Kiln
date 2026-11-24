@@ -10,7 +10,6 @@ import {
 // guide read came back empty, not skipped, before any plan or results exist.
 const OPEN: DataGuideDecisionState = {
   on_generate_step: true,
-  is_multi_turn: false,
   read: "none",
   skipped: false,
   has_plan: false,
@@ -27,10 +26,6 @@ describe("data_guide_offer_open — the Step 4 offer gate", () => {
     expect(data_guide_offer_open({ ...OPEN, on_generate_step: false })).toBe(
       false,
     )
-  })
-
-  it("never opens on the multi-turn arm", () => {
-    expect(data_guide_offer_open({ ...OPEN, is_multi_turn: true })).toBe(false)
   })
 
   it("never opens before the guide read returns", () => {
@@ -90,7 +85,6 @@ describe("data_guide_decision_pending — what the draft persists", () => {
 
 describe("plan_used_data_guide — the proposal line's condition", () => {
   const USED = {
-    is_multi_turn: false,
     has_plan: true,
     use_data_guide: true,
     has_guide: true,
@@ -110,9 +104,5 @@ describe("plan_used_data_guide — the proposal line's condition", () => {
 
   it("is false when the task has no guide, whatever the checkbox says", () => {
     expect(plan_used_data_guide({ ...USED, has_guide: false })).toBe(false)
-  })
-
-  it("is false on the multi-turn arm", () => {
-    expect(plan_used_data_guide({ ...USED, is_multi_turn: true })).toBe(false)
   })
 })

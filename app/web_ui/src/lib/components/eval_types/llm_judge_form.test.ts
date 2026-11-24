@@ -350,7 +350,9 @@ describe("LlmJudgeForm", () => {
         },
       })
       expect(container.textContent).toContain(variable)
-      expect(container.textContent).toContain("The case's judge guidance")
+      expect(container.textContent).toContain(
+        "The judge guidance saved with each case",
+      )
     })
 
     it("leaves it out by default", () => {

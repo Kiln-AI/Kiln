@@ -1,7 +1,6 @@
 <script lang="ts">
-  // A grounded case's starting state and judge guidance, read-only and closed
-  // by default: review is about the judge's verdict, and this is what the
-  // judge graded against, for when the reviewer wants to check it.
+  // A grounded case's judge guidance and the reset arguments it ran with,
+  // read-only: the guidance is what the judge graded against.
   import Collapse from "$lib/ui/collapse.svelte"
   import SettingsHeader from "$lib/ui/settings_header.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
@@ -35,9 +34,20 @@
   )
 </script>
 
-<Collapse title="Environment and Judge Guidance" outlined>
-  <div class="flex flex-col gap-3" data-environment-guidance>
-    <SettingsHeader title="Starting State" show_divider={false} />
+<!-- The judge guidance is open: it is what the judge graded this case against,
+     and its starting point already says where the case begins. The exact reset
+     arguments stay folded under Environment Options, for when the reviewer
+     wants to check them. -->
+<div class="flex flex-col gap-3" data-environment-guidance>
+  <SettingsHeader
+    title="Judge Guidance"
+    subtitle="What the judge checks this case against: where it starts, what Kiln found in the environment, and the expected outcome."
+    show_divider={false}
+  />
+  <Output raw_output={judge_guidance} max_height={GUIDANCE_MAX_HEIGHT}>
+    <ChatMarkdown text={judge_guidance} />
+  </Output>
+  <Collapse title="Environment Options" outlined>
     {#if properties.length > 0}
       <PropertyList {properties}>
         <svelte:fragment slot="custom_value" let:property>
@@ -54,9 +64,5 @@
         Starts from the server's default state.
       </div>
     {/if}
-    <SettingsHeader title="Judge Guidance" show_divider={false} />
-    <Output raw_output={judge_guidance} max_height={GUIDANCE_MAX_HEIGHT}>
-      <ChatMarkdown text={judge_guidance} />
-    </Output>
-  </div>
-</Collapse>
+  </Collapse>
+</div>

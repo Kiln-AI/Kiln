@@ -27,6 +27,10 @@
   export let task_id: string
   export let data_guide: string
   export let use_data_guide: boolean
+  // What the checkbox says the guide is for. A multi-turn task's guide
+  // describes users rather than inputs, so the eval builder passes its own.
+  export let description: string =
+    "A saved description of what realistic inputs to this task look like, so generated inputs match the structure and style of your real data."
 </script>
 
 {#if data_guide}
@@ -34,7 +38,7 @@
     <FormElement
       id="data_guide_toggle"
       label="Use Data Guide"
-      description="A saved description of what realistic inputs to this task look like, so generated inputs match the structure and style of your real data."
+      {description}
       inputType="checkbox"
       bind:value={use_data_guide}
       inline_action={{

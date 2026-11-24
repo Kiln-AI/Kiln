@@ -211,16 +211,19 @@ describe("RunConfigComparisonTable on a grounded eval", () => {
   }
 
   it.each([true, false])(
-    "disables Run Eval for a run config without the server's tools (interactive: %s)",
+    "disables Run Eval for a run config on another server (interactive: %s)",
     async (interactive) => {
       load_openenv_server.mockResolvedValue({ name: "World" })
       const { container } = render(RunConfigComparisonTable, {
-        props: groundedProps(runConfigWithTools("rc1", []), interactive),
+        props: groundedProps(
+          runConfigWithTools("rc1", ["kiln_tool::openenv::server_2::t"]),
+          interactive,
+        ),
       })
       await vi.waitFor(() => {
         const tooltip = container.querySelector("td .tooltip")
         expect(tooltip?.getAttribute("data-tip")).toBe(
-          "No OpenEnv tools. This eval's cases run in World.",
+          "Uses another OpenEnv server. This eval's cases run in World.",
         )
       })
       expect(disabledRunEval(container)?.textContent).toContain("Run Eval")
@@ -251,13 +254,28 @@ describe("RunConfigComparisonTable on a grounded eval", () => {
   it("names the server by its id when it can't be loaded", async () => {
     load_openenv_server.mockRejectedValue(new Error("deleted"))
     const { container } = render(RunConfigComparisonTable, {
-      props: groundedProps(runConfigWithTools("rc1", []), true),
+      props: groundedProps(
+        runConfigWithTools("rc1", ["kiln_tool::openenv::server_2::t"]),
+        true,
+      ),
     })
     await vi.waitFor(() => {
       expect(
         container.querySelector("td .tooltip")?.getAttribute("data-tip"),
-      ).toBe("No OpenEnv tools. This eval's cases run in server_1.")
+      ).toBe("Uses another OpenEnv server. This eval's cases run in server_1.")
     })
+  })
+
+  it("leaves Run Eval on for a run config with no OpenEnv tools", async () => {
+    load_openenv_server.mockResolvedValue({ name: "World" })
+    const { container } = render(RunConfigComparisonTable, {
+      props: groundedProps(runConfigWithTools("rc1", []), true),
+    })
+    await vi.waitFor(() =>
+      expect(load_openenv_server).toHaveBeenCalledWith("proj1", "server_1"),
+    )
+    expect(container.querySelector("td .tooltip")).toBeNull()
+    expect(disabledRunEval(container)).toBeNull()
   })
 
   it("leaves a run config with the server's tools runnable", () => {

@@ -56,6 +56,7 @@
     type BuilderDraft,
     type CachedMintedInputs,
     type CachedGroundedCases,
+    type CaseGroundingKey,
     type CachedResetArgumentsBrief,
     type CachedSuCases,
     type DrivenCaseWire,
@@ -65,20 +66,25 @@
   // Grounding a multi-turn build's cases in its OpenEnv server: the request,
   // the stream's frames, and what the save and the review read from them.
   import {
-    all_dropped_message,
     dropped_notice,
     dropped_notice_drops,
+    drops_action,
+    type PlannedNoun,
     ground_cases_request,
     grounded_server_id,
     grounding_request_cases,
+    plan_row_cases,
     model_choice_key,
     openenv_lookup_key,
     read_grounding_stream,
+    single_turn_items_from_cases,
+    single_turn_pipeline_inputs,
+    ungrounded_single_turn_items,
     type GroundingDrop,
     type GroundingModel,
     type GroundingOutcome,
+    type SingleTurnItem,
   } from "./grounding_flow"
-  import DroppedCasesList from "./dropped_cases_list.svelte"
   import {
     load_openenv_server_reset_arguments_brief,
     lookup_run_openenv_server,
@@ -92,6 +98,7 @@
   // agrees/disagrees with distilled claims; the trace stays hidden in a modal.
   import ClaimEvidenceReview from "./claim_evidence_review.svelte"
   import ReviewIntro from "./review_intro.svelte"
+  import DropsRefineScreen from "./drops_refine_screen.svelte"
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
   // Step 4 plan approval reuses the /generate batch-plan components — one
@@ -105,6 +112,7 @@
   // SDG does, so it opens by offering a guide and lets Refine Plan turn one
   // off, in SDG's words and SDG's controls.
   import DataGuideOffer from "../../../../generate/[project_id]/[task_id]/data_guide_offer.svelte"
+  import DataGuideTextDialog from "../../../../generate/[project_id]/[task_id]/data_guide_text_dialog.svelte"
   import SynthDataGuide, {
     open_data_guide_in_new_tab,
   } from "../../../../generate/[project_id]/[task_id]/synth_data_guide.svelte"
@@ -123,7 +131,7 @@
     multiturn_plan_guidance,
     reset_arguments_section,
     single_turn_plan_guidance,
-    synthetic_user_guide_section,
+    data_guide_section,
   } from "./batch_plan_guidance"
   // The Step 4 dataset sizes: what the planner is asked for, and the splits
   // the save deals into.
@@ -192,7 +200,7 @@
     is_partial_stop,
     stale_case_caches,
     pick_target_run_config,
-    judge_thinking_level_refused,
+    prefilled_judge_thinking_level,
     restore_turns_per_case,
     stop_primary_action,
     MAX_TURNS_PER_CASE,
@@ -253,6 +261,7 @@
     QuestionWithAnswer,
     SpecType,
     KilnAgentRunConfigProperties,
+    DataGuide,
   } from "$lib/types"
   import posthog from "posthog-js"
 
@@ -486,8 +495,9 @@
         input_gen_run_config,
         judge_model,
         judge_thinking_level,
+        grounding_model: grounding_lane_model,
+        grounding_thinking_level,
         turns_per_case,
-        synthetic_user_guide,
         target_run_config_id,
         openenv_server_lookup,
         landed_plan_steer,
@@ -600,6 +610,8 @@
       input_gen_run_config = saved.input_gen_run_config ?? null
       judge_model = saved.judge_model ?? null
       judge_thinking_level = saved.judge_thinking_level ?? null
+      grounding_lane_model = saved.grounding_model ?? null
+      grounding_thinking_level = saved.grounding_thinking_level ?? null
       // Conversation length: no key, no choice on record, or a stored value
       // that isn't a number restores the default; a real number is clamped to
       // the current range.
@@ -607,7 +619,7 @@
         saved.turns_per_case,
         TURNS_PER_CASE,
       )
-      synthetic_user_guide = restore_synthetic_user_guide(
+      legacy_guide_prefill = restore_synthetic_user_guide(
         saved.synthetic_user_guide,
       )
       // A missing config reads as nothing chosen and keeps the task-default
@@ -1120,9 +1132,10 @@
   // was drafted under. Null when the task has no runs — grounding is
   // best-effort, never a gate.
   let grounding_sample: TaskSampleExample | null = null
-  // The task's saved Data Guide (single-turn only), as read when Step 4 was
-  // entered without a plan; rides the draft so a restore mints under the
-  // text its plan was drafted with. Multi-turn never reads it.
+  // The task's saved Data Guide, as read when Step 4 was entered without a
+  // plan; rides the draft so a restore mints under the text its plan was
+  // drafted with. Single-turn sends it to the planner and the input
+  // generator; multi-turn to the planner; OpenEnv builds also to grounding.
   let data_guide_text: string | null = null
   let use_data_guide = false
   // Continue Without Data Guide: the plan fires without one, now and on
@@ -1133,7 +1146,6 @@
   let data_guide_read: DataGuideRead = "unread"
   $: data_guide_decision_state = {
     on_generate_step: current_step === "generate",
-    is_multi_turn,
     read: data_guide_read,
     skipped: data_guide_skipped,
     has_plan: batch_plan !== null,
@@ -1152,7 +1164,6 @@
   // committed on/off state always describes the plan on screen, because
   // every change to it re-plans.
   $: plan_drafted_with_data_guide = plan_used_data_guide({
-    is_multi_turn,
     has_plan: batch_plan !== null,
     use_data_guide,
     has_guide: data_guide_text !== null,
@@ -1267,7 +1278,7 @@
   // successes. Not drafted: results don't survive a reload, so neither
   // does the batch's slot state.
   let batch_cases: SyntheticUserCaseWire[] | null = null
-  let batch_inputs: string[] | null = null
+  let batch_inputs: SingleTurnItem[] | null = null
   let built_by_case: (TraceClaims | null)[] = []
   // Slots whose conversation was successfully driven. Guards driven_cases
   // against a duplicate append when a top-off re-drives a case that drove
@@ -1322,9 +1333,8 @@
   // applies as before.
   let target_run_config_id: string | null = null
 
-  // The OpenEnv server the target run config's tools reach, on a multi-turn
-  // build. The builder grounds every case in it and the planner reads its
-  // reset arguments. Looked up once per tool set and drafted, so a reload or
+  // The OpenEnv server the target run config's tools reach. The builder grounds
+  // every case in it, on either arm, and the planner reads its reset arguments. Looked up once per tool set and drafted, so a reload or
   // a re-plan doesn't ask again. The lookup runs when the first plan needs it
   // rather than right after step 1: nothing before planning reads it, and the
   // planner is its first reader.
@@ -1333,9 +1343,11 @@
   // Never drafted: the server's owner can rewrite it at any time, and a
   // restored copy would plan against starting states the server no longer has.
   let reset_arguments_brief: CachedResetArgumentsBrief | null = null
-  $: build_openenv_server_id = is_multi_turn
-    ? openenv_server_lookup?.openenv_server_id ?? null
-    : null
+  $: build_openenv_server_id = openenv_server_lookup?.openenv_server_id ?? null
+  // A single-turn build on an OpenEnv server takes its inputs from grounded
+  // cases: each input is a grounded case's opening message, run in that case's
+  // episode. No input generator runs.
+  $: grounds_single_turn = !is_multi_turn && build_openenv_server_id !== null
 
   // The server the run config's tools reach, or null when they reach none.
   // Throws when they reach more than one, or one that no longer exists: the
@@ -1396,14 +1408,12 @@
       : null
   }
 
-  // The multi-turn plan's guidance: the base, then on a build with an OpenEnv
-  // server the reset arguments it offers, the synthetic user guide and, on a
-  // Refine Plan after drops, the scenarios that didn't fit; the user's steer
-  // last. Throws an AbortError once the signal aborts, before the plan is
-  // requested.
-  async function multi_turn_plan_guidance(
-    signal: AbortSignal,
-  ): Promise<string> {
+  // The plan's guidance, on either arm: the arm's base, then on a build with
+  // an OpenEnv server the reset arguments it offers, the synthetic user guide
+  // and, on a Refine Plan after drops, the scenarios that didn't fit; the
+  // user's steer last. Throws an AbortError once the signal aborts, before the
+  // plan is requested.
+  async function plan_guidance(signal: AbortSignal): Promise<string> {
     const { openenv_server_id, reset_arguments_brief: brief } =
       await load_plan_openenv_context(
         {
@@ -1413,18 +1423,18 @@
         },
         signal,
       )
-    const sections =
-      openenv_server_id === null
-        ? []
-        : [
-            reset_arguments_section(brief),
-            synthetic_user_guide_section(synthetic_user_guide),
-            dropped_cases_section(pending_retry_drops),
-          ]
+    const openenv = openenv_server_id !== null
+    const sections = [
+      openenv ? reset_arguments_section(brief) : null,
+      is_multi_turn
+        ? data_guide_section(use_data_guide ? data_guide_text : null)
+        : null,
+      openenv ? dropped_cases_section(pending_retry_drops) : null,
+    ]
     return compose_plan_guidance(
-      multiturn_plan_guidance(spec_text(), {
-        openenv: openenv_server_id !== null,
-      }),
+      is_multi_turn
+        ? multiturn_plan_guidance(spec_text(), { openenv })
+        : single_turn_plan_guidance(spec_text(), { openenv }),
       sections,
       pending_plan_steer,
     )
@@ -1538,9 +1548,6 @@
   // the cost warning honest as the stepper moves, and never quotes a length
   // the route would reject.
   $: staged_drive_turns_per_case = clamp_turns_per_case(staged_turns_per_case)
-  // Who uses the agent; read by the grounding agent and the OpenEnv planner.
-  let synthetic_user_guide = ""
-  let staged_synthetic_user_guide = synthetic_user_guide
 
   // ── Model lanes (SDG's Generation Settings pattern). The Generation
   // Settings dialog is the drive's only entrance: it shows the lanes the
@@ -1558,6 +1565,11 @@
   let judge_model: ModelChoice | null = null
   // Null runs the judge at its model's default thinking level.
   let judge_thinking_level: string | null = null
+  // The model the grounding agent runs on, on a build with an OpenEnv server:
+  // it fits each case to the server's data through the server's tools, and on
+  // single-turn writes each input. Separate from the judge, which only judges.
+  let grounding_lane_model: ModelChoice | null = null
+  let grounding_thinking_level: string | null = null
   let drive_settings_dialog: Dialog | null = null
   // Model-only lane bindings: the combined "provider_id/model_id" string plus
   // the parsed ids the dropdown maintains. Committed to the lanes on submit —
@@ -1575,6 +1587,36 @@
   let judge_model_id: string | null = null
   let judge_provider_id: string | null = null
   let staged_judge_thinking_level: string | null = null
+  let grounding_model_combined: string | null = null
+  let grounding_model_id: string | null = null
+  let grounding_provider_id: string | null = null
+  let staged_grounding_thinking_level: string | null = null
+  $: grounding_model_details = grounding_model_combined
+    ? available_model_details(
+        grounding_model_combined.split("/").slice(1).join("/"),
+        grounding_model_combined.split("/")[0],
+        $available_models,
+      )
+    : null
+  $: grounding_thinking_levels =
+    grounding_model_details?.available_thinking_levels ?? null
+  $: grounding_thinking_level_options = [
+    {
+      label: "Thinking Level",
+      options: Object.entries(grounding_thinking_levels ?? {}).map(
+        ([label, value]) => ({ label, value }),
+      ),
+    },
+  ]
+  // Prefilled and kept to what the model offers, like the judge's level.
+  $: staged_grounding_thinking_level = prefilled_judge_thinking_level(
+    staged_grounding_thinking_level,
+    grounding_model_details,
+    grounding_thinking_level === null &&
+      grounding_lane_model !== null &&
+      grounding_model_combined ===
+        `${grounding_lane_model.model_provider}/${grounding_lane_model.model_name}`,
+  )
   // Read off the dropdown's combined value, not the ids it parses from it: the
   // ids trail a reseed by a tick, and checking the level against the previous
   // model could clear one the reseeded model offers.
@@ -1595,16 +1637,21 @@
       ),
     },
   ]
-  // A level the newly picked judge model doesn't offer would be refused by the
-  // judge route, so it falls back to the model's default.
-  $: if (
-    judge_thinking_level_refused(
-      staged_judge_thinking_level,
-      judge_model_details,
-    )
-  ) {
-    staged_judge_thinking_level = null
-  }
+  // The dropdown starts on the judge model's default level, and a level the
+  // newly picked model doesn't offer falls back to it. A committed blank is
+  // kept only while grounding still runs on the judge (an OpenEnv build with
+  // no Environment Setup Model yet), where the judge's level is part of the
+  // grounded cases' cache key (see prefilled_judge_thinking_level).
+  $: staged_judge_thinking_level = prefilled_judge_thinking_level(
+    staged_judge_thinking_level,
+    judge_model_details,
+    build_openenv_server_id !== null &&
+      grounding_lane_model === null &&
+      judge_thinking_level === null &&
+      judge_model !== null &&
+      judge_model_combined ===
+        `${judge_model.model_provider}/${judge_model.model_name}`,
+  )
   let drive_settings_submitting = false
   // Typed as KilnError so the dialog's FormContainer renders it in its own
   // centered error slot, like every other form in the app.
@@ -1721,8 +1768,21 @@
 
   async function fill_null_lanes() {
     const su_needed = is_multi_turn && su_driver === null
-    const input_gen_needed = !is_multi_turn && input_generator === null
-    if (!su_needed && !input_gen_needed && judge_model !== null) return
+    const input_gen_needed =
+      !is_multi_turn && !grounds_single_turn && input_generator === null
+    const grounding_needed =
+      build_openenv_server_id !== null && grounding_lane_model === null
+    if (
+      !su_needed &&
+      !input_gen_needed &&
+      !grounding_needed &&
+      judge_model !== null
+    ) {
+      return
+    }
+    // A judge picked here starts on its model's default thinking level, as a
+    // model picked in the dropdown does.
+    const judge_was_null = judge_model === null
     if (judge_model === null) {
       try {
         const saved_judge = await last_saved_eval_judge()
@@ -1739,7 +1799,7 @@
         su_driver = model_choice(suggested.model_id, suggested.provider_id)
       }
     }
-    if (!is_multi_turn && input_generator === null) {
+    if (input_gen_needed) {
       // Same suggestion tier as /generate's input-generation dropdown (a
       // saved eval records no input-generator, so there is no replay tier).
       const suggested = build_suggested_models(models, "data_gen")[0]
@@ -1756,6 +1816,20 @@
         judge_model = model_choice(suggested.model_id, suggested.provider_id)
       }
     }
+    if (judge_was_null && judge_model !== null) {
+      judge_thinking_level =
+        available_model_details(
+          judge_model.model_name,
+          judge_model.model_provider,
+          models,
+        )?.default_thinking_level ?? null
+    }
+    // Starts on the judge model, which is what grounding ran on before it
+    // had a lane of its own.
+    if (grounding_needed && grounding_lane_model === null) {
+      grounding_lane_model = judge_model
+      grounding_thinking_level = judge_thinking_level
+    }
   }
 
   async function open_drive_settings() {
@@ -1764,7 +1838,6 @@
     // gone the next time it opens. Unlike the lanes it waits on nothing, so it
     // is seeded up front rather than after the await below.
     staged_turns_per_case = turns_per_case
-    staged_synthetic_user_guide = synthetic_user_guide
     // Await the pre-population pass (usually already in flight from the plan
     // surface, so this resolves at once) so the reseed below reads resolved
     // lanes. On failure the dialog still opens on whatever is committed.
@@ -1785,6 +1858,16 @@
       ? `${judge_model.model_provider}/${judge_model.model_name}`
       : judge_model_combined
     staged_judge_thinking_level = judge_thinking_level
+    // With none committed, the Environment Setup Model starts on the judge, which is
+    // what grounding ran on before it had a lane. Seeded here rather than in
+    // fill_null_lanes, which can run before the build's server is known.
+    const grounding_seed = grounding_lane_model ?? judge_model
+    grounding_model_combined = grounding_seed
+      ? `${grounding_seed.model_provider}/${grounding_seed.model_name}`
+      : grounding_model_combined
+    staged_grounding_thinking_level = grounding_lane_model
+      ? grounding_thinking_level
+      : judge_thinking_level
     // The input lane holds more than a model, and its component stays mounted
     // between opens, so reseed the whole lane: a visit abandoned by Esc or
     // Cancel must not leave its tool and sampling edits on the next one. With
@@ -1937,10 +2020,11 @@
     // The input lane's run config comes out of its component whole. Only a
     // kiln_agent config with a model on it can mint, so anything else is
     // treated as an unset lane.
-    const input_gen_rcp = is_multi_turn
-      ? null
-      : input_gen_config_component?.run_options_as_run_config_properties() ??
-        null
+    const input_gen_rcp =
+      is_multi_turn || grounds_single_turn
+        ? null
+        : input_gen_config_component?.run_options_as_run_config_properties() ??
+          null
     const input_gen_config =
       input_gen_rcp &&
       isKilnAgentRunConfig(input_gen_rcp) &&
@@ -1949,12 +2033,26 @@
         ? input_gen_rcp
         : null
     const su_ok = !is_multi_turn || (su_model_id && su_provider_id)
-    const input_gen_ok = is_multi_turn || input_gen_config
-    if (!su_ok || !input_gen_ok || !judge_model_id || !judge_provider_id) {
+    const input_gen_ok =
+      is_multi_turn || grounds_single_turn || input_gen_config
+    const grounding_ok =
+      build_openenv_server_id === null ||
+      (grounding_model_id && grounding_provider_id)
+    if (
+      !su_ok ||
+      !input_gen_ok ||
+      !grounding_ok ||
+      !judge_model_id ||
+      !judge_provider_id
+    ) {
       drive_settings_error = new KilnError(
         is_multi_turn
-          ? "Select a model to play the user and a judge model to continue."
-          : "Select an input generation model and a judge model to continue.",
+          ? build_openenv_server_id !== null
+            ? "Select a model to play the user, an environment setup model and a judge model to continue."
+            : "Select a model to play the user and a judge model to continue."
+          : grounds_single_turn
+            ? "Select an environment setup model and a judge model to continue."
+            : "Select an input generation model and a judge model to continue.",
       )
       return
     }
@@ -1970,11 +2068,21 @@
     }
     judge_model = model_choice(judge_model_id, judge_provider_id)
     judge_thinking_level = staged_judge_thinking_level
+    if (
+      build_openenv_server_id !== null &&
+      grounding_model_id &&
+      grounding_provider_id
+    ) {
+      grounding_lane_model = model_choice(
+        grounding_model_id,
+        grounding_provider_id,
+      )
+      grounding_thinking_level = staged_grounding_thinking_level
+    }
     // Commit the staged length. Clamped on the way in so the committed value —
     // what the request, the draft, and the stamp all read — is always one the
     // drive route accepts.
     turns_per_case = clamp_turns_per_case(staged_turns_per_case)
-    synthetic_user_guide = staged_synthetic_user_guide
     drive_settings_error = null
     drive_settings_dialog?.close()
     // Let the commit above reach the reactive graph before driving: the drive
@@ -2131,13 +2239,7 @@
       // The arm's base guidance carries the balance policy; the user's steer
       // (when they typed one) is appended to it, never replaces it — see
       // compose_plan_guidance.
-      const guidance = is_multi_turn
-        ? await multi_turn_plan_guidance(signal)
-        : compose_plan_guidance(
-            single_turn_plan_guidance(spec_text()),
-            [],
-            pending_plan_steer,
-          )
+      const guidance = await plan_guidance(signal)
       const planned = await request_batch_plan(
         guidance,
         planned_count(batch_size),
@@ -2481,20 +2583,26 @@
     cases: SyntheticUserCaseWire[],
     approved_prompts: string[],
     target_run_config_id: string,
-    judge_model: GroundingModel,
-    synthetic_user_guide: string,
+    grounding_model: GroundingModel,
+    data_guide: string,
     signal: AbortSignal,
   ): Promise<GroundingOutcome | null> {
-    const request_cases = grounding_request_cases(cases, approved_prompts)
+    const request_cases = grounding_request_cases(
+      cases,
+      approved_prompts,
+      !is_multi_turn,
+    )
     grounding_total = request_cases.length
     grounding_checked = 0
     grounding_dropped = 0
     const body = ground_cases_request({
       target_run_config_id,
-      judge_model,
+      grounding_model,
       specification: spec_text(),
       cases: request_cases,
-      synthetic_user_guide,
+      data_guide,
+      // Single-turn: a real input from the task's dataset, for format.
+      example_input: is_multi_turn ? null : grounding_sample?.input ?? null,
     })
     // Aborting (Back, leaving the page) closes the stream, and the server
     // ends every episode the cancelled cases had open.
@@ -2553,9 +2661,14 @@
     !review_results_stale
       ? dropped_notice_drops(cached_grounded_cases, driven_prompts_json)
       : null
+  $: planned_noun = (is_multi_turn ? "conversation" : "input") as PlannedNoun
   $: drops_warning = notice_drops
-    ? dropped_notice(notice_drops.length, driven_plan_size)
+    ? dropped_notice(notice_drops.length, driven_plan_size, planned_noun)
     : null
+  $: review_drops_action = drops_action(
+    notice_drops?.length ?? 0,
+    driven_plan_size,
+  )
 
   function mark_dropped_notice_seen() {
     if (cached_grounded_cases && !cached_grounded_cases.drops_notice_seen) {
@@ -2580,6 +2693,78 @@
     mark_dropped_notice_seen()
     history.back()
     open_refine_plan_after_drops(drops)
+  }
+
+  type PlanCases = { cases: SyntheticUserCaseWire[]; grounding_drops: number }
+
+  // The cases a drive runs, on either arm: the cached grounded set when it was
+  // grounded from exactly this plan, spec, server and judge; else the plan's
+  // generated cases, grounded in the server when the build has one. The cases
+  // that fit run; the drops are kept for the review's notice. Returns null
+  // after setting generation_error or grounding_all_dropped, with the previous
+  // drive's results untouched.
+  async function cases_for_plan(
+    approved_prompts: string[],
+    target_run_config_id: string,
+    grounding_model: GroundingModel,
+    grounding_key: CaseGroundingKey | null,
+  ): Promise<PlanCases | null> {
+    const grounded_cache = grounding_key
+      ? reusable_grounded_cases(
+          cached_grounded_cases,
+          approved_prompts,
+          spec_text(),
+          grounding_key,
+        )
+      : null
+    if (grounded_cache) {
+      posthog.capture("eval_v2_su_cases_reused", {
+        num_cases: grounded_cache.cases.length,
+        grounded: true,
+      })
+      return {
+        cases: grounded_cache.cases,
+        grounding_drops: grounded_cache.grounding_dropped,
+      }
+    }
+    // A grounded single-turn build has nothing to generate first: the
+    // grounding agent writes each input from its plan row.
+    const cases =
+      grounding_key && !is_multi_turn
+        ? plan_row_cases(approved_prompts)
+        : await generated_cases_for_plan(approved_prompts)
+    if (cases === null) return null
+    if (!grounding_key) return { cases, grounding_drops: 0 }
+    generation_phase = "grounding_cases"
+    const outcome = await ground_planned_cases(
+      cases,
+      approved_prompts,
+      target_run_config_id,
+      grounding_model,
+      grounding_key.data_guide,
+      new_copilot_abort_signal(),
+    )
+    if (outcome === null) return null
+    if (outcome.drops.length > 0) {
+      posthog.capture("eval_v2_grounding_dropped", {
+        num_cases: cases.length,
+        num_dropped: outcome.drops.length,
+      })
+    }
+    if (outcome.grounded.length === 0) {
+      grounding_all_dropped = outcome.drops
+      return null
+    }
+    cached_grounded_cases = {
+      prompts_json: JSON.stringify(approved_prompts),
+      spec_text: spec_text(),
+      ...grounding_key,
+      cases: outcome.grounded,
+      grounding_dropped: outcome.drops.length,
+      drops: outcome.drops,
+      drops_notice_seen: false,
+    }
+    return { cases: outcome.grounded, grounding_drops: outcome.drops.length }
   }
 
   async function on_drive_multi_turn() {
@@ -2632,17 +2817,21 @@
       const openenv_server_id = await ensure_openenv_server(
         drive_config.tool_ids,
       )
+      // Drafts from before the Environment Setup Model lane ground on the judge, as
+      // they did then.
       const grounding_model: GroundingModel = {
-        ...chosen_judge_model,
-        thinking_level: judge_thinking_level,
+        ...(grounding_lane_model ?? chosen_judge_model),
+        thinking_level: grounding_lane_model
+          ? grounding_thinking_level
+          : judge_thinking_level,
       }
       const grounding_key =
         openenv_server_id === null
           ? null
           : {
               openenv_server_id,
-              judge_model: model_choice_key(grounding_model),
-              synthetic_user_guide: synthetic_user_guide.trim(),
+              grounding_model: model_choice_key(grounding_model),
+              data_guide: grounding_guide_text,
             }
 
       // 2. Author the judge before preflight and any SU spend, so a failure
@@ -2720,62 +2909,14 @@
       })
       if (stale.generated) cached_su_cases = null
       if (stale.grounded) cached_grounded_cases = null
-      const grounded_cache = grounding_key
-        ? reusable_grounded_cases(
-            cached_grounded_cases,
-            approved_prompts,
-            spec_text(),
-            grounding_key,
-          )
-        : null
-      let cases: SyntheticUserCaseWire[] | null = grounded_cache?.cases ?? null
-      let drive_grounding_drops = grounded_cache?.grounding_dropped ?? 0
-      if (cases) {
-        posthog.capture("eval_v2_su_cases_reused", {
-          num_cases: cases.length,
-          grounded: true,
-        })
-      } else {
-        cases = await generated_cases_for_plan(approved_prompts)
-        if (cases === null) return
-        if (grounding_key) {
-          // Check each case against the server before anything is driven.
-          // The cases that fit are driven; the drops are kept with them for
-          // the review's notice. When nothing fits, the step stops here with
-          // the previous drive's results untouched.
-          generation_phase = "grounding_cases"
-          const outcome = await ground_planned_cases(
-            cases,
-            approved_prompts,
-            target_run_config_id,
-            grounding_model,
-            grounding_key.synthetic_user_guide,
-            new_copilot_abort_signal(),
-          )
-          if (outcome === null) return
-          if (outcome.drops.length > 0) {
-            posthog.capture("eval_v2_grounding_dropped", {
-              num_cases: cases.length,
-              num_dropped: outcome.drops.length,
-            })
-          }
-          if (outcome.grounded.length === 0) {
-            grounding_all_dropped = outcome.drops
-            return
-          }
-          cases = outcome.grounded
-          drive_grounding_drops = outcome.drops.length
-          cached_grounded_cases = {
-            prompts_json: JSON.stringify(approved_prompts),
-            spec_text: spec_text(),
-            ...grounding_key,
-            cases,
-            grounding_dropped: outcome.drops.length,
-            drops: outcome.drops,
-            drops_notice_seen: false,
-          }
-        }
-      }
+      const resolved = await cases_for_plan(
+        approved_prompts,
+        target_run_config_id,
+        grounding_model,
+        grounding_key,
+      )
+      if (resolved === null) return
+      const { cases, grounding_drops: drive_grounding_drops } = resolved
       planned_cases = approved_prompts.length - drive_grounding_drops
 
       // 5. The drive plan: TOP OFF the current batch — drive only the
@@ -3212,10 +3353,13 @@
     }
   }
 
-  // Step 4 (single-turn) part 2 — run from the approved plan: mint one test
-  // input per approved prompt (local, input-generator lane), then a single
-  // single_turn_pipeline stream runs [run → judge] per input — the task
-  // executes once per input with tools live on the user's keys.
+  // Step 4 (single-turn) part 2 — run from the approved plan. Without an
+  // OpenEnv server: mint one test input per approved prompt (local,
+  // input-generator lane). With one: generate a case per prompt and ground it
+  // in the server, and each grounded case's opening message is an input, run
+  // in that case's episode. Then a single single_turn_pipeline stream runs
+  // [run → judge] per input — the task executes once per input with tools
+  // live on the user's keys.
   async function on_drive_single_turn() {
     // Only the Generation Settings dialog's submit starts a run, and it is a
     // plain click handler, so guard reentry: a double-click must not start a
@@ -3230,13 +3374,13 @@
     const chosen_input_gen = input_generator
     const chosen_input_config = input_gen_run_config
     const chosen_judge_model = judge_model
-    if (!chosen_input_gen || !chosen_input_config || !chosen_judge_model) {
+    if (
+      !chosen_judge_model ||
+      (!grounds_single_turn && (!chosen_input_gen || !chosen_input_config))
+    ) {
       open_drive_settings()
       return
     }
-    // The cache key for the config the mint will run under, derived from the
-    // very object the request sends, so key and request cannot drift.
-    const input_gen_config_key = run_config_cache_key(chosen_input_config)
     const approved_prompts = batch_plan.prompts
     generation_loading = true
     generation_error = null
@@ -3248,6 +3392,10 @@
     // Set once the run's batch bookkeeping is committed; the abort
     // handler must leave the previous results untouched before that point.
     let drive_committed = false
+    // How many inputs this run sets out to run: the plan, less any cases
+    // grounding dropped. The shortfall the stop screen reports is measured
+    // against it.
+    let planned_inputs = approved_prompts.length
 
     try {
       // 1. Resolve target_run_config (task default → first config). The
@@ -3256,6 +3404,34 @@
       const drive_config = await resolve_drive_run_config()
       if (!drive_config) return
       const target_run_config_id = drive_config.id
+      // The OpenEnv server every input is grounded in and runs against, or
+      // null on a build without one, whose inputs are minted.
+      const openenv_server_id = await ensure_openenv_server(
+        drive_config.tool_ids,
+      )
+      // Drafts from before the Environment Setup Model lane ground on the judge, as
+      // they did then.
+      const grounding_model: GroundingModel = {
+        ...(grounding_lane_model ?? chosen_judge_model),
+        thinking_level: grounding_lane_model
+          ? grounding_thinking_level
+          : judge_thinking_level,
+      }
+      const grounding_key =
+        openenv_server_id === null
+          ? null
+          : {
+              openenv_server_id,
+              grounding_model: model_choice_key(grounding_model),
+              data_guide: grounding_guide_text,
+            }
+      if (
+        grounding_key === null &&
+        (!chosen_input_gen || !chosen_input_config)
+      ) {
+        open_drive_settings()
+        return
+      }
 
       // 2. The judge, authored BEFORE the pipeline so the preflight covers
       // its lane too. The server frames every rubric against a transcript,
@@ -3284,11 +3460,15 @@
             model_name: drive_config.model_name,
             model_provider: drive_config.model_provider,
           },
-          {
-            lane: "input generator",
-            model_name: chosen_input_gen.model_name,
-            model_provider: chosen_input_gen.model_provider,
-          },
+          ...(grounding_key === null && chosen_input_gen
+            ? [
+                {
+                  lane: "input generator" as const,
+                  model_name: chosen_input_gen.model_name,
+                  model_provider: chosen_input_gen.model_provider,
+                },
+              ]
+            : []),
           {
             lane: "judge",
             model_name: judge.model_name,
@@ -3307,46 +3487,64 @@
         return
       }
 
-      // 4. Preflight passed. Mint the test inputs BEFORE committing to a
-      // run shape: the drive plan below compares them to the current batch
-      // to pick top-off vs fresh, and a minting failure here leaves the
-      // previous run's results intact. Their generation depends on the
-      // plan, the input generator's whole run config, and the grounding
-      // guide — never the task's own run config — so a re-run with all
+      // 4. Preflight passed. Resolve the inputs BEFORE committing to a run
+      // shape: the drive plan below compares them to the current batch to
+      // pick top-off vs fresh, and a failure here leaves the previous run's
+      // results intact. Both sources are cached, so a re-run with everything
       // byte-unchanged (the fix-config-then-run-again recovery loop) reuses
-      // the cached inputs instead of re-paying one generation call per
-      // prompt. Any plan edit or new plan misses the cache.
-      const mint_data_guide = single_turn_data_guide()
-      let inputs = reusable_minted_inputs(
-        cached_minted_inputs,
-        approved_prompts,
-        mint_data_guide,
-        input_gen_config_key,
-      )
-      if (inputs) {
-        posthog.capture("eval_v2_minted_inputs_reused", {
-          num_inputs: inputs.length,
-        })
-      } else {
-        generation_phase = "minting_inputs"
-        inputs = await mint_inputs_from_plan(
+      // them instead of paying again; any plan edit or new plan misses.
+      let items: SingleTurnItem[]
+      if (grounding_key !== null) {
+        const resolved = await cases_for_plan(
           approved_prompts,
-          chosen_input_config,
-          mint_data_guide,
-          new_copilot_abort_signal(),
+          target_run_config_id,
+          grounding_model,
+          grounding_key,
         )
-        // Cache only a COMPLETE mint: a partial set cached against the full
-        // prompt list would make the stop banner's "run the batch again"
-        // recovery reuse the same shortfall forever instead of re-minting
-        // the failures.
-        if (inputs.length === approved_prompts.length) {
-          cached_minted_inputs = {
-            prompts_json: JSON.stringify(approved_prompts),
-            data_guide: mint_data_guide,
-            run_config_json: input_gen_config_key,
-            inputs,
+        if (resolved === null) return
+        items = single_turn_items_from_cases(resolved.cases)
+        planned_inputs -= resolved.grounding_drops
+      } else if (chosen_input_config) {
+        // The mint depends on the plan, the input generator's whole run
+        // config, and the grounding guide — never the task's own run config.
+        // The cache key derives from the very object the request sends, so
+        // key and request cannot drift.
+        const input_gen_config_key = run_config_cache_key(chosen_input_config)
+        const mint_data_guide = single_turn_data_guide()
+        let inputs = reusable_minted_inputs(
+          cached_minted_inputs,
+          approved_prompts,
+          mint_data_guide,
+          input_gen_config_key,
+        )
+        if (inputs) {
+          posthog.capture("eval_v2_minted_inputs_reused", {
+            num_inputs: inputs.length,
+          })
+        } else {
+          generation_phase = "minting_inputs"
+          inputs = await mint_inputs_from_plan(
+            approved_prompts,
+            chosen_input_config,
+            mint_data_guide,
+            new_copilot_abort_signal(),
+          )
+          // Cache only a COMPLETE mint: a partial set cached against the full
+          // prompt list would make the stop banner's "run the batch again"
+          // recovery reuse the same shortfall forever instead of re-minting
+          // the failures.
+          if (inputs.length === approved_prompts.length) {
+            cached_minted_inputs = {
+              prompts_json: JSON.stringify(approved_prompts),
+              data_guide: mint_data_guide,
+              run_config_json: input_gen_config_key,
+              inputs,
+            }
           }
         }
+        items = ungrounded_single_turn_items(inputs)
+      } else {
+        return
       }
 
       // 5. The drive plan: TOP OFF the current batch — run only the
@@ -3358,7 +3556,7 @@
         batch_judge: review_judge,
       })
       const drive_plan = plan_drive({
-        items: inputs,
+        items,
         batch_items: judge_unchanged ? batch_inputs : null,
         built_slots: built_by_case,
         batch_tag: single_turn_batch_tag,
@@ -3386,10 +3584,10 @@
         trace_claims = []
         trace_reviews = []
         selected_trace_indices = []
-        batch_inputs = inputs
+        batch_inputs = items
         // Failed generations drop their input (the salvage posture): the
         // batch's slot count is what actually minted, not the plan size.
-        built_by_case = new Array(inputs.length).fill(null)
+        built_by_case = new Array(items.length).fill(null)
         driven_prompts_json = JSON.stringify(approved_prompts)
       }
       pipeline_total_cases = drive_plan.items.length
@@ -3417,9 +3615,12 @@
           Accept: "text/event-stream",
         },
         body: JSON.stringify({
-          inputs: drive_plan.items,
-          input_model_name: chosen_input_gen.model_name,
-          input_provider: chosen_input_gen.model_provider,
+          ...single_turn_pipeline_inputs(drive_plan.items),
+          // A grounded input was written by the grounding agent, which runs
+          // on the judge model.
+          input_model_name: (chosen_input_gen ?? chosen_judge_model).model_name,
+          input_provider: (chosen_input_gen ?? chosen_judge_model)
+            .model_provider,
           target_run_config_id,
           // A top-off runs into the existing batch's tag; null lets the
           // server mint a fresh one.
@@ -3505,6 +3706,12 @@
               // the modal's chat rendering; null when the run recorded
               // none.
               trace: event.trace ?? null,
+              // A grounded input's episode and judge guidance: review shows
+              // them, and the claims build, re-judge and save read them.
+              openenv_reset:
+                drive_plan.items[event.case_index]?.grounding?.openenv_reset,
+              judge_guidance:
+                drive_plan.items[event.case_index]?.grounding?.judge_guidance,
             }
             judged_case_count += 1
           }
@@ -3579,7 +3786,7 @@
       if (batch_abort) {
         drive_stop = {
           survivors: complete.length,
-          failed: approved_prompts.length - complete.length,
+          failed: planned_inputs - complete.length,
           dominant_error: null,
           aborted_error: batch_abort.error,
         }
@@ -3589,7 +3796,7 @@
       // retried server-side. A clean batch auto-advances silently; ANY
       // shortfall vs the approved plan (minting drops included) stops once
       // on the plan screen with the outcome and the recovery choice.
-      const failed = approved_prompts.length - complete.length
+      const failed = planned_inputs - complete.length
       if (failed > 0) {
         drive_stop = {
           survivors: complete.length,
@@ -3614,7 +3821,7 @@
             trace_claims = complete
             trace_reviews = build_trace_reviews(complete)
             selected_trace_indices = select_review_subset(complete)
-            const failed = approved_prompts.length - complete.length
+            const failed = planned_inputs - complete.length
             if (failed > 0) {
               drive_stop = {
                 survivors: complete.length,
@@ -3684,10 +3891,6 @@
   // user's choice: Continue Without fires it here; Set Up leaves for the
   // setup chain, which returns to this step with the guide saved.
   async function plan_or_offer_data_guide() {
-    if (is_multi_turn) {
-      on_plan_batch()
-      return
-    }
     // A failed plan's error belongs to that attempt, not to this entry.
     generation_error = null
     await read_data_guide()
@@ -3707,6 +3910,10 @@
   // Continue), onto this step with the draft intact, and plans under the
   // new guide. Same tab, like SDG: only View opens a new one.
   function set_up_data_guide() {
+    if (is_multi_turn) {
+      data_guide_text_dialog?.show(legacy_guide_prefill)
+      return
+    }
     goto(
       with_data_guide_caller(
         `/generate/${project_id}/${task_id}/data_guide_chooser`,
@@ -3714,6 +3921,31 @@
       ),
     )
   }
+
+  // A multi-turn task writes its guide in a dialog rather than the
+  // single-turn setup pages, which build a guide from example inputs. Saving
+  // plans under it at once.
+  let data_guide_text_dialog: DataGuideTextDialog | null = null
+  // Text typed into the Generation Settings box that preceded the Data Guide,
+  // read from older drafts, to start the dialog with. "" when there is none.
+  let legacy_guide_prefill = ""
+  const MULTI_TURN_GUIDE_OFFER = [
+    "A Data Guide tells us who talks to your agent and what they ask. Without one, the model might guess.",
+    "Describe their roles, what each one asks for, and what each one can and can't do.",
+  ]
+  function on_multi_turn_guide_saved(saved: DataGuide) {
+    data_guide_text = saved.guide.trim() ? saved.guide : null
+    data_guide_read = data_guide_text === null ? "none" : "found"
+    use_data_guide = data_guide_text !== null
+    data_guide_skipped = false
+    legacy_guide_prefill = ""
+    if (data_guide_text !== null) on_plan_batch()
+  }
+
+  // The Data Guide text grounding reads, trimmed: the task's guide when it is
+  // on, "" otherwise. Part of the grounded cases' cache key.
+  $: grounding_guide_text =
+    use_data_guide && data_guide_text ? data_guide_text.trim() : ""
 
   // The single-turn data-guide param, one expression for both the plan and
   // the mint so the minted-input cache (keyed on it) cannot drift from what
@@ -4787,7 +5019,12 @@
                 // Empty when the pipeline recorded no run; such a case can't
                 // have been reviewed, so it is minted like any other.
                 leaf_run_id: tc.leaf_run_id ?? "",
+                openenv_reset: tc.openenv_reset ?? null,
+                judge_guidance: tc.judge_guidance ?? null,
               })),
+              // The server the inputs were grounded in, which the eval
+              // records. Null on a build without one.
+              openenv_server_id: grounded_server_id(trace_claims),
             },
             // The auto-picked sample that grounded planning and input
             // minting, recorded on the Spec for provenance (v1 parity).
@@ -5021,8 +5258,10 @@
           : generation_phase === "minting_inputs"
             ? "Creating Eval Dataset"
             : generation_phase === "grounding_cases"
-              ? "Checking Cases Against Your Environment"
-              : "Creating Simulated Users"
+              ? "Preparing Your Test Cases"
+              : is_multi_turn
+                ? "Creating Simulated Users"
+                : "Creating Eval Inputs"
   $: generate_animation_description =
     generation_phase === "planning"
       ? is_multi_turn
@@ -5031,22 +5270,29 @@
       : generation_phase === "authoring_judge"
         ? "Authoring a judge rubric tailored to your eval."
         : generation_phase === "preflight"
-          ? `Checking that your run config, the ${
-              is_multi_turn
-                ? "model that plays the user"
-                : "input generation model"
-            }, and the judge all respond before creating your eval data.`
+          ? grounds_single_turn
+            ? "Checking that your run config and the judge both respond before creating your eval data."
+            : `Checking that your run config, the ${
+                is_multi_turn
+                  ? "model that plays the user"
+                  : "input generation model"
+              }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
             ? `Creating ${planned_total} dataset items.`
             : generation_phase === "grounding_cases"
-              ? "Kiln's agent looks inside the OpenEnv server to fit each case to real data and write what the judge should check."
-              : `Setting up ${planned_total} simulated users from the approved plan.`
+              ? is_multi_turn
+                ? "Kiln's agent looks inside the OpenEnv server to fit each case to real data and write what the judge should check."
+                : "Kiln's agent looks inside the OpenEnv server to fit each input to real data and write what the judge should check."
+              : is_multi_turn
+                ? `Setting up ${planned_total} simulated users from the approved plan.`
+                : `Writing ${planned_total} inputs from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
   // no progress bar. Stages that show a bar let the bar carry the wait, and
   // preflight is a reachability check measured in seconds, so a wait warning
   // there would set the wrong expectation. Both arms share the rule:
-  // generating_cases is multi-turn only, minting_inputs single-turn only.
+  // minting_inputs is single-turn only, and generating_cases runs on
+  // multi-turn and on single-turn builds with an OpenEnv server.
   $: generate_animation_warning =
     generation_phase === "planning" ||
     generation_phase === "authoring_judge" ||
@@ -5081,9 +5327,24 @@
       : undefined}
     breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
     no_y_padding
-    action_buttons={reset_available
-      ? [{ label: "Reset", handler: reset_draft_with_confirm }]
-      : []}
+    action_buttons={[
+      // The task's guide, beside Reset, as on the synthetic data page. The
+      // guide page returns here.
+      ...(data_guide_text !== null
+        ? [
+            {
+              label: "Data Guide",
+              href: with_data_guide_caller(
+                `/generate/${project_id}/${task_id}/data_guide`,
+                "builder",
+              ),
+            },
+          ]
+        : []),
+      ...(reset_available
+        ? [{ label: "Reset", handler: reset_draft_with_confirm }]
+        : []),
+    ]}
   >
     {#if $kilnCopilotConnected === null}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -5280,6 +5541,9 @@
               surface="builder"
               on_set_up={set_up_data_guide}
               on_skip={skip_data_guide}
+              {...is_multi_turn
+                ? { description_paragraphs: MULTI_TURN_GUIDE_OFFER }
+                : {}}
             />
           {:else if fallback_run_config_name}
             <div class="mt-2">
@@ -5311,7 +5575,7 @@
                 <ProgressCount
                   value={grounding_checked}
                   max={grounding_total}
-                  noun="cases checked"
+                  noun="cases ready"
                   failed={grounding_dropped}
                   failed_label="dropped"
                 />
@@ -5327,6 +5591,14 @@
                   value={minting_done}
                   max={minting_total}
                   noun="items created"
+                />
+              {:else if generation_phase === "grounding_cases"}
+                <ProgressCount
+                  value={grounding_checked}
+                  max={grounding_total}
+                  noun="inputs ready"
+                  failed={grounding_dropped}
+                  failed_label="dropped"
                 />
               {/if}
             {/if}
@@ -5441,38 +5713,16 @@
               </div>
             </div>
           {:else if grounding_all_dropped && batch_plan}
-            <!-- Every planned conversation dropped in grounding, so there is
-                 nothing to drive or review. The step error's layout, with the
-                 reasons, and Refine Plan to plan again with them in hand. -->
-            <div
-              class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-            >
-              <div class="font-medium">Error Creating Eval Dataset</div>
-              <div class="text-error text-sm">
-                {all_dropped_message(batch_plan.prompts.length)}
-              </div>
-              <div class="w-full max-w-2xl mt-4">
-                <DroppedCasesList drops={grounding_all_dropped} />
-              </div>
-              <div class="flex justify-center gap-2 mt-4">
-                <button
-                  class="btn"
-                  on:click={() => {
-                    grounding_all_dropped = null
-                  }}
-                >
-                  Back to Plan
-                </button>
-                <button
-                  class="btn btn-primary"
-                  on:click={() =>
-                    grounding_all_dropped &&
-                    open_refine_plan_after_drops(grounding_all_dropped)}
-                >
-                  Refine Plan
-                </button>
-              </div>
-            </div>
+            <!-- Every planned item dropped in grounding, so there is nothing
+                 to drive or review: Refine Plan plans again with the drops. -->
+            <DropsRefineScreen
+              dropped={batch_plan.prompts.length}
+              planned={batch_plan.prompts.length}
+              noun={planned_noun}
+              on_refine_plan={() =>
+                grounding_all_dropped &&
+                open_refine_plan_after_drops(grounding_all_dropped)}
+            />
           {/if}
 
           {#if show_plan_approval && batch_plan}
@@ -5581,11 +5831,7 @@
                 <div class="flex flex-row justify-end mt-4">
                   <div class="flex flex-row items-center gap-3">
                     <span class="font-light text-xs text-gray-500">
-                      {#if trace_claims.length < driven_plan_size}
-                        {trace_claims.length} of {driven_plan_size} eval inputs created
-                      {:else}
-                        {trace_claims.length} eval inputs created
-                      {/if}
+                      {trace_claims.length} eval inputs created
                     </span>
                     <!-- The screen's single solid primary: the re-drive
                          button on the plan surface above demotes to outline
@@ -5798,10 +6044,19 @@
             <!-- Keyed per round: a new round replaces the subset and resets
                  every grade, so the review component restarts on the new
                  selection instead of pointing at a stale index. -->
-            {#if !review_intro_dismissed || drops_warning}
+            {#if drops_warning && review_drops_action === "refine_only"}
+              <DropsRefineScreen
+                dropped={notice_drops?.length ?? 0}
+                planned={driven_plan_size}
+                noun={planned_noun}
+                on_refine_plan={refine_plan_from_notice}
+              />
+            {:else if !review_intro_dismissed || drops_warning}
               <ReviewIntro
                 {judged_noun}
                 {drops_warning}
+                drops_action={review_drops_action}
+                kept_count={trace_claims.length}
                 on_start={start_review}
                 on_refine_plan={refine_plan_from_notice}
               />
@@ -5897,14 +6152,18 @@
       <!-- SDG's checkbox after the rows, where SDG puts it. Single-turn
            only: multi-turn never sends the guide. Renders nothing when the
            task has no guide. -->
-      {#if !is_multi_turn}
-        <SynthDataGuide
-          {project_id}
-          {task_id}
-          data_guide={data_guide_text ?? ""}
-          bind:use_data_guide={use_data_guide_draft}
-        />
-      {/if}
+      <SynthDataGuide
+        {project_id}
+        {task_id}
+        data_guide={data_guide_text ?? ""}
+        bind:use_data_guide={use_data_guide_draft}
+        {...is_multi_turn
+          ? {
+              description:
+                "A saved description of who talks to your agent and what they ask, so planned conversations match your real users.",
+            }
+          : {}}
+      />
     </KilnProBatchForm>
   </FormContainer>
 </Dialog>
@@ -5931,6 +6190,14 @@
      why. With no usable model, the empty state links to provider settings
      (same-tab, so the models list is fresh when the user returns) and submit
      refuses to start. -->
+<DataGuideTextDialog
+  bind:this={data_guide_text_dialog}
+  {project_id}
+  {task_id}
+  title="Create a Data Guide"
+  on_saved={on_multi_turn_guide_saved}
+/>
+
 <Dialog bind:this={drive_settings_dialog} title="Generation Settings">
   <FormContainer
     submit_label={`Generate Dataset (${planned_total} items)`}
@@ -5941,7 +6208,8 @@
   >
     {#if is_multi_turn}
       <AvailableModelsDropdown
-        label="Model that writes the user's messages"
+        label="Synthetic User Model"
+        description="Multi-turn agents are evaluated with synthetic users, who act as the user across turns."
         info_description="Stands in for a real user in each test conversation. Your agent replies to it."
         bind:model={su_model_combined}
         bind:model_name={su_model_id}
@@ -5973,17 +6241,7 @@
           max={MAX_TURNS_PER_CASE}
         />
       </div>
-      {#if build_openenv_server_id !== null}
-        <FormElement
-          label="Who uses this agent"
-          id="synthetic_user_guide"
-          inputType="textarea"
-          optional={true}
-          info_description="Describe the people who talk to your agent and what they ask. Kiln uses it to pick who each test conversation's user is and to plan new cases."
-          bind:value={staged_synthetic_user_guide}
-        />
-      {/if}
-    {:else}
+    {:else if !grounds_single_turn}
       <RunConfigComponent
         bind:this={input_gen_config_component}
         {project_id}
@@ -6001,23 +6259,47 @@
         }}
       />
     {/if}
-    <!-- On a build with an OpenEnv server the judge model also runs the agent
-         that checks each case against the server, through the server's
-         tools, so the lane asks for tool support too. -->
+    <!-- On a build with an OpenEnv server, the model that fits each case to
+         the server's data works through the server's tools, so the lane asks
+         for tool support. -->
+    {#if build_openenv_server_id !== null}
+      <AvailableModelsDropdown
+        label="Environment Setup Model"
+        description={is_multi_turn
+          ? "Fits each planned conversation to real data in your OpenEnv server, and notes what the judge should check."
+          : "Writes each input from real data in your OpenEnv server, and notes what the judge should check."}
+        info_description="Works inside your OpenEnv server through its tools before anything runs, so it needs tool calling."
+        bind:model={grounding_model_combined}
+        bind:model_name={grounding_model_id}
+        bind:provider_name={grounding_provider_id}
+        settings={{
+          requires_tool_support: true,
+          suggested_mode: "evals",
+        }}
+      />
+      {#if grounding_thinking_levels && Object.keys(grounding_thinking_levels).length > 0}
+        <FormElement
+          id="grounding_thinking_level"
+          label="Environment Setup Model Thinking Level"
+          inputType="fancy_select"
+          bind:value={staged_grounding_thinking_level}
+          fancy_select_options={grounding_thinking_level_options}
+          info_description={THINKING_LEVEL_INFO_DESCRIPTION}
+          optional={true}
+        />
+      {/if}
+    {/if}
     <AvailableModelsDropdown
       label="Judge Model"
-      info_description={build_openenv_server_id !== null
-        ? "Checks each conversation against your eval's criteria. It also checks each case against your OpenEnv server before the conversations run, so it needs tool calling."
-        : is_multi_turn
-          ? "Checks each conversation against your eval's criteria."
-          : "Checks each result against your eval's criteria."}
+      description={is_multi_turn
+        ? "Grades each conversation against your eval."
+        : "Grades each result against your eval."}
       bind:model={judge_model_combined}
       bind:model_name={judge_model_id}
       bind:provider_name={judge_provider_id}
       settings={{
         requires_structured_output: true,
         suggested_mode: "evals",
-        requires_tool_support: build_openenv_server_id !== null,
       }}
     />
     {#if judge_thinking_levels && Object.keys(judge_thinking_levels).length > 0}

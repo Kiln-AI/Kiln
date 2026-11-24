@@ -11,15 +11,19 @@
   export let surface: "synth" | "builder"
   export let on_set_up: () => void
   export let on_skip: () => void
+  // The two paragraphs under the title. A multi-turn task's guide describes
+  // who talks to the agent rather than what its inputs look like, so the
+  // builder passes its own; every other caller keeps the default.
+  export let description_paragraphs: string[] = [
+    "A Data Guide tells us what realistic inputs to your task look like. Without one, the model might guess.",
+    "Add examples, rate the data we generate, and we'll refine the guide from there.",
+  ]
 </script>
 
 <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
   <Intro
     title="Create a Data Guide"
-    description_paragraphs={[
-      "A Data Guide tells us what realistic inputs to your task look like. Without one, the model might guess.",
-      "Add examples, rate the data we generate, and we'll refine the guide from there.",
-    ]}
+    {description_paragraphs}
     action_buttons={[
       {
         label: "Set Up Data Guide",

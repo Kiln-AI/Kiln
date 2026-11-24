@@ -121,7 +121,7 @@ const ACME: OpenEnvServer = {
   named_reset_kwargs: [
     {
       name: "Acme Tech",
-      description: "  Acme's data, as a technician  ",
+      description: "  Acme's data, as an admin  ",
       reset_kwargs: { company: "acme", role: "tech" },
     },
     {
@@ -267,7 +267,7 @@ describe("environment_preset_groups", () => {
       {
         label: "Acme Tech",
         value: "Acme Tech",
-        description: "Acme's data, as a technician",
+        description: "Acme's data, as an admin",
       },
       { label: "Acme Manager", value: "Acme Manager", description: undefined },
     ])
@@ -337,9 +337,9 @@ describe("openenv_misfit", () => {
     expect(openenv_misfit(undefined, [other])).toBeNull()
   })
 
-  it("needs at least one of the server's tools", () => {
-    expect(openenv_misfit("server_1", [])).toBe("no_openenv_tools")
-    expect(openenv_misfit("server_1", [project_tool])).toBe("no_openenv_tools")
+  it("fits a run config with no OpenEnv tools, which runs the cases on its own tools", () => {
+    expect(openenv_misfit("server_1", [])).toBeNull()
+    expect(openenv_misfit("server_1", [project_tool])).toBeNull()
   })
 
   it("fits the server's tools, with or without project tools", () => {
@@ -357,9 +357,6 @@ describe("openenv_misfit", () => {
 
 describe("openenv_misfit_note", () => {
   it("names what is missing and where the cases run", () => {
-    expect(openenv_misfit_note("no_openenv_tools", "World")).toBe(
-      "No OpenEnv tools. This eval's cases run in World.",
-    )
     expect(openenv_misfit_note("other_openenv_server", "World")).toBe(
       "Uses another OpenEnv server. This eval's cases run in World.",
     )

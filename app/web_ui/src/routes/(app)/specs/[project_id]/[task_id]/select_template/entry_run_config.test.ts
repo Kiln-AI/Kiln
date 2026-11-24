@@ -60,7 +60,10 @@ const page_body = region(
 const pro_arm_start = page_body.indexOf("{#if $kilnCopilotConnected === true}")
 const manual_arm_start = page_body.indexOf("{:else}")
 const assistant_arm = page_body.slice(pro_arm_start, manual_arm_start)
-const manual_arm = page_body.slice(manual_arm_start, page_body.indexOf("{/if}"))
+const manual_arm = page_body.slice(
+  manual_arm_start,
+  page_body.indexOf("{/if}", manual_arm_start),
+)
 
 // Where a section sits in the body, by the anchor that identifies it.
 function position_of(anchor: string): number {
@@ -72,11 +75,31 @@ function position_of(anchor: string): number {
 }
 
 describe("the run config dialog", () => {
-  it("opens on Continue instead of going straight to the builder", () => {
-    // The choice is asked before the wizard starts, because everything the
-    // wizard does afterwards reads the chosen config.
-    expect(contains("on:click={open_run_config_dialog}")).toBe(true)
+  it("goes straight in on a saved run config, and asks only when there is none", () => {
+    // Everything the wizard does reads the chosen config, so it is settled
+    // before the wizard starts: the summary above the button shows it, and
+    // the dialog opens only when the task has none saved.
+    expect(contains("on:click={write_my_eval}")).toBe(true)
+    expect(
+      contains(
+        "if (entry_run_config?.id) { goto_builder(entry_run_config.id) return } open_run_config_dialog()",
+      ),
+    ).toBe(true)
     expect(normalize(open_dialog_fn)).toContain("run_config_dialog?.show()")
+  })
+
+  it("shows the run config it will use above the button, which opens the dialog", () => {
+    expect(
+      contains(
+        '<GenerationSettingsTrigger label="Run Config" model_name={entry_run_config.name}',
+      ),
+    ).toBe(true)
+    expect(contains("open={change_run_config}")).toBe(true)
+    expect(
+      contains(
+        "entry_run_config = pick_entry_run_config( get(run_configs_by_task_composite_id)[key] ?? [], task.default_run_config_id, )",
+      ),
+    ).toBe(true)
   })
 
   it("hands over without a config when there is no task to pick from", () => {
@@ -187,7 +210,7 @@ describe("the entry page's copy", () => {
 
   it("labels the primary for what it produces", () => {
     expect(normalize(assistant_arm)).toContain(
-      "on:click={open_run_config_dialog} > Write My Eval",
+      "on:click={write_my_eval} > Write My Eval",
     )
   })
 
@@ -227,5 +250,44 @@ describe("the entry page's sections", () => {
     // a section now, so the Collapse and its import are gone.
     expect(page_source).not.toContain("<Collapse")
     expect(page_source).not.toContain("collapse.svelte")
+  })
+})
+
+describe("changing the run config before describing the eval", () => {
+  it("opens the dialog from the summary without a description", () => {
+    const change = normalize(region("function change_run_config() {", "\n  }"))
+    expect(change).toContain("run_config_dialog?.show()")
+    expect(change).not.toContain("description")
+  })
+
+  it("keeps the choice for Write My Eval instead of starting the builder", () => {
+    const cont = normalize(
+      region("async function continue_with_description() {", "\n  }\n"),
+    )
+    expect(cont).not.toContain("if (!text) return")
+    expect(cont).toContain("if (!text) {")
+    expect(cont).toContain("run_config_dialog?.close() return }")
+    expect(
+      contains(
+        'submit_label={description.trim() ? "Continue" : "Use This Run Config"}',
+      ),
+    ).toBe(true)
+  })
+})
+
+describe("the run config's OpenEnv server", () => {
+  it("shows under the summary's run config name, with no task default label", () => {
+    expect(contains("? `OpenEnv Server: ${entry_world_name}`")).toBe(true)
+    expect(page_source).not.toContain("Task default")
+  })
+
+  it("shows as a green note at the top of the dialog, from the picked tools", () => {
+    const dialog = region("<Dialog", "</Dialog>")
+    expect(dialog.indexOf("dialog_world_name")).toBeLessThan(
+      dialog.indexOf("<SavedRunConfigsDropdown"),
+    )
+    expect(normalize(dialog)).toContain('warning_color="success"')
+    expect(normalize(dialog)).toContain("outline={true}")
+    expect(dialog).toContain("bind:tools={dialog_tools}")
   })
 })

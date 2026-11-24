@@ -57,8 +57,8 @@
       <li>
         <span class="font-mono font-bold"
           >{"{{ reference_data.judge_guidance }}"}</span
-        > The case's judge guidance: the facts of the OpenEnv server the agent worked
-        in and the correct answer, found when the case was checked against it.
+        > The judge guidance saved with each case: the facts to check the answer
+        against, and the correct answer.
       </li>
     {/if}
     {#if SHOW_REFERENCE_DATA_UI}

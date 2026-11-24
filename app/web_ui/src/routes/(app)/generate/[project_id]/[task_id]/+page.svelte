@@ -205,7 +205,7 @@
     no_y_padding
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
-    action_buttons={has_data_guide && !is_multiturn
+    action_buttons={has_data_guide
       ? [
           {
             label: "Data Guide",

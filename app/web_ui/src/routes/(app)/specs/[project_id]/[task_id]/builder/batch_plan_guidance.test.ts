@@ -7,7 +7,7 @@ import {
   multiturn_plan_guidance,
   reset_arguments_section,
   single_turn_plan_guidance,
-  synthetic_user_guide_section,
+  data_guide_section,
 } from "./batch_plan_guidance"
 
 describe("compose_plan_guidance", () => {
@@ -254,18 +254,18 @@ describe("reset_arguments_section", () => {
   })
 })
 
-describe("synthetic_user_guide_section", () => {
+describe("data_guide_section", () => {
   it("frames the guide for the planner", () => {
-    const section = synthetic_user_guide_section(" Support agents ask. ")
-    expect(section).toContain("## Who uses this agent")
+    const section = data_guide_section(" Support agents ask. ")
+    expect(section).toContain("## Data Guide")
     expect(section).toContain(
       "<data_guide>\nSupport agents ask.\n</data_guide>",
     )
   })
 
   it("is null when the guide is blank", () => {
-    expect(synthetic_user_guide_section(null)).toBeNull()
-    expect(synthetic_user_guide_section(" ")).toBeNull()
+    expect(data_guide_section(null)).toBeNull()
+    expect(data_guide_section(" ")).toBeNull()
   })
 })
 
@@ -339,5 +339,25 @@ describe("dropped_cases_section", () => {
 
   it("is null when nothing dropped", () => {
     expect(dropped_cases_section([])).toBeNull()
+  })
+})
+
+describe("single_turn_plan_guidance", () => {
+  it("warns the planner off assuming records without an OpenEnv server", () => {
+    const guidance = single_turn_plan_guidance("be helpful")
+    expect(guidance).toContain("You cannot see what that system contains.")
+    expect(guidance).not.toContain("OpenEnv")
+  })
+
+  it("lets inputs rely on a starting state on an OpenEnv build", () => {
+    const guidance = single_turn_plan_guidance("be helpful", { openenv: true })
+    expect(
+      guidance.startsWith("Each input is one single-turn task input"),
+    ).toBe(true)
+    expect(guidance).toContain("starting states each input can run in")
+    expect(guidance).toContain("Kiln fits each input to real data")
+    expect(guidance).toContain(
+      "<eval_definition>\nbe helpful\n</eval_definition>",
+    )
   })
 })

@@ -99,8 +99,8 @@ const full_draft: BuilderDraft = {
     prompts_json: JSON.stringify(["Customer asks about a return window."]),
     spec_text: "The agent must not fabricate or guess at policies.",
     openenv_server_id: "srv_1",
-    judge_model: "openai/gpt_5_4",
-    synthetic_user_guide: "Shoppers asking about orders.",
+    grounding_model: "openai/gpt_5_4",
+    data_guide: "Shoppers asking about orders.",
     cases: [
       {
         seed_prompt: "What's the return window on order 1042?",
@@ -160,7 +160,8 @@ const full_draft: BuilderDraft = {
   // Deliberately NOT the default 5: a fixture on the default couldn't tell a
   // restored choice from the fallback.
   turns_per_case: 8,
-  synthetic_user_guide: "Shoppers asking about orders and returns.",
+  grounding_model: { model_name: "gpt_5_4", model_provider: "openai" },
+  grounding_thinking_level: "high",
   target_run_config_id: "run_config_1",
   openenv_server_lookup: {
     tool_ids_key: JSON.stringify(["kiln_tool::openenv::srv_1::search"]),
@@ -432,8 +433,8 @@ describe("reusable_grounded_cases", () => {
     prompts_json: JSON.stringify(prompts),
     spec_text: spec,
     openenv_server_id: "srv_1",
-    judge_model: "openai/gpt_5_4",
-    synthetic_user_guide: "Shoppers asking about orders.",
+    grounding_model: "openai/gpt_5_4",
+    data_guide: "Shoppers asking about orders.",
     cases: [
       {
         seed_prompt: "hi",
@@ -448,11 +449,11 @@ describe("reusable_grounded_cases", () => {
   }
   const key = {
     openenv_server_id: "srv_1",
-    judge_model: "openai/gpt_5_4",
-    synthetic_user_guide: "Shoppers asking about orders.",
+    grounding_model: "openai/gpt_5_4",
+    data_guide: "Shoppers asking about orders.",
   }
 
-  it("reuses when plan, spec, server and judge model all match", () => {
+  it("reuses when plan, spec, server, model and guide all match", () => {
     expect(reusable_grounded_cases(grounded, prompts, spec, key)).toBe(grounded)
   })
 
@@ -479,39 +480,35 @@ describe("reusable_grounded_cases", () => {
     ).toBeNull()
   })
 
-  it("misses when the judge model changed", () => {
+  it("misses when the grounding model changed", () => {
     expect(
       reusable_grounded_cases(grounded, prompts, spec, {
         ...key,
-        judge_model: "openai/gpt_5_4_mini",
+        grounding_model: "openai/gpt_5_4_mini",
       }),
     ).toBeNull()
   })
 
-  it("misses when the synthetic user guide changed", () => {
+  it("misses when the Data Guide changed", () => {
     expect(
       reusable_grounded_cases(grounded, prompts, spec, {
         ...key,
-        synthetic_user_guide: "Store staff checking stock.",
+        data_guide: "Store staff checking stock.",
       }),
     ).toBeNull()
     expect(
       reusable_grounded_cases(grounded, prompts, spec, {
         ...key,
-        synthetic_user_guide: "",
+        data_guide: "",
       }),
     ).toBeNull()
   })
 
-  it("reads a cache without a guide as grounded with none", () => {
-    const { synthetic_user_guide: _guide, ...older } = grounded
+  it("grounds again from a cache saved before the Data Guide was keyed", () => {
+    const { data_guide: _guide, ...older } = grounded
     expect(
-      reusable_grounded_cases(older, prompts, spec, {
-        ...key,
-        synthetic_user_guide: "",
-      }),
-    ).toBe(older)
-    expect(reusable_grounded_cases(older, prompts, spec, key)).toBeNull()
+      reusable_grounded_cases(older, prompts, spec, { ...key, data_guide: "" }),
+    ).toBeNull()
   })
 })
 
@@ -949,33 +946,24 @@ describe("model lanes (su_driver / judge_model)", () => {
   })
 })
 
-describe("synthetic user guide", () => {
-  it("round-trips the guide", () => {
-    const restored = JSON.parse(JSON.stringify(full_draft)) as BuilderDraft
+describe("the Generation Settings guide older drafts kept", () => {
+  it("restores its text, which starts the Data Guide dialog", () => {
+    const restored = JSON.parse(
+      JSON.stringify({ ...full_draft, synthetic_user_guide: "Shoppers." }),
+    ) as BuilderDraft
     expect(restore_synthetic_user_guide(restored.synthetic_user_guide)).toBe(
-      "Shoppers asking about orders and returns.",
+      "Shoppers.",
     )
   })
 
-  it("restores no guide from a draft without the key", () => {
-    const { synthetic_user_guide: _guide, ...older } = full_draft
-    const restored = JSON.parse(JSON.stringify(older)) as BuilderDraft
+  it("restores no text from a draft without the key", () => {
+    const restored = JSON.parse(JSON.stringify(full_draft)) as BuilderDraft
     expect(restore_synthetic_user_guide(restored.synthetic_user_guide)).toBe("")
   })
 
-  it("restores no guide from a stored value that isn't text", () => {
+  it("restores no text from a stored value that isn't text", () => {
     expect(restore_synthetic_user_guide(42)).toBe("")
     expect(restore_synthetic_user_guide(null)).toBe("")
-  })
-
-  it("is dropped by a reset and does not make a draft restorable", () => {
-    expect(reset_draft_keeping_tags(full_draft).synthetic_user_guide).toBe("")
-    expect(
-      draft_has_content({
-        ...EMPTY_BUILDER_DRAFT,
-        synthetic_user_guide: "Shoppers.",
-      }),
-    ).toBe(false)
   })
 })
 

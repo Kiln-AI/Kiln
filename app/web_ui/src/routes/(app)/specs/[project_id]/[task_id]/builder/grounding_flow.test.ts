@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from "vitest"
 import { KilnError } from "$lib/utils/error_handlers"
+import type { OpenEnvReset } from "$lib/types"
 import {
   restore_cached_grounded_cases,
   type CachedGroundedCases,
   type SyntheticUserCaseWire,
 } from "./builder_draft"
 import {
-  all_dropped_message,
   apply_grounding_frame,
   dropped_notice,
   dropped_notice_drops,
+  drops_refine_text,
+  drops_action,
   flatten_reset_arguments,
   ground_cases_request,
   grounded_server_id,
@@ -20,6 +22,10 @@ import {
   model_choice_key,
   openenv_lookup_key,
   read_grounding_stream,
+  single_turn_items_from_cases,
+  single_turn_pipeline_inputs,
+  ungrounded_single_turn_items,
+  plan_row_cases,
   type GroundingFrame,
   type GroundingProgress,
 } from "./grounding_flow"
@@ -54,6 +60,7 @@ function grounded_frame(case_index: number): GroundingFrame {
     openenv_reset: RESET,
     seed_prompt: `filled seed ${case_index}`,
     synthetic_user_info: `<persona>filled ${case_index}</persona>`,
+    input: null,
     judge_guidance: `## Starting point ${case_index}`,
   }
 }
@@ -135,32 +142,40 @@ describe("grounding_request_cases", () => {
 describe("ground_cases_request", () => {
   const base = {
     target_run_config_id: "rc_1",
-    judge_model: { model_name: "gpt_5_4", model_provider: "openai" as const },
+    grounding_model: {
+      model_name: "gpt_5_4",
+      model_provider: "openai" as const,
+    },
     specification: "No fabrication.",
     cases: grounding_request_cases(CASES, PLAN),
   }
 
-  it("sends the guide trimmed", () => {
+  it("sends the guide and example input trimmed", () => {
     expect(
       ground_cases_request({
         ...base,
-        synthetic_user_guide: "  Shoppers asking about orders.\n",
+        data_guide: "  Shoppers asking about orders.\n",
+        example_input: " Where is order 12? ",
       }),
     ).toEqual({
       ...base,
-      synthetic_user_guide: "Shoppers asking about orders.",
+      data_guide: "Shoppers asking about orders.",
+      example_input: "Where is order 12?",
     })
   })
 
-  it("sends a blank guide as null", () => {
-    expect(
-      ground_cases_request({ ...base, synthetic_user_guide: " \n " })
-        .synthetic_user_guide,
-    ).toBeNull()
-    expect(
-      ground_cases_request({ ...base, synthetic_user_guide: "" })
-        .synthetic_user_guide,
-    ).toBeNull()
+  it("sends a blank guide and a missing example as null", () => {
+    const body = ground_cases_request({ ...base, data_guide: " \n " })
+    expect(body.data_guide).toBeNull()
+    expect(body.example_input).toBeNull()
+  })
+})
+
+describe("plan_row_cases and single-turn request cases", () => {
+  it("sends each plan row as a scenario with nothing drafted", () => {
+    expect(grounding_request_cases(plan_row_cases(PLAN), PLAN, true)).toEqual(
+      PLAN.map((scenario, i) => ({ scenario_index: i, scenario })),
+    )
   })
 })
 
@@ -181,6 +196,29 @@ describe("apply_grounding_frame", () => {
       openenv_reset: RESET,
       judge_guidance: "## Starting point 1",
     })
+  })
+
+  it("keeps a single-turn case's input where the drive reads it", () => {
+    const rows = plan_row_cases(PLAN)
+    const frame: GroundingFrame = {
+      ...(grounded_frame(0) as Extract<
+        GroundingFrame,
+        { type: "case_grounded" }
+      >),
+      seed_prompt: null,
+      synthetic_user_info: null,
+      input: "How many linen sets sold last month?",
+    }
+    const state = apply_grounding_frame(
+      initial_grounding_state(PLAN.length),
+      frame,
+      rows,
+      grounding_request_cases(rows, PLAN, true),
+    )
+    expect(state.grounded[0]?.seed_prompt).toBe(
+      "How many linen sets sold last month?",
+    )
+    expect(state.grounded[0]?.synthetic_user_info).toBe("")
   })
 
   it("names the request's plan row on a grounded case generated without one", () => {
@@ -430,8 +468,8 @@ describe("dropped_notice_drops", () => {
     prompts_json: plan_json,
     spec_text: "spec",
     openenv_server_id: "srv_1",
-    judge_model: "openai/gpt_5_4",
-    synthetic_user_guide: "",
+    grounding_model: "openai/gpt_5_4",
+    data_guide: "",
     cases: [CASES[0]],
     grounding_dropped: 1,
     drops: [drop],
@@ -477,30 +515,124 @@ describe("dropped_notice_drops", () => {
   })
 })
 
+describe("drops_action", () => {
+  it("leads with Continue up to 15% dropped", () => {
+    expect(drops_action(0, 20)).toBe("continue_first")
+    expect(drops_action(3, 20)).toBe("continue_first")
+  })
+
+  it("leads with Refine Plan above 15%", () => {
+    expect(drops_action(4, 20)).toBe("refine_first")
+    expect(drops_action(9, 20)).toBe("refine_first")
+  })
+
+  it("offers only Refine Plan at half or more", () => {
+    expect(drops_action(10, 20)).toBe("refine_only")
+    expect(drops_action(20, 20)).toBe("refine_only")
+  })
+
+  it("treats an empty plan as nothing left to continue with", () => {
+    expect(drops_action(0, 0)).toBe("refine_only")
+  })
+})
+
 describe("dropped_notice", () => {
   it("counts several drops against the plan", () => {
-    expect(dropped_notice(2, 20)).toBe(
+    expect(dropped_notice(2, 20, "conversation")).toBe(
       "2 of 20 planned conversations were dropped when Kiln checked them against your OpenEnv server. Continue with the ones that fit, or refine the plan and generate again.",
     )
   })
 
   it("reads in the singular for one drop", () => {
-    expect(dropped_notice(1, 20)).toBe(
+    expect(dropped_notice(1, 20, "conversation")).toBe(
       "1 of 20 planned conversations was dropped when Kiln checked it against your OpenEnv server. Continue with the ones that fit, or refine the plan and generate again.",
+    )
+  })
+
+  it("names inputs on a single-turn build", () => {
+    expect(dropped_notice(1, 10, "input")).toBe(
+      "1 of 10 planned inputs was dropped when Kiln checked it against your OpenEnv server. Continue with the ones that fit, or refine the plan and generate again.",
     )
   })
 })
 
-describe("all_dropped_message", () => {
-  it("says none of the planned conversations fit", () => {
-    expect(all_dropped_message(20)).toBe(
-      "None of the 20 planned conversations fit your OpenEnv server. Each row says why.",
+describe("drops_refine_text", () => {
+  it("says none of the plan fit", () => {
+    expect(drops_refine_text(20, 20, "conversation")).toBe(
+      "None of the 20 planned conversations fit your OpenEnv server. Refine the plan, and Kiln will plan around what didn't fit.",
     )
   })
 
-  it("reads in the singular for a one-conversation plan", () => {
-    expect(all_dropped_message(1)).toBe(
-      "The planned conversation didn't fit your OpenEnv server. The row below says why.",
+  it("reads in the singular for a one-item plan", () => {
+    expect(drops_refine_text(1, 1, "input")).toBe(
+      "The planned input didn't fit your OpenEnv server. Refine the plan, and Kiln will plan around what didn't fit.",
+    )
+  })
+
+  it("says too many didn't fit when some did", () => {
+    expect(drops_refine_text(6, 10, "input")).toBe(
+      "6 of 10 planned inputs didn't fit your OpenEnv server, too many for a useful eval. Refine the plan, and Kiln will plan around what didn't fit.",
+    )
+  })
+})
+
+describe("single-turn items", () => {
+  const RESET_A = {
+    openenv_server_id: "srv",
+    reset_kwargs: { fixture: "small" },
+  }
+  const grounded_case = (seed: string): SyntheticUserCaseWire => ({
+    seed_prompt: seed,
+    synthetic_user_info: "<persona>p</persona>",
+    openenv_reset: RESET_A,
+    judge_guidance: `facts for ${seed}`,
+  })
+
+  it("runs each grounded case's input in its episode", () => {
+    expect(single_turn_items_from_cases([grounded_case("Restock it")])).toEqual(
+      [
+        {
+          input: "Restock it",
+          grounding: {
+            openenv_reset: RESET_A,
+            judge_guidance: "facts for Restock it",
+          },
+        },
+      ],
+    )
+  })
+
+  it("refuses a case the grounding stream didn't ground", () => {
+    const ungrounded = { ...grounded_case("Restock it"), openenv_reset: null }
+    expect(() => single_turn_items_from_cases([ungrounded])).toThrow(
+      "Case 0 has no OpenEnv episode to run in.",
+    )
+  })
+
+  it("sends grounded inputs with their groundings", () => {
+    const items = single_turn_items_from_cases([
+      grounded_case("A"),
+      grounded_case("B"),
+    ])
+    expect(single_turn_pipeline_inputs(items)).toEqual({
+      inputs: ["A", "B"],
+      groundings: items.map((item) => item.grounding),
+    })
+  })
+
+  it("omits groundings when no input is grounded", () => {
+    expect(
+      single_turn_pipeline_inputs(ungrounded_single_turn_items(["A", "B"])),
+    ).toEqual({ inputs: ["A", "B"], groundings: null })
+  })
+
+  it("refuses a batch that mixes grounded and ungrounded inputs", () => {
+    const items = [
+      ...single_turn_items_from_cases([grounded_case("A")]),
+      ...ungrounded_single_turn_items(["B"]),
+    ]
+    expect(() => single_turn_pipeline_inputs(items)).toThrow(
+      "Input 1 isn't grounded",
     )
   })
 })

@@ -164,13 +164,13 @@ export function openenv_server_id_of_tool(tool_id: string): string | null {
 }
 
 /** Why a run config doesn't fit a grounded eval (see openenv_misfit). */
-export type OpenEnvMisfit = "no_openenv_tools" | "other_openenv_server"
+export type OpenEnvMisfit = "other_openenv_server"
 
 /**
  * Why a run config with these tool ids can't run the cases of an eval grounded in
- * eval_openenv_server_id, or null when it can or the eval isn't grounded. It fits when it
- * lists at least one OpenEnv tool and every OpenEnv tool it lists is served by the eval's
- * server. Matches openenv_misfit in libs/core, which the eval runner applies.
+ * eval_openenv_server_id, or null when it can or the eval isn't grounded. It fits unless
+ * it lists an OpenEnv tool another server serves: a run config with no OpenEnv tools runs
+ * the cases against its own tools. Matches openenv_misfit in libs/core.
  */
 export function openenv_misfit(
   eval_openenv_server_id: string | null | undefined,
@@ -180,9 +180,6 @@ export function openenv_misfit(
     return null
   }
   const openenv_tool_ids = tool_ids.filter(is_openenv_tool_id)
-  if (openenv_tool_ids.length === 0) {
-    return "no_openenv_tools"
-  }
   const serves_all = openenv_tool_ids.every(
     (tool_id) => openenv_server_id_of_tool(tool_id) === eval_openenv_server_id,
   )
@@ -194,11 +191,9 @@ export function openenv_misfit_note(
   misfit: OpenEnvMisfit,
   openenv_server_name: string,
 ): string {
-  const what =
-    misfit === "no_openenv_tools"
-      ? "No OpenEnv tools."
-      : "Uses another OpenEnv server."
-  return `${what} This eval's cases run in ${openenv_server_name}.`
+  // One kind of misfit today; the parameter names it for the caller.
+  void misfit
+  return `Uses another OpenEnv server. This eval's cases run in ${openenv_server_name}.`
 }
 
 /** A run config Run All left out because it doesn't fit the eval's OpenEnv server. */

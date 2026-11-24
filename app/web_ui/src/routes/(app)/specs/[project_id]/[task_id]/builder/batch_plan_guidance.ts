@@ -46,12 +46,20 @@ ${grounding}`
   return null
 }
 
+const SINGLE_TURN_WORLD_STATE = `The agent may act on a live system through tools (a database, an API, a set of records). You cannot see what that system contains. Never write an input that depends on a specific record already existing: the input creates what it later acts on, or asks the agent what exists. Name a specific record only when the point of the input is how the agent handles a record that is not found.`
+
+const SINGLE_TURN_OPENENV_WORLD_STATE = `The agent acts on an OpenEnv server through tools: a stand-in for the real system, with its own data. You can't see that data. When a section below describes the server's reset arguments, those describe the starting states each input can run in. After you plan, Kiln fits each input to real data in one of them, so an input may rely on things a starting state plausibly holds. Still name kinds of things and situations, never specific records, names or IDs.`
+
 // Single-turn: each planned prompt mints ONE task input, run once locally
-// and judged against the specification.
-export function single_turn_plan_guidance(spec: string): string {
+// and judged against the specification. On an OpenEnv build each input is
+// fitted to the server's data after planning, like a multi-turn scenario.
+export function single_turn_plan_guidance(
+  spec: string,
+  { openenv = false }: { openenv?: boolean } = {},
+): string {
   return `Each input is one single-turn task input: the complete message a real user would send the agent in one shot.
 
-The agent may act on a live system through tools (a database, an API, a set of records). You cannot see what that system contains. Never write an input that depends on a specific record already existing: the input creates what it later acts on, or asks the agent what exists. Name a specific record only when the point of the input is how the agent handles a record that is not found.
+${openenv ? SINGLE_TURN_OPENENV_WORLD_STATE : SINGLE_TURN_WORLD_STATE}
 
 The batch exists to stress-test the agent against this specification:
 <eval_definition>
@@ -100,14 +108,13 @@ export function reset_arguments_section(brief: string | null): string | null {
   return trimmed ? trimmed : null
 }
 
-// The project's multi-turn synthetic user guide, framed for the planner. Same
-// words as the prototype command's DATA_GUIDE_FRAMING. Null when blank.
-export function synthetic_user_guide_section(
-  guide: string | null,
-): string | null {
+// A multi-turn task's Data Guide, framed for the planner: who talks to the
+// agent and what they ask. Single-turn sends its guide through the planner's
+// data-guide input instead (join_data_guides). Null when blank.
+export function data_guide_section(guide: string | null): string | null {
   const trimmed = guide?.trim()
   if (!trimmed) return null
-  return `## Who uses this agent
+  return `## Data Guide
 
 The user wrote the guide below about who talks to this agent and what they ask. Take the people in your scenarios, and the kinds of requests they make, from it. Where it says how common something is, follow that in the batch. Where it is silent, use your judgment as usual. It describes users, not test goals: the specification above still decides what each scenario stresses.
 

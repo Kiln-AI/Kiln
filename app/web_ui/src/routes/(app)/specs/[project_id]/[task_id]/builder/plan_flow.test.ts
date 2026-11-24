@@ -11,6 +11,7 @@ import {
   is_claims_resolved,
   is_partial_stop,
   judge_thinking_level_refused,
+  prefilled_judge_thinking_level,
   load_plan_openenv_context,
   missing_slot_indices,
   new_plan_confirm,
@@ -1345,5 +1346,38 @@ describe("load_plan_openenv_context", () => {
     controller.abort()
     brief.resolve("brief")
     expect(await result).toBe("AbortError")
+  })
+})
+
+describe("prefilled_judge_thinking_level", () => {
+  const details = {
+    available_thinking_levels: { Medium: "medium", High: "high" },
+    default_thinking_level: "medium",
+  }
+
+  it("prefills a blank level with the model's default", () => {
+    expect(prefilled_judge_thinking_level(null, details, false)).toBe("medium")
+  })
+
+  it("keeps a blank the user committed for this model", () => {
+    expect(prefilled_judge_thinking_level(null, details, true)).toBeNull()
+  })
+
+  it("keeps a level the model offers", () => {
+    expect(prefilled_judge_thinking_level("high", details, false)).toBe("high")
+  })
+
+  it("swaps a level the model doesn't offer for its default", () => {
+    expect(prefilled_judge_thinking_level("max", details, true)).toBe("medium")
+  })
+
+  it("leaves a model with no default blank", () => {
+    expect(prefilled_judge_thinking_level(null, {}, false)).toBeNull()
+    expect(prefilled_judge_thinking_level("high", {}, false)).toBeNull()
+  })
+
+  it("changes nothing while the model's details are unknown", () => {
+    expect(prefilled_judge_thinking_level("xhigh", null, false)).toBe("xhigh")
+    expect(prefilled_judge_thinking_level(null, null, false)).toBeNull()
   })
 })

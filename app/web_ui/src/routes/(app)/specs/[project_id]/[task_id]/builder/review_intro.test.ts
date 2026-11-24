@@ -42,16 +42,25 @@ describe("Step 5 entry screen", () => {
     )
   })
 
-  it("with drops, shows the warning and offers Continue and Refine Plan", () => {
+  it("with drops, shows the warning, and drops_action picks the buttons", () => {
     const normalized = normalize(intro_source)
     expect(normalized).toContain(
       '<Warning warning_color="warning" warning_message={drops_warning} />',
     )
     expect(normalized).toContain(
-      '{ label: "Continue", onClick: on_start, is_primary: true }',
+      "action_buttons={buttons(drops_warning, drops_action, kept_count)}",
     )
+    // Few drops: Continue leads.
     expect(normalized).toContain(
-      '{ label: "Refine Plan", onClick: on_refine_plan, is_primary: false }',
+      '{ label: "Continue", onClick: on_start, is_primary: true }, { ...refine, is_primary: false },',
+    )
+    // Over 15%: Refine Plan leads, and Continue says how many it keeps.
+    expect(normalized).toContain(
+      "{ ...refine, is_primary: true }, { label: `Continue with ${kept}`, onClick: on_start, is_primary: false, },",
+    )
+    // Half or more never reaches this screen: the refine screen replaces it.
+    expect(normalize(page_source)).toContain(
+      '{#if drops_warning && review_drops_action === "refine_only"} <DropsRefineScreen',
     )
   })
 
@@ -66,7 +75,7 @@ describe("Step 5 entry screen", () => {
     // surface. If this inverts, the reviewer never reaches the claims.
     const normalized = normalize(page_source)
     expect(normalized).toContain(
-      "{#if !review_intro_dismissed || drops_warning} <ReviewIntro",
+      "{:else if !review_intro_dismissed || drops_warning} <ReviewIntro",
     )
     expect(normalized).toContain("on_start={start_review}")
   })

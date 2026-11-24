@@ -1055,13 +1055,22 @@ describe("environment and judge guidance", () => {
     }
   }
 
-  it("shows a grounded case's starting state and guidance, closed, under the overview", () => {
+  it("shows a grounded case's guidance open, and its reset arguments folded, under the overview", () => {
     const { container } = render_review([grounded_trace("a")])
     const overview = by_id(container, "review-overview")
     const section = overview.querySelector("[data-environment-guidance]")
     expect(section).not.toBeNull()
-    expect(overview.textContent).toContain("Environment and Judge Guidance")
-    // Collapsed by default: the disclosure's checkbox is unchecked.
+    expect(overview.textContent).toContain("Judge Guidance")
+    expect(overview.textContent).toContain("Environment Options")
+    expect(overview.textContent).toContain(
+      "What the judge checks this case against",
+    )
+    expect(overview.textContent).not.toContain("Starting State")
+    // The guidance sits outside the disclosure; the reset arguments inside it.
+    const collapse = overview.querySelector(".collapse")
+    expect(collapse?.textContent).toContain("startup.acting_user")
+    expect(collapse?.textContent).not.toContain("Ada leads design.")
+    // Folded by default: the disclosure's checkbox is unchecked.
     const toggle = overview.querySelector<HTMLInputElement>(
       ".collapse input[type=checkbox]",
     )
@@ -1077,8 +1086,6 @@ describe("environment and judge guidance", () => {
   it("is absent for an ungrounded case", () => {
     const { container } = render_review([built_trace("a")])
     expect(container.querySelector("[data-environment-guidance]")).toBeNull()
-    expect(container.textContent).not.toContain(
-      "Environment and Judge Guidance",
-    )
+    expect(container.textContent).not.toContain("Environment Options")
   })
 })

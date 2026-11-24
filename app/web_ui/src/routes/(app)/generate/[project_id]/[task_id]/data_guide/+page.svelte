@@ -10,6 +10,8 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import GuideRefineView from "../data_guide_setup/guide_refine_view.svelte"
+  import DataGuideTextDialog from "../data_guide_text_dialog.svelte"
+  import { load_task } from "$lib/stores"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
   import type { KilnAgentRunConfigProperties, DataGuide } from "$lib/types"
@@ -34,6 +36,19 @@
   // Bound so the AppPage's "Edit" action button can drive the dialog inside
   // GuideRefineView without having to lift the dialog state up here.
   let refine_view: GuideRefineView | null = null
+  // A multi-turn task edits its guide as plain text: the refine path checks a
+  // guide by generating example inputs, which multi-turn tasks can't.
+  let is_multi_turn = false
+  let text_dialog: DataGuideTextDialog | null = null
+  function on_text_saved(saved: DataGuide) {
+    saved_data_guide = saved
+    guide = saved.guide
+    posthog.capture("data_guide_saved", {
+      method: "save_without_verifying",
+      source: "multi_turn_text",
+      refine_iterations: 0,
+    })
+  }
 
   // Surface "Save Without Verifying" pending + error state inside the edit
   // dialog (instead of dropping the failure into the parent-level `error`,
@@ -64,6 +79,13 @@
   // that's actually present but unreachable due to a transient error.
   let load_failed = false
   onMount(async () => {
+    try {
+      const task = await load_task(project_id, task_id)
+      is_multi_turn = task?.turn_mode === "multiturn"
+    } catch (e) {
+      // The page still works without the task: Edit offers the refine path.
+      console.warn("Could not load the task for the Data Guide page:", e)
+    }
     try {
       const { data, error: api_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
@@ -180,7 +202,10 @@
           },
           {
             label: "Edit",
-            handler: () => refine_view?.open_edit_chooser(),
+            handler: () =>
+              is_multi_turn
+                ? text_dialog?.show(guide)
+                : refine_view?.open_edit_chooser(),
           },
         ]
       : []}
@@ -206,6 +231,14 @@
     {/if}
   </AppPage>
 </div>
+
+<DataGuideTextDialog
+  bind:this={text_dialog}
+  {project_id}
+  {task_id}
+  title="Edit Data Guide"
+  on_saved={on_text_saved}
+/>
 
 <DeleteDialog
   name="Data Guide"

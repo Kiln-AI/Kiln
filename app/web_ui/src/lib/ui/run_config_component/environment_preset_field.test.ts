@@ -31,7 +31,7 @@ const ACME: OpenEnvServer = {
   named_reset_kwargs: [
     {
       name: "Acme Tech",
-      description: "Acme's data, as a technician",
+      description: "Acme's data, as an admin",
       reset_kwargs: { company: "acme", role: "tech" },
     },
     {
@@ -158,7 +158,7 @@ describe("EnvironmentPresetField", () => {
     ])
     // Each preset shows its own description, never its reset arguments.
     expect(JSON.parse(props?.optionDescriptions ?? "")).toEqual([
-      "Acme's data, as a technician",
+      "Acme's data, as an admin",
       null,
     ])
     expect(JSON.parse(props?.value ?? "")).toBe("Acme Tech")
