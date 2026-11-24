@@ -10,9 +10,9 @@ Conventions:
 
 - **HT** is the harness-tuner repository at commit `b49f159`. HT paths are under `src/kiln_harness_tuner/` unless they start with `tests/`, `docs/` or `src/`. Line numbers are of that commit. Test counts are collected counts at that commit (3,965 in all).
 - A code block with no language is a signature or pseudo-code.
-- **"Per the Kiln component doc"** marks an exact name that a sibling Kiln document fixes: [kiln_measurement_apis.md](kiln_measurement_apis.md) or [kiln_smells_skills_version.md](kiln_smells_skills_version.md). Both were written at the same time as this one. The names here were aligned with them after the rulings of architecture section 10. A name can still move: the Kiln document wins, and `contract.py` (section 4) finds a mismatch at start-up.
+- **"Per the Kiln component doc"** marks an exact name that the sibling Kiln document [kiln_smells_skills_version.md](kiln_smells_skills_version.md) fixes. It was written at the same time as this one. The names here were aligned with it after the rulings of architecture section 10. A name can still move: the Kiln document wins, and `contract.py` (section 4) finds a mismatch at start-up. HT uses nothing that the other Kiln document, [kiln_measurement_apis.md](kiln_measurement_apis.md), adds: its additions are for MCP clients (functional spec 5.6).
 - The rulings of architecture section 10 are applied in the body. Section 10 lists the limits that are accepted, and section 11 the points that are still open.
-- What stays in HT, unchanged: the noise check (2.6), screening and the measurement engine, the model preflight, the integrity, judge-copy, reference and generality checks, probes, latency, the model policy, and HT's own paired comparison (`Analyzer.compare_rows`).
+- What stays in HT, unchanged: the floor arithmetic and the gateway's statistics tool (2.4), the detectability check (2.5), the noise check (2.6), screening and the measurement engine, the model preflight, the integrity, judge-copy, reference and generality checks, probes, latency, the model policy, and HT's own paired comparison (`Analyzer.compare_rows`).
 
 ## 1. REST client additions (`kiln.py`)
 
@@ -27,14 +27,13 @@ KilnClient.routes -> KilnRoutes            # property: KilnRoutes(self.call)
 | Method | Route | Notes |
 |---|---|---|
 | `version() -> dict` | `GET /api/version` | 5 s, `retries=False` |
-| `eval_detectability(project_id, task_id, run_config_id, *, eval_ids, confidence=0.95) -> dict` | `GET …/run_configs/{run_config_id}/eval_detectability` | `eval_ids` is a repeated query parameter. HT never sends `include_val_size` (2.5) |
 | `smell_check(project_id, task_id, run_config_id, *, as_of: date) -> dict` | `GET …/run_configs/{run_config_id}/smell_check?as_of=YYYY-MM-DD` | |
 | `create_skill_from_folder(project_id, *, folder_path, provenance) -> dict` | `POST /api/projects/{project_id}/skills/from_folder` | `retries=False` |
 | `skill_files(project_id, skill_id) -> dict` | `GET …/skills/{skill_id}/files` | `files`, each with `path` and `size_bytes`, and `total_bytes` (per the Kiln component doc) |
 | `skill_file(project_id, skill_id, path) -> str \| None` | `GET …/skills/{skill_id}/files/{path}` | Each path segment is URL-quoted. Returns `content`. `None` when `is_text` is false: a binary file, or a file over Kiln's limit of 524,288 bytes (per the Kiln component doc) |
 | `model_info_models(**params) -> dict`, `model_info_details(model_id, provider=None) -> dict`, `model_info_providers() -> dict` | `GET /api/model_info/models`, `/model_details`, `/providers` | Built in spec one |
 
-There is no method for the `significance_floor` operation and none for noise. Loop code does not call the operation (2.4), and Kiln has no noise route (2.6).
+There is no method for four of the new Kiln routes: the `significance_floor` operation, the detectability read, scores by split and the paired comparison. HT does not call them. They are for MCP clients (functional spec 5.6; sections 2.4 and 2.5). There is no method for noise: Kiln has no noise route (2.6).
 
 **Error mapping.** Every method raises what `call` raises today: `KilnAPIError` (4xx at once; 5xx after the retries of a GET) and `KilnTransportError`. No error type is added. The callers decide:
 
@@ -43,7 +42,7 @@ There is no method for the `significance_floor` operation and none for noise. Lo
 | `KilnAPIError` 404 on `version()` | A Kiln older than this spec: the "too old" problem (section 3) |
 | `KilnAPIError` 422 on `create_skill_from_folder` | The folder was refused. The body holds every problem (2.1) |
 | `KilnAPIError` 404 on a skill, a run config or a model | The id is unknown. The caller's own fallback applies (each section below) |
-| Any `KilnError` in detectability or the smell check | The documented fallback of that step. Neither ends a run, except the refusal of 2.5 |
+| Any `KilnError` in the smell check | The documented fallback of that step (2.7). It does not end a run |
 
 `kiln_error_text` is not changed.
 
@@ -116,42 +115,31 @@ async def read_skill(kiln: KilnApi, project_id: str, skill_id: str) -> SkillText
 
 **Kept:** `model_policy.py`, the policy copy in the run folder, the check in `create_run_config` and `run_task`, and every loop-code check of the policy.
 
-### 2.4 The significance floor
+### 2.4 The significance floor is not changed
 
-Nothing switches in loop code (functional spec 5.6). HT keeps its own floor arithmetic, because the noise check and the val side use it. Kiln's `significance_floor` operation is for MCP clients, and for a role that calls it through the gateway's statistics tool.
+Architecture decision 5, and functional spec 5.6. Kiln's `significance_floor` operation is for MCP clients. HT does not call it: not from loop code, and not through the gateway.
 
-| | |
-|---|---|
-| Kept in `detectability.py`, not changed | `binary_floor`, `wilcoxon_all_positive_p`, `rating_floor`, `significance_floor`, `fewest_wins`, `_z`, `_wilson`, `paired_ci_low`, `bootstrap_ci_excludes_zero`, `interval_wins`, `interval_best_case` (`:114-260`), `WILCOXON_MIN_NONZERO`, `_MAX_FLOOR` |
-| Who uses them | `noise.py` imports `fewest_wins` (`:77`), which calls `significance_floor`, `binary_floor`, `rating_floor` and `wilcoxon_all_positive_p`. `run_detectability_check` reads `binary_floor` and `rating_floor` for the report's `floor_binary` and `floor_rating`. `build_rows` calls `interval_wins` for the train side and `interval_best_case` for the val side, with the interval functions under them |
-| Kept in `noise.py`, not changed | `binomial_two_sided_p`, `noise_adjusted_wins` (`:117-141`) |
-| No new helper | Loop code makes no call of the new operation. `KilnRoutes` gets no method for it (section 1) |
-| The gateway tool `compute_statistics` | Its route, its answer model and `ROLE_OPS` are not changed. Its request model `gateway.models.StatisticsRequest` gains two optional fields, `test: str \| None` and `room: int \| None`. The model refuses an unknown field (`extra="forbid"`), and the new operation needs both. With them, a role that has the tool (`promote_best` today) can send `operation: "significance_floor"`. The answer's keys are numbers, null or text, so `Statistics` carries them as it is |
-| No role needs the operation | The planner gets the numbers in its input |
+- **The floor arithmetic stays in HT, not changed.** In `detectability.py`: `binary_floor`, `wilcoxon_all_positive_p`, `rating_floor`, `significance_floor`, `fewest_wins`, `_z`, `_wilson`, `paired_ci_low`, `bootstrap_ci_excludes_zero`, `interval_wins`, `interval_best_case` (`:114-260`), `WILCOXON_MIN_NONZERO` and `_MAX_FLOOR`. In `noise.py`: `binomial_two_sided_p` and `noise_adjusted_wins` (`:117-141`).
+- **The gateway tool `compute_statistics` is not changed.** Its route, its request model `gateway.models.StatisticsRequest`, its answer model and `ROLE_OPS` stay as they are. The request model gains no field. It refuses an unknown field (`extra="forbid"`), and the new operation needs the field `test`. So a role cannot send `operation: "significance_floor"` through the gateway.
+- **No role needs the operation.** The planner gets the numbers in its input, from HT's own code.
+- `KilnRoutes` gets no method for the operation (section 1), and `contract.py` gets no check of it (section 4).
 
-### 2.5 Detectability
+### 2.5 Detectability is not changed
 
-| Function | After |
-|---|---|
-| `train_detectability(ctx, rc_id, active, …)` (`:334`) | One call: `routes.eval_detectability(…, eval_ids=[the active eval ids], confidence=…)`. Each row of the answer fills `schemas.TrainDetectability` field by field: `eval_id`, `eval_name`, `score_key`, `score_type`, `direction`, `n`, `room`, `unscored`, `floor`, `fewest_wins`, `best_case_change`. HT does not read the row's `interval_wins`: `build_rows` computes it, as today. A `KilnError` returns `[]`: advisory, as today. The `runs=` and `train_sizes` arguments go |
-| `train_row` (`:281-310`) | Deleted. The read replaces it, and nothing else in HT calls it. The imports of `_runs_by_item` and `UnsupportedScoreTypeError` in `detectability.py` go with it |
-| `score_room` (`:266-278`), `comparable_specs` (`:313-331`) | **Kept, not changed.** `noise.py` imports both (2.6). The read itself no longer calls them |
-| `run_detectability_check` (`:604`) | (1) the active evals, by HT's own rule; (2) `train_detectability`; (3) `build_rows`; (4) `assess`; (5) the same events, lines and refusal. `skipped` comes from the answer. `floor_binary` and `floor_rating` of the report come from `binary_floor` and `rating_floor`, as today (2.4). `left_out_held_out` and `unread_eval_ids` go in the `detectability` event. `ctx.train_split_sizes` is no longer set |
-| `build_rows` (`:370`) | **Kept, not changed: the val side is HT's.** `val_n` comes from `split_sizes(ctx, "val")`, read from disk as today. `val_room_estimate` and `val_best_case_change` keep their one-line formulas, on the row's `floor`. `train_interval_wins` and `val_interval_best_case` come from HT's own `interval_wins` and `interval_best_case`, as today (2.4) |
-| `assess`, `_row_warnings`, `row_line`, `val_certainly_undetectable`, `val_estimate_undetectable`, `UnderpoweredEvalsError`, `--allow-underpowered`, `--min-effect` | **Kept, unchanged.** The refusal is HT's rule |
-| The per-wave read (`orchestrator.py:2674-2680`) | One call of `train_detectability` for the baseline, after the loop over the evals. Free |
+Architecture decision 5, and functional spec 5.6. Kiln's detectability read (`GET …/run_configs/{run_config_id}/eval_detectability`) is for MCP clients. HT does not call it.
 
-HT does not send `include_val_size`. Kiln never reads a val result for HT, and HT's val sizes stay its own.
-
-**Counts can differ from today's** (architecture ruling 17, accepted). HT also holds out an item that carries a tag named `val`, `test`, `val_*`, `test_*`, `holdout*` or `heldout*`, used by an eval or not (`gateway/trainset.py:16-21`). Kiln's train helper removes only an item that is in a val or test split of an eval. On a task with such tags, Kiln's `n`, `room` and `unscored` can count an item that HT holds out by name. The answer holds counts only: no item id and no row reaches an agent. The noise check keeps its own train read (2.6), so its sample does not change.
+- **`detectability.py` is not changed.** No function is deleted or rewritten. `train_detectability` (`:334`) and `train_row` (`:281-310`) stay as they are. So do `score_room`, `comparable_specs`, `build_rows`, `assess`, `split_sizes` and `run_detectability_check` (`:604`), with its events, its lines and its refusal (`UnderpoweredEvalsError`, `--allow-underpowered`, `--min-effect`).
+- **It keeps its own train read.** `train_detectability` reads the stored train rows with `Analyzer.stored_results`, and the split sizes come from disk, as today. So no count changes.
+- The per-wave read (`orchestrator.py:2674-2680`) and `ctx.train_split_sizes` are not changed.
+- `KilnRoutes` gets no method for the read (section 1). `contract.py` does not check the route or its models (section 4). The fake Kiln gets no fake of it (6.1). `tests/test_detectability.py` is not changed (6.2).
 
 ### 2.6 The noise check is not changed
 
 Architecture decision 5, and functional spec 3.4. The noise check stays in HT as it is: behind `--noise-check`, off by default. Kiln has no noise route, so nothing here calls one.
 
 - **`noise.py` is not changed.** `run_noise_check` (`:391`) keeps the sample, the estimate, the clone of the run config, the judge copy and its archive, the comparison, the warnings, the spend event and its other events.
-- **Three imported helpers stay.** `noise.py` imports `comparable_specs`, `fewest_wins` and `score_room` from `detectability.py` (`noise.py:77`). All three stay, not changed. The floor arithmetic under `fewest_wins` stays with them: `significance_floor`, `binary_floor`, `rating_floor` and `wilcoxon_all_positive_p` (2.4).
-- **It keeps its own train read.** The sample comes from `Analyzer.stored_results` on train, as today. It does not use Kiln's train helper, so ruling 17 does not touch it.
+- **Its imports are not changed.** `noise.py` imports `comparable_specs`, `fewest_wins` and `score_room` from `detectability.py` (`noise.py:77`). `detectability.py` is not changed (2.4, 2.5).
+- **It keeps its own train read.** The sample comes from `Analyzer.stored_results` on train, as today.
 - `stop_rules.noise_flip_rate` (`:126`), `schemas.NoiseRow`, `schemas.NoiseCheckResult`, `ctx.policy_exempt_rcs` and the report lines (`report.py:320-321`) are not changed.
 - `tests/test_noise.py` is not changed (6.2).
 
@@ -234,7 +222,7 @@ async def missing_skill_paths(skill: SkillSource) -> list[str]   # paths, in lis
 | Group | Routes |
 |---|---|
 | The gateway's | Every route of `gateway.ops.OP_ROUTES` (sibling document, section 7) |
-| New in this spec, called by loop code | `GET /api/version`; `GET …/run_configs/{run_config_id}/eval_detectability`; `GET …/run_configs/{run_config_id}/smell_check`; `POST /api/projects/{project_id}/skills/from_folder`; `GET …/skills/{skill_id}/files`; `GET …/skills/{skill_id}/files/{path}`; the three `/api/model_info/` routes |
+| New in this spec, called by loop code | `GET /api/version`; `GET …/run_configs/{run_config_id}/smell_check`; `POST /api/projects/{project_id}/skills/from_folder`; `GET …/skills/{skill_id}/files`; `GET …/skills/{skill_id}/files/{path}`; the three `/api/model_info/` routes |
 | Today's required APIs | `/api/projects/{project_id}/memories`; `/api/jobs/evals/run` |
 
 **Fields.** A field is present when the named schema of `openapi["components"]["schemas"]` has the property. The schema names in the left column are per the Kiln component docs. HT needs these properties:
@@ -243,13 +231,14 @@ async def missing_skill_paths(skill: SkillSource) -> list[str]   # paths, in lis
 |---|---|
 | `CreateTaskRunConfigRequest`, `EvalJobParams` | `provenance`; `judge` (today's two) |
 | `VersionResponse` | `version`, `min_supported_harness_tuner_version` |
-| `EvalDetectabilityRow`; `EvalDetectability` | `eval_id`, `eval_name`, `eval_config_id`, `score_key`, `score_type`, `direction`, `n`, `room`, `unscored`, `floor`, `fewest_wins`, `best_case_change`; `skipped`, `unread_eval_ids`, `left_out_held_out` |
 | `SmellCheckResponse`; `SmellDetection`; `SmellCheckModel` | `detections`, `checked`, `unread_tools`, `model`; `smell`, `detector`, `scope`, `fact`, `value`, `reference`, `reference_source`; `release_date_note` |
 | `SkillBundleCreateRequest`; `SkillBundleResponse` | `folder_path`, `provenance`; `id`, `name`, `tool_id` |
 | `SkillFileList`; `SkillFileEntry`; `SkillFileContent` | `files`, `total_bytes`; `path`, `size_bytes`; `content`, `is_text` |
 | `ModelInfoRow`; `ModelInfoProviderEntryRow` (spec one) | The fields of `gateway.models.ModelRow` and `ProviderEntryRow` |
 
-**The statistics operation.** `contract_preflight` (`contract.py:62`) calls the pure statistics route on two fixtures today. It gains none for `significance_floor`: no loop code reads the operation (2.4). `POST /api/statistics` is a route of the gateway's group, as today. The minimum Kiln version covers a role's call of the operation (section 3).
+**The statistics operation.** `contract_preflight` (`contract.py:62`) calls the pure statistics route on two fixtures today. It gains none for `significance_floor`: HT does not call the operation (2.4). `POST /api/statistics` is a route of the gateway's group, as today.
+
+**The detectability read.** Its route is not in the route list, and its models are not in the field list: HT does not call it (2.5). The same holds for the `split` parameter of the summary routes and for the paired comparison route.
 
 **The skill paths.** `KILN_SKILL_PATHS` is the constant of the sibling document (section 8): 93 paths today. `missing_skill_paths` reads each one with `skill.read`, at most 8 at a time, and collects the paths whose read raises `KilnSkillError` with Kiln's "No skill file" text. Any other `KilnSkillError` stops the check at once with the "could not be read" problem. Then it runs `smell_ids` on the index text: no id is reported as a missing path named `references/improving_agents/index.md (the Smells table)`. Kiln's contract test guards the same table from its side: each smell id of the contract list must be in the Smells table as its backticked path (architecture ruling 14; per the Kiln component doc).
 
@@ -261,7 +250,7 @@ The order is the build order. "Before" is what must be true first.
 |---|---|---|
 | 12 | `src/kiln_harness_tuner/skill_installer/`; console script `harness-tuner-skill-installer-mcp` (`pyproject.toml:41`); the code named in 2.1; `tests/test_skill_installer.py` | The two gateway tools and the new `read_skill` pass their tests against the fake |
 | 13 | `src/kiln_harness_tuner/model_catalog/`; the option `--no-model-catalog`; the code named in 2.3; `tests/test_model_catalog.py`, `tests/fixtures/model_catalog/` | The three model tools pass their tests against the fake model info routes |
-| 14 | `train_row`, and the old body of `train_detectability` (2.5); the code named in 2.7: `smells/detectors/`, `smells/thresholds.py`, `smells/model.py`. Nothing of `noise.py` goes (2.6). The functions of `detectability.py` that 2.4 and 2.5 name as kept stay | The Kiln tests that pin HT's values exist (architecture section 7). The callers pass their tests against the fake |
+| 14 | The code named in 2.7: `smells/detectors/`, `smells/thresholds.py`, `smells/model.py`. Nothing of `detectability.py` goes (2.4, 2.5). Nothing of `noise.py` goes (2.6) | Kiln's smell check tests pin HT's limits (architecture section 7). `run_detectors` passes its tests against the fake smell check |
 | 15a | `src/kiln_api_mcp/`; console script `kiln_api_mcp` (`pyproject.toml:44`); `packages` loses `src/kiln_api_mcp` (`:61`); the ruff per-file ignore (`:113-121`); `agent_files/claude/` (`.mcp.json`, `settings.json`); the command `harness-tuner-install-agents`, whole (architecture ruling 15): its console script (`pyproject.toml:43`), and `install_agents.install_into`, `_claude_configs`, `_read_object`, `agent_cli_name`, `build_parser`, `main`; `tests/test_kiln_api_tool.py`, `tests/test_kiln_api_server.py` | Nothing. No loop session uses it. The deny rule `mcp__kiln_api_mcp` (`cli.py:1040`) stays: it costs nothing |
 | 15b | `agent_files/skills/kiln-api/` (291 files) | No agent text names it (sibling document, section 9) |
 | 15c | `agent_files/skills/memory/`, `agent_files/skills/kiln-harness-tuner-code-tool-authoring/`, `agent_files/skills/kiln-task-setup/` | The links are re-pointed. The 36 tests of `tests/test_wrapper_templates.py` are in Kiln, or Kiln has the same tests (functional spec 5.5) |
@@ -302,11 +291,12 @@ The order is the build order. "Before" is what must be true first.
 | `FakeSkillReader` | Sibling document, 1.7 |
 | `GET /api/version` | `fake.version = {"version": …, "min_supported_harness_tuner_version": …}`; `None` answers 404 |
 | `GET /openapi.json` | The fake's document lists every route and field of section 4 by default. A test removes one |
-| `GET …/eval_detectability` | `fake.detectability[rc_id]`: canned rows, `skipped`, `unread_eval_ids`, `left_out_held_out`. With no entry for the run config, the answer has no row. It records the `eval_ids` it was asked for |
 | `GET …/smell_check` | `fake.smell_check[rc_id]`; it records `as_of` |
 | `POST …/skills/from_folder` | Reads the folder, makes a skill row and its files in the fake, answers the id and tool id. `fake.bundle_errors` makes it answer 422 with a list. It does not repeat Kiln's folder rules |
 | `GET …/skills/{id}/files`, `…/files/{path}` | From the fake's skill files. A file marked binary answers as Kiln does |
 | `GET /api/model_info/models`, `/model_details`, `/providers` | From `fake.model_rows`, with real paging by `limit` and `offset`, and the `include_not_available` filter |
+
+The fake gains nothing for a route that HT does not call: no detectability read, no `significance_floor` operation, no `split` parameter on a summary route and no paired comparison route (functional spec 5.6).
 
 **The packaging smoke test.** `tests/packaging/fake_kiln_server.py` is a stdlib HTTP server that answers GET only. The installed wheel now calls the version route and reads 93 skill paths at start-up, so the server gains: `GET /api/version`; the routes of section 4 in its `/openapi.json`; and `POST /mcp`, answered by hand as plain JSON over HTTP/1.1 with a `Content-Length`: `initialize` gets a result with the client's protocol version, `notifications/initialized` gets HTTP 202, `tools/call` for `kiln_skill` gets one text block (the fixture index for the index path, a short stand-in text for any other contract path), and `tools/list` gets the one tool. A stdlib server of this shape was tried with the SDK client of `mcp` 1.30.0, and the read worked. `smoke_installed_wheel.py` changes `COMMANDS` (two console scripts are left), `WHEEL_FILES`, `WHEEL_PACKAGES`, the `kiln_api_mcp` checks (`:63-87,331`) and drops `--no-model-catalog` (`:435`).
 
@@ -318,8 +308,8 @@ The order is the build order. "Before" is what must be true first.
 | `test_backlog.py` (26) | Stays: `specs/backlog.md` stays (section 5). `WHERE` loses `knowledge`, and the small test texts change with it |
 | `test_smells.py` (44) | Rewritten against the fake smell check and `FakeSkillReader`. The tests of each detector and each limit go: Kiln pins the same values |
 | `test_baseline_review.py` (55) | Stays, on `FakeSkillReader` |
-| `test_detectability.py` (30) | The arithmetic tests (floors, Wilcoxon, intervals, bootstrap) stay: the arithmetic stays in HT (2.4). Kiln's tests pin the same values and name these tests. The tests of `score_room` and `comparable_specs` stay. The tests of `build_rows`, `assess`, the refusal and the lines stay, not changed. The tests of `run_detectability_check` and of the whole loop stay, on the fake's canned rows |
-| `test_noise.py` (13) | Stays, not changed. The noise check is not changed (2.6). Its one test that runs the whole loop gets the fake's detectability answer with no row |
+| `test_detectability.py` (30) | Stays, not changed. `detectability.py` is not changed (2.4, 2.5). Kiln's tests of its own routes pin the same values and name these tests |
+| `test_noise.py` (13) | Stays, not changed. The noise check is not changed (2.6) |
 | `test_stop_rules.py` (46) | Stays. `noise_flip_rate` is not changed |
 | `test_gateway_model_info.py` (27) | Rewritten: the status, both `include_not_available` values, paging over more than 200 rows with blocked entries, `total`, the provider count with a policy |
 | `test_model_catalog.py` (41), `test_skill_installer.py` (45), `test_kiln_api_tool.py` (73), `test_kiln_api_server.py` (19) | Go. From `test_skill_installer.py`, the cases "outside scratch", "the root itself", "a file" and the export destination cases are written again in `test_gateway.py`. New there: an export of a skill with a binary asset writes the text files only, and `skipped` names the asset |
@@ -327,7 +317,7 @@ The order is the build order. "Before" is what must be true first.
 | `test_onboarding_kiln_check.py` (46) | Rewritten: each row of the message table of section 3, the source-tree case, `parse_version`, the order of the four steps. With `KILN_HARNESS_TUNER_SKIP_KILN_VERSION_CHECK` set: a Kiln below the minimum passes step 2a with the warning; step 2b still stops a tuner that is too old; a missing route still stops at step 3; a missing skill path still stops at step 4; a 404 from the version route is still "too old". With the value `0` or empty, step 2a runs |
 | `test_install_agents.py` (46) | The cases of the removed command go: `--dest`, the parser, `main`, `agent_cli_name` and `kiln_api_mcp`. The run-install cases stay, with the new file set |
 | `test_prompt_text.py` (8) | `read_skill` cases use the fake's skill files |
-| `test_gateway.py` (89), `test_cli.py` (154), `test_cli_reference.py` (18), `test_docs.py` (55), `test_job_drives.py` (20), the three dispatcher files (124, 39, 40) | Updated where they name a removed part: the catalogue, the staging sweep, the installer server, tool lists, console scripts, the `judge_free` probe, the layout blocks. New in `test_gateway.py`: `compute_statistics` sends `test` and `room` to Kiln (2.4) |
+| `test_gateway.py` (89), `test_cli.py` (154), `test_cli_reference.py` (18), `test_docs.py` (55), `test_job_drives.py` (20), the three dispatcher files (124, 39, 40) | Updated where they name a removed part: the catalogue, the staging sweep, the installer server, tool lists, console scripts, the `judge_free` probe, the layout blocks. `test_gateway.py` gains no test of `compute_statistics`: the tool is not changed (2.4) |
 | `test_integrity.py`, `test_judge_copy.py`, `test_reference_check.py`, `test_generality.py`, `test_model_preflight.py` | Stay. A test that writes a skill folder on disk writes it into the fake |
 
 ## 7. Docs and command line
@@ -336,7 +326,7 @@ The order is the build order. "Before" is what must be true first.
 |---|---|
 | `docs/cli.md` | The command table (`:7-18`) loses three commands: `kiln_api_mcp`, `harness-tuner-skill-installer-mcp` and `harness-tuner-install-agents`; "installs all five" becomes two. `--no-model-catalog` (`:121`) moves to "Removed flags". The section `harness-tuner-install-agents` (`:140-183`) is removed. One paragraph takes its place: for work by hand, connect Kiln's own MCP server, which carries Kiln's skill. "Internal commands" (`:185-210`) keeps the gateway only |
 | `docs/install.md` | Section 2 (`:84-145`): the executables, what a run starts, no `kiln_api_mcp`. Section 3 (`:165-230`): the minimum Kiln version, from `MIN_KILN_VERSION`. "The Kiln check at start-up" (`:231-358`): the four steps and each message of section 3. "Where the tuner keeps its files" (`:869-953`): no `model_catalog.json` |
-| `docs/architecture.md` | Section 5.1: the train-side read calls Kiln; what HT keeps. Section 5.2, the noise check, is not changed. Section 12: the skill installer is two gateway tools; the gateway reads Kiln's skill. Section 13: the layout. Section 14, item 1: `mcp` client code in one module. Section 15: the fakes. Section 17.1 (the catalogue) is replaced by a short "Model information" section. Sections 18.1 to 18.4 are replaced by "Kiln's skill, the entry files and the smell check" |
+| `docs/architecture.md` | Sections 5.1 and 5.2, the detectability check and the noise check, are not changed. Section 12: the skill installer is two gateway tools; the gateway reads Kiln's skill. Section 13: the layout. Section 14, item 1: `mcp` client code in one module. Section 15: the fakes. Section 17.1 (the catalogue) is replaced by a short "Model information" section. Sections 18.1 to 18.4 are replaced by "Kiln's skill, the entry files and the smell check" |
 | `docs/agents.md` | The intro and the tables (`:13-58`): each role's entry file is `references/knowledge-entry.md` of its skill; `kiln_skill` in the tool lists; no `kiln-api`, `experiment-costing`, `kiln-task-setup` |
 | `docs/agent-cli.md` | Sections 6, 7, 10 and 11: no skill installer server; the two tools are the gateway's |
 | `docs/limitations.md` | "Containment": the installer items; a new item: a loop agent can read all of Kiln's skill. "The Kiln API reference can go stale" (`:400-405`) is removed. A new item: the knowledge changes with the Kiln version |
@@ -397,10 +387,10 @@ Each test that binds HT's code to knowledge text, and cannot run offline after t
 **The command.**
 
 ```
-harness-tuner --demo-project --budget-usd 20 --timeout-mins 60 --noise-check 5
+harness-tuner --demo-project --budget-usd 20 --timeout-mins 60
 ```
 
-`--noise-check 5` is not a default. The noise check is not changed and calls no new route (2.6). It is here so that the run also proves that the check still works beside the switched detectability code: it imports three helpers from `detectability.py`. Every new call is on the default path.
+The run uses the default options. So the noise check, which is off by default, does not run. No option is needed to reach a new call.
 
 **Pass conditions.** All must hold:
 
@@ -411,7 +401,7 @@ harness-tuner --demo-project --budget-usd 20 --timeout-mins 60 --noise-check 5
 | 3 | No error from a missing file: no `knowledge_unreadable` event, and no `kiln_skill` call that ends in "No skill file" for a path that an HT file named | `wave_log.jsonl`; the transcripts |
 | 4 | No error from a missing tool: no "not available to the … role" answer, and no hook block | The transcripts; the hook's messages |
 | 5 | No refused call that the switch caused: no 404 or 422 from a new route | `kiln-harness-tuner.log` |
-| 6 | The detectability event, the `smell_detections` event and the `noise_check` event are in the log, and the noise check has rows | `wave_log.jsonl` |
+| 6 | The `smell_detections` event is in the log. The `detectability` event is in the log as before the switch: that check is not changed (2.5) | `wave_log.jsonl` |
 | 7 | A builder session read a lever through `kiln_skill`. Record whether one called `install_skill_bundle`; a run may not need a skill | The transcripts |
 | 8 | The report is written | The reports folder |
 
@@ -421,11 +411,10 @@ The run proves the mechanics. It does not prove quality: runs differ each time (
 
 Each of these is settled. Nothing here waits for a decision.
 
-1. **HT's held-out rule by tag name is not in Kiln's train helper** (ruling 17). Detectability counts can differ from today's on a task that has such tags (2.5). The noise check is not touched: it keeps its own train read (2.6).
-2. **A skill export loses binary assets** (ruling 16). The export does not copy one, and `skipped` names it. A builder that clones such a skill gets a clone without it.
-3. **`has_thinking_levels` of a model list row can be true because of an entry that the policy drops** (ruling 20). `get_model_details` is exact.
-4. **`contract.py` does not list every older route of loop code** (results, jobs wait, runs and others). They are older than `MIN_KILN_VERSION`, and the version check covers them. The list holds the gateway's routes, the routes of this spec and today's required APIs.
-5. **With the skip variable set, the Kiln version is not compared** (ruling 21). The contract checks still catch a missing route, field or skill path. They do not catch a route that is present with an older meaning.
+1. **A skill export loses binary assets** (ruling 16). The export does not copy one, and `skipped` names it. A builder that clones such a skill gets a clone without it.
+2. **`has_thinking_levels` of a model list row can be true because of an entry that the policy drops** (ruling 20). `get_model_details` is exact.
+3. **`contract.py` does not list every older route of loop code** (results, jobs wait, runs and others). They are older than `MIN_KILN_VERSION`, and the version check covers them. The list holds the gateway's routes, the routes of this spec that HT calls and today's required APIs.
+4. **With the skip variable set, the Kiln version is not compared** (ruling 21). The contract checks still catch a missing route, field or skill path. They do not catch a route that is present with an older meaning.
 
 ## 11. Open points
 
@@ -434,7 +423,7 @@ Each of these is settled. Nothing here waits for a decision.
 
 ## 12. Not verified
 
-- The names marked "per the Kiln component doc" were read from the two sibling drafts. Those drafts can change, and no Kiln code exists yet.
+- The names marked "per the Kiln component doc" were read from the sibling Kiln draft. That draft can change, and no Kiln code exists yet.
 - That each schema of section 4 is in Kiln's OpenAPI document under the name given.
 - That `model_info_models(include_deprecated=True)` lists every entry that Kiln's `ready_model_count` counts.
 - `MIN_KILN_VERSION`: no Kiln release has this spec yet.

@@ -298,7 +298,7 @@ After this spec, HT has only role skills, the gateway skill and no `kiln_api_mcp
 
 - HT's test suite stays offline: no live server and no model spend.
 - About 310 HT tests read the knowledge copy or its layout today. The tests of the knowledge's own content go, because Kiln's checks cover it. The tests of HT's code that happen to read the copy are rewritten against a fake.
-- HT's fake Kiln gains a fake `kiln_skill` and a fake of each new route.
+- HT's fake Kiln gains a fake `kiln_skill` and a fake of each new route that HT calls.
 - Three tests bind HT's code to knowledge text: the lever ids, a playbook against the planner's input fields, and the output-mode lever against Kiln's list of modes. They cannot run offline after the switch. The ids move into Kiln's contract test (section 4). The other two are kept as review items in the audit (section 7).
 - Each new Kiln API has tests, with HT's pinned values where HT has them.
 

@@ -4,7 +4,7 @@ status: draft
 
 # Component: Kiln measurement APIs
 
-This document designs the Kiln side of [functional spec](../functional_spec.md) sections 3.1 to 3.4, 3.7 and 3.8, under the fixed decisions of the [architecture](../architecture.md) (decisions 5, 7 to 9, 13, 14, section 2.1, and the rulings 1, 2 and 6 of section 10). The noise check is not ported (decision 5): section 5 says what that means here.
+This document designs the Kiln side of [functional spec](../functional_spec.md) sections 3.1 to 3.4, 3.7 and 3.8, under the fixed decisions of the [architecture](../architecture.md) (decisions 5, 7 to 9, 13, 14, section 2.1, and the rulings 1, 2 and 6 of section 10). The noise check is not ported (decision 5): section 5 says what that means here. The `significance_floor` operation and the detectability read are for MCP clients. HT does not call them, and HT's own code for both is not changed (decision 5).
 
 **HT** is Kiln Harness Tuner at `b49f159`. `HT/x.py:f` names a function in `harness-tuner/src/kiln_harness_tuner/`. Kiln was read at `325c7cb3`. Marks: **[V]** checked by running code against Kiln's library in this checkout; **[U]** not verified. Everything else was read in the source. Every number and definition is HT's. The rulings of architecture section 10 are applied in the body. Section 10 lists the limits that are accepted.
 
@@ -314,4 +314,4 @@ None.
 ## 12. Not verified
 
 - `make api_docs` and the `app/mcp` tree are on the build branch, not in this checkout.
-- That `resolve_split` and HT's on-disk reader give the same train count for every eval; `unscored` depends on it. Also the order of `eval_config.runs()`: HT keeps the last record of a replicate set in served order; 1.2 uses the newest by `created_at`.
+- That `resolve_split` and HT's on-disk reader give the same train count for every eval; `unscored` is the same number as HT's only when they do. HT does not call the read, so a difference changes no HT result. Also the order of `eval_config.runs()`: HT keeps the last record of a replicate set in served order; 1.2 uses the newest by `created_at`.
