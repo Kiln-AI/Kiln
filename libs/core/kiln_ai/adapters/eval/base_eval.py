@@ -727,6 +727,8 @@ class BaseEval:
                 allow_saving=False,
                 skills=self.skills,
                 task_run_config_id=run_config_id,
+                # Every item of a job sends the same system prompt and tools.
+                automatic_prompt_caching=True,
             ),
         )
 

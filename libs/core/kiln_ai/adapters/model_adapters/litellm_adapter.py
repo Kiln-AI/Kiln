@@ -49,7 +49,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.adapters.retry_classification import is_run_ending_tool_error
-from kiln_ai.datamodel.datamodel_enums import InputType
+from kiln_ai.datamodel.datamodel_enums import InputType, TurnMode
 from kiln_ai.datamodel.json_schema import (
     close_object_schemas,
     strip_numeric_bounds,
@@ -102,6 +102,38 @@ def strip_assistant_fields_for_cerebras(messages: Iterable[Any]) -> list[Any]:
             }
         stripped.append(message)
     return stripped
+
+
+def prompt_cache_injection_points(
+    litellm_model_id: str,
+    messages: list[ChatCompletionMessageIncludingLiteLLM],
+    expects_later_call: bool,
+) -> list[dict[str, Any]]:
+    """The LiteLLM ``cache_control_injection_points`` for one model call.
+
+    The system prompt of a Claude model is marked, so calls that share only the
+    system prompt and tools (two runs of one task) share a cache entry. The last
+    message is marked when a later call re-sends these messages: the caller
+    expects one (a tool loop, the next turn of a conversation), or the messages
+    already hold a model reply.
+    """
+    points: list[dict[str, Any]] = []
+    # Claude reads the cache only at a position an earlier request marked. Other
+    # providers cache a shared prefix unasked, and LiteLLM answers a marked Gemini
+    # system prompt by creating a separately billed cachedContents object.
+    if (
+        "claude" in litellm_model_id.lower()
+        and messages
+        and messages[0].get("role") == "system"
+    ):
+        points.append({"location": "message", "index": 0})
+    # A cache write costs more than plain input, so it only pays for itself on
+    # messages that a later call reads back.
+    if expects_later_call or any(
+        message.get("role") == "assistant" for message in messages
+    ):
+        points.append({"location": "message", "index": -1})
+    return points
 
 
 logger = logging.getLogger(__name__)
@@ -906,19 +938,21 @@ class LiteLlmAdapter(BaseAdapter):
             **self._additional_body_options,
         }
 
-        if self.base_adapter_config.automatic_prompt_caching:
-            # Mark the last message for cache control. Litellm's AnthropicCacheControlHook
-            # handles provider-specific injection. Providers auto-cache matching prefixes,
-            # so marking the last message is sufficient for multi-turn conversations.
-            completion_kwargs["cache_control_injection_points"] = [
-                {"location": "message", "index": -1}
-            ]
-
         tool_calls = await self.litellm_tools()
         has_tools = len(tool_calls) > 0
         if has_tools:
             completion_kwargs["tools"] = tool_calls
             completion_kwargs["tool_choice"] = "auto"
+
+        if self.base_adapter_config.automatic_prompt_caching:
+            injection_points = prompt_cache_injection_points(
+                self.litellm_model_id(),
+                messages,
+                expects_later_call=has_tools
+                or self.task.turn_mode == TurnMode.multiturn,
+            )
+            if injection_points:
+                completion_kwargs["cache_control_injection_points"] = injection_points
 
         # Special condition for Claude Opus 4.1 and Sonnet 4.5, where we can only specify top_p or temp, not both.
         # Remove default values (1.0) prioritizing anything the user customized, then error with helpful message if they are both custom.
@@ -992,6 +1026,9 @@ class LiteLlmAdapter(BaseAdapter):
             prompt_details = litellm_usage.get("prompt_tokens_details", None)
             if prompt_details and hasattr(prompt_details, "cached_tokens"):
                 usage.cached_tokens = prompt_details.cached_tokens
+                usage.cache_write_tokens = getattr(
+                    prompt_details, "cache_write_tokens", None
+                )
             elif prompt_details:
                 logger.warning(
                     f"prompt_tokens_details has unexpected type {type(prompt_details)}, cached_tokens not extracted"

@@ -99,6 +99,8 @@ class KilnTaskTool(KilnToolInterface):
                 default_tags=["tool_call"],
                 skills=skills,
                 task_run_config_id=self._run_config_id,
+                # An agent that calls this tool again sends the same system prompt.
+                automatic_prompt_caching=True,
             ),
         )
         task_run = await adapter.invoke(

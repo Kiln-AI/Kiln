@@ -92,6 +92,11 @@ class MessageUsage(BaseModel):
         description="Number of tokens served from prompt cache. None if not reported.",
         ge=0,
     )
+    cache_write_tokens: int | None = Field(
+        default=None,
+        description="Number of input tokens written to the prompt cache, which providers bill above the normal input price. None if not reported.",
+        ge=0,
+    )
 
     def __add__(self, other: "MessageUsage") -> "MessageUsage":
         """Add two MessageUsage objects together, handling None values gracefully.
@@ -110,6 +115,9 @@ class MessageUsage(BaseModel):
             total_tokens=_add_optional_int(self.total_tokens, other.total_tokens),
             cost=_add_optional_float(self.cost, other.cost),
             cached_tokens=_add_optional_int(self.cached_tokens, other.cached_tokens),
+            cache_write_tokens=_add_optional_int(
+                self.cache_write_tokens, other.cache_write_tokens
+            ),
         )
 
     @staticmethod
@@ -187,6 +195,9 @@ class Usage(MessageUsage):
             total_tokens=_add_optional_int(self.total_tokens, other.total_tokens),
             cost=_add_optional_float(self.cost, other.cost),
             cached_tokens=_add_optional_int(self.cached_tokens, other.cached_tokens),
+            cache_write_tokens=_add_optional_int(
+                self.cache_write_tokens, other.cache_write_tokens
+            ),
             total_llm_latency_ms=_add_optional_int(
                 self.total_llm_latency_ms, other_latency
             ),

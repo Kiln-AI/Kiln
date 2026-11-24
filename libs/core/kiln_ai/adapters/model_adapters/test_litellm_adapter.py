@@ -1124,6 +1124,23 @@ async def test_build_completion_kwargs_strips_kiln_only_fields(config, mock_task
                 cached_tokens=80,
             ),
         ),
+        # Cache write reported next to cache reads
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=100,
+                completion_tokens=20,
+                total_tokens=120,
+                prompt_tokens_details={"cached_tokens": 0, "cache_write_tokens": 80},
+            ),
+            None,
+            Usage(
+                input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                cached_tokens=0,
+                cache_write_tokens=80,
+            ),
+        ),
     ],
 )
 def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_usage):
@@ -1152,6 +1169,7 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
         assert result.total_tokens == expected_usage.total_tokens
         assert result.cost == expected_usage.cost
         assert result.cached_tokens == expected_usage.cached_tokens
+        assert result.cache_write_tokens == expected_usage.cache_write_tokens
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
@@ -2983,7 +3001,39 @@ async def test_build_completion_kwargs_no_caching_by_default(config, mock_task):
     assert "cache_control_injection_points" not in kwargs
 
 
-async def test_build_completion_kwargs_with_automatic_prompt_caching(config, mock_task):
+ADD_TOOL_DEFINITION = {
+    "type": "function",
+    "function": {"name": "add", "description": "Add", "parameters": {}},
+}
+
+
+@pytest.mark.parametrize(
+    ("messages", "tools", "expected_points"),
+    [
+        pytest.param(
+            [{"role": "user", "content": "Hello"}], [], None, id="one_shot_call"
+        ),
+        pytest.param(
+            [{"role": "user", "content": "Hello"}],
+            [ADD_TOOL_DEFINITION],
+            [{"location": "message", "index": -1}],
+            id="model_can_call_tools",
+        ),
+        pytest.param(
+            [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi"},
+                {"role": "user", "content": "And now?"},
+            ],
+            [],
+            [{"location": "message", "index": -1}],
+            id="messages_hold_a_model_reply",
+        ),
+    ],
+)
+async def test_build_completion_kwargs_with_automatic_prompt_caching(
+    config, mock_task, messages, tools, expected_points
+):
     adapter = LiteLlmAdapter(
         config=config,
         kiln_task=mock_task,
@@ -2992,21 +3042,19 @@ async def test_build_completion_kwargs_with_automatic_prompt_caching(config, moc
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
     mock_provider.litellm_allowed_openai_params = None
-    messages = [{"role": "user", "content": "Hello"}]
 
     with (
         patch.object(adapter, "model_provider", return_value=mock_provider),
         patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
         patch.object(adapter, "build_extra_body", return_value={}),
         patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "litellm_tools", AsyncMock(return_value=tools)),
     ):
         kwargs = await adapter.build_completion_kwargs(
             mock_provider, messages, top_logprobs=None
         )
 
-    assert kwargs["cache_control_injection_points"] == [
-        {"location": "message", "index": -1}
-    ]
+    assert kwargs.get("cache_control_injection_points") == expected_points
 
 
 @pytest.mark.asyncio

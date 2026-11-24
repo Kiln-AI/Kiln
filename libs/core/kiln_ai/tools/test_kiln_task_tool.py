@@ -198,6 +198,7 @@ class TestKilnTaskTool:
                 default_tags=["tool_call"],
                 skills={},
                 task_run_config_id="test_config_456",
+                automatic_prompt_caching=True,
             )
 
             # Verify adapter invoke was called
@@ -521,4 +522,5 @@ class TestKilnTaskTool:
                 default_tags=["tool_call"],
                 skills={},
                 task_run_config_id="test_config_456",
+                automatic_prompt_caching=True,
             )

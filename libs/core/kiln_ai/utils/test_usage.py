@@ -50,6 +50,17 @@ def test_message_usage_add_handles_none_fields():
     assert result.cost == 0.5
 
 
+@pytest.mark.parametrize("usage_class", [MessageUsage, Usage])
+def test_add_sums_cache_tokens(usage_class):
+    cold_call = usage_class(cached_tokens=0, cache_write_tokens=2400)
+    warm_call = usage_class(cached_tokens=2400, cache_write_tokens=None)
+
+    result = cold_call + warm_call
+
+    assert result.cached_tokens == 2400
+    assert result.cache_write_tokens == 2400
+
+
 def test_message_usage_add_rejects_non_message_usage():
     with pytest.raises(TypeError, match="Cannot add MessageUsage with"):
         MessageUsage() + 5  # type: ignore[operator]

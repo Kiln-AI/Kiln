@@ -345,6 +345,32 @@ async def test_run_task_forwards_task_run_config_id(client, task_run_setup):
 
 
 @pytest.mark.asyncio
+async def test_run_task_requests_prompt_caching(client, task_run_setup):
+    task = task_run_setup["task"]
+    captured: dict = {}
+
+    def fake_adapter_for_task(task_arg, run_config_properties, base_adapter_config):
+        captured["adapter_config"] = base_adapter_config
+        mock_adapter = MagicMock()
+        mock_adapter.invoke = AsyncMock(return_value=task_run_setup["task_run"])
+        return mock_adapter
+
+    with (
+        patch("kiln_server.run_api.task_from_id", return_value=task),
+        patch(
+            "kiln_server.run_api.adapter_for_task", side_effect=fake_adapter_for_task
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/project-1/tasks/{task.id}/run",
+            json=task_run_setup["run_task_request"],
+        )
+
+    assert response.status_code == 200
+    assert captured["adapter_config"].automatic_prompt_caching is True
+
+
+@pytest.mark.asyncio
 async def test_run_task_task_run_config_id_defaults_to_none(client, task_run_setup):
     task = task_run_setup["task"]
     run_task_request = task_run_setup["run_task_request"]

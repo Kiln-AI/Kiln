@@ -1193,6 +1193,7 @@ async def test_run_job_full_trace_serializes_per_message_usage(
         "total_tokens": None,
         "cost": 0.001,
         "cached_tokens": None,
+        "cache_write_tokens": None,
     }
 
 

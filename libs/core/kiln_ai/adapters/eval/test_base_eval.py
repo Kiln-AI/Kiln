@@ -457,6 +457,7 @@ async def test_run_task_and_eval():
         # Verify the base_adapter_config has allow_saving=False
         adapter_config = mock_adapter_for_task.call_args[1]["base_adapter_config"]
         assert adapter_config.allow_saving is False
+        assert adapter_config.automatic_prompt_caching is True
 
         # Verify adapter.invoke was called with correct input
         mock_adapter.invoke.assert_called_once_with("test input")

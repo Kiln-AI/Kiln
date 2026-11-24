@@ -3070,6 +3070,7 @@ class TestEvalRunTraceJoin:
             "total_tokens": 18,
             "cost": 0.5,
             "cached_tokens": None,
+            "cache_write_tokens": None,
         }
 
     def test_returns_the_output_that_was_scored_not_a_later_repair(
