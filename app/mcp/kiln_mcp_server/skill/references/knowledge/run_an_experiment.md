@@ -286,9 +286,14 @@ decide on the user's answer and the numbers.
 
 Then apply the keep rule:
 
-- **The headline**: the target eval is better on val than the baseline,
-  by the summary numbers. Kiln Harness Tuner's mean win rate against the
-  baseline, over the evals, is the loop's version of this headline.
+- **The headline**: for each eval, compare the candidate's mean score on
+  val with the baseline's, from the val summary numbers
+  (`references/knowledge/train_val_test.md` says which call reads which
+  split). The headline is how many of the evals the candidate is ahead on,
+  and the target eval must be one of them. Kiln Harness Tuner's mean win
+  rate (the share of paired val items won, averaged across evals) is the
+  loop's stronger version; an agent here reads summary numbers, never val
+  items.
 - **No eval is clearly worse.** Only a significant change counts as a
   change. A higher-priority eval comes before a lower one: no number of
   small wins on low-priority evals makes up for a drop on a high-priority

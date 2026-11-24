@@ -113,6 +113,8 @@ The owner answered the nine questions of [phase_plans/phase_18.md](phase_plans/p
 8. **B13.** Resolved by allowing MCP agents to read the `val` memory record, which holds only summary metrics. Close B13. No extra fence is needed for the val record.
 9. **What the val fence covers.** The follow-up project's val and test fence covers only rows; val summary metrics stay readable. So the val parts of M1, M4, M6 and M21 stay as written, with no "needs Kiln Harness Tuner" wording.
 
+**The one-off headline (2026-11-24).** Owner decision: the one-off headline is eval-level, how many evals the candidate is ahead on by summary scores, the target eval included; Kiln Harness Tuner's item-level mean win rate is the loop's version.
+
 *Where it goes:* Phase 18 ([phase_plans/phase_18.md](phase_plans/phase_18.md)), items 1 to 8.
 
 ## Related
