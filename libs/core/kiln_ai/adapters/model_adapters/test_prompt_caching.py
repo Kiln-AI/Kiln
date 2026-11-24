@@ -132,6 +132,30 @@ async def test_prompt_caching_cache_hit(
     assert has_cached_tokens_at_least_once
 
 
+@pytest.mark.paid
+@pytest.mark.prerelease
+async def test_prompt_caching_single_turn_cache_hit(tmp_path):
+    """Two runs of one task share only the system prompt; the second reads it from cache."""
+    skip_if_missing_provider_keys(ModelProviderName.anthropic)
+
+    adapter = adapter_for_task(
+        build_caching_test_task(tmp_path),
+        KilnAgentRunConfigProperties(
+            model_name="claude_sonnet_4_5",
+            model_provider_name=ModelProviderName.anthropic,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_instructions,
+        ),
+        base_adapter_config=AdapterConfig(automatic_prompt_caching=True),
+    )
+
+    await adapter.invoke("What is 2+2?")
+    second_run = await adapter.invoke("What is 3+3?")
+
+    assert second_run.usage is not None
+    assert second_run.usage.cached_tokens
+
+
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL_ID = "claude-sonnet-4-5-20250929"
 GEMINI_GENERATE_URL = re.compile(
