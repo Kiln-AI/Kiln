@@ -57,6 +57,7 @@ class ModelFamily(str, Enum):
     nex = "nex"
     motif = "motif"
     kt = "kt"
+    radixark = "radixark"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -371,6 +372,7 @@ class ModelName(str, Enum):
     mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling_2_small = "inkling_2_small"
+    inkling_2_mini = "inkling_2_mini"
     inkling = "inkling"
     inkling_small = "inkling_small"
     jev_1_13 = "jev_1_13"
@@ -386,6 +388,7 @@ class ModelName(str, Enum):
     nex_n2_6 = "nex_n2_6"
     motif_3 = "motif_3"
     midm_k_3_0_pro = "midm_k_3_0_pro"
+    daisyrose_27b = "daisyrose_27b"
 
 
 class ModelParserID(str, Enum):
@@ -921,6 +924,13 @@ MUSE_EMBER_OPENROUTER_THINKING_LEVELS = {
     "High": "high",
     "Extra High": "xhigh",
     "Max": "max",
+}
+
+DAISYROSE_27B_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "Extra High": "xhigh",
 }
 
 NEX_N2_6_OPENROUTER_THINKING_LEVELS = {
@@ -9363,6 +9373,11 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 parser=ModelParserID.r1_thinking,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3.5-4B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Qwen 3 Next 80B A3B
@@ -12372,6 +12387,11 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="tencent/Hy4",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Hy4 Flash is Tencent's lower-cost Hy4 variant. OpenRouter lists no reasoning efforts for it, so it has no thinking levels.
@@ -13250,6 +13270,12 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/inkling-2-small",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/thinkingmachines/inkling-2-small",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -13259,6 +13285,39 @@ built_in_models: List[KilnModel] = [
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.thinking_machines,
+        name=ModelName.inkling_2_mini,
+        friendly_name="Inkling 2 Mini",
+        editorial_notes="The smallest model of Thinking Machines' Inkling 2 generation (open weights). A 26.4B-parameter looped MoE (3.4B active) with image input, a 1M-token context and configurable reasoning.",
+        agent_notes=(
+            "Description: Thinking Machines' smallest open-weight multimodal model in the Inkling 2 generation, a looped MoE transformer whose middle layers run three times.\n"
+            "Lineup: Inkling 2 sizes are Mini < Small. Mini is a new size class with no Inkling 1 counterpart."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thinkingmachines/inkling-2-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=INKLING_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
                     KilnMimeType.JPG,
@@ -13754,6 +13813,52 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.radixark,
+        name=ModelName.daisyrose_27b,
+        friendly_name="DaisyRose 27B",
+        editorial_notes="RadixArk's open-weight multimodal reasoning model, trained from Qwen 3.8 27B with reinforcement learning on long-horizon agent tasks only.",
+        agent_notes=(
+            "Description: RadixArk's open-weight multimodal reasoning model, trained from Qwen 3.8 27B with reinforcement learning only, on long-horizon agent tasks.\n"
+            "Lineup: RadixArk's first public model. Same size class as its base, Qwen 3.8 27B."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="radixark/daisyrose-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DAISYROSE_27B_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="RadixArk/DaisyRose-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
