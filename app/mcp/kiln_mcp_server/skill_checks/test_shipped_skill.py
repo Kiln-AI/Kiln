@@ -304,6 +304,66 @@ def test_run_an_experiment_opens_with_the_two_paths():
     assert "one-off" in two_paths
 
 
+# --- Kiln Harness Tuner's experiment-costing and kiln-task-setup skills --------
+
+EXPERIMENT_COSTING = "references/knowledge/experiment_costing.md"
+
+# The six cost lanes of Kiln Harness Tuner's experiment-costing skill, in order.
+COST_LANES = (
+    "Drives (target inference)",
+    "Synthetic user (driver model)",
+    "Judging — the lane you pay AGAIN on every re-score",
+    "Third-party infrastructure (MCP calls, writes)",
+    "Provider quotas and keys",
+    "The replicate — the error bar is a cost lane",
+)
+
+
+def test_run_an_experiment_points_to_the_costing_file():
+    sections = _sections(read_file(RUN_AN_EXPERIMENT, get_index()))
+    assert EXPERIMENT_COSTING in sections["Cost before you spend"]
+
+
+def test_the_costing_file_has_every_cost_lane_and_the_human_gate():
+    sections = _sections(read_file(EXPERIMENT_COSTING, get_index()))
+    lanes = sections["The six cost lanes — price every one, every time"]
+    positions = [lanes.index(f"**{lane}.**") for lane in COST_LANES]
+    assert positions == sorted(positions)
+    assert "**Human gate.**" in sections["Rules"]
+
+
+def test_the_costing_file_reads_synthetic_user_usage_off_the_task_run():
+    text = " ".join(read_file(EXPERIMENT_COSTING, get_index()).split())
+    assert "EvalRun.synthetic_user_usage" not in text
+    assert "TaskRun.synthetic_user_usage" in text
+    assert "scored_run_id" in text
+    # Kiln rejects a custom score on an eval (`EvalOutputScore`).
+    assert "custom`-score" not in text
+
+
+# Facts of Kiln Harness Tuner's kiln-task-setup skill, each with the file that
+# holds it.
+TASK_SETUP_FACTS = (
+    (
+        "references/knowledge/create_task.md",
+        "**`turn_mode` is frozen**: PATCH rejects changes",
+    ),
+    (
+        "references/knowledge/tools.md",
+        "**The built-in `kiln_tool::call_kiln_api` is hidden from UI tool pickers**",
+    ),
+    (
+        "references/knowledge/model_create_configs.md",
+        "Require `supports_function_calling: true` for tool-bearing tasks.",
+    ),
+)
+
+
+@pytest.mark.parametrize(("path", "phrase"), TASK_SETUP_FACTS)
+def test_the_named_task_setup_facts_are_in_their_files(path, phrase):
+    assert phrase in " ".join(read_file(path, get_index()).split())
+
+
 # --- memory: the records Kiln Harness Tuner's code writes ---------------------
 
 MEMORY = "references/knowledge/memory.md"
@@ -884,6 +944,7 @@ ENTRY_POINTS = (
     "references/levers/index.md",
     "references/improving_agents/index.md",
     "references/knowledge/run_an_experiment.md",
+    "references/knowledge/experiment_costing.md",
     "references/knowledge/train_val_test.md",
     "references/knowledge/memory.md",
     "references/knowledge/working_with_project_files.md",

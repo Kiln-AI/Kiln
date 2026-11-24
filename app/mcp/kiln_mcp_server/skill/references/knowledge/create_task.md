@@ -1,7 +1,7 @@
 ---
 name: create_task
 description: |
-  Knowledge for building a new AI agent task from scratch — gathering requirements, writing the prompt, creating the task, initial run config, and first specs. Loaded by the Project Operations mode.
+  Knowledge for building a new AI agent task from scratch — gathering requirements, writing the prompt, creating the task (single-turn or multi-turn), initial run config, first specs, driving a multi-turn conversation over the API, and a check of the setup. Loaded by the Project Operations mode.
 ---
 # Create New Task
 
@@ -34,6 +34,9 @@ Load the relevant endpoint doc **before** making each API call.
 | GET list run configs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md` |
 | PATCH update run config | `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_run_configs_run_config_id.md` |
 | POST execute run | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run.md` |
+| GET run chain (multi-turn) | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_runs_run_id_chain.md` |
+| PATCH edit a run | `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_runs_run_id.md` |
+| GET list runs | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_runs.md` |
 | POST create prompt | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_prompts.md` |
 | GET list prompts | `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_prompts.md` |
 | POST create spec | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_specs.md` |
@@ -64,7 +67,7 @@ Kiln's server rejects `name` values that contain any of these characters: `/ \ ?
 
 A 422 "Name is invalid" response wastes a round-trip; sanitize on the first attempt. If the sanitization changes the name's meaning, surface the sanitized form to the user and give them a chance to rename before proceeding.
 
-Saved prompts are referenced by `id::<raw>` in run config bodies — see `references/knowledge/model_create_configs.md` → Getting the Prompt ID for the GET-vs-POST shape distinction and the canonical filter.
+Saved prompts are referenced by `id::<raw>` in run config bodies — see `references/knowledge/model_create_configs.md` → Getting the Prompt ID for the canonical filter.
 
 ### Gather Requirements
 
@@ -92,6 +95,10 @@ Then create the task:
 call_kiln_api("POST", "/api/projects/{project_id}/tasks", body={"name": "...", "instruction": "...", "description": "..."})
 ```
 
+The body is the raw Task dict: `{name, instruction, turn_mode?, description?, input_json_schema?, output_json_schema?}`. Set `turn_mode` at create: `"single_turn"` (default) or `"multiturn"`. Multiturn tasks MUST have null input/output schemas (plaintext only; validator rejects otherwise). For schema'd single-turn tasks, strip constraints the target provider rejects and expect the schema to be immutable post-create — PATCH rejects a change to either schema (explicit 400).
+
+**`turn_mode` is frozen**: PATCH rejects changes (explicit 400).
+
 Deep-link to [Task Settings](http://localhost:8757/settings/edit_task/{project_id}/{task_id}).
 
 **Do NOT stop at "task created".** A task without a run config cannot be run — proceed to *Create Initial Run Config* in the same turn, even if earlier steps were interrupted by a project-name conflict or other recovery. The session is incomplete until the user has a clickable `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` link.
@@ -103,14 +110,29 @@ Load `references/knowledge/model_create_configs.md` to choose an appropriate mod
 **Strict ordered checklist (do all in order before POSTing a run config):**
 
 1. Read `references/knowledge/api_docs/get_api_settings_available_providers.md`, call it, and confirm the target provider is connected.
-2. Read `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_prompts.md`, call `GET /prompts`, and capture a real `prompt_id` from the `prompts` array. The list returns the ID in its prefixed form (`id::<raw>`) — **use it as-is, with the `id::` prefix included**. If you created the prompt in this same turn with `POST /prompts`, the POST response returned the bare form; see **Getting the Prompt ID** in `references/knowledge/model_create_configs.md`. **Never use the literal string `simple_prompt_builder` or any generator name as `prompt_id` — the API will 422.**
+2. Read `references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_prompts.md`, call `GET /prompts`, and capture a real `prompt_id` from the `prompts` array. The list returns the ID in its prefixed form (`id::<raw>`) — **use it as-is, with the `id::` prefix included**. If you created the prompt in this same turn with `POST /prompts`, its response returns the same prefixed form; use it as-is. A generator name (such as `simple_prompt_builder`) is accepted too: the run config freezes the generated prompt and rewrites `prompt_id` to `task_run_config::…` (**Getting the Prompt ID** in `references/knowledge/model_create_configs.md`).
 3. Sanitize the config name per the **Name validation** rule at the top of this section.
 4. Read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md` **immediately before** the POST — not after a failed attempt.
 5. Then POST:
 
 ```
-call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/run_configs", body={"name": "<sanitized>", "run_config_properties": {"type": "kiln_agent", "model_name": "...", "model_provider_name": "...", "prompt_id": "<real-uuid-from-step-2>"}})
+call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/run_configs", body={"name": "<sanitized>", "run_config_properties": {"type": "kiln_agent", "model_name": "...", "model_provider_name": "...", "prompt_id": "<real-uuid-from-step-2>", "structured_output_mode": "default"}})
 ```
+
+`structured_output_mode` is required: `default` for a plaintext task; the other modes are in `references/knowledge/model_create_configs.md` (Key Parameters).
+
+Then set it as task default: `PATCH /api/projects/{project_id}/tasks/{task_id}` with `{"default_run_config_id": "<rcid>"}` (`references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id.md`). **`PATCH /run_configs/{id}` silently ignores `run_config_properties`** (only name/starred/prompt_name update; 200 with the change dropped). Properties are immutable post-create — create a new config and re-point `default_run_config_id`.
+
+### Run the task, and drive a multi-turn conversation
+
+Execute a run with `POST /api/projects/{project_id}/tasks/{task_id}/run`: `{run_config_properties, plaintext_input | structured_input, tags?, task_run_config_id?, parent_task_run_id?}`.
+
+- **Drive conversations (multiturn).** Turn 1 = `POST /run` without `parent_task_run_id`; turn N = pass the previous run's id (parent must have a `trace`).
+- Response carries `output.output`, `trace` (OpenAI-format incl. tool_calls), `usage`, `cumulative_usage`.
+- Tag runs at creation (no spaces in tags) — tags drive eval dataset filters later.
+- `GET /runs` lists leaves only for multiturn tasks.
+- **Inspect chain**: `GET /api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain` — multiturn only.
+- **Edit a run**: `PATCH /api/projects/{project_id}/tasks/{task_id}/runs/{run_id}` — raw dict, deep-merged; `{"trace": [...]}` replaces the trace wholesale (fixture seeding).
 
 ### Create Initial Evals
 
@@ -137,6 +159,13 @@ After the basics are set up:
 - **Run evals** once specs are created to get a baseline score
 - **Try alternate models** if quality or cost isn't right → `references/modes/improve_task.md`
 - **Add tools or RAG** if the agent needs external capabilities or knowledge
+
+### Verification checklist
+
+- `GET /api/projects/{project_id}/tasks/{task_id}` round-trips `turn_mode` and `instruction`.
+- When the task has skills: a driven conversation's trace shows skill loads BEFORE dependent API calls (progressive discovery working).
+- Multi-turn only: `chain` endpoint returns all turns, `chain_broken: false`; `cumulative_usage.cost` grows per turn.
+- Every tool in `tools_config` actually fires in at least one trace.
 
 ## See also
 

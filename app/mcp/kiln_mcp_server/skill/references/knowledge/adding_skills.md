@@ -52,6 +52,10 @@ The body loads in full when the skill fires; treat it like a focused operating m
 - **Use examples sparingly and broadly.** A body tuned on three near-identical examples works only on those examples. Show 1–2 representative cases and a counter-example, not five variants of the same shape.
 - **Lazy-reference, don't inline.** If the skill needs a long appendix (terminology, large rule set, archival examples), keep the body terse and have it tell the agent which Kiln resource (deep link, doc, knowledge file) to consult — the same progressive-disclosure shape this skill uses.
 
+### Reference files
+
+Strip external doc references from ported knowledge files; inline the API schemas the model will need. At runtime the model reads them with the `skill` tool: `name="<skill-name>"`, `resource="references/…"`.
+
 ## Pre-submission checklist (skills are immutable)
 
 Walk the user through this before POSTing. The agent should print it back and confirm each line:
@@ -69,7 +73,7 @@ Skills **cannot be edited** after creation (body or description). To change one,
 
 ## Workflow: create + wire
 
-1. **Create via API** — POST to `/api/projects/{project_id}/skills` with name, description, body.
+1. **Create via API** — POST to `/api/projects/{project_id}/skills` with name, description, body. The API writes `skill.kiln` + `SKILL.md` + empty `references/`/`assets/`. **`references/*` files have NO API.**
 2. **Attach it to a run config** — a skill reaches the agent as a tool: its tool ID is in `GET /api/projects/{project_id}/available_tools` (the "Skills" set; the ID is `kiln_tool::skill::<skill_id>`). A run config cannot be edited (`PATCH .../run_configs/{rcid}` changes the name, starred and prompt name only), so create a new run config whose `tools_config.tools` lists the skill's tool ID, copying the rest of the parent (`references/knowledge/model_create_configs.md`). The user can also add a skill on the Run screen → Advanced → Skills (`http://localhost:8757/run?run_config_id={rcid}`).
 3. **Report back** — after creation confirm: skill ID, name, and the deep-link to the skill detail page (`http://localhost:8757/skills/{project_id}/{sid}`).
 

@@ -48,8 +48,9 @@ What to change, and how to change a prompt as an experiment, is the lever's: `re
 1. **Create a saved prompt**:
    Read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_prompts.md`, then:
    `call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/prompts", body={"name": "...", "prompt": "...", "description": "..."})`
+   Body essentials: `{name, prompt, description?, chain_of_thought_instructions?}`.
    See `references/knowledge/model_create_configs.md` → Kiln Name Validation for naming rules (forbidden characters: `. , ; : = / \ ? % * | < >`).
-2. **Create a run config that uses it**, a copy of the parent with the new `prompt_id` (the POST answers the bare id; the run config takes `id::<id>`, `references/knowledge/model_create_configs.md`):
+2. **Create a run config that uses it**, a copy of the parent with the new `prompt_id` (the POST answers `id::<id>`, which the run config takes as-is, `references/knowledge/model_create_configs.md`):
 
    ```json
    {

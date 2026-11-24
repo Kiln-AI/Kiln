@@ -30,6 +30,9 @@ not the numbers:
 - `lever_costs`: what each lever took to build in this run;
 - `should_wrap_up`: the code's judgment that this is the last wave.
 
+How to price a measurement, lane by lane, is in
+`references/knowledge/experiment_costing.md`.
+
 Build cost and learning cost are different. A prompt line costs the least
 to build. A new description on a clone of a tool, a change of the attached
 tools, a flat skill, a wrapper, a skill with reference files, a new tool

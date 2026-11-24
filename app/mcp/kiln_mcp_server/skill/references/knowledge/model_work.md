@@ -114,7 +114,7 @@ For local/on-prem/privacy cases, check `open_weights` in `GET /api/model_info/mo
 
 ## Cost Estimation
 
-This arithmetic answers a price question that is not about a task ("what would 10,000 calls cost?"). The cost of an eval run on a task is measured, not computed from list prices: `references/knowledge/run_an_experiment.md` ("Cost before you spend").
+This arithmetic answers a price question that is not about a task ("what would 10,000 calls cost?"). The cost of an eval run on a task is measured, not computed from list prices: `references/knowledge/experiment_costing.md`.
 
 Get live numbers from `GET /api/model_info/model_details` — each provider entry's `input_price` and `output_price`, in USD per million tokens. `GET /api/model_info/models` also gives `median_input_price` and `median_output_price` across providers.
 
@@ -189,7 +189,7 @@ When a model swap is a good experiment for the task, and how to run it, is the t
 After recommending a model, **immediately create a run config for it** — do not end on a recommendation. A recommendation without a config is not a usable answer.
 
 1. Load `references/knowledge/model_create_configs.md`.
-2. POST the new run config with the recommended model. Use a sanitized name and a real `prompt_id` from `GET /api/projects/{project_id}/tasks/{task_id}/prompts` (never the literal generator name like `simple_prompt_builder`).
+2. POST the new run config with the recommended model. Use a sanitized name and a real `prompt_id` from `GET /api/projects/{project_id}/tasks/{task_id}/prompts` (a saved prompt's `id::<id>`, or a generator id, which the run config freezes: `references/knowledge/model_create_configs.md`, "Getting the Prompt ID").
 3. Include the `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` deep-link in the response.
 4. If the POST fails (provider not connected, 422, etc.), fall back to `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/create` with the recommended model as a UI suggestion.
 

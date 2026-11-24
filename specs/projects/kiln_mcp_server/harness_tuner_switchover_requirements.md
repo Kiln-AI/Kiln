@@ -55,7 +55,9 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 - **What the role skills keep:**
   - the frozen overview format of `kiln-harness-tuner-experiment-analysis` (lines 262–307), which HT's tests string-assert;
   - the BatchPlan, PromotionDecision and RcBuildResult conventions;
-  - `merging.md`, `skill-authoring.md`, `experiment-costing`, `kiln-task-setup` and the gateway catalogue.
+  - `merging.md`, `skill-authoring.md` and the gateway catalogue.
+  - Not `experiment-costing` and `kiln-task-setup`: Phase 19 ports both into the Kiln skill (SR5), and the role skills that load them name those Kiln files.
+  - HT's `experiment-costing` is wrong for Kiln's code in two places, and Kiln's port is corrected ([decisions](harness_tuner_alignment_decisions.md) section 13): the synthetic user's usage is on the scored TaskRun, not on the eval row, and Kiln has no `custom`-score metric eval. HT's role skills that rely on either read Kiln's port instead. The gateway's `get_task_run` answer (`TaskRunView`, `gateway/models.py:341-353`) carries `usage` only; it must also carry `synthetic_user_usage` and `cumulative_usage`, or the port's lane 2 cannot be read in a loop session.
   
   Re-pointing does not delete any of these. A shared method rule that the owner ports into the Kiln skill (Phase 18, item 5) is then read from the Kiln skill, and HT's role skill names its path in place of its own copy.
 
@@ -69,6 +71,8 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 | Memory endpoint docs | `references/knowledge/api_docs/{post,get,get…summary,get…by_ids,patch,delete}_…memories….md` (same file names) |
 | `kiln-api` | `references/knowledge/api_docs/`, with `api_index.md` as the routing index |
 | Code-tool authoring | `references/knowledge/code_tool_authoring.md` and `references/knowledge/code_tool_wrappers/*.md`. The 8 templates are `.md` files holding a python fence, not `.py` files, and `wrappers/README.md` is gone. HT's template tests read the fences |
+| `experiment-costing` | `references/knowledge/experiment_costing.md` |
+| `kiln-task-setup` | `references/knowledge/create_task.md`, `references/knowledge/model_create_configs.md`, `references/knowledge/tools.md`, `references/knowledge/adding_skills.md`, `references/knowledge/prompt_rewrite.md` |
 | Cited playbooks | `references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md`, `…/dealing-with-a-noisy-eval.md` |
 | Ids | levers: model, new_tool, output_mode, params, prompt, skill, tool_config. 27 techniques plus 3 sub-files, 23 playbooks, 15 smells, including the five detector smells (very-long-prompt, very-long-skill-description, very-long-tool-description, too-many-tools, old-model) |
 | Front-matter keys | `title`, `description`, `reviewed`; technique `status`, `levers`, `applies_to`, `cost`; playbook `kind`, `applies_to`; lever `api_docs` |
@@ -174,7 +178,7 @@ The contract audit's table also lists `latency.py`, `objective.py`, `budget.py`,
 **SR18 — A "create skill from a folder" API replaces HT's skill installer.** (`CT-22`, `CT-§5`; `KT-B1`, `KT-B15`; `HS-M14`; decisions section 2)
 
 Kiln today:
-- `POST /api/projects/{project_id}/skills` takes `name`, `description`, `body` (at least 1 character) and `provenance`. It writes `skill.kiln` and SKILL.md only.
+- `POST /api/projects/{project_id}/skills` takes `name`, `description`, `body` (at least 1 character) and `provenance`. It writes `skill.kiln`, SKILL.md and empty `references/` and `assets/` folders (`Skill.save_skill_md`, `libs/core/kiln_ai/datamodel/skill.py`), and no reference file.
 - `GET …/skills/{id}/content` returns only `skill_md` and `body`.
 - So a new version made over the API loses its reference files.
 
@@ -205,7 +209,7 @@ HT today (`skill_installer/bundle.py`, `skill_installer/mcp_server.py`, `prompt_
 - **Read every file of a skill:** `prompt_text.py` reads every reference file and every text asset of attached skills, and code-tool files, for the generality and integrity checks.
 - **Effect:** with both, HT can stop reading the project tree from disk.
 
-**Kiln counterpart:** once the API exists, the skill lever and the four skill techniques (`KT-B1`) name it as the route for every agent. Until then, Phase 17 decides what they tell an MCP agent (its question 8).
+**Kiln counterpart:** once the API exists, the skill lever, the four skill techniques (`KT-B1`) and `references/knowledge/adding_skills.md` ("`references/*` files have NO API", in "Workflow: create + wire") name it as the route for every agent. Until then, Phase 17 decides what they tell an MCP agent (its question 8).
 
 ## 7. Acceptance for the switchover project
 

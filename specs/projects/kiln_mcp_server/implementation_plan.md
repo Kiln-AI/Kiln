@@ -25,8 +25,8 @@ The order follows [architecture.md](architecture.md) section 6. Each phase names
 - [x] Phase 15 (optional): a "load the endpoint doc first" check that keeps the server stateless. Only if phase 14 shows agents calling endpoints wrongly because they skipped the docs. (functional spec section 5.9) Not needed: owner decision after phase 14.
 - [x] Phase 17: Revert and revisit phase 8. ([phase_8_revisit](phase_8_revisit.md); [phase_17 plan](phase_plans/phase_17.md))
 - [x] Phase 18: Harness Tuner alignment fixes outside the knowledge trees. ([phase_18 plan](phase_plans/phase_18.md); [decisions](harness_tuner_alignment_decisions.md))
-- [ ] Phase 19: Bring back the two shared Kiln Harness Tuner skills that were not ported: experiment-costing (close to as is) and kiln-task-setup (its knowledge into the right Kiln files, or a new knowledge file). ([deep_pr_goals](deep_pr_goals.md) section 8)
-- [ ] **Phase 16: Backlog.** Review open backlog items with the user, then close or dismiss each through the standard phase flow.
+- [x] Phase 19: Bring back the two shared Kiln Harness Tuner skills that were not ported: experiment-costing (close to as is) and kiln-task-setup (its knowledge into the right Kiln files, or a new knowledge file). ([deep_pr_goals](deep_pr_goals.md) section 8)
+- [x] **Phase 16: Backlog.** Review open backlog items with the user, then close or dismiss each through the standard phase flow.
 
 ## Notes
 

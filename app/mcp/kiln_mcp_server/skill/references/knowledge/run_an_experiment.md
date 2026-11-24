@@ -126,20 +126,13 @@ call the new tool?") on a few train items. It is not a measurement.
 
 ## Cost before you spend
 
-Estimate from this task, never from a list price (it misses cached
-tokens, reasoning tokens and turns). Run the target eval on a few train
-items first: the eval job with `"split": "train"` and `item_ids`. Read the
-recorded usage on the result rows (`task_run_usage`, the judge's
-`eval_usage`, and for a multi-turn eval the synthetic user's), and scale it
-to the items and evals that the experiment runs on train and val. Judging
-is paid again on every re-score; a run is paid once. A later full run
-reuses the scores of these items.
-
-Tell the user the estimate. Ask before you go on when it is above the
-spend limit, when more than 100 items are judged, or when a provider quota
-must be raised. Live calls to a server that someone else operates need its
-operator's agreement for each batch, whatever their cost; writes to it
-need a separate agreement.
+Price every cost lane before you spend, with
+`references/knowledge/experiment_costing.md`: the lanes, their formulas,
+how to measure each variable, and when to ask first. Run the target eval
+on a few train items first: the eval job with `"split": "train"` and
+`item_ids`. A later full run reuses the scores of these items. The
+estimate covers the runs on train and the confirmation on val. Tell the
+user the estimate.
 
 ## Build the candidate
 
@@ -361,7 +354,9 @@ shows test scores. No number of the test split.
   ("mostly judge cost") and no quantifier without a source ("most",
   "nearly all"). Report the failures, the holes in coverage and the work
   you stopped, as they are.
-- **A cost is the recorded usage**, labelled `spend`. Never patch a
+- **A cost is the recorded usage**, labelled `spend`, quoted with the
+  invoiced number as `references/knowledge/experiment_costing.md` says
+  ("Recorded cost ≠ invoice"). Never patch a
   missing cost with an estimate: say that it is missing.
 - **Speed and cost wording:** a candidate kept on speed or cost has "no
   clear loss" of quality, never "no loss": a few hundred paired items or

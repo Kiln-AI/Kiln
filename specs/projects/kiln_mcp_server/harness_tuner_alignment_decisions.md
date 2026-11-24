@@ -140,6 +140,31 @@ Decided with them:
 
 *Where it goes:* Phase 17 ([phase_plans/phase_17.md](phase_plans/phase_17.md)).
 
+## 13. Phase 19 corrections (2026-11-24)
+
+The owner's rule for the port of `experiment-costing` and `kiln-task-setup`: once HT switches over, no agent gets incorrect guidance. Where HT's text is wrong for Kiln's code, the code wins, and the change is an approved correction. The same holds for Kiln's own text. Line numbers are at the Phase 19 working tree.
+
+HT's text, corrected in `references/knowledge/experiment_costing.md`:
+
+- **The synthetic user's usage is on the TaskRun.** HT: "`EvalRun.synthetic_user_usage`", "No endpoint aggregates it (the eval API sums the task-run usage only)", read it off the per-item result rows. Code: the field is `TaskRun.synthetic_user_usage` (`libs/core/kiln_ai/datamodel/task_run.py:113`). The result rows' `task_run_usage` is `trace.usage` and leaves it out (`app/desktop/studio_server/eval_api.py:740-743`). The port reads it from the scored TaskRun: `eval_run.scored_run_id`, then `GET /api/projects/{project_id}/tasks/{task_id}/runs/{run_id}`; for a drive-only job, `result.driven_runs[].task_run_id` (`app/desktop/studio_server/jobs/workers/eval.py:170-182`). The run config eval-score summaries add only its cost into `mean_usage` (`scored_trace_usage`, `eval_api.py:1197-1234`), and they read the test split, so the port says not to use them. A reused trace is the same TaskRun (`TraceIndex.get_or_create`, `libs/core/kiln_ai/adapters/eval/eval_runner.py:1178-1189`): the port sums the field once per TaskRun. `None` on a run with no synthetic user, and on a migrated legacy trace whose driver cost is fused into `usage` (the field's description). The row's per-conversation usage is the row's `task_run_usage`, not `EvalRun.task_run_usage`, which is deprecated and set only on legacy inline records (`libs/core/kiln_ai/datamodel/eval.py:1061`). HT: drives from before the field existed are "unrecoverable". Code: a migrated legacy trace has the driver's cost fused into `usage` (the field's description, `task_run.py:113-120`), so the port says they have "no separate SU number".
+- **No `custom`-score metric eval.** HT measured drive sizes with a `custom`-score metric eval and called it $0. Code: `EvalOutputScore` rejects a custom score (`libs/core/kiln_ai/datamodel/eval.py:927-931`). The port reads drive sizes off `task_run_usage` on the result rows, counted once per `scored_run_id` because several evals' rows can name the same TaskRun, or off the TaskRun's `usage`. For one drive's own cost on a seeded item it reads `usage`, not `cumulative_usage`, which includes the seeded prior trace (`libs/core/kiln_ai/datamodel/task_run.py:104-110`). "Code evals are $0" stays.
+- **Model prices are a live read.** Removed: "A Kiln Harness Tuner run fetched these prices at its start" (the switchover reads model info live). "The run could not fetch models.dev" became "Kiln could not fetch models.dev". The lookups are named as `GET /api/model_info/models` and `GET /api/model_info/model_details`, with their endpoint docs.
+
+HT's text, corrected or dropped in the `kiln-task-setup` port:
+
+- **`kiln_api_mcp`.** Dropped from `references/knowledge/tools.md`: "For UI-driven tasks, attach the tool via a Local MCP server instead (`command: "kiln_api_mcp"`, …)". The switchover removes that command; Kiln's `/mcp` is not offered in its place, as it is untested.
+- **Schemas after create.** HT: "expect the schema to be immutable post-create — that rule is inherited and was not re-verified here". Code: PATCH of a task refuses `input_json_schema` and `output_json_schema` with a 400 (`libs/server/kiln_server/task_api.py:136-140`). `references/knowledge/create_task.md` states the fact.
+- **Disk writes.** Dropped on purpose (component skill_and_content section 9): the writes of `references/*` files and `task.kiln` to disk.
+- **Scope.** "Batch-creating 3+ run configs: use a code tool wrapper" holds for a task whose own agent creates run configs, with `references/knowledge/code_tool_wrappers/batch_with_errors.md`. An agent that creates run configs itself calls `call_kiln_api` once for each.
+
+Kiln's text, corrected to the code, with HT's clauses restored:
+
+- **`POST /prompts` returns `id::<id>`.** Kiln said it returns the bare id. Code: `api_prompt_from_prompt` builds `id::{prompt.id}`, and `create_prompt` returns it (`libs/server/kiln_server/prompt_api.py:117`, `:236-256`). Fixed in `references/knowledge/model_create_configs.md` (prerequisite 3), `references/knowledge/create_task.md` and `references/knowledge/prompt_rewrite.md`; HT's "returns prefixed `id::<pid>` (use as-is)" holds.
+- **A generator name is a valid `prompt_id`.** Kiln said it returns 422. Code: the run config create freezes a prompt that is not frozen yet into the config, and points `prompt_id` at the frozen copy, `task_run_config::…` (`app/desktop/studio_server/eval_api.py:2545-2596`). HT's parenthesis is restored in `references/knowledge/model_create_configs.md`; prerequisite 1, `references/knowledge/create_task.md` and `references/knowledge/model_work.md` agree.
+- **`structured_output_mode` is required.** The run config example of `references/knowledge/create_task.md` sets it.
+
+*Where it goes:* Phase 19 ([phase_plans/phase_19.md](phase_plans/phase_19.md)).
+
 ## Related
 
 - [phase_8_revisit.md](phase_8_revisit.md): Phase 17, approved on 2026-11-24 (section 12); its plan is [phase_plans/phase_17.md](phase_plans/phase_17.md).

@@ -98,7 +98,7 @@ The connect endpoints add a tool server to the project:
 1. **Read the current state** first: `GET /api/projects/{project_id}/available_tool_servers` lists the servers the project has, so you do not add a second copy of one (see "Checking Tool State" below).
 2. **Draft the server** with the user: the type ("Local MCP" / "Remote MCP" / a specific demo) and the field values (name, command and arguments, or URL and headers; see "Setup Field Reference" below). Mark API keys and tokens as secrets. A secret value comes from the user; if they would rather not share it in the conversation, they add the server in the app at `http://localhost:8757/tools/{project_id}/add_tools`.
 3. **Ask the user first** before you add a local MCP server: it runs a program on the machine where Kiln runs. For a remote server, the URL must come from the user.
-4. **Connect it**, then read `GET /api/projects/{project_id}/tool_servers/{tool_server_id}/config` to check that it exposes the tools you expect.
+4. **Connect it** (`POST /api/projects/{project_id}/connect_local_mcp` body essentials: `{name, command, args[], env_vars{}, secret_env_var_keys[], is_archived: false}` — validates connectivity on create), then read `GET /api/projects/{project_id}/tool_servers/{tool_server_id}/config` to check that it exposes the tools you expect.
 5. **Iterate.** A server that lists no tools usually has a wrong command, path or key; fix the field and edit the server (`PATCH .../edit_local_mcp/{tool_server_id}` or `.../edit_remote_mcp/{tool_server_id}`), then check again. For a local server, a change to its command, arguments or environment runs a different program: ask the user first, as in step 3. When you work on the machine where Kiln runs, you can run the command in a terminal yourself to read its error (the debug path under "Local MCP — fields"); it runs the same program, so the same ask applies.
 6. **Attach the tool** to a new run config (the end of this file).
 
@@ -183,6 +183,12 @@ Call these freely to ground recommendations in current state:
 - `references/knowledge/api_docs/get_api_projects_project_id_available_tools.md` — `GET /api/projects/{project_id}/available_tools` lists every tool the project can call (across all servers).
 - `references/knowledge/api_docs/get_api_projects_project_id_available_tool_servers.md` — `GET /api/projects/{project_id}/available_tool_servers` lists connected tool servers (one row per Local MCP / Remote MCP / Kiln Task server). Returns `missing_secrets` per server — useful to flag when a server is wired but a teammate hasn't entered their key yet.
 - `references/knowledge/api_docs/get_api_projects_project_id_tool_servers_tool_server_id_config.md` — `GET /api/projects/{project_id}/tool_servers/{tool_server_id}/config` returns one server's full config (command, URL, headers — minus secret values) plus the list of tools it exposes (`available_tools[]` with name, description, inputSchema). Use this when the user says "what is `<tool_server>` set up to do?"
+
+## Tool IDs
+
+**Tool id forms**: `kiln_tool::call_kiln_api` (built-in REST tool) · `mcp::local|remote::<server_id>::<tool_name>` · `kiln_tool::skill::<skill_id>` · `kiln_tool::code::<code_tool_id>` · `kiln_task::<tool_server_id>`.
+
+**The built-in `kiln_tool::call_kiln_api` is hidden from UI tool pickers** (intentional, `tool_api.py`): UI conversations silently drop it while API/eval runs keep it. MCP tools ARE UI-visible.
 
 After a tool server is added, attach its tool to the run config that should use it — tool wiring at the project level isn't enough; the run config must list the tool ID under `tools_config.tools`. A run config cannot be edited, so create a new one with the tool listed (`references/knowledge/model_create_configs.md`).
 

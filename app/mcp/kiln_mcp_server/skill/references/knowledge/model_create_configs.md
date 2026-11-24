@@ -52,13 +52,17 @@ Load the relevant endpoint doc **before** making each API call — they have req
 2. **Verify the `(model_id, provider_id)` pair is actually served — not just that the provider is connected.** A connected provider does not mean every model exists on that provider; e.g. Cerebras is connected does not imply `gpt_oss_120b` is served on Cerebras. Use `available_models` and check the **pair**:
 
    Read `references/knowledge/api_docs/get_api_available_models.md`, then:
-   `call_kiln_api("GET", "/api/available_models", jq_filter="[.[] | select(.provider_id == \"<provider_id>\") | .models[] | .id]")`
+   `call_kiln_api("GET", "/api/available_models", jq_filter="[.[] | select(.provider_id == \"<provider_id>\") | .models[] | {id, supports_function_calling}]")`
 
    The model_id you intend to POST must appear in that list. If it doesn't, either pick a different provider for that model or pick a different model on the connected provider — do **not** POST a `(model, provider)` pair you haven't confirmed in the response. `agent_overview.connected_providers` only tells you the provider has a valid API key; it does not tell you which models that key gives access to.
+
+   Require `supports_function_calling: true` for tool-bearing tasks.
 
 ## Key Parameters
 
 The fields of `run_config_properties`, one line each. When and why to change one, and its limits, are in its lever:
+
+**`run_config_properties` (`type: "kiln_agent"`)**: `model_name`*, `model_provider_name`*, `prompt_id`* (`id::<id>` saved / generator name — generators get frozen into the config and `prompt_id` rewritten to `task_run_config::…`), `structured_output_mode`* (`default` for plaintext tasks), `top_p`, `temperature`, `thinking_level`, `tools_config: {tools: [ToolId]} | null`, `input_transform: {type: "jinja", template} | null` (template sees `input`; compiled at save; invalid → 422). `*` marks a required field.
 
 - `model_name`, `model_provider_name` — the model and its provider; check the pair as above. Lever: `references/levers/model.md`.
 - `prompt_id` — the saved prompt or prompt generator; see "Getting the Prompt ID" below. Lever: `references/levers/prompt.md`.
@@ -87,13 +91,13 @@ call_kiln_api("GET", "/api/projects/{project_id}/tasks/{task_id}/prompts",
   jq_filter=".prompts[0].id // .generators[0].id")
 ```
 
-Use the returned ID as the `prompt_id` in the run config body. If `.prompts` is empty, fall back to the first generator ID (a built-in prompt builder).
+Use the returned ID as the `prompt_id` in the run config body. If `.prompts` is empty, fall back to the first generator ID (a built-in prompt builder); the run config freezes it, as in prerequisite 1 below.
 
 > ⚠️ **Three hard prerequisites — all have caused bugs when skipped:**
 >
-> 1. **`prompt_id` must come from a real `GET /prompts` call on THIS task.** The string `"simple_prompt_builder"` is a generator name, not a valid prompt_id. Do NOT copy from an existing run config's `run_config_properties.prompt_id` — that's a second-hand reference (the prompt may be deleted or belong to a different task). Use the filter above; `.[] | {id, name}` is wrong (response is not a flat array).
+> 1. **`prompt_id` must come from a real `GET /prompts` call on THIS task**: a saved prompt's `id::<id>` from `.prompts`, or a generator's id (such as `"simple_prompt_builder"`) from `.generators`. A generator gets frozen into the config, and `prompt_id` is rewritten to `task_run_config::…`. Do NOT copy from an existing run config's `run_config_properties.prompt_id` — that's a second-hand reference (the prompt may be deleted or belong to a different task). Use the filter above; `.[] | {id, name}` is wrong (response is not a flat array).
 > 2. **Name validation:** Periods, slashes, colons, and other forbidden chars (see "Kiln Name Validation" below) cause `Name: Name is invalid` (422). Model versions like "3.3" / "4.1" become "3p3" / "4p1". **Sanitize before POSTing.**
-> 3. **`POST /prompts` and `GET /prompts` return the prompt ID in different shapes.** `GET /prompts` returns the prefixed form (`"id::197516709367"`) which is what `/run_configs` requires — use it as-is. `POST /prompts` returns the **bare** form (`"197516709367"`). If you just created the prompt this turn, either (a) re-fetch via `GET /prompts`, or (b) prepend `id::` to the POST-response `id`. Sending the bare form to `/run_configs` returns `422 Invalid prompt ID`.
+> 3. **`POST /prompts` and `GET /prompts` both return the prefixed form** (`"id::197516709367"`), which is what `/run_configs` requires — use it as-is. If you just created the prompt this turn, use the `id` of the POST response. Sending the bare form to `/run_configs` returns `422 Invalid prompt ID`.
 
 ## Creating a Run Config
 
@@ -118,6 +122,8 @@ call_kiln_api("POST", "/api/projects/{project_id}/tasks/{task_id}/run_configs", 
   }
 })
 ```
+
+Batch-creating 3+ run configs, when a task's own agent creates them: use a code tool wrapper rather than looping API calls (`references/knowledge/code_tool_wrappers/batch_with_errors.md`). When you create run configs yourself, call `call_kiln_api` once for each.
 
 After creation, deep-link to the config: [View Config](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}).
 

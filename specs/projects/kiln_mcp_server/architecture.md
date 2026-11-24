@@ -172,7 +172,7 @@ The components depend on each other in this order; the implementation plan follo
 - The web UI's own models.dev price fetch could use the model info endpoints.
 - A refresh of the copied help articles (8 public pages have no copy yet). It needs the docs repo.
 - Harness-tuner adopts the model info endpoints and drops its copies of the model info code and of the knowledge.
-- The harness-tuner skills with general knowledge that this port leaves out (`kiln-task-setup`, `experiment-costing`, the skill-authoring guide). Each is a separate decision.
+- The harness-tuner skill-authoring guide, which this port leaves out. A separate decision. (`kiln-task-setup` and `experiment-costing` are ported in Phase 19: [skill_and_content](components/skill_and_content.md) section 9.)
 - The knowledge file `using_harness_tuner`: how the user's own agent, connected to Kiln with the skill, runs the Kiln Harness Tuner CLI in place of running experiments itself. It is the first new entry of the knowledge backlog. Until it exists, the skill recommends Harness Tuner and gives no CLI steps.
 - Tooling to read the noise of an eval. This project adds none, and no guidance of its own on noise.
 - Model info: a short cache for the availability check; a hint field for a search that finds nothing under the default filters; a person reads the models.dev terms of use for a desktop app that fetches the file.

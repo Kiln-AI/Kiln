@@ -91,6 +91,7 @@ When the request changes to creating project resources that are not about an imp
 | `references/levers/index.md` | The parts of a run config an experiment can change, and the rules of each: before you build a candidate |
 | `references/knowledge/diagnose_an_agent.md` | The calls that read the agent, its train scores and its failing items: before you choose a playbook |
 | `references/knowledge/run_an_experiment.md` | The two paths, and how to measure, judge and keep a change: before any experiment or comparison |
+| `references/knowledge/experiment_costing.md` | The cost of an experiment, lane by lane, from measured usage, and when to ask before you spend: before any eval run or experiment that spends tokens |
 | `references/knowledge/train_val_test.md` | Which split may decide what, which call reads which split, the leak rules: before you measure or change anything |
 | `references/knowledge/memory.md` | The project's durable memory: at the start of work, and to record lessons, dead ends and new issues |
 | `references/knowledge/working_with_project_files.md` | The project's files on disk: before you read or change one |
