@@ -39,7 +39,7 @@ fixes the other three.
 
 ## What to try, in order
 
-1. Read the raw outputs of several failing items, with the expected
+1. Read the raw outputs of several failing train items, with the expected
    output and the judge's reasoning, before any candidate. Name the cause of
    each.
 2. A requirement that the prompt never states:
@@ -50,22 +50,23 @@ fixes the other three.
    [malformed tool calls](references/improving_agents/playbooks/malformed-tool-calls.md).
 4. A judge that fails right answers, or expected outputs that cannot be
    met: [dealing with a wrong eval](references/improving_agents/playbooks/dealing-with-a-wrong-eval.md).
-5. A capability floor, when the model is a lever (the user allows another
-   model, and does not forbid a model change). Look for evidence that this
-   model cannot do the task. One sign is that the reads show answers wrong
-   in substance on most failing items. Another sign is that repeated
-   candidates on sound fixes did not move the score: each candidate stated
-   the requirement or fixed the format, and the outputs stayed wrong in
-   substance. On such evidence, consider a smarter model of the class before
-   more harness tuning. Lock it, then tune the harness:
-   [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md).
+5. A capability floor, when the model is a lever (`allowed_models` lists
+   another model, and what the user asked does not forbid a model change).
+   Look for evidence that this model cannot do the task. One sign is that
+   the reads show answers wrong in substance on most failing items. Another
+   sign is that repeated candidates on sound fixes did not move the score:
+   each candidate stated the requirement or fixed the format, and the
+   outputs stayed wrong in substance. On such evidence, consider a smarter
+   model of the class before more harness tuning. Lock it, then tune the
+   harness: [model swap inside a
+   class](references/improving_agents/techniques/model-swap-inside-a-class.md).
    When a candidate moves the score on the current model, keep tuning on it.
 6. A capability floor where some items fail because the model does not
    think the problem through: one rung more thinking, on those items
    first:
    [thinking level ladder](references/improving_agents/techniques/thinking-level-ladder.md).
-7. When the model is not a lever and no step above applies, tell the user:
-   the eval cannot steer the tuning on this model.
+7. When the model is not a lever and no step above applies, say so in
+   `open_questions`: the eval cannot steer the run on this model.
 
 ## What not to do yet
 
@@ -79,10 +80,10 @@ fixes the other three.
   the harness, and it does not lift a floor of capability on most items.
   Step 6 is one rung on the items that need more reasoning, not a scan.
 - Do not tune on a very large model and expect the result to hold when
-  the work goes back to a small one.
+  the run goes back to a small one.
 
 ## Budget
 
 Steps 1 to 4 cost reads and cheap candidates, so they come first on every
 budget. A model change at step 5 needs a measurement of every eval, so it
-fits a larger budget, or work where this eval is the main goal.
+fits a larger budget, or a run where this eval is the main goal.

@@ -32,17 +32,19 @@ cost: low
 - **Many topics, and each run needs few of them.** The prompt then grows
   with content that most runs do not use:
   [long prompt into a skill](references/improving_agents/techniques/long-prompt-into-a-skill.md).
-- **A small model that loses parts of a long prompt**, when a quick check
-  shows that it opens skills. It then does better with focused context.
+- **A small model that loses parts of a long prompt**, when a quick check shows
+  that it opens skills. It then does better with focused context.
 - **The measured cost shows no cache saving.** Whether the cache applies
   depends on the provider and on how Kiln makes the call. Read the cost
   per item in the traces before you plan the cache as the reason.
 
 ## Alternatives
 
-- [Long prompt into a skill](references/improving_agents/techniques/long-prompt-into-a-skill.md), the reverse
-  move: when a quick check shows that the model opens skills, and each run needs
-  a part of the content or the prompt cache does not apply.
+- [Long prompt into a
+  skill](references/improving_agents/techniques/long-prompt-into-a-skill.md),
+  the reverse move: when a quick check shows that the model opens skills,
+  and each run needs a part of the content or the prompt cache does not
+  apply.
 - [Rewrite an inherited skill](references/improving_agents/techniques/rewrite-an-inherited-skill.md), when the
   agent opens the skill and then reads the wrong file, and the content is
   too large for the prompt: a new version, restructured.
@@ -65,9 +67,9 @@ The change is an edit of the [prompt](references/levers/prompt.md), and the
 
 ## Check that it took effect
 
-Run the candidate on two or three train items that need the content. In each
-trace, find no call to the skill, and the rule of the content followed in
-the answer. Note the cost per item and the cached tokens when the trace has
+Smoke on two or three train items that need the content. In each trace,
+find no call to the skill, and the rule of the content followed in the
+answer. Note the cost per item and the cached tokens when the trace has
 them.
 
 ## Budget

@@ -31,6 +31,8 @@ from kiln_mcp_server.skill_checks.knowledge_schema import (
 )
 from kiln_mcp_server.skill_checks.test_knowledge_check import API_DOC, build_tree
 from kiln_mcp_server.skill_checks.tree_check import (
+    HARNESS_TUNER_RECORD_STRINGS,
+    KNOWLEDGE_TREES,
     SPLIT_RULE_FILE,
     TEST_SPLIT_READERS,
     TREE_RULES,
@@ -507,6 +509,60 @@ def test_glue_files_have_no_harness_tuner_branch():
         if phrase in " ".join(read_file(key, index).split())
     ]
     assert hits == []
+
+
+def test_the_knowledge_trees_have_no_harness_tuner_branch():
+    index = get_index()
+    hits = [
+        (key, phrase)
+        for key in index.files
+        if key.startswith(KNOWLEDGE_TREES)
+        for phrase in HARNESS_TUNER_BRANCHES
+        if phrase in " ".join(read_file(key, index).split())
+    ]
+    assert hits == []
+
+
+IMPROVING_AGENTS_INDEX = "references/improving_agents/index.md"
+
+
+def test_the_index_explains_harness_tuner_words_to_mcp_agents():
+    section = _sections(read_file(IMPROVING_AGENTS_INDEX, get_index()))[
+        "How to read these documents over MCP"
+    ]
+    assert RUN_AN_EXPERIMENT in section
+    assert MEMORY in section
+
+
+TRAIN_WINS_PLAYBOOK = (
+    "references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md"
+)
+
+
+def test_the_record_strings_in_the_knowledge_are_harness_tuner_formats():
+    # Each quoted record line matches a format up to its first placeholder,
+    # because the playbook abbreviates the placeholder names.
+    formats = [
+        string for strings in HARNESS_TUNER_FORMATS.values() for string in strings
+    ]
+    text = " ".join(read_file(TRAIN_WINS_PLAYBOOK, get_index()).split())
+    quoted = re.findall(
+        r"`((?:— |- |passed over: |an eval dropped at val: |no gain at val: "
+        r"|a gain at val, not clear: |not promoted at val; )[^`]+)`",
+        text,
+    )
+    assert len(quoted) >= 10
+    for line in quoted:
+        prefix = line.split("<")[0]
+        assert any(prefix in string for string in formats), line
+
+
+def test_the_record_strings_exempt_from_banned_terms_are_harness_tuner_formats():
+    formats = [
+        string for strings in HARNESS_TUNER_FORMATS.values() for string in strings
+    ]
+    for record in HARNESS_TUNER_RECORD_STRINGS:
+        assert any(record in string for string in formats), record
 
 
 CODE_OWNED_WRITES = (

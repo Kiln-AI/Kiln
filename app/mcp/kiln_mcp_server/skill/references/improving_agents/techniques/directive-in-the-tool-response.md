@@ -94,18 +94,17 @@ read before the reply.
 
 Dry-run the wrapper and read its response: the field is there, with the
 expected facts or the expected error. Read the tool's description and the
-prompt: the rules that moved are in the description, and not in the prompt.
-Then run the candidate on two or three train items that failed in the reply.
-In each trace, find the field in the tool result and the reply that follows
+prompt: the rules that moved are in the description, and not in the
+prompt. Then smoke two or three train items that failed in the reply. In
+each trace, find the field in the tool result and the reply that follows
 it.
 
 ## Budget
 
 Medium cost: a wrapper and a dry run, and a measurement on its target evals.
 When it fixes its target, the confirmation on val measures every eval before
-a candidate becomes the baseline, the evals that the reply touches too. On a
-small budget, take it after a new description, when the reply still fails
-after a right call.
+a promotion, the evals that the reply touches too. On a small budget, take
+it after a new description, when the reply still fails after a right call.
 
 ## If it does not move the evals
 

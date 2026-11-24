@@ -54,10 +54,9 @@ Rules of the object:
 
 - No value from a train item goes into the prompt: no item id, number,
   sentence or expected value (the leak rules of
-  `references/knowledge/train_val_test.md`). Search each build for copies
-  yourself before you measure it.
-- No text copied from an eval or its judge. Check each build for it
-  yourself.
+  `references/knowledge/train_val_test.md`). Code searches each build for
+  copies before it measures the build.
+- No text copied from an eval or its judge. The judge-copy check refuses it.
 - The prompt is in the context of every call, so each line costs tokens on
   every item. A long prompt has its own smell:
   [very long prompt](references/improving_agents/smells/very-long-prompt.md).

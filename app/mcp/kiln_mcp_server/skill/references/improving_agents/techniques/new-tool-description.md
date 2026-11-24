@@ -67,8 +67,8 @@ fixed: a clone of a code tool with the new description, or a wrapper of an
 MCP or built-in tool. See the lever [new_tool](references/levers/new_tool.md) for
 the build, and drop the old tool on the same run config.
 
-1. **Name the decision point.** From your analysis of the results or
-   the traces: which tool, and whether the failure came before, with or after
+1. **Name the decision point.** From your findings or the
+   traces: which tool, and whether the failure came before, with or after
    the call.
 2. **Write the description for that decision.** Say what the tool does,
    when to call it, and when not to. When the failure is a preamble or a
@@ -91,9 +91,9 @@ the build, and drop the old tool on the same run config.
 Read the new run config: the new tool is attached, the old one is gone, and
 the description that the model sees
 (`references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_tools_tool_id_definition.md`)
-is the new text. The prompt no longer states the rule that moved. Then run
-the candidate on two or three train items that failed at that call, and
-count the calls in the right form.
+is the new text. The prompt no longer states the rule that moved. Then smoke
+two or three train items that failed at that call, and count the calls in
+the right form.
 
 ## Budget
 

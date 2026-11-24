@@ -49,10 +49,7 @@ cost: medium
 ## How
 
 The change is a new skill bundle, attached on a new run config. See the
-lever [skill](references/levers/skill.md) for how a skill is built and attached. The
-Kiln API creates a skill with a body only, so a bundle with leaf files is
-built when running Kiln Harness Tuner. A new version of an existing guide
-made over the API loses its leaf files.
+lever [skill](references/levers/skill.md) for how a skill is built and installed.
 
 1. **The description** says which work the skill is for, and lists the path
    of each reference file with the key terms of that file.
@@ -76,16 +73,15 @@ made over the API loses its leaf files.
 5. **A prompt line is not part of this technique.** When the agent must be
    told to open the guide, that is a second change, measured on its own or
    stated as part of the hypothesis.
-6. **Write from the tools and the traces**, never from the train items: no
-   value of an item goes into the guide (the leak rules of
+6. **Write from the tools and the traces**, never from the train items:
+   no value of an item goes into the guide (the leak rules of
    `references/knowledge/train_val_test.md`).
 
 ## Check that it took effect
 
-Run the candidate on two or three train items that need the tools. In each
-trace, find the read of the skill and of one leaf file before the tool call
-that needs it. When the skill is never read, the change did not reach the
-agent.
+Smoke on two or three train items that need the tools. In each trace, find
+the read of the skill and of one leaf file before the tool call that needs
+it. When the skill is never read, the change did not reach the agent.
 
 ## Budget
 
@@ -107,9 +103,8 @@ None yet.
 ## Confidence
 
 Low to medium. It is field practice and an idea of the authors of this
-knowledge.
-No public study known to this document compares a guide skill with tool
-search, or with the tool descriptions alone. The reason it can help is
-progressive disclosure: the
-agent reads a short map of the tools first, then only the leaf file that
-the work needs. No measured case is recorded here yet.
+knowledge. No public study known to this document compares a guide skill
+with tool search, or with the tool descriptions alone. The reason it can
+help is progressive disclosure: the agent reads a short map of the tools
+first, then only the leaf file that the work needs. No measured case is
+recorded here yet.

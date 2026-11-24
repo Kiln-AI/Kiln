@@ -59,7 +59,7 @@ result in the traces.
 1. **Trim to what this agent needs.** The wrapper calls the tool and
    returns a smaller result. The exact design depends on the wrapped tool
    and on the use case. Use your judgement, and let the dry run, the
-   quick runs and the evals check it. A good design has three parts:
+   smoke and the evals check it. A good design has three parts:
    - **It trims, but not too much.** It drops what the agent does not
      use: ids that it never passes on, long text fields, nested objects.
      When the agent uses an id only to find a name, it returns the name.
@@ -73,9 +73,9 @@ result in the traces.
    Form 1 cuts each row, and pages the rows. Form 2 returns a preview, and
    a separate call that gets one item in full.
 2. **Preview and cap.** The wrapper returns the total count, the first N
-   rows in the trimmed form, and how to get more: a cursor, or a filter.
-   A follow-up query (a second wrapper, or a parameter of the same one)
-   gets one item in full. The wrapper template
+   rows in the trimmed form, and how to get more: a cursor, or a filter. A
+   follow-up query (a second wrapper, or a parameter of the same one) gets
+   one item in full. The wrapper template
    `references/knowledge/code_tool_wrappers/preview_and_cap.md` has this
    shape. When a list has many pages, the template
    `references/knowledge/code_tool_wrappers/paginate_all.md` fetches every
@@ -102,10 +102,10 @@ For each form:
 
 ## Check that it took effect
 
-Dry-run the wrapper on a read that returns a large result, and compare its
-size with the size of the raw result. When the result was cut, find the
-signal that says so, and get the rest with a second call (a higher limit, or
-an offset). Then run the candidate on two or three train items that called
+Dry-run the wrapper on a read that returns a large result, and compare
+its size with the size of the raw result. When the result was cut, find
+the signal that says so, and get the rest with a second call (a higher
+limit, or an offset). Then smoke two or three train items that called
 the large tool. In each trace, find a call to the wrapper, no call to the
 dropped tool, and a tool result that is smaller than the baseline's.
 
@@ -113,10 +113,9 @@ dropped tool, and a tool result that is smaller than the baseline's.
 
 Medium cost: one code tool, a dry run, and a measurement on its target
 evals. When it fixes its target, the confirmation on val measures every eval
-before a candidate becomes the baseline, the evals that the tool touches
-too. When a very large result is in the traces, it is a good first step on
-any budget: other changes measure little while one result can fill the
-context.
+before a promotion, the evals that the tool touches too. When a very large
+result is in the traces, it is a good first step on any budget: other
+changes measure little while one result can fill the context.
 
 ## If it does not move the evals
 

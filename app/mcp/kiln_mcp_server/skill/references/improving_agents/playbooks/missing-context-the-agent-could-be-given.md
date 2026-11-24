@@ -13,7 +13,7 @@ applies_to:
 
 The agent answers from what it has, and what it has is not enough. A
 tool could give it the fact, and it did not think to call that tool. Read
-a failing trace and ask: "If it had known that, would it have done the
+a failing train trace and ask: "If it had known that, would it have done the
 right thing?" Signs:
 
 - the answer is right for the request as stated, and wrong for the state

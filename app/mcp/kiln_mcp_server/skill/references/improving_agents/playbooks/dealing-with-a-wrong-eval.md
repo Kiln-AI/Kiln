@@ -26,7 +26,7 @@ tunes the agent toward the judge, not toward the task.
 
 ## What to try, in order
 
-1. Read the fires. For each failing item, read the output, the expected
+1. Read the fires. For each failing train item, read the output, the expected
    output and the judge's reasoning. When the sign is false passes, read
    a sample of passing items too. Name each fire as a config failure, an
    eval-data failure or a judge failure. Only a config failure is a
@@ -34,23 +34,24 @@ tunes the agent toward the judge, not toward the task.
    provider) or noise (the same config passes it on another run) gets
    nothing until it recurs.
 2. When it is not clear that the baseline still fails in the way an
-   issue says: measure the issue on the current baseline.
+   issue says: measure the issue on the current baseline (a
+   `measure_issue_baseline` item).
 3. A judge that gives different verdicts on the same output is a judge
    failure. Report it as in step 4. To plan candidates against that noise in
-   the meantime:
-   [dealing with a noisy eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md).
-4. For the eval-data failures and the judge failures: report them to the
-   user. Give the items that show them
+   the meantime: [dealing with a noisy
+   eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md).
+4. For the eval-data failures and the judge failures: report them in
+   `open_questions` for the user. Give the items that show them
    and what is wrong in each: the reasoning against the score, or the
    expected output against the instructions. The fix is a change to the
    eval: corrected expected outputs, or a judge calibrated against human
-   labels. An experiment does not change an existing eval. When the eval
-   does not measure the failure that an issue names, report that too. Only
-   when the user agrees that you build evals, a new eval can be built for
-   the issue (`references/knowledge/create_spec.md`). It is the rare
-   exception, not a routine step. Build none for a closed issue. When the
-   new eval cannot reproduce the issue, close the issue as won't fix, and
-   never reopen an issue that is fixed.
+   labels. An experiment does not change an existing eval. When the eval does
+   not measure the failure that an issue names, report that too. Only
+   when `eval_building` is `true`, an `eval_only` item can commission a
+   new eval for the issue, under the rules of Kiln Harness Tuner for
+   that item. It is the rare exception, not a routine step. Commission
+   none for a closed issue. When the new eval cannot reproduce the issue,
+   close the issue as won't fix, and never reopen an issue that is fixed.
 5. Take the config failures that remain to their playbook:
    [ordering work](references/improving_agents/playbooks/ordering-work.md).
 
@@ -61,9 +62,9 @@ tunes the agent toward the judge, not toward the task.
 - Do not read a judge's score without its reasoning. A score that
   disagrees with the reasoning is a judge failure.
 - Do not change the prompt to please the judge. Such a candidate fits the
-  judge, not the task. A check for copied judge text catches only copied
-  text: a run of 8 or more words shared with the text of an eval.
-  Judge-pleasing in new words passes that check.
+  judge, not the task. The judge-copy check catches only copied text: a
+  run of 8 or more words shared with the text of an eval. Judge-pleasing
+  in new words passes that check.
 
 ## Budget
 

@@ -4,7 +4,7 @@ status: complete
 
 # Harness Tuner alignment: owner decisions
 
-Recorded 2026-11-23 in three rounds (sections 1–7 first; sections 8 and 9, then section 10, the same day), and on 2026-11-24 (section 11), on branch `claude/kiln-mcp-server-impl` at `7af37d1`, after the three Harness Tuner alignment audits in `research/harness_tuner_alignment_audit/` (`knowledge_tree.md`, `ht_skills.md` with `ht_skills_maps/`, `contract.md`). The audits compare Kiln Harness Tuner (HT) at `b49f159` with Kiln at `25157f3`.
+Recorded 2026-11-23 in three rounds (sections 1–7 first; sections 8 and 9, then section 10, the same day), and on 2026-11-24 (sections 11 and 12), on branch `claude/kiln-mcp-server-impl` at `7af37d1`, after the three Harness Tuner alignment audits in `research/harness_tuner_alignment_audit/` (`knowledge_tree.md`, `ht_skills.md` with `ht_skills_maps/`, `contract.md`). The audits compare Kiln Harness Tuner (HT) at `b49f159` with Kiln at `25157f3`.
 
 These decisions override the audits where the two differ. An audit "Fix" line that adds a branch, a lane, or a write step for a code-owned record is overridden by the decisions below.
 
@@ -48,7 +48,7 @@ The decisions are copied as the owner gave them. Lines marked *Where it goes* ar
 
 > It put procedural instructions ("ask the user", "measure it yourself", "applies when running Kiln Harness Tuner", dropped HT record strings and check names) into the levers, techniques, playbooks and smells, following the spec's `LOOP_WORDS` table and §4.5. The fix needs a new spec phase: **"Revert and revisit phase 8"**, which requires the owner's approval before any work. Likely approach (to be approved): revert the knowledge trees to batch 7 (`b4b066e`, byte-identical to HT's normalised text), keep only the mechanical changes (root-relative links, `api_docs`) and changes the owner already approved (e.g. the B30 "no sandbox" wording), re-apply better rules, and add one short "how MCP agents read these documents" section to `references/improving_agents/index.md` instead of rewriting 74 files.
 
-*Where it goes:* Phase 17 ([phase_8_revisit.md](phase_8_revisit.md)). No work starts before the owner approves it. Backlog B7, B11 and B12 move there.
+*Where it goes:* Phase 17 ([phase_8_revisit.md](phase_8_revisit.md)). The owner approved it on 2026-11-24 (section 12). Backlog B7, B11 and B12 move there.
 
 ## 7. Shared method rules that lived only in HT's role skills
 
@@ -60,7 +60,7 @@ The decisions are copied as the owner gave them. Lines marked *Where it goes* ar
 
 The owner answered "ok" to three of the decisions above:
 - **Memory** (section 4): read-only code-written records; writable lessons, dead ends and issues: "ok".
-- **The Phase 8 revert-and-revisit phase** (section 6), which needs the owner's approval before any work: "ok". The approach itself, and the questions in [phase_8_revisit.md](phase_8_revisit.md) section 7, still wait on the owner's approval.
+- **The Phase 8 revert-and-revisit phase** (section 6), which needs the owner's approval before any work: "ok". The approach itself, and the questions in [phase_8_revisit.md](phase_8_revisit.md) section 7, were answered on 2026-11-24 (section 12).
 - **Lanes cut** (section 5): "ok".
 
 ## 9. One guide for MCP clients in place of the case-by-case table (2026-11-23, second round)
@@ -117,8 +117,31 @@ The owner answered the nine questions of [phase_plans/phase_18.md](phase_plans/p
 
 *Where it goes:* Phase 18 ([phase_plans/phase_18.md](phase_plans/phase_18.md)), items 1 to 8.
 
+## 12. Answers to the questions of Phase 17 (2026-11-24)
+
+The owner answered the questions in section 7 of [phase_8_revisit.md](phase_8_revisit.md) and approved its approach.
+
+1. **Approach.** Revert the knowledge trees (`references/levers/`, `references/improving_agents/`) to batch 7 and re-apply (section 5.2 there), not a targeted patch.
+2. **Vocabulary renames.** Re-apply them: role → you, gateway operation → endpoint doc path, arm → candidate, val gate → the confirmation on val, probe → a quick check, screening round → a screening, owner → the user.
+3. **Banned terms.** Allow Kiln Harness Tuner's input and output names, `install_skill_bundle` and `REJECTED AT VAL` in the trees. Keep the gateway operation names and the role names banned.
+4. **Index section.** Approved as drafted (section 5.4 there), in `references/improving_agents/index.md` only, with the M11 playbook-step flow and the `KT-B14` fix that points to `references/knowledge/run_an_experiment.md`.
+5. **"train".** Add "train" to the item-reading steps that name no split (`KT-B13`).
+6. **The rules that batch 8 added from Kiln Harness Tuner's role skills.** Re-add the commissioning rules to the saturated-eval and wrong-eval playbooks: building a new eval is the rare exception; none for a closed issue; close the issue as won't fix when the new eval cannot reproduce it; never reopen a fixed issue. Do not re-add the "no number, no item id and no trace" recording rule: only Kiln Harness Tuner's code writes experiment records after Phase 18.
+7. **Keep list.** The table of section 5.2 there is the full list of changes to re-apply after the revert. Nothing else since batch 7 touches the trees.
+
+Decided with them:
+- **Noise and detectability.** Say plainly that Kiln Harness Tuner has a noise check and a detectability check. For MCP agents, the document's rule for an absent input applies: the flip rate of 10% for noise, and the floor of 6 wins for detectability.
+- **Screening and skill bundles.** "Tell the user it needs Kiln Harness Tuner", for now. The bundle API comes in the next project.
+- **Memory.** The record lines that Kiln Harness Tuner writes are read-only (Phase 18).
+- **"The tuner"** (option B, decided after the code review): an approved rename. Where "the tuner" is the subject of a rule that limits what may be changed (the task, an eval, a fine-tune, a RAG config), the subject becomes "an experiment" or "this lever"; everywhere else, "the tuner" becomes "you". The owner's reason: Kiln Harness Tuner's agents act only through experiments, so for them the meaning is the same; for MCP agents it limits the rule to experiments, so an agent does not refuse a user who asks it to change a task or an eval.
+- **B7.** Drop "Smell: an old model" from `app/mcp/knowledge_backlog.md`. Keep the renames "A repeat measurement on request" and "A quick check for room to improve", each with a Kiln Harness Tuner example line.
+- **B11.** The revert brings back the `output_mode` sentence on the test call with no tools attached and the `params` wording. Add `post_api_projects_project_id_skills.md` to the `api_docs` of `levers/skill.md`. Close B11.
+- **B12.** Close it as moot. Instead, `.agents/skills/knowledge-maintenance/SKILL.md` 4.6 describes the new rules: Kiln Harness Tuner's text is ported as written, with only the mechanical changes and the approved renames, and the index section explains its inputs, code checks, outputs and tools to MCP agents.
+
+*Where it goes:* Phase 17 ([phase_plans/phase_17.md](phase_plans/phase_17.md)).
+
 ## Related
 
-- [phase_8_revisit.md](phase_8_revisit.md): Phase 17. It needs the owner's approval before any work.
+- [phase_8_revisit.md](phase_8_revisit.md): Phase 17, approved on 2026-11-24 (section 12); its plan is [phase_plans/phase_17.md](phase_plans/phase_17.md).
 - [phase_plans/phase_18.md](phase_plans/phase_18.md): Phase 18, the fixes outside the knowledge trees, including the one-off experimentation guide.
 - [harness_tuner_switchover_requirements.md](harness_tuner_switchover_requirements.md): what the switchover project must do in HT.

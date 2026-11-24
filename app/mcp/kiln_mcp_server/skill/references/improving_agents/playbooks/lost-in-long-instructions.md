@@ -31,28 +31,31 @@ This is not a missing requirement: the text asks for the part. When the
 text does not ask for it, see
 [a requirement is missing from the prompt](references/improving_agents/playbooks/requirement-missing-from-the-prompt.md).
 
-First, check quickly whether this model opens a skill, or calls a tool,
+First, run a quick check of whether this model opens a skill, or calls a tool,
 under this run config and its output mode. The answer decides between the
 first two steps.
 
 ## What to try, in order
 
-1. [Long prompt into a skill](references/improving_agents/techniques/long-prompt-into-a-skill.md),
-   when the check says that the model reads skills, and each run needs only
-   some of the topics. A short prompt, a router body with one line per file,
-   one reference file per topic, and a path index in the description with
-   the key terms of each file. A second candidate can trim the prompt to the
-   router.
-2. [Structure a long prompt](references/improving_agents/techniques/structure-a-long-prompt.md),
-   when the check says no, or the task has no tools, or most runs need most
-   of the content. Topics under headings, the parts that must be present
-   marked, and a last step that checks each required property before the
-   answer.
+1. [Long prompt into a
+   skill](references/improving_agents/techniques/long-prompt-into-a-skill.md),
+   when the quick check says that the model reads skills, and each run needs
+   only some of the topics. A short prompt, a router body with one line per
+   file, one reference file per topic, and a path index in the description
+   with the key terms of each file. A second candidate can trim the prompt
+   to the router.
+2. [Structure a long
+   prompt](references/improving_agents/techniques/structure-a-long-prompt.md),
+   when the quick check says no, or the task has no tools, or most runs need
+   most of the content. Topics under headings, the parts that must be
+   present marked, and a last step that checks each required property before
+   the answer.
 3. [Rewrite an inherited skill](references/improving_agents/techniques/rewrite-an-inherited-skill.md),
    when the long text is a skill that the baseline attaches: split it into
    reference files, restructure it, or remove what contradicts the task,
    as a new version of the skill.
-4. [Prune one group at a time](references/improving_agents/techniques/prune-one-group-at-a-time.md),
+4. [Prune one group at a
+   time](references/improving_agents/techniques/prune-one-group-at-a-time.md),
    when the text is long because of rules that may not help: remove one
    group on each candidate and measure it.
 
@@ -69,14 +72,13 @@ technique document covers it yet.
 - Do not change the output mode on the same candidate. A change of the output
   mode is a lever of its own, and it can break other items.
 - Do not let a router narrate an order of reads ("load X first"). It
-  changes the order of the calls, and that can change items that the
-  candidate was not aimed at.
+  changes the order of the calls, and that can change items that the candidate
+  was not aimed at.
 - Do not measure a skill bundle on every eval before it has fixed its
   target. Measure its target, and add an eval only when you have a stated
   reason to expect the bundle to break it. When it fixes its target, the
-  confirmation on val measures every eval before a candidate becomes the
-  baseline:
-  [spending the budget](references/improving_agents/playbooks/spending-the-budget.md).
+  confirmation on val measures every eval before a promotion: [spending the
+  budget](references/improving_agents/playbooks/spending-the-budget.md).
 
 ## Budget
 

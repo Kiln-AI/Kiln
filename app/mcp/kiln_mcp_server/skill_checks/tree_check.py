@@ -127,8 +127,7 @@ BANNED_TERMS: dict[str, tuple[str, ...]] = {
         "get_val_summary",
         "compute_statistics",
         "get_answer_part",
-        # Its other tool, roles and folders.
-        "install_skill_bundle",
+        # Its gateway, roles and folders.
         "gateway",
         "the tuner",
         "harness-tuner",
@@ -145,25 +144,16 @@ BANNED_TERMS: dict[str, tuple[str, ...]] = {
         "probe",
         "probes",
         "screening round",
-        # The loop's inputs and outputs.
-        "open_questions",
-        "rejected_summary",
-        "allowed_models",
-        "model_policy",
-        "train_noise",
-        "train_detectability",
-        "measurement_prices",
-        "eval_sizes",
-        "lever_attempts",
-        "should_wrap_up",
-        "measure_issue_baseline",
-        "eval_only",
-        "eval_building",
-        "probe_results",
-        "the planner's skill",
-        "REJECTED AT VAL",
     ),
 }
+# Record strings that Kiln Harness Tuner's code writes and that hold a banned
+# loop word. The knowledge quotes them exactly, as
+# `references/knowledge/memory_formats/experiment_records.md` gives them.
+HARNESS_TUNER_RECORD_STRINGS: tuple[str, ...] = (
+    "- rejected at the val gate",
+    "- blocked at the val gate",
+)
+
 # `/api/model_info/...` and `get_api_model_info_...` are the model info
 # endpoints, not the Assistant's tool. `references/knowledge/create_spec.md`
 # is a knowledge file of the skill, not the gateway operation.
@@ -506,8 +496,11 @@ class _TreeChecker:
             scopes.append("knowledge")
         for number, line in enumerate(text.split("\n"), start=1):
             for scope in scopes:
+                scanned = (
+                    _without_record_strings(line) if scope == "knowledge" else line
+                )
                 for term, pattern in self.banned[scope]:
-                    if pattern.search(line):
+                    if pattern.search(scanned):
                         self.problem(
                             "tree-banned-term",
                             key,
@@ -584,6 +577,12 @@ class _TreeChecker:
             else:
                 for key in keys:
                     self.problem("tree-unreachable", key, "not reached from SKILL.md")
+
+
+def _without_record_strings(line: str) -> str:
+    for record in HARNESS_TUNER_RECORD_STRINGS:
+        line = line.replace(record, "")
+    return line
 
 
 def _term_pattern(term: str) -> re.Pattern[str]:

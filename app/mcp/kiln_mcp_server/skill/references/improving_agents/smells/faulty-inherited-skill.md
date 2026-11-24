@@ -49,8 +49,8 @@ In how the agent runs:
 
 ## What it blocks
 
-A prompt rule that works around the skill. The skill is part of what you
-can change, and a rule around it leaves the fault in place.
+A prompt rule that works around the skill. The skill is part of what you can
+change, and a rule around it leaves the fault in place.
 
 ## Remedies
 
@@ -59,5 +59,7 @@ can change, and a rule around it leaves the fault in place.
   place of the old one. When the agent does not open the reference file it
   needs, the new version also restructures it: the full path of each file,
   with its key terms, in the description and in the body map.
-- [Prune one group at a time](references/improving_agents/techniques/prune-one-group-at-a-time.md),
-  when the skill may not help at all: drop it on one candidate and measure it.
+- [Prune one group at a
+  time](references/improving_agents/techniques/prune-one-group-at-a-time.md),
+  when the skill may not help at all: drop it on one candidate and measure
+  it.

@@ -32,7 +32,7 @@ cost: medium
   private facts either.
 - **Do not narrow the answer to a closed list of topics** in place of a
   source. A list does not add the facts.
-- An experiment does not create a RAG config. When no tool exists and the
+- An experiment cannot create a RAG config. When no tool exists and the
   knowledge is too large for a skill, this technique is out of reach.
 
 ## Alternatives
@@ -68,8 +68,8 @@ The change is one of two, on a new run config: attach a tool that exists
    your model is much stronger than the agent's runtime model, for example
    a frontier model that writes for a small local model. It is not enough
    when the two models are peers: the agent already knows what you know.
-   The train labels are never a source (step 5). How to write a skill in
-   Kiln is in `references/knowledge/adding_skills.md`.
+   The train labels are never a source (step 5). The shape of the bundle
+   is in Kiln Harness Tuner's skill-authoring guide, section 2.
 4. **Choose the content by what the agent does with it.** Worked examples
    of correct work (for a query agent: example queries) can help more than
    general notes about the domain. Records that do not match the question
@@ -82,33 +82,34 @@ The change is one of two, on a new run config: attach a tool that exists
    not a source of the skill's facts.
 6. A prompt line that tells the agent to use the source is part of the
    hypothesis, or a second candidate. Scope discipline is the next step:
-   [answer only from the source](references/improving_agents/techniques/answer-only-from-the-source.md).
+   [answer only from the
+   source](references/improving_agents/techniques/answer-only-from-the-source.md).
 
 ## Check that it took effect
 
-Run the candidate on two or three train items whose answers were not
-grounded. In each trace, find the call to the tool or the read of the skill
-before the answer, and the fact from the source in the answer. When the
-agent never looks, the source did not reach the decision.
+Smoke on two or three train items whose answers were not grounded. In each
+trace, find the call to the tool or the read of the skill before the
+answer, and the fact from the source in the answer. When the agent never
+looks, the source did not reach the decision.
 
 ## Budget
 
 Medium cost: a tool to attach is cheap, a skill to write is not, and both
 need a measurement on their target evals. When it fixes its target, the
-confirmation on val measures every eval before a candidate becomes the
-baseline, the evals that the
-knowledge touches too. On a small budget, take it when the traces show
+confirmation on val measures every eval before a promotion, the evals that
+the knowledge touches too. On a small budget, take it when the traces show
 answers that need facts the agent does not have. It is the first step for
 that failure.
 
 ## If it does not move the evals
 
-It must move an eval. The source exists to fix measured answers that are
-not grounded. When the agent reads the source and the answers do not
-improve, the source does not hold what the answers need, or the agent
-answers past it. When the traces show that the agent read the source and
-still answered past it, the source can be right. Plan the source together
-with the rule of [answer only from the source](references/improving_agents/techniques/answer-only-from-the-source.md)
+It must move an eval. The source exists to fix measured answers that are not
+grounded. When the agent reads the source and the answers do not improve,
+the source does not hold what the answers need, or the agent answers past
+it. When the traces show that the agent read the source and still answered
+past it, the source can be right. Plan the source together with the rule of
+[answer only from the
+source](references/improving_agents/techniques/answer-only-from-the-source.md)
 on one candidate, and name both in the hypothesis.
 
 ## Priors

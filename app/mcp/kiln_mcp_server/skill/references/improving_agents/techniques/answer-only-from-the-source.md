@@ -65,10 +65,10 @@ The change is one edit of the [prompt](references/levers/prompt.md).
 
 ## Check that it took effect
 
-Run the candidate on two kinds of train item: one that the source does not
-cover, and one that it covers. On the first, count the answers that say the
-source has no answer. On the second, check that the agent still answers. A
-rule that makes the agent decline questions the source covers is too strong.
+Smoke on two kinds of train item: one that the source does not cover, and
+one that it covers. On the first, count the answers that say the source
+has no answer. On the second, check that the agent still answers. A rule
+that makes the agent decline questions the source covers is too strong.
 
 ## Budget
 

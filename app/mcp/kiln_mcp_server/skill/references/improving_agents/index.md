@@ -7,34 +7,93 @@ projects. It holds nothing that was measured on the task that you tune.
 
 ## How to read these documents
 
-**These are ideas to try.** The techniques, the playbooks and the smells are
-ideas to try as part of experimentation. What actually works varies from
-agent to agent. A document says what to try, in what order, and under which
-conditions. You know more about this agent than the documents do. Read each
-document for the spirit of its guidance. Fit its suggestions to the agent's
-goal, its tools and its task, and change a suggestion where the agent needs
-it. The hard limits are the exception: the safety and integrity rules in the
-lever documents. For example: never attach a tool that can reach the Kiln
-server; the allowlist and the shared-tool rules of a code tool; no value
-from a train item in a change (the leak rules of
-`references/knowledge/train_val_test.md`). No measurement overrides a hard
-limit, and you do not change one to fit the agent.
+**These are ideas to try.** The techniques, the playbooks and the smells
+are ideas to try as part of experimentation. What actually works varies
+from agent to agent. A document says what to try, in what order, and under
+which conditions. You know more about this agent than the documents do.
+Read each document for the spirit of its guidance. Fit its suggestions to
+the agent's goal, its tools and its task, and change a suggestion where the
+agent needs it. The hard limits are the exception: the safety and integrity
+rules in the lever documents. For example: never attach a tool that can
+reach the Kiln server; the allowlist and the shared-tool rules of a code
+tool; no value from a train item in a change (the leak rules of
+`references/knowledge/train_val_test.md`). No measurement overrides a
+hard limit, and you do not change one to fit the agent.
 
 **The documents are not complete.** They are a source of ideas, not a list
 of every option. You have context that their authors did not have: this
-agent, its goal, its traces and the results of your experiments. When the
-evidence of this agent says that a document does not fit, do not follow it
-to the letter: that is an error, not care. Propose a new solution when it fits
+agent, its goal, its traces and the results of this run. When the evidence
+of this agent says that a document does not fit, do not follow it to the
+letter: that is an error, not care. Propose a new solution when it fits
 this agent better than the documents do. A new idea meets the same bar as
 a documented one: a hypothesis, a predicted effect, the confirmation on
 val and the hard limits.
 
 **A clear measurement outranks a document.** A result measured on this task
-outranks what a document suggests only when it is clearly past the noise,
-as the measurement on train and the confirmation on val judge it. A result
-inside the noise does not refute a technique: see
-[dealing with a noisy eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md).
+outranks what a document suggests only when it is clearly past the noise, as
+the stop rules and the confirmation on val judge it. A result inside the
+noise does not refute a technique: see [dealing with a noisy
+eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md).
 When two options tie, the knowledge can settle the choice.
+
+## How to read these documents over MCP
+
+These documents are shared with Kiln Harness Tuner, whose agents run
+without a person and whose code does part of the work. Their rules apply
+to you as written. Read them this way:
+
+- A role of Kiln Harness Tuner (its planner, builder or analyzer) is you.
+- An input of Kiln Harness Tuner that the user decides (`allowed_models`,
+  the model policy, `measurement_prices`): ask the user. An input that
+  Kiln Harness Tuner measures (`train_noise`, `train_detectability`,
+  `probe_results`, `lever_attempts`): you do not have it, so follow the
+  document's rule for when it is absent.
+- "Code checks", "code refuses", "the code detection in your input":
+  Kiln Harness Tuner's code does this for its agents. Check it yourself,
+  with the same rule and threshold.
+- An output field (`open_questions`, `rejected_summary`, `rationale`):
+  tell the user.
+- A record line that Kiln Harness Tuner writes, such as
+  `— REJECTED AT VAL`: read it, and never write it
+  (`references/knowledge/memory.md`).
+- A Kiln Harness Tuner tool that Kiln does not have (the skill installer,
+  the screening): tell the user it needs Kiln Harness Tuner.
+- "The stop rules and the confirmation on val", in "A clear measurement
+  outranks a document" above: judge a result with
+  `references/knowledge/run_an_experiment.md`.
+
+**How to work through a playbook:**
+
+1. **Read the smells of the present baseline.** The detections in your
+   input and the smell issues in memory each name a smell id. Open that
+   smell's document from the table "Smells" and read its remedies. A smell
+   that blocks other work comes first.
+2. **Take each failure and each eval problem to its playbook.** Find the
+   playbook whose situation fits the issue, in the tables of the kinds
+   `failure` and `eval`. Its steps are in order, and each step states its
+   condition. The order is the default priority: change it when the
+   evidence of this agent says so. Skip a step whose condition does not
+   hold. Otherwise, start from the first step whose condition holds. When
+   the budget allows, the next steps whose conditions hold can run as
+   parallel candidates in the same wave. The outcome of a measured step
+   sets what comes next:
+   - **Landed**: go to the next step only if the issue is still open.
+   - **Refuted**, clearly past the noise: go on to the next step.
+   - **Capped**: the step is not measured. Run it again with a larger
+     `max_usd`, or run the next step beside it. The step stays open.
+   - **Inconclusive**, inside the noise
+     ([dealing-with-a-noisy-eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md)):
+     the step is not refuted. The step stays open, and the next step can
+     run in parallel.
+3. **Plan your own idea when the documents do not fit.** No playbook fits
+   the issue, its steps do not fit this agent, or each step is tried. Then
+   plan the change that the traces and the results point to. Set
+   `technique` to the lever that it changes, and write "not in the
+   knowledge" in the hypothesis.
+
+The `technique` field of an experiment is the id of a lever document where
+one exists: `prompt`, `skill`, `tool_config`, `new_tool`, `params`,
+`output_mode`, `model`.
 
 ## The parts
 
@@ -63,17 +122,17 @@ does not matter.
 | `references/improving_agents/smells/faulty-inherited-skill.md` | all | A skill that the baseline attaches is wrong or stale, contradicts the task, or holds an example whose answer contradicts a rule. It can be changed as a new version. |
 | `references/improving_agents/smells/fixed-call-chain.md` | tools | The agent calls the same tools in the same order on each run, and passes an id from one result to the next call. The model decides nothing new between the calls. |
 | `references/improving_agents/smells/general-query-tool-without-a-guide.md` | tools | The agent has a SQL, GraphQL or general API tool, with no examples and no guide to the schema, so it must learn the data model on each run. |
-| `references/improving_agents/smells/old-model.md` | all | The baseline's model was released more than 8 months ago. Read its release date yourself, and give its age and the reference. |
+| `references/improving_agents/smells/old-model.md` | all | The baseline's model was released more than the reference time (8 months) before the run. A code detector reads the release date, and the detection gives the age, the reference and its source. |
 | `references/improving_agents/smells/one-file-skill-with-many-topics.md` | all | An attached skill is one long file that holds many topics, with no reference files. The agent reads all of it to use one part of it. |
 | `references/improving_agents/smells/skill-too-small-to-earn-its-place.md` | all | An attached skill holds a few words and no other file. Its description is in every run and opening it costs a call, so it can cost more than it saves. |
-| `references/improving_agents/smells/too-many-tools.md` | tools | The run config attaches more than 40 tools, and every tool definition is in the context of every call. Count them yourself. |
+| `references/improving_agents/smells/too-many-tools.md` | tools | The run config attaches more than 40 tools, and every tool definition is in the context of every call. A code detector counts them. |
 | `references/improving_agents/smells/tool-results-flood-the-context.md` | tools | A tool returns a very large result - a list with every field, a full schema, many pages - or the agent makes one call for each item of a list. |
 | `references/improving_agents/smells/tool-search.md` | tools | The tools are listed nowhere the model can read, so the agent must guess that a tool exists and guess the raw search terms that find it. |
 | `references/improving_agents/smells/tools-on-a-live-server.md` | tools | The agent's tools write to a real system, or read data that changes, so the right answer to an eval item moves and a measurement cannot be repeated. A read of fixed data (RAG) is fine. |
 | `references/improving_agents/smells/unnecessary-tools.md` | tools | Tools that overlap - two tools used for the same kind of request - or tools never called in the traces. One tool for each job, and each tool needed. |
-| `references/improving_agents/smells/very-long-prompt.md` | all | The system prompt is longer than 200,000 characters, or it holds many unrelated topics and each request needs a few. Measure the length yourself. |
-| `references/improving_agents/smells/very-long-skill-description.md` | all | A skill description is longer than 1,024 characters, or it holds rules that the agent needs only after it opens the skill. Measure the length yourself. |
-| `references/improving_agents/smells/very-long-tool-description.md` | tools | The description of an attached tool is longer than 4,096 characters. Measure each attached tool yourself, and name each tool that is over. |
+| `references/improving_agents/smells/very-long-prompt.md` | all | The system prompt is longer than the reference length (200,000 characters), or it holds many unrelated topics and each request needs a few. Code measures the length. |
+| `references/improving_agents/smells/very-long-skill-description.md` | all | A skill description is longer than the reference length (1,024 characters), or it holds rules that the agent needs only after it opens the skill. Code measures the length. |
+| `references/improving_agents/smells/very-long-tool-description.md` | tools | The description of an attached tool is longer than the reference length, 4,096 characters. A code detector measures each tool, and each detection names the tool. |
 <!-- END GENERATED: smells -->
 
 ## Goals
@@ -94,7 +153,7 @@ the budget.
 | Playbook | Applies to | Description |
 |---|---|---|
 | `references/improving_agents/playbooks/know-the-agent-before-you-plan.md` | all | Classify the agent before the first plan - its turns, its output, a classifier shape, its tools, skills and model - because each document says which shapes it fits. |
-| `references/improving_agents/playbooks/ordering-work.md` | all | How to order the work of an improvement - the priority comes from the smells and the failures of this agent, not from a fixed order of levers. All of it is guidance. |
+| `references/improving_agents/playbooks/ordering-work.md` | all | How to order the work of a run - the priority comes from the smells and the failures of this agent, not from a fixed order of levers. All of it is guidance. |
 | `references/improving_agents/playbooks/spending-the-budget.md` | all | How to spend a fixed budget - fewer experiments, each large enough to pass its own test, the cheap techniques first on a small budget, and the scan of models only on a large one. |
 <!-- END GENERATED: playbooks-order -->
 
@@ -106,7 +165,7 @@ A class of failure seen in the traces of eval items.
 | Playbook | Applies to | Description |
 |---|---|---|
 | `references/improving_agents/playbooks/answers-not-grounded.md` | all | The answers need knowledge that is not in the agent's context - attach the source, then add scope discipline. A source behind a lookup tool can move into a skill. |
-| `references/improving_agents/playbooks/change-the-surface-not-the-words.md` | all | Two text changes failed on one issue, or the failure is mechanical. Change what the model touches before the words it reads. A policy failure comes here only after two text changes failed. |
+| `references/improving_agents/playbooks/change-the-surface-not-the-words.md` | all | Two text changes failed on one issue, or the failure is mechanical. Change what the model touches before the words it reads. A policy failure comes here only after two text candidates failed. |
 | `references/improving_agents/playbooks/failure-at-a-tool-call.md` | tools | The failing message comes before or with a tool call - a preamble, or a narration that rides the call. A new tool description, then a directive in the tool's response. |
 | `references/improving_agents/playbooks/lost-in-long-instructions.md` | all | The agent misses a part of a long prompt or of a one-file skill. Progressive disclosure when the model reads skills, a prompt structure when it does not. A quick check first. |
 | `references/improving_agents/playbooks/malformed-tool-calls.md` | tools | The agent calls a tool with the wrong case, the wrong form of an id, a body on a GET, or a misspelled tool name. A wrapper that normalises, errors the agent can act on, a guard at the tool. |
@@ -129,7 +188,7 @@ The measurement is the problem.
 | `references/improving_agents/playbooks/dealing-with-a-saturated-eval.md` | all | The baseline passes almost every item of an eval, so a candidate has no room to show a gain on it. Keep the eval as a guard, put the effort elsewhere, and ask the user for harder items. |
 | `references/improving_agents/playbooks/dealing-with-a-wrong-eval.md` | all | The judge fails right answers or passes wrong ones, or the eval does not measure the issue. Classify each fire, try changes only on the config failures, report the rest. Do not tune toward the judge. |
 | `references/improving_agents/playbooks/dealing-with-an-eval-near-zero.md` | all | The baseline passes almost no item of an eval. Read the raw outputs first - text fixes a missing requirement or a wrong format. Try a smarter model only on evidence that the model cannot do the task. |
-| `references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md` | all | A train win is rejected at the confirmation on val. Read the reason first - passed over, copied eval text, an eval dropped, no gain, or a gain not clear. Only "no gain" shows no carry. |
+| `references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md` | all | A train win ends REJECTED AT VAL. Read the reason first - passed over, copied eval text, an eval dropped, no gain, or a gain not clear. Only "no gain" shows that the win did not carry. |
 <!-- END GENERATED: playbooks-eval -->
 
 ## Design
@@ -157,7 +216,7 @@ The response to a smell that needs more than one technique.
 | `references/improving_agents/techniques/directive-in-the-tool-response.md` | new_tool | tools | medium | A wrapper whose response states the tool's own status for the reply - derived facts, a fixable error, or how the tool works - as facts about the result, not as orders to the agent. |
 | `references/improving_agents/techniques/document-into-a-skill.md` | skill, tool_config | tools | medium | Move a long reference document that sits behind a lookup tool into a skill - a contents body with key terms, one reference file per section - and drop the tool. |
 | `references/improving_agents/techniques/errors-the-agent-can-act-on.md` | new_tool | tools | medium | A wrapper that turns a raw tool error into an error the agent can correct from - what was wrong, the valid values or nearest matches, and what to do next. |
-| `references/improving_agents/techniques/faster-provider-for-the-same-model.md` | model | all | low | Serve the same model from another provider - a faster one, or a cheaper one - with the harness unchanged, when the user allows that provider and the goal is latency or cost. |
+| `references/improving_agents/techniques/faster-provider-for-the-same-model.md` | model | all | low | Serve the same model from another provider - a faster one, or a cheaper one - with the harness unchanged, when the run allows that provider and the goal is latency or cost. |
 | `references/improving_agents/techniques/guard-tool-calls-at-the-boundary.md` | new_tool, prompt | tools | medium | A check in a wrapper that refuses a call which breaks a rule the product enforces, with an error that says why, and the rule moved from the prompt into the tool's description. |
 | `references/improving_agents/techniques/guide-skill-for-a-tool-set.md` | skill | tools | medium | A side skill that describes the agent's tools by progressive disclosure - which tool for which work, then one leaf file per tool or per query area. |
 | `references/improving_agents/techniques/long-prompt-into-a-skill.md` | skill, prompt | all | medium | Move the topics of a long prompt into a skill by progressive disclosure - a short prompt, a router body, one reference file per topic, a path index. |

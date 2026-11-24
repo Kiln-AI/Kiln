@@ -50,12 +50,12 @@ cost: medium
 ## How
 
 The change is a wrapper with the guard, on a new run config, with the
-wrapped tool dropped (the lever [new_tool](references/levers/new_tool.md)), and an
-edit of the [prompt](references/levers/prompt.md) on the same candidate. Make sure every
-function of the wrapped tool that the agent needs is in a wrapper tool
-before you remove it. The template
-`references/knowledge/code_tool_wrappers/readonly_guard.md` has one form
-of it: a read-only variant of a read-write tool.
+wrapped tool dropped (the lever [new_tool](references/levers/new_tool.md)),
+and an edit of the [prompt](references/levers/prompt.md) on the same
+candidate. Make sure every function of the wrapped tool that the agent needs
+is in a wrapper tool before you remove it. The template
+`references/knowledge/code_tool_wrappers/readonly_guard.md` has one form of
+it: a read-only variant of a read-write tool.
 
 1. **State the rule** from the task's instruction, the product's own
    rules, and the traces. Do not copy the text of an eval or of its judge.
@@ -86,9 +86,9 @@ of it: a read-only variant of a read-write tool.
 
 ## Check that it took effect
 
-Dry-run the wrapper with a call that breaks the rule, and read the refusal.
-Read the new tool's description: it states the rule, and the prompt does
-not. Then run the candidate on two or three train items whose traces broke
+Dry-run the wrapper with a call that breaks the rule, and read the
+refusal. Read the new tool's description: it states the rule, and the
+prompt does not. Then smoke two or three train items whose traces broke
 the rule. In each trace, find the refusal, or a call in the allowed form,
 and no call that breaks the rule.
 
@@ -96,9 +96,9 @@ and no call that breaks the rule.
 
 Medium cost: a wrapper with a check, a dry run, and a measurement on its
 target evals: the evals that check the rule. When it fixes its target, the
-confirmation on val measures every eval before a candidate becomes the
-baseline, the evals that the tool touches too. A good step on any budget
-when an eval guards a rule that the agent breaks on some items.
+confirmation on val measures every eval before a promotion, the evals that
+the tool touches too. A good step on any budget when an eval guards a rule
+that the agent breaks on some items.
 
 ## If it does not move the evals
 

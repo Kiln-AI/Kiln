@@ -152,7 +152,7 @@ The components depend on each other in this order; the implementation plan follo
 6. The content port and edit (it needs 2 to 5: the text must match the block list, the model info endpoints, the generated API docs and the checks). Its last batch tunes the server and tool texts.
 7. The Connect page, the install guide, README, and the rename of the `kiln_mcp` help text.
 8. Probe the real API for unclear errors and missing route descriptions; fix them (section 10).
-9. Reviews by people, on the content as it stands after step 8: a security owner reads the sandbox wording in `code_tools.md` and `judge_types.md`; a person confirms the knowledge's public-source claims and approves case studies; the owner reads `SKILL.md`, `train_val_test.md` and the two glue files of the merge (`run_an_experiment.md`, `diagnose_an_agent.md`). Their changes are made before step 10.
+9. Reviews by people, on the content as it stands after step 8: a security owner reads the sandbox wording in `code_tools.md`, `judge_types.md` and `levers/new_tool.md`; a person confirms the knowledge's public-source claims and approves case studies; the owner reads `SKILL.md`, `train_val_test.md` and the two glue files of the merge (`run_an_experiment.md`, `diagnose_an_agent.md`). Their changes are made before step 10.
 10. Manual sanity check.
 11. Optional later, only if step 10 shows a need: a "load the endpoint doc first" check that keeps the server stateless.
 

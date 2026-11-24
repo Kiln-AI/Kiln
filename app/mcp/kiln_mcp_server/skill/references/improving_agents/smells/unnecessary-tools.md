@@ -49,9 +49,10 @@ can go, the description is not needed.
 
 ## Remedies
 
-- [Remove or scope tools](references/improving_agents/techniques/remove-or-scope-tools.md), first:
-  drop the tools that are never called, and one tool of an overlapping
-  pair, each on its own candidate.
+- [Remove or scope
+  tools](references/improving_agents/techniques/remove-or-scope-tools.md),
+  first: drop the tools that are never called, and one tool of an
+  overlapping pair, each on its own candidate.
 - [Consolidate tools](references/improving_agents/techniques/consolidate-tools.md), when the
   overlapping tools each do part of the job well, so neither can go alone.
 - [New tool description](references/improving_agents/techniques/new-tool-description.md), when both

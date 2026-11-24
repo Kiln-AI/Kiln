@@ -48,11 +48,12 @@ case, and the agent reads it before it sees the document.
 
 ## Remedies
 
-- [Document into a skill](references/improving_agents/techniques/document-into-a-skill.md), first,
-  when the document is stable and fits in a skill: a contents body with
-  key terms, one reference file for each section, and the lookup tool
+- [Document into a
+  skill](references/improving_agents/techniques/document-into-a-skill.md),
+  first, when the document is stable and fits in a skill: a contents body
+  with key terms, one reference file for each section, and the lookup tool
   dropped on the same candidate. When the document cannot move, the same
-  technique gives a smaller change: a keyword contents skill in front of
-  the tool.
+  technique gives a smaller change: a keyword contents skill in front of the
+  tool.
 - [Answers not grounded](references/improving_agents/playbooks/answers-not-grounded.md), when the
   answers state facts that the document does not hold.

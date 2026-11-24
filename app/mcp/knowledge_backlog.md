@@ -282,6 +282,7 @@ Tool names with a common prefix for each service or group.
 - Source: Kiln Harness Tuner: V1 coverage note, section 7
 
 Before an experiment on the wording, check whether the failing items can pass at all.
+Example: the Kiln Harness Tuner planner may run a quick check for room before a wording change.
 
 ### Fine-tuning as a late step
 
@@ -466,16 +467,6 @@ Eval: the score goes up, and the outputs get worse in a way that the eval does n
 
 The agent has so many skills that their descriptions crowd its context.
 
-### Smell: an old model
-
-- Kind: smell
-- Where: knowledge
-- Depends on: None
-- Source: Kiln Harness Tuner: knowledge design notes; functional spec 12.3; model-provider-info spec, section 8
-
-Done in Kiln Harness Tuner: the smell document `old-model`, with a code detector there that
-reads the release date from the model catalogue.
-
 ### Smell: a long list of "must" and "never" lines
 
 - Kind: smell
@@ -626,6 +617,7 @@ a skill, a tool's response. The agent then follows one at random. The remedy can
 
 A way to ask for an existing run config to run and be judged again on train items. In Kiln
 Harness Tuner today only `--noise-check` repeats a measurement, one time, before wave 1.
+Example: the Kiln Harness Tuner planner may request a repeat measurement to analyze noise.
 
 ### Feature engineering on the data that reaches the model
 

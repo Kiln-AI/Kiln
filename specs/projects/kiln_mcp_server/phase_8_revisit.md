@@ -1,14 +1,14 @@
 ---
-status: draft
+status: approved
 ---
 
-**This phase requires the owner's approval before any work.** Nothing below is to be started, reverted or edited until the owner has answered the questions in section 7 and approved the approach.
+**Approved by the owner on 2026-11-24.** The owner answered the questions of section 7 and approved the approach of section 5. The answers are in section 8 and in [harness_tuner_alignment_decisions.md](harness_tuner_alignment_decisions.md) section 12. The plan of the work is [phase_plans/phase_17.md](phase_plans/phase_17.md).
 
 # Phase 17: Revert and revisit phase 8
 
 Batch 8 of phase 8 (commit `919fb6a`, "loop vocabulary in the knowledge trees") is the batch that reworded the knowledge trees: the levers, techniques, playbooks and smells. The Harness Tuner alignment audits found that it changed what those documents tell an agent. This phase revisits that work.
 
-The owner's decision is in [harness_tuner_alignment_decisions.md](harness_tuner_alignment_decisions.md), section 6. This file sets out the evidence, the proposed approach and the questions for the owner.
+The owner's decision is in [harness_tuner_alignment_decisions.md](harness_tuner_alignment_decisions.md), section 6. This file sets out the evidence, the approach and the owner's answers.
 
 **Citations.** All audits are in `research/harness_tuner_alignment_audit/`:
 - `KT-` is an item of `knowledge_tree.md`.
@@ -169,7 +169,7 @@ Batch 8 did what the spec said. The fix starts in `components/skill_and_content.
 
 The audits' own "Fix" lines mostly add "Kiln Harness Tuner: X; otherwise Y" branches to each sentence. The owner's decision on branches ([decisions](harness_tuner_alignment_decisions.md), section 3) rules that pattern out.
 
-## 5. Proposed approach (a proposal; the owner approves it before any work)
+## 5. Approach (approved by the owner on 2026-11-24)
 
 ### 5.1 Fix the spec first
 
@@ -261,3 +261,23 @@ A diff check like the audit's: re-run the audit's normalisation and sentence dif
 9. **`KT-B19`.** The revert drops the lines that batch 8 added from HT's own role skills: "rare exception / none for a closed issue / won't fix, never reopen", and "no number, no item id and no trace". Re-add them, or leave them to Phase 18's one-off guide?
 10. **The kept list.** Is the table of 5.2 the full list of changes to keep? Or did the owner approve other edits to the trees since batch 7, beyond B23 and B30?
 11. **Order.** Phase 18 touches no file of the trees, except that the one-off guide may link to `index.md`. So it can run while this phase waits for approval. Agree?
+
+## 8. Owner answers (2026-11-24)
+
+1. **The approach:** revert the knowledge trees to batch 7 and re-apply (5.2), not a targeted patch.
+2. **The vocabulary rows:** re-apply them all: role → you, gateway operation → endpoint doc path, arm → candidate, val gate → the confirmation on val, probe → a quick check, screening round → a screening, owner → the user.
+3. **The banned terms:** allow HT's input and output names, `install_skill_bundle` and `REJECTED AT VAL` in the trees. Keep the gateway operation names and the role names banned. `tree_check.py` `BANNED_TERMS`, its tests and skill_and_content section 8 change with it.
+4. **The index section:** approved as drafted in 5.4, in `references/improving_agents/index.md` only. It includes the M11 playbook-step flow, and the `KT-B14` fix that points to `references/knowledge/run_an_experiment.md`.
+5. **Noise** and 6. **Detectability:** say plainly that Kiln Harness Tuner has a noise check and a detectability check. For MCP agents, the document's rule for an absent input applies: the flip rate of 10% for noise, and the floor of 6 wins for detectability.
+7. **Screening and skill bundles:** "tell the user it needs Kiln Harness Tuner", for now. The bundle API comes in the next project.
+8. **`KT-B13`:** add "train" to the item-reading steps that name no split.
+9. **`KT-B19`:** re-add the commissioning rules of HT's role skills to the saturated-eval and wrong-eval playbooks: building a new eval is the rare exception; none for a closed issue; close the issue as won't fix when the new eval cannot reproduce it; never reopen a fixed issue. Do not re-add the "no number, no item id and no trace" recording rule: after Phase 18, only HT's code writes experiment records.
+10. **The kept list:** the table of 5.2 is the full list of changes to re-apply after the revert: the renames; the batch 9 pointers to `train_val_test.md`; the batch 11 code-tool template paths and `code_tool_authoring.md` pointers; the batch 13a "See also" `run_an_experiment.md`; Phase 16's B30 "no sandbox" and B23 code-trust wording; the two size shortenings that dropped no rule; each lever's "See also". Nothing else since batch 7 touches the trees.
+11. **Order:** Phase 18 ran first (it touches no file of the trees).
+
+Given with the answers:
+- The record lines that HT writes are read-only for MCP agents (Phase 18).
+- **"The tuner"** (owner, option B, after review): where "the tuner" is the subject of a rule that limits what may be changed (the task, an eval, a fine-tune, a RAG config), the subject becomes "an experiment" or "this lever"; everywhere else, "the tuner" becomes "you". Reason: Kiln Harness Tuner's agents act only through experiments, so for them the meaning is the same; for MCP agents it limits the rule to experiments, so an agent does not refuse a user who asks it to change a task or an eval. This is an approved rename.
+- **B7:** in `app/mcp/knowledge_backlog.md`, drop "Smell: an old model". Keep the renames "A repeat measurement on request" and "A quick check for room to improve", and add a Kiln Harness Tuner example line to each.
+- **B11:** the revert restores the `output_mode` sentence on the test call with no tools attached and the `params` wording; check that they are back. Add `post_api_projects_project_id_skills.md` to the `api_docs` of `levers/skill.md`. Close B11.
+- **B12:** close it as moot, because batch 8 is reverted. Instead, `.agents/skills/knowledge-maintenance/SKILL.md` 4.6 describes the new rules: HT's text is ported as written with only the mechanical changes and the approved renames, and the section "How to read these documents over MCP" of `references/improving_agents/index.md` explains HT's inputs, code checks, outputs and tools to MCP agents.

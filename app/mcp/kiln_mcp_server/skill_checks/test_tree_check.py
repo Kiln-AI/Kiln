@@ -642,5 +642,54 @@ def test_product_name_is_not_banned(tmp_path):
     assert problems_of(tmp_path, changes) == []
 
 
+def banned_in_levers_index(tmp_path, text: str) -> list[str]:
+    changes = {
+        "references/levers/index.md": f"# Levers\n\n{text}\n",
+        "SKILL.md": with_line(SKILL_MD, "`references/levers/index.md`"),
+    }
+    return [
+        p.message
+        for p in problems_of(tmp_path, changes)
+        if p.rule == "tree-banned-term"
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Without `train_noise`, use a flip rate of 10%.",
+        "Read `train_detectability`, `probe_results` and `lever_attempts`.",
+        "Ask the user, or write it in `open_questions` or `rejected_summary`.",
+        "The models are in `allowed_models` and `model_policy`.",
+        "Kiln Harness Tuner installs it with `install_skill_bundle`.",
+        "The record ends `— REJECTED AT VAL <MM-DD>`.",
+    ],
+)
+def test_harness_tuner_inputs_and_outputs_are_allowed_in_the_knowledge(tmp_path, text):
+    assert banned_in_levers_index(tmp_path, text) == []
+
+
+@pytest.mark.parametrize(
+    "text, term",
+    [
+        ("Then the planner plans it.", "the planner"),
+        ("The planner's skill gives the order.", "the planner"),
+        ("The builder writes it.", "the builder"),
+        ("The analyzer reads it.", "the analyzer"),
+        ("The tuner reads it.", "the tuner"),
+    ],
+)
+def test_role_names_stay_banned_in_the_knowledge(tmp_path, text, term):
+    assert banned_in_levers_index(tmp_path, text) == [f"line 3: banned term `{term}`"]
+
+
+def test_harness_tuner_record_strings_may_hold_a_loop_word(tmp_path):
+    record = "`- rejected at the val gate <MM-DD> vs baseline <rc> — `"
+    assert banned_in_levers_index(tmp_path, f"A line {record}.") == []
+    assert banned_in_levers_index(
+        tmp_path, f"A line {record}, and the val gate rejects it."
+    ) == ["line 3: banned term `val gate`"]
+
+
 def test_every_rule_id_is_listed():
     assert len(TREE_RULES) == len(set(TREE_RULES)) == 11

@@ -16,30 +16,33 @@ for software, and software reads extra data at no cost. An agent pays for
 each token that a tool returns, and the model runs again between two
 calls. So a good API can be a poor tool for an agent.
 
-This playbook responds to the smells of the tool design. Each smell has
-its own document in the table "Smells" of
-`references/improving_agents/index.md`, and that document says how
-to recognise it. The smells of the tools are:
-[tool results flood the context](references/improving_agents/smells/tool-results-flood-the-context.md),
+This playbook responds to the smells of the tool design. Each smell has its
+own document in the table "Smells" of
+`references/improving_agents/index.md`, and that document says how to
+recognise it. The smells of the tools are: [tool results flood the
+context](references/improving_agents/smells/tool-results-flood-the-context.md),
 [fixed call chain](references/improving_agents/smells/fixed-call-chain.md),
-[general query tool without a guide](references/improving_agents/smells/general-query-tool-without-a-guide.md),
+[general query tool without a
+guide](references/improving_agents/smells/general-query-tool-without-a-guide.md),
 [too many tools](references/improving_agents/smells/too-many-tools.md),
-[unnecessary tools](references/improving_agents/smells/unnecessary-tools.md),
-[tool search](references/improving_agents/smells/tool-search.md),
-[document behind a lookup tool](references/improving_agents/smells/document-behind-a-lookup-tool.md)
-and [very long tool description](references/improving_agents/smells/very-long-tool-description.md).
+[unnecessary
+tools](references/improving_agents/smells/unnecessary-tools.md), [tool
+search](references/improving_agents/smells/tool-search.md), [document behind
+a lookup
+tool](references/improving_agents/smells/document-behind-a-lookup-tool.md)
+and [very long tool
+description](references/improving_agents/smells/very-long-tool-description.md).
 
-You do not change the company's tools. You write a layer of code
-tools over them: a wrapper calls the original tool and changes what goes
-in or what comes back. The [code tools](references/levers/new_tool.md) lever says
-how. So many tool designs can be tried, and the original tools stay as
-they are.
+You do not change the company's tools. You write a layer of code tools over
+them: a wrapper calls the original tool and changes what goes in or what
+comes back. The [code tools](references/levers/new_tool.md) lever says how.
+So many tool designs can be tried, and the original tools stay as they are.
 
 The harness is one object. A new tool says when to call it in its own
 description, not in a prompt line, and a guide skill can describe the tool
 set. The exception is a "call X at the start" line, which goes in the
-prompt: see
-[missing context the agent could be given](references/improving_agents/playbooks/missing-context-the-agent-could-be-given.md).
+prompt: see [missing context the agent could be
+given](references/improving_agents/playbooks/missing-context-the-agent-could-be-given.md).
 The same candidate removes the prompt text that the new tool takes over.
 
 ## What to try, in order
@@ -87,9 +90,9 @@ them only when it does not.
   strong preference. Text in a tool moves with the tool. So a later experiment
   that adds, removes or changes a tool needs no prompt change, and its
   result stays clean.
-- Do not put several unrelated wrappers in one candidate. When it wins,
-  nothing says which wrapper helped. A wrapper with its description and
-  its guide skill is one technique, and it is one candidate.
+- Do not put several unrelated wrappers in one candidate. When it wins, nothing
+  says which wrapper helped. A wrapper with its description and its guide
+  skill is one technique, and it is one candidate.
 - Do not plan a small fix elsewhere while a tool result can flood the
   context. The flood hides the effect of the fix.
 

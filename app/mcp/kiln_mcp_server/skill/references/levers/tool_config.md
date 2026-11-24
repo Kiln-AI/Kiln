@@ -63,11 +63,12 @@ Rules of the object:
 
 ## Limits
 
-- This lever attaches only what exists. It does not connect an MCP
-  server, and it does not create a RAG config or a Kiln task tool.
+- This lever attaches only what exists. It cannot connect an MCP server,
+  and it cannot create a RAG config or a Kiln task tool.
 - When a dropped tool is still named in the prompt or in an attached
-  skill, the text points at nothing. After the build, search the text for
-  the name yourself and change each mention.
+  skill, the text points at nothing. Code looks for such names after the
+  build (the reference check). The build searches the text for the name
+  and changes each mention.
 - A code tool can call a tool that it lists in its `tool_allowlist` when
   that tool is not attached. To drop a tool from the model's view does not
   remove it from a wrapper.
@@ -77,7 +78,7 @@ Rules of the object:
   (`function_calling`, `function_calling_weak`, or `default` outside Ollama
   and Docker Model Runner), Kiln refuses every call once a tool or a skill
   is attached. Set the mode on the same run config by the fallback of
-  [model](references/levers/model.md), step 4, and record it as part of the change. The lever
+  [model](references/levers/model.md), step 4, and list it in `change`. The lever
   [output_mode](references/levers/output_mode.md) gives the modes.
 
 ## See also

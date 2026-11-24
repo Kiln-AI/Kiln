@@ -59,7 +59,7 @@ cost: low
 The change is one edit of the [prompt](references/levers/prompt.md).
 
 1. **Find the rule.** Read the task's instruction and requirements, and the
-   failing outputs. State the rule in your own words. Do not copy the text
+   failing train outputs. State the rule in your own words. Do not copy the text
    of an eval or of its judge, and do not copy a value from a train item.
 2. **Write one line that states the contract exactly**: the literal
    delimiters, the order of the parts, and the escaping. When an example
@@ -75,7 +75,7 @@ The change is one edit of the [prompt](references/levers/prompt.md).
 
 ## Check that it took effect
 
-Run the new run config on two or three train items that failed on the
+Smoke the new run config on two or three train items that failed on the
 form. Count the outputs that obey the contract, by eye or with a regular
 expression on the output. When none obey it, the line did not reach the
 model, or the failure is not one of format.

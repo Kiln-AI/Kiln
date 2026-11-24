@@ -45,9 +45,9 @@ cost: medium
   the facts that the failures show the agent needs.
 - **An eval scores the tool calls.** An eval made from the Kiln template
   `tool_call`, a `tool_call_check` eval config, or a judge whose criteria
-  name a tool can expect the tools that a roll-up replaces. Read the spec of
-  that eval first. Keep the tool names that it expects, or name that eval as
-  a target eval of the experiment, as a stated coupling.
+  name a tool can expect the tools that a roll-up replaces. Read the spec
+  of that eval first. Keep the tool names that it expects, or list that
+  eval in the candidate's `evaluation_target` as a stated coupling.
 
 ## Alternatives
 
@@ -71,16 +71,16 @@ first. The tool and the line are one set of changes.
    items in order, with the value that each call passes to the next. A
    roll-up is worth it when the same sequence appears on most items.
 2. **Choose the form.**
-   - **A chain**: one tool that takes the input of the first call, makes
-     the calls in order, and returns the facts that the agent used from
-     any call in the chain. The template
+   - **A chain**: one tool that takes the input of the first call, makes the
+     calls in order, and returns the facts that the agent used from any call
+     in the chain. The template
      `references/knowledge/code_tool_wrappers/composite_resolve_fetch.md`
      has this shape for search, disambiguate and fetch.
    - **A loop**: one tool that takes a list, runs the operation on each
-     item, and returns what was done and the errors for each item. A
-     partial success is then usable. The template
-     `references/knowledge/code_tool_wrappers/batch_with_errors.md` has
-     this shape.
+     item, and returns what was done and the errors for each item. A partial
+     success is then usable. The template
+     `references/knowledge/code_tool_wrappers/batch_with_errors.md` has this
+     shape.
    - **A context loader**: one tool, for example `get_account_context`,
      that calls the tools that hold the facts and returns a short summary
      of them. Add one prompt line that tells the agent to call it before
@@ -98,20 +98,20 @@ first. The tool and the line are one set of changes.
 
 ## Check that it took effect
 
-Dry-run the tool on a read. Then run the candidate on two or three train
-items that showed the pattern. In each trace, find one call to the roll-up
-where the baseline made several calls, and fewer model turns before the
-answer. For a context loader, find the call before the answer, and the fact
-from it in the answer.
+Dry-run the tool on a read. Then smoke two or three train items that
+showed the pattern. In each trace, find one call to the roll-up where the
+baseline made several calls, and fewer model turns before the answer. For
+a context loader, find the call before the answer, and the fact from it in
+the answer.
 
 ## Budget
 
 Medium cost: one code tool, a dry run, and a measurement on its target
 evals. When it fixes its target, the confirmation on val measures every eval
-before a candidate becomes the baseline, the evals that the tools touch too.
-A good step on any budget when the traces show the same chain on most items,
-because each item then costs fewer model calls. A context loader that fixes
-a class of failures is worth a slot on a small budget.
+before a promotion, the evals that the tools touch too. A good step on any
+budget when the traces show the same chain on most items, because each item
+then costs fewer model calls. A context loader that fixes a class of
+failures is worth a slot on a small budget.
 
 ## If it does not move the evals
 

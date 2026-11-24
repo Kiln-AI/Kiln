@@ -18,10 +18,9 @@ api_docs:
 ## What it is
 
 A code tool is a Python function that the subject model can call. Kiln runs
-it with no sandbox (`references/knowledge/code_tools.md`). It can
-call other tools through its `tool_allowlist`. The
-model sees its `tool_function_name`, its `tool_description` and the
-descriptions in its `parameters_schema`.
+it with no sandbox (`references/knowledge/code_tools.md`). It can call other
+tools through its `tool_allowlist`. The model sees its `tool_function_name`,
+its `tool_description` and the descriptions in its `parameters_schema`.
 
 This lever covers three kinds of change:
 
@@ -34,8 +33,8 @@ This lever covers three kinds of change:
   comes back. An MCP or built-in tool gets a new description only through a
   wrapper.
 
-The subject's own tools are the company's software. You do not change
-them. You add code tools beside them.
+The subject's own tools are the company's software. You do not
+change them. You add code tools beside them.
 
 ## How to change it
 
@@ -73,10 +72,8 @@ Rules of the object:
   reach the Kiln server, never a memory tool, never a skill id, never the
   tool's own id. `references/knowledge/code_tool_authoring.md` gives the
   rule in full.
-- Archive with
-  `references/knowledge/api_docs/post_api_projects_project_id_code_tools_code_tool_id_archive.md`
-  only a tool that you created for this experiment and that no run config
-  uses.
+- `references/knowledge/api_docs/post_api_projects_project_id_code_tools_code_tool_id_archive.md`
+  is for a tool that this build created and that no run config uses.
 
 ## Limits
 
@@ -86,16 +83,16 @@ Rules of the object:
   go at most 10 deep.
 - A nested result can arrive parsed, or as a JSON string. The code parses
   both.
-- No value from a train item goes into the code or the description
-  (the leak rules of `references/knowledge/train_val_test.md`).
-  Search each build yourself for copies of train content and of eval text.
+- No value from a train item goes into the code or the description (the
+  leak rules of `references/knowledge/train_val_test.md`). Code searches
+  each build for copies of train content and of eval text.
 - The tool's description moves with the tool. A run config that drops the
   tool drops its description too.
 - When the parent's output mode sends the schema as a tool
   (`function_calling`, `function_calling_weak`, or `default` outside Ollama
   and Docker Model Runner), Kiln refuses every call once a tool or a skill
   is attached. Set the mode on the same run config by the fallback of
-  [model](references/levers/model.md), step 4, and record it as part of the change. The lever
+  [model](references/levers/model.md), step 4, and list it in `change`. The lever
   [output_mode](references/levers/output_mode.md) gives the modes.
 
 ## See also

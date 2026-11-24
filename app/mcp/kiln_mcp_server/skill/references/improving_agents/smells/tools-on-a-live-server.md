@@ -20,7 +20,7 @@ an eval passes or fails. Each tool is in one of four cases:
 | Reads fixed data: RAG over a document store, a fixed copy of a database | Fine. Not this smell. |
 | Reads the real world: a web search | Usually fine: there is no fixed copy of the web. A smell only for an eval item whose answer depends on a result that can change: "returns the web site X" (the site can go away) is bad; "confirms that the sixth king of England is X" is fine. |
 | Reads data that moves: a live or staging system that people change | Usually bad. "How many tickets did we close last week" has no fixed answer: people change the data, and "last week" moves. |
-| Writes to a real system: create, change or delete | Always bad, for evals and for experiments. One run changes what the next run reads, and a write can do real harm. |
+| Writes to a real system: create, change or delete | Always bad, for evals and for tuner runs. One run changes what the next run reads, and a write can do real harm. |
 
 ## How to recognise it
 
@@ -60,7 +60,7 @@ times on data that can have changed. A write also blocks a safe run.
 No experiment can fix the drift.
 
 - [Dealing with a wrong eval](references/improving_agents/playbooks/dealing-with-a-wrong-eval.md),
-  first: report the issue to the user. Name the
+  first: report the issue in `open_questions` and in the report. Name the
   tools, the host, the case from the table and the evidence.
   - **For a read of data that changes, check first:** read the eval
     expectations. One that stays true when the data changes is fine ("the
@@ -71,7 +71,8 @@ No experiment can fix the drift.
     OpenEnv world, so that the data is reproducible and isolated. The
     alternative: the user confirms that the system is static (a read-only
     test system, the same data on each run). Then it is not this smell.
-- [Dealing with a noisy eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md),
+- [Dealing with a noisy
+  eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md),
   when scores move between repeats with no change to the agent: repeat
   before you trust a small difference, until the user fixes it.
 - [Guard tool calls at the boundary](references/improving_agents/techniques/guard-tool-calls-at-the-boundary.md),

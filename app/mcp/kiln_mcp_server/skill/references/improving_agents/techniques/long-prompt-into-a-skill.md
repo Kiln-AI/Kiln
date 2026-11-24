@@ -18,8 +18,9 @@ cost: medium
   few of them. Example: an agent that can do 25 things, with the rules of
   all 25 in its prompt.
 - A quick check shows that the model reliably opens skills under this run
-  config. Small models often do not. The measured cases are in the
-  playbook [the skill is not read](references/improving_agents/playbooks/skill-is-not-read.md).
+  config. Small models often do not. The measured cases are in the playbook
+  [the skill is not
+  read](references/improving_agents/playbooks/skill-is-not-read.md).
 - The traces show the agent miss a part of the long prompt, and the part
   it misses changes from item to item.
 - The cost per item is high because of the prompt, and the measured cost
@@ -31,9 +32,9 @@ one of these conditions is not true, an alternative below fits better.
 
 ## When not to use
 
-- **The model does not read skills** under this run config. Check it
-  quickly first. When the check says no:
-  [structure a long prompt](references/improving_agents/techniques/structure-a-long-prompt.md).
+- **The model does not read skills** under this run config. Check it quickly
+  first. When the quick check says no: [structure a long
+  prompt](references/improving_agents/techniques/structure-a-long-prompt.md).
 - **Most runs need most of the content.** Each run then pays for the
   calls to read the files, and gets nothing that the prompt did not give.
 - **A capable model, with a prompt that the cache serves.** A long prompt
@@ -49,8 +50,9 @@ one of these conditions is not true, an alternative below fits better.
 - [Skill into the prompt](references/improving_agents/techniques/skill-into-the-prompt.md), when most runs need
   the content, the model is capable, and the measured cost shows that the
   prompt cache applies.
-- [Structure a long prompt](references/improving_agents/techniques/structure-a-long-prompt.md), when a quick check shows
-  that the model does not read skills.
+- [Structure a long
+  prompt](references/improving_agents/techniques/structure-a-long-prompt.md),
+  when a quick check shows that the model does not read skills.
 - [Policy as step-by-step procedures](references/improving_agents/techniques/policy-as-step-by-step-procedures.md),
   when the long text is one policy that every run follows.
 
@@ -59,31 +61,27 @@ one of these conditions is not true, an alternative below fits better.
 The change is a new [skill](references/levers/skill.md) bundle and a shorter
 [prompt](references/levers/prompt.md), on one new run config.
 
-1. **Check quickly**, when no earlier check answered it: does this model
-   open a skill under this run config?
+1. **Run a quick check**, when no earlier quick check answered it: does this
+   model open a skill under this run config?
 2. **Build the bundle from the prompt text**, never from the train items
-   (the leak rules of `references/knowledge/train_val_test.md`): one topic
-   file for each topic, and a body that maps them. The Kiln API creates a
-   skill with a body only (the lever [skill](references/levers/skill.md)),
-   so a bundle with topic files is built when running Kiln Harness Tuner. A
-   new version of an existing skill made over the API loses that skill's
-   reference files. How to write the description and the body in Kiln is in
-   `references/knowledge/adding_skills.md`.
+   (the leak rules of `references/knowledge/train_val_test.md`). The steps
+   are in Kiln Harness Tuner's skill-authoring guide: section 2, "When the
+   model is lost in a long prompt or one big skill", for the topic files and
+   the body map, and section 3 for the description.
 3. **Trim the prompt on the same candidate.** It keeps what every run needs (the
    role, the output contract) and one line that names the skill. The moved
    text leaves the prompt. Two copies can disagree.
 
 ## Check that it took effect
 
-Run the candidate on two or three train items that need different topics. In
-each trace, find the read of the right reference file before the answer.
-When the skill is never opened, the change did not reach the agent.
+Smoke on two or three train items that need different topics. In each
+trace, find the read of the right reference file before the answer. When
+the skill is never opened, the change did not reach the agent.
 
 The bundle changes the order of the agent's calls, and that can break another
 criterion. Measure the bundle on its target evals, and add an eval only when
 you have a stated reason to expect the bundle to break it. When it fixes its
-target, the confirmation on val measures every eval before a candidate
-becomes the baseline.
+target, the confirmation on val measures every eval before a promotion.
 
 ## Budget
 

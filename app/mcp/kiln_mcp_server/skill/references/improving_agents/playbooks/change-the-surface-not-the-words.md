@@ -1,6 +1,6 @@
 ---
 title: Change the surface, not the words
-description: Two text changes failed on one issue, or the failure is mechanical. Change what the model touches before the words it reads. A policy failure comes here only after two text changes failed.
+description: Two text changes failed on one issue, or the failure is mechanical. Change what the model touches before the words it reads. A policy failure comes here only after two text candidates failed.
 reviewed: 2026-11-16
 kind: failure
 applies_to: all
@@ -20,9 +20,9 @@ This playbook applies in two cases:
   rule.
 - **Two text changes failed on one issue.** A text change is a `prompt`
   candidate, or a `skill` candidate that only changes words (a description,
-  a body). Count the candidates opened on each issue and lever, with any
-  outcome, from your experiment records. The records say which of them
-  failed.
+  a body). Your input's `lever_attempts` counts the candidates opened on
+  each issue and lever, with any outcome. The experiment records say which
+  of them failed.
 
 Instruction text is the cheapest change to build. For a mechanical
 failure it can be the most expensive to learn from. The model that fails
@@ -56,25 +56,27 @@ and [faulty inherited skill](references/improving_agents/smells/faulty-inherited
    [long prompt into a skill](references/improving_agents/techniques/long-prompt-into-a-skill.md),
    or a new version of an inherited skill,
    [rewrite an inherited skill](references/improving_agents/techniques/rewrite-an-inherited-skill.md).
-4. **A policy failure, after two failed text candidates.** A policy failure is
-   not mechanical: the agent breaks a rule of the business that only words
-   can carry (who gets a refund, which case needs a person). Its first
-   text candidate is
-   [policy as step-by-step procedures](references/improving_agents/techniques/policy-as-step-by-step-procedures.md),
+4. **A policy failure, after two failed text candidates.** A policy failure
+   is not mechanical: the agent breaks a rule of the business that only
+   words can carry (who gets a refund, which case needs a person). Its first
+   text candidate is [policy as step-by-step
+   procedures](references/improving_agents/techniques/policy-as-step-by-step-procedures.md),
    through the normal path, not through this playbook. When two text
-   candidates already failed on a policy issue, change the structure: put the
-   procedures in a skill, with one reference file for each procedure
-   ([long prompt into a skill](references/improving_agents/techniques/long-prompt-into-a-skill.md)).
+   candidates already failed on a policy issue, change the structure: put
+   the procedures in a skill, with one reference file for each procedure
+   ([long prompt into a
+   skill](references/improving_agents/techniques/long-prompt-into-a-skill.md)).
    Or defer the issue (step 5).
-5. When no surface change fits the issue, defer the issue, and report the
-   reason to the user.
+5. When no surface change fits the issue, defer the issue with the reason
+   in `rejected_summary`.
 
 When a wrapper, a guard or a tool takes over a step, the same candidate removes
 the prompt text that asked the model to do that step.
 
 ## What not to do yet
 
-- No third text candidate on the same issue after two failed.
+- No third text candidate on the same issue after two failed. Kiln Harness
+  Tuner's batch-selection skill gives the count and the rule.
 - No prompt list of rules for a mechanical failure. A wrapper removes the
   failure.
 - No model swap to hide a mechanical failure. The cause stays in the

@@ -31,10 +31,11 @@ low cost whether this model opens skills at all under this run config.
 2. [One general rule per edit](references/improving_agents/techniques/one-general-rule-per-edit.md),
    when the agent does not open the skill: one prompt rule that says which
    requests need the skill.
-3. [Skill into the prompt](references/improving_agents/techniques/skill-into-the-prompt.md), when a
-   quick check shows that the model does not open skills under this run config,
-   or the skill is small, or most runs need it. The content, or a compact
-   index of it, is then always in the context.
+3. [Skill into the
+   prompt](references/improving_agents/techniques/skill-into-the-prompt.md),
+   when a quick check shows that the model does not open skills under this
+   run config, or the skill is small, or most runs need it. The content, or
+   a compact index of it, is then always in the context.
 4. [Policy as step-by-step procedures](references/improving_agents/techniques/policy-as-step-by-step-procedures.md),
    when the agent reads the right file and does not follow it, and the
    file is prose. Numbered steps with yes-or-no conditions are easier to
@@ -52,8 +53,7 @@ low cost whether this model opens skills at all under this run config.
   the reads in a few traces, or run a quick check.
 - When the agent loads the skill and does not follow it, do not add more
   text to the skill. More text gives the model more to miss. A shorter,
-  more procedural text, or the content in the prompt, is the next
-  candidate.
+  more procedural text, or the content in the prompt, is the next candidate.
   When the model is a lever, a model that follows long guidance better
   is another option.
 

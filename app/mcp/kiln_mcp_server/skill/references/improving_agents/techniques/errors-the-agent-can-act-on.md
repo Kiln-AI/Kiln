@@ -46,8 +46,8 @@ cost: medium
 ## How
 
 The change is a wrapper of the tool on a new run config, with the wrapped
-tool dropped. See the lever [new_tool](references/levers/new_tool.md) for the
-build. The template
+tool dropped. See the lever [new_tool](references/levers/new_tool.md) for
+the build. The template
 `references/knowledge/code_tool_wrappers/actionable_errors.md` has this
 shape, and the rules of `references/knowledge/code_tool_authoring.md` say
 that errors are data, not exceptions.
@@ -89,25 +89,23 @@ that errors are data, not exceptions.
    - retry a fixed number of times, with a wait that fits the timeout;
    - return the error, and let the agent decide what to do.
 
-   Choose the option for this tool, and say why in the `notes` of the
-   tool's `provenance`. No
+   Choose the option for this tool, and say why in `build_notes`. No
    template retries yet: when you choose a retry, add it to the copy of
    the template.
 
 ## Check that it took effect
 
-Dry-run the wrapper with a call that fails (a value that does not exist, a
-read only) and read the error. It says what was wrong and what to do. Then
-run the candidate on two or three train items whose traces had raw errors,
-and count the retries and the calls that fail again in the same way.
+Dry-run the wrapper with a call that fails (a value that does not exist,
+a read only) and read the error. It says what was wrong and what to do.
+Then smoke two or three train items whose traces had raw errors, and
+count the retries and the calls that fail again in the same way.
 
 ## Budget
 
 Medium cost: a wrapper, a dry run for each class of error, and a measurement
 on its target evals. When it fixes its target, the confirmation on val
-measures every eval before a candidate becomes the baseline, the evals that
-the tool touches too. A good step on any budget when the traces show retries
-after raw errors.
+measures every eval before a promotion, the evals that the tool touches too.
+A good step on any budget when the traces show retries after raw errors.
 
 ## If it does not move the evals
 

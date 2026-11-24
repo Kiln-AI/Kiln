@@ -178,14 +178,40 @@ The port was last brought up to date with Kiln Harness Tuner at commit
 
 1. Diff that folder of Kiln Harness Tuner from the recorded commit to its
    head.
-2. Port each change by hand, with the same rewrites as the first port:
-   links become full paths from the skill root; a gateway operation becomes
-   the path of its endpoint doc under `references/knowledge/api_docs/`; a
-   role of the tuner becomes "you"; a word of the tuner's loop becomes the
-   general word ("arm" becomes "candidate" or "experiment", "the val gate"
-   becomes "the confirmation on val", "a probe" becomes "a quick check").
-   Change the words only, never what a rule requires. The check bans the
-   tuner's words in the knowledge trees.
+2. Port each change by hand. Kiln Harness Tuner's text is ported as
+   written, with only these changes:
+   - links become full paths from the skill root;
+   - a gateway operation becomes the path of its endpoint doc under
+     `references/knowledge/api_docs/`;
+   - a role (the planner, the builder, the analyzer) becomes "you";
+   - where "the tuner" is the subject of a rule that limits what may be
+     changed (the task, an eval, a fine-tune, a RAG config), the subject
+     becomes "an experiment" or "this lever"; everywhere else, "the tuner"
+     becomes "you";
+   - a word of the loop becomes the general word: "arm" becomes
+     "candidate" or "experiment", "the val gate" becomes "the confirmation
+     on val", "a probe" becomes "a quick check", "a screening round"
+     becomes "a screening", the owner of an agent or an eval becomes "the
+     user", and "the guidance" becomes "what the user asked";
+   - where the source names a role's skill or entry file as the holder of
+     a rule, name it as Kiln Harness Tuner's, or name the Kiln file that
+     now holds its table;
+   - where a sentence says that a gateway operation refuses something that
+     the Kiln endpoint does not, its subject becomes "Code";
+   - a smell whose source names only the reference of its code detection
+     gets the threshold number.
+
+   Keep Kiln Harness Tuner's inputs, outputs, code checks, verdicts, tools
+   and record strings as it writes them, named as its own. Do not turn them
+   into "ask the user" or "check it yourself", and do not add a rule that
+   "applies when running Kiln Harness Tuner". The section "How to read
+   these documents over MCP" of `references/improving_agents/index.md`
+   tells an agent on the MCP how to read those words; change that section
+   when a port adds a new kind of input, check or tool. A sentence that
+   names the split rule names `references/knowledge/train_val_test.md`.
+   In the knowledge trees, the check bans the gateway operation names, the
+   role names, the loop words and a few other words of the tuner
+   (`gateway`, `the tuner`, `scratch folder`).
 3. Finish (section 9).
 4. Change the recorded commit above to the head that you ported.
 

@@ -21,10 +21,11 @@ final answer:
   section, or did not look;
 - or the source was read, and the answer goes past what the source says.
 
-The knowledge exists somewhere you can reach: a search tool or a
-RAG tool of the project, a document, a skill. When the source is a long
-document that the agent reaches only by page, by search or by section, the
-smell [document behind a lookup tool](references/improving_agents/smells/document-behind-a-lookup-tool.md)
+The knowledge exists somewhere you can reach: a search tool or a RAG tool of
+the project, a document, a skill. When the source is a long document that
+the agent reaches only by page, by search or by section, the smell [document
+behind a lookup
+tool](references/improving_agents/smells/document-behind-a-lookup-tool.md)
 says how to recognise it.
 
 ## What to try, in order
@@ -36,10 +37,11 @@ says how to recognise it.
    when the source is in the context and the answers go past it. A short
    rule of scope discipline: answer from the source, and say so when the
    source does not cover the question.
-3. [Document into a skill](references/improving_agents/techniques/document-into-a-skill.md), when a
-   long reference document sits behind a lookup tool (by page, by search
-   or by section), and the agent picks the wrong part or never looks. A
-   contents file that names what each section holds, one reference file
+3. [Document into a
+   skill](references/improving_agents/techniques/document-into-a-skill.md),
+   when a long reference document sits behind a lookup tool (by page, by
+   search or by section), and the agent picks the wrong part or never looks.
+   A contents file that names what each section holds, one reference file
    per section, and the lookup tool dropped on the same candidate.
 
 ## What not to do yet

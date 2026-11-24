@@ -63,25 +63,24 @@ version of the [skill](references/levers/skill.md) that holds the policy.
    hypothesis.
 6. **Remove the prose version on the same edit.** Two versions of one
    policy can disagree.
-7. A strong model can draft the rewrite from the policy text. It writes from
-   the policy, never from the train items (the leak rules of
+7. A strong model can draft the rewrite from the policy text. It writes
+   from the policy, never from the train items (the leak rules of
    `references/knowledge/train_val_test.md`).
 
 ## Check that it took effect
 
-Run the candidate on two or three train items that need a procedure. In each
-trace, find the steps of the procedure in the order it gives, and the check
-step after a fix. When the agent still skips the same step, the procedure
-did not reach it, or the step is not the cause.
+Smoke on two or three train items that need a procedure. In each trace,
+find the steps of the procedure in the order it gives, and the check step
+after a fix. When the agent still skips the same step, the procedure did
+not reach it, or the step is not the cause.
 
 ## Budget
 
 Low cost to build: one prompt edit, or one skill version. Measure it on its
 target evals. When it fixes its target, the confirmation on val measures
-every eval before a candidate becomes the baseline, the evals that the
-policy touches too. That matters here, because a rewrite changes many
-behaviours at once. On a small budget, take it when the traces show steps
-skipped or out of order.
+every eval before a promotion, the evals that the policy touches too. That
+matters here, because a rewrite changes many behaviours at once. On a small
+budget, take it when the traces show steps skipped or out of order.
 
 ## If it does not move the evals
 

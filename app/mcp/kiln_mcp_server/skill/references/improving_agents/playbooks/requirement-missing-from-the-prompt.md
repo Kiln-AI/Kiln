@@ -33,19 +33,20 @@ layout, an escaping rule), see
 1. [Add the missing requirement](references/improving_agents/techniques/add-the-missing-requirement.md),
    when one requirement explains most of the failing items. One prompt
    rule, in new words, with its reason.
-2. [One general rule per edit](references/improving_agents/techniques/one-general-rule-per-edit.md),
+2. [One general rule per
+   edit](references/improving_agents/techniques/one-general-rule-per-edit.md),
    when the failing items lack several things. Group them by cause, and
-   write one rule for the cause that explains the most items. The next
-   cause goes in the next candidate.
+   write one rule for the cause that explains the most items. The next cause
+   goes in the next candidate.
 3. [The output contract is not met](references/improving_agents/playbooks/output-contract-not-met.md), when the
    missing part turns out to be a format rule.
 
 ## What not to do yet
 
 - Do not copy the text of the eval, of its judge or of a spec into the
-  prompt. A check for copied judge text finds a copied passage and ends the
-  candidate. State the rule in new words, from what the task needs (the leak
-  rules of `references/knowledge/train_val_test.md`).
+  prompt. The judge-copy check finds a copied passage and ends the candidate.
+  State the rule in new words, from what the task needs (the leak rules of
+  `references/knowledge/train_val_test.md`).
 - Do not write a rule for each failing item. A rule that names an item's
   values is a leak, and the generality check refuses it.
 - No skill, no tool and no model swap. One prompt rule costs less, and it

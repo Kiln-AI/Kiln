@@ -1,6 +1,6 @@
 ---
 title: Model settings
-description: The model's settings on a run config - thinking level, temperature and top-p - changed on a copy of the parent, as one experiment or in a screening.
+description: The model's settings on a run config - thinking level, temperature and top-p - changed on a clone of the parent, as a params experiment or in a screening.
 reviewed: 2026-11-16
 api_docs:
   - references/knowledge/api_docs/get_api_projects_project_id_tasks_task_id_run_configs.md
@@ -29,38 +29,38 @@ as the parent has them.
 
 There are two ways.
 
-**One experiment.** Make one run config with
+**A params experiment.** You make one run config with
 `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md`.
 It is identical to the parent, except the named settings. No new prompt,
-skill or tool. Record each setting with its old and its new value, and that
-everything else is unchanged.
+skill or tool. The `change` block of the build lists each setting with its
+old and its new value, and everything else under `unchanged`.
 
-**A screening.** Make one run config for each candidate. Each candidate
-changes only `thinking_level`, `temperature` or `top_p`. Measure all of them
-on the same items, and give each one a verdict. A candidate that survives
-becomes one experiment on the same run config, and its measured results are
-used again.
+**A screening.** You write a plan with `screen` set and no items. Each
+candidate has `overrides` (`thinking_level`, `temperature`, `top_p`). Code
+makes each candidate's run config, measures all of them on the same items,
+and gives each one a verdict. No agent builds them. A survivor becomes an
+experiment with `work.existing_rc_id`, and its judged rows are used again.
 
 Rules of the object:
 
 - **The thinking levels come from
   `references/knowledge/api_docs/get_api_model_info_model_details.md`**: the
   `thinking_levels` of the model's provider entry, lowest first. For a pair
-  that Kiln offers, they are Kiln's list. A level that is not in that list
-  is refused.
+  that the server offers, they are the server's list. A level that is not
+  in that list is refused.
 - **The properties of a run config are fixed when it is created.** A
   mistake means another new run config.
 
 ## Limits
 
-- A provider can accept a setting and not apply it. Check the runs
-  yourself for two things: the thinking level, and the model and provider.
-  A thinking level with no reasoning in any run, and output tokens that did
-  not move against the parent, means that the change was not applied. So
-  does a run that another model or provider served. When no signal can show
-  one of these two, the change is unverified. `temperature` and `top_p`
-  cannot be checked in the runs: count a change to them as applied, with no
-  check.
+- A provider can accept a setting and not apply it. Code reads the drives
+  for two things only: the thinking level, and the model and provider. A
+  thinking level with no reasoning in any drive, and output tokens that
+  did not move against the parent, gives the verdict `lever not applied`.
+  So does a drive that another model or provider served. When no signal
+  can show one of these two, the verdict is `lever unverified`. Code does
+  not check `temperature` or `top_p`: a change to them gets the verdict
+  `applied` with no check.
 - A provider can refuse a setting. One failed call shows it.
   `references/knowledge/api_docs/get_api_model_info_model_details.md` gives
   `supports_temperature` for each provider entry, from models.dev: `false`

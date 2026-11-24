@@ -54,23 +54,22 @@ The change is one edit of the [prompt](references/levers/prompt.md).
 3. **Replace scattered rules** about scope with the paragraph, on the same
    edit.
 4. **Read the residual failures** after the measurement, on both sides.
-   When the agent now refuses valid requests, the next candidate
-   rebalances: it adds to the fourth part, or makes the second part
-   narrower. Change one side for each candidate.
+   When the agent now refuses valid requests, the next candidate rebalances: it
+   adds to the fourth part, or makes the second part narrower. Change one
+   side for each candidate.
 
 ## Check that it took effect
 
-Run the candidate on two train items that are out of scope and two that are
-valid but unusual. Count the declines on each side. Declines on the valid
-items show over-refusal before the measurement.
+Smoke on two train items that are out of scope and two that are valid but
+unusual. Count the declines on each side. Declines on the valid items show
+over-refusal before the measurement.
 
 ## Budget
 
 Low cost: one prompt edit. A good first step on any budget, when the
-failures are about scope. Measure it on its target evals. When it fixes
-its target, the confirmation on val measures every eval before a candidate
-becomes the baseline, the evals
-that check a valid answer too: a stronger guard can break them.
+failures are about scope. Measure it on its target evals. When it fixes its
+target, the confirmation on val measures every eval before a promotion, the
+evals that check a valid answer too: a stronger guard can break them.
 
 ## If it does not move the evals
 

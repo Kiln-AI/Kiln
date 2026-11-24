@@ -18,9 +18,8 @@ cost: low
   items have more than one cause.
 - The failing items each fail for their own reason, and a rule for each
   one is easy to write.
-- Earlier text candidates won on train and the confirmation on val
-  rejected them.
-- The prompt or a skill grows with each kept candidate, and old rules stay
+- Earlier text candidates won on train and validation rejected them.
+- The prompt or a skill grows with each promoted candidate, and old rules stay
   beside the new ones.
 
 ## When not to use
@@ -34,8 +33,9 @@ cost: low
 
 ## Alternatives
 
-- [Prune one group at a time](references/improving_agents/techniques/prune-one-group-at-a-time.md), when the text
-  is already long with rules from earlier candidates.
+- [Prune one group at a
+  time](references/improving_agents/techniques/prune-one-group-at-a-time.md),
+  when the text is already long with rules from earlier candidates.
 - [Add the missing requirement](references/improving_agents/techniques/add-the-missing-requirement.md), when one
   requirement explains most failures and the prompt never asks for it.
 
@@ -50,8 +50,10 @@ version of a [skill](references/levers/skill.md).
 2. **Write one rule** that states the cause and the action. Put its reason
    beside it, in a short clause. A rule with its reason is easier to keep
    correct.
-3. **The rule replaces text, and it names its source**, never a train case.
-   An example in the rule uses invented values (the leak rules of
+3. **Apply "Text you add"** in "Build the candidate" of
+   `references/knowledge/run_an_experiment.md`: the rule replaces text, and
+   it names its source, never a train case. An example in the rule uses
+   invented values (the leak rules of
    `references/knowledge/train_val_test.md`).
 4. **Look for a contradiction.** Search the prompt and the attached skills
    for text that says the opposite. Two rules that disagree make the model
@@ -61,15 +63,14 @@ version of a [skill](references/levers/skill.md).
 
 ## Check that it took effect
 
-Before a quick run, read the diff: one rule, no value from an item, and text
-that did not grow, or grew by the one rule. Then run the candidate on two
-train items of the chosen cause, and one item of another cause that passed
-before.
+Before the smoke, read the diff: one rule, no value from an item, and text
+that did not grow, or grew by the one rule. Then smoke on two train items
+of the chosen cause, and one item of another cause that passed before.
 
 ## Budget
 
-Low cost. It matters most on a small budget: a candidate that wins on train
-and loses at val is the most expensive candidate there is.
+Low cost. It matters most on a small budget: a candidate that wins on train and
+loses at validation is the most expensive candidate there is.
 
 ## If it does not move the evals
 
@@ -83,8 +84,7 @@ None yet.
 
 ## Confidence
 
-Medium. It follows the build rules and the generality check of Kiln
-Harness Tuner. It
+Medium. It follows Kiln Harness Tuner's build rules and its generality check. It
 agrees with public research on instruction files: files that only grow,
 rules with no reason, and rules that contradict each other each lower how
 well a model follows the file. No measured case of this exact rule is
