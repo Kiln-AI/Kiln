@@ -6,18 +6,16 @@ status: complete
 
 Build an MCP server into the Kiln app, so anyone running Kiln can use it from any agent (Claude Code, Codex, etc). Think "local Kiln assistant": add the MCP to your agent, and your agent knows what Kiln is and how to drive it.
 
-This started as "move the harness-tuner MCP into Kiln". After looking at the code, the plan changed: this project is a clean, general Kiln MCP. Fencing, and everything else harness-tuner needs from the MCP, is a second spec: [kiln_mcp_fencing](../kiln_mcp_fencing/project_overview.md).
+This started as "move the harness-tuner MCP into Kiln". After looking at the code, the plan changed: this project is a clean, general Kiln MCP. What harness-tuner needs is a second spec: [harness_tuner_switchover](../harness_tuner_switchover/project_overview.md).
 
 ## Roadmap
 
 1. **This spec:** the MCP server running in the desktop app, with knowledge and APIs. Gets us to a smart agent fast.
-2. **Spec two ([kiln_mcp_fencing](../kiln_mcp_fencing/project_overview.md)):** support for fencing, and everything harness-tuner needs.
-
-Both specs are written together, so the planning is aligned. They are built separately.
+2. **Spec two ([harness_tuner_switchover](../harness_tuner_switchover/project_overview.md)):** harness-tuner moves onto Kiln's skill and shared APIs, and keeps its gateway.
 
 Not specced now:
 
-- Adopting spec two in the harness-tuner repo (harness-tuner uses the new MCP, and removes its duplicate `kiln-harness-tuner-knowledge`).
+- Scopes for MCP connections, such as withholding val and test data (P2). An earlier spec for this, [harness_tuner_port](../harness_tuner_port/project_overview.md), was canceled as too large and risky; its decisions are kept as a starting point.
 - Moving the tuner code into the Kiln repo, bundled into the app (P2, nice to have).
 
 ## MCP Server
@@ -58,9 +56,9 @@ Not specced now:
 - Keep it for now. Steal anything we need from its skill for our new skill.
 - Sharing its skill with the new main skill is P2. We'll focus on getting people into the Claude version; we can maintain two in parallel for a bit.
 
-## Must leave room for spec two
+## Must leave room for scopes
 
-This spec builds none of the fencing. Its design must not block it:
+This spec builds no scoping of connections. Its design must not block it:
 
-- Spec two scopes a connection by its URL path. `/mcp` here is the open default.
-- Spec two adds no tools and changes no skill files. A scoped connection gets the same two tools and the same API, and a clear error when it goes outside what it was given. So `call_kiln_api` needs one place where a per-connection policy can be applied later.
+- A later project may scope a connection by its URL path. `/mcp` here is the open default.
+- Scoping adds no tools. A scoped connection gets the same two tools and the same API, and a clear error when it goes outside what it was given. So `call_kiln_api` needs one place where a per-connection policy can be applied later.

@@ -646,7 +646,7 @@ edit saves a few tokens, but it breaks the cache and can cost 10x more.
 - Kind: guide
 - Where: knowledge
 - Depends on: None
-- Source: kiln_mcp_server backlog B8; API enforcement of the rule is tracked in `specs/projects/kiln_mcp_fencing/project_overview.md`
+- Source: kiln_mcp_server backlog B8; API enforcement of the rule is tracked as the scopes item (P2) in `specs/projects/kiln_mcp_server/project_overview.md`
 
 Mike signs it off or improves it. Open: val is summary numbers only, yet "whether it is significant"
 is one; that needs per-item val scores, and the spec planned the paired statistics call on val.

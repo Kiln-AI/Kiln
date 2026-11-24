@@ -35,7 +35,7 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 **SR2 — HT copies the Kiln skill files into its agents folder.** (`CT-4`)
 - Until the fence exists (SR8), HT does not give a loop session the Kiln MCP to read the skill. That would also hand the session an unfenced `call_kiln_api`.
 - `install_agents.py` copies the Kiln skill tree from a pinned Kiln version into each agent CLI's skills folder, as it copies HT's own skills today.
-- HT checks the Kiln version against its minimum expected version, and Kiln returns `min_supported_harness_tuner_version`. Both checks come from the fencing project (`specs/projects/kiln_mcp_fencing/project_overview.md`, "Version alignment"). Neither exists at `25157f3` (`contract.md`, bottom line).
+- HT checks the Kiln version against its minimum expected version, and Kiln returns `min_supported_harness_tuner_version`. Both checks come from the fencing project (`specs/projects/harness_tuner_switchover/project_overview.md`, "Version alignment"). Neither exists at `25157f3` (`contract.md`, bottom line).
 
 **SR3 — HT's copy of the knowledge goes only after SR1, SR4 and SR5 hold.** (`CT-2`, `HS-H3`)
 - If HT deletes `kiln-harness-tuner-knowledge` first, `load()` raises and `_smell_titles` returns None.
@@ -111,7 +111,7 @@ HT paths are under HT's `src/kiln_harness_tuner/` at `b49f159`. Kiln skill paths
 - The gateway (`gateway/`, the `quarantine.py` train-only fence, the per-role operation sets, `VAL_READERS`) stays HT's only route for loop sessions until Kiln's fencing project is built.
 - At `25157f3`, `server.py:142-143` registers `kiln_skill` and `call_kiln_api` on every connection, and `api_tool/policy.py:43-51` always returns `OPEN_SCOPE`.
 
-**SR8 — The fence.** (`CT-4`; `specs/projects/kiln_mcp_fencing/project_overview.md`)
+**SR8 — The fence.** (`CT-4`; `specs/projects/harness_tuner_port/project_overview.md`)
 - HT moves loop sessions to fenced Kiln MCP URLs only once these exist: the per-connection scope (`fence=train`, `project=`, `task=`, `readonly`), the train filter, `/api/version` and `min_supported_harness_tuner_version`.
 - Each HT role maps to fence settings on HT's side. Kiln does not learn HT's role names.
 - The owner's follow-up project, which removes MCP read access to val and test ([decisions](harness_tuner_alignment_decisions.md), section 5), is the same boundary seen from Kiln's side. The switchover checks that HT's `promote_best` and `report_writer` still have a route to val summary numbers.

@@ -15,7 +15,7 @@ The server has exactly two tools, the same for every agent:
 
 Every capability is a REST endpoint. New capabilities are added as endpoints, not as more tools.
 
-This is spec one of two. Fencing, and everything else harness-tuner needs, is [kiln_mcp_fencing](../kiln_mcp_fencing/project_overview.md). This spec builds none of that, but must leave room for it (section 13).
+This is spec one of two. Fencing, and everything else harness-tuner needs, is [harness_tuner_port](../harness_tuner_port/project_overview.md). This spec builds none of that, but must leave room for it (section 13).
 
 ## 2. Goals and non-goals
 
