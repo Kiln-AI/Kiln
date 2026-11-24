@@ -33,6 +33,7 @@ Nothing in this spec is built until spec one is done. The first phase of the imp
 
 - Spec one is merged, including its phases 17 and 18, which still move skill text and may move paths.
 - Every skill path this document names exists in the merged skill tree. A path that moved is corrected here before work starts.
+- The costing method of HT's `experiment-costing` skill is in Kiln's skill. HT's copy is not removed until this is confirmed.
 
 ## 3. Kiln APIs
 
@@ -223,6 +224,8 @@ The role skills stay as they are. Every link and named path in them, in the role
 | The skill `memory` | `references/knowledge/memory.md` (see 5.5) |
 | The skill `kiln-harness-tuner-code-tool-authoring` and its templates | `references/knowledge/code_tool_authoring.md` and `references/knowledge/code_tool_wrappers/` (see 5.5) |
 | The skill `kiln-api` | `references/knowledge/api_docs/`, for interactive sessions only |
+| The skill `experiment-costing` | its port in Kiln's skill: find the file and point to it (see 5.5) |
+| The skill `kiln-task-setup` | Kiln's files on creating tasks, run configs, skills and tools (see 5.5) |
 
 Kiln's skill is written for an agent in a chat with a person. A loop agent is not in a chat. Every role that reads Kiln's skill gets one shared block of rules:
 
@@ -238,7 +241,7 @@ The map in rule 2 is built from the gateway's own tool list, and a test fails wh
 
 ### 5.5 Which skills HT keeps
 
-HT keeps only what belongs to its roles. Of its 14 skills:
+HT keeps only what belongs to its roles. Every other skill is removed, and its replacement is in Kiln's skill. Of its 14 skills:
 
 | Skill | Outcome |
 |---|---|
@@ -248,7 +251,8 @@ HT keeps only what belongs to its roles. Of its 14 skills:
 | `kiln-api` | Removed. Kiln's API reference replaces it |
 | `memory` | Removed. `references/knowledge/memory.md` in Kiln's skill replaces it |
 | `kiln-harness-tuner-code-tool-authoring` | Removed. `references/knowledge/code_tool_authoring.md` and its templates in Kiln's skill replace it |
-| `experiment-costing`, `kiln-task-setup` | **Proposed:** stay. Spec one did not port them, and two role skills name them. Removing them would lose their content |
+| `experiment-costing` | Removed. The owner ports it into Kiln's skill, outside this spec, so MCP clients can use it too. This spec finds it there, confirms it is ported, and points the planner's role skill at it |
+| `kiln-task-setup` | Removed. Kiln's skill already covers creating tasks, run configs, skills and tools. This spec confirms its few unique facts are there, and points the builder's role skill at those files |
 
 Notes on the two ported skills:
 
@@ -282,7 +286,7 @@ Notes:
 - The model catalogue, and the `--no-model-catalog` option.
 - The skill installer: the package, its console script and its tests.
 - The noise, detectability and significance-floor code that moved, and the five smell detectors with their limits.
-- The memory skill and the code tool authoring skill (5.5).
+- The memory skill, the code tool authoring skill, `experiment-costing` and `kiln-task-setup` (5.5).
 
 The knowledge copy goes last, after the pass-through, the entry files and the re-pointed links all work.
 
@@ -301,7 +305,7 @@ HT checks both ways at start-up, before any spend:
 
 Loop sessions never get `kiln_api_mcp`: every loop tool set denies it by name. It is used in one place only. The command `harness-tuner-install-agents --dest DIR` puts HT's skills into a person's own project for interactive sessions, and for Claude Code it also adds the `kiln_api_mcp` server to that project.
 
-With `kiln_api_mcp` and the `kiln-api` docs removed, that command no longer adds an MCP server. It tells the user to connect Kiln's own MCP server instead.
+After this spec, HT has only role skills, the gateway skill and no `kiln_api_mcp`. None of them is of use in a person's own project. So the `--dest` form of the command is removed. A person who works with an agent by hand connects Kiln's own MCP server, which carries Kiln's skill.
 
 ### 5.10 Docs and command line
 
