@@ -167,6 +167,10 @@ class Usage(MessageUsage):
         ge=0,
     )
 
+    def without_latency(self) -> MessageUsage:
+        """The token and cost fields of this usage, as a :class:`MessageUsage`."""
+        return MessageUsage(**self.model_dump(include=set(MessageUsage.model_fields)))
+
     def __add__(self, other: "MessageUsage | Usage") -> "Usage":
         """Add Usage to either Usage or MessageUsage.
 

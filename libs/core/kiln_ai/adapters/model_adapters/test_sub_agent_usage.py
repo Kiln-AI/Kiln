@@ -4,6 +4,7 @@ End to end and offline: real tasks, run configs, tool servers and adapters in a
 temp project, with only the provider call replaced by a script.
 """
 
+import asyncio
 import json
 from collections import deque
 from pathlib import Path
@@ -39,6 +40,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunC
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.tool_id import build_kiln_task_tool_id
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 from kiln_ai.utils.usage import MessageUsage
 
 
@@ -49,6 +51,7 @@ def reply(
     cost: float | None,
     input_tokens: int,
     output_tokens: int,
+    cached_tokens: int | None = None,
 ) -> ModelResponse:
     """One provider response. `calls` are (tool_call_id, tool_name) pairs."""
     response = ModelResponse(
@@ -76,6 +79,9 @@ def reply(
             prompt_tokens=input_tokens,
             completion_tokens=output_tokens,
             total_tokens=input_tokens + output_tokens,
+            prompt_tokens_details=None
+            if cached_tokens is None
+            else {"cached_tokens": cached_tokens},
         ),
     )
     response._hidden_params["response_cost"] = cost
@@ -86,36 +92,56 @@ class ScriptedProvider:
     """Stands in for the provider: each agent answers from its own queue of replies.
 
     A request is routed by the task instruction in its system message, so a
-    parent and the sub-agents it calls each follow their own script.
+    parent and the sub-agents it calls each follow their own script. A queued
+    exception is raised in place of a reply.
     """
 
     def __init__(self) -> None:
-        self._scripts: dict[str, deque[ModelResponse]] = {}
+        self._scripts: dict[str, deque[ModelResponse | Exception]] = {}
+        self._delays: dict[str, float] = {}
 
-    def script(self, task: Task, *replies: ModelResponse) -> None:
+    def script(
+        self, task: Task, *replies: ModelResponse | Exception, delay_s: float = 0.0
+    ) -> None:
         self._scripts[task.instruction] = deque(replies)
+        self._delays[task.instruction] = delay_s
 
-    def next_reply(self, **kwargs) -> ModelResponse:
+    def _agent(self, kwargs: dict) -> str:
         system_message = kwargs["messages"][0]["content"]
-        for instruction, replies in self._scripts.items():
-            if instruction in system_message:
-                return replies.popleft()
-        raise AssertionError(f"No script for system message: {system_message}")
+        matches = [i for i in self._scripts if i in system_message]
+        assert len(matches) == 1, f"{len(matches)} scripts match: {system_message}"
+        return matches[0]
+
+    def _next_reply(self, agent: str) -> ModelResponse:
+        assert self._scripts[agent], f"Script ran out of replies for: {agent}"
+        next_reply = self._scripts[agent].popleft()
+        if isinstance(next_reply, Exception):
+            raise next_reply
+        return next_reply
+
+    def assert_all_used(self) -> None:
+        unused = {agent: len(r) for agent, r in self._scripts.items() if r}
+        assert not unused, f"Scripted replies never requested: {unused}"
 
     async def acompletion(self, **kwargs) -> ModelResponse:
-        return self.next_reply(**kwargs)
+        agent = self._agent(kwargs)
+        await asyncio.sleep(self._delays[agent])
+        return self._next_reply(agent)
 
     def streaming_completion(self, **kwargs) -> "_ScriptedStream":
-        return _ScriptedStream(self.next_reply(**kwargs))
+        agent = self._agent(kwargs)
+        return _ScriptedStream(self._next_reply(agent), self._delays[agent])
 
 
 class _ScriptedStream:
     """The shape AdapterStream reads from StreamingCompletion: chunks, then a response."""
 
-    def __init__(self, response: ModelResponse) -> None:
+    def __init__(self, response: ModelResponse, delay_s: float) -> None:
         self.response = response
+        self._delay_s = delay_s
 
     async def __aiter__(self):
+        await asyncio.sleep(self._delay_s)
         return
         yield
 
@@ -207,11 +233,36 @@ def provider():
         ),
     ):
         yield scripted
+    scripted.assert_all_used()
+
+
+async def run_agent(
+    adapter: BaseAdapter,
+    input: str,
+    streamed: bool,
+    prior_trace: list[ChatCompletionMessageParam] | None = None,
+) -> TaskRun:
+    if not streamed:
+        return await adapter.invoke(input, prior_trace=prior_trace)
+    stream = adapter.invoke_openai_stream(input, prior_trace=prior_trace)
+    async for _ in stream:
+        pass
+    return stream.task_run
+
+
+streamed_or_not = pytest.mark.parametrize(
+    "streamed", [False, True], ids=["invoked", "streamed"]
+)
 
 
 def tool_messages(run: TaskRun) -> list[dict]:
     assert run.trace is not None
     return [dict(m) for m in run.trace if m["role"] == "tool"]
+
+
+def own_latency_ms(run: TaskRun) -> int:
+    assert run.trace is not None
+    return sum(m.get("latency_ms", 0) for m in run.trace if m["role"] == "assistant")
 
 
 def assert_usage(
@@ -220,15 +271,22 @@ def assert_usage(
     cost: float | None,
     input_tokens: int,
     output_tokens: int,
+    cached_tokens: int | None = None,
 ) -> None:
     assert usage is not None
     assert usage.cost == (None if cost is None else pytest.approx(cost))
     assert usage.input_tokens == input_tokens
     assert usage.output_tokens == output_tokens
     assert usage.total_tokens == input_tokens + output_tokens
+    assert usage.cached_tokens == cached_tokens
 
 
-async def test_interactive_run_includes_its_sub_agent_call(agents, provider):
+ONE_CALL_TOTAL = {"cost": 0.013, "input_tokens": 1220, "output_tokens": 65}
+
+
+@pytest.fixture
+def one_sub_agent_call(agents, provider) -> tuple[Task, Task]:
+    """A parent that calls its child once; the run costs ONE_CALL_TOTAL."""
     child = agents.add("child")
     parent = agents.add("parent", sub_agents=(child,))
     provider.script(
@@ -236,17 +294,24 @@ async def test_interactive_run_includes_its_sub_agent_call(agents, provider):
         reply(
             calls=(("c1", "ask_child"),), cost=0.001, input_tokens=100, output_tokens=10
         ),
-        reply("done", cost=0.002, input_tokens=120, output_tokens=5),
+        reply("hello", cost=0.002, input_tokens=120, output_tokens=5),
     )
     provider.script(
-        child, reply("child answer", cost=0.01, input_tokens=1000, output_tokens=50)
+        child,
+        reply("child answer", cost=0.01, input_tokens=1000, output_tokens=50),
+        delay_s=0.02,
     )
+    return parent, child
 
-    run = await agents.adapter(parent).invoke("go")
 
-    total = {"cost": 0.013, "input_tokens": 1220, "output_tokens": 65}
-    assert_usage(run.usage, **total)
-    assert_usage(run.cumulative_usage, **total)
+@streamed_or_not
+async def test_run_includes_its_sub_agent_call(agents, one_sub_agent_call, streamed):
+    parent, child = one_sub_agent_call
+
+    run = await run_agent(agents.adapter(parent), "go", streamed)
+
+    assert_usage(run.usage, **ONE_CALL_TOTAL)
+    assert_usage(run.cumulative_usage, **ONE_CALL_TOTAL)
 
     # The sub-agent's run is saved under its own task, and the parent's tool
     # message points at it and carries what it spent.
@@ -259,20 +324,21 @@ async def test_interactive_run_includes_its_sub_agent_call(agents, provider):
         input_tokens=1000, output_tokens=50, total_tokens=1050, cost=0.01
     )
 
-    # Latency stays the parent's own model calls: tool time is not LLM wait time.
-    assert run.usage.total_llm_latency_ms == sum(
-        m["latency_ms"] for m in run.trace if m["role"] == "assistant"
-    )
+    # Latency stays the parent's own model calls: the child's is not added.
+    assert child_run.usage is not None and run.usage is not None
+    assert child_run.usage.total_llm_latency_ms >= 20
+    assert run.usage.total_llm_latency_ms == own_latency_ms(run)
 
     # The saved file keeps the per-message usage, so the total can be re-derived.
     assert run.path is not None
     reloaded = TaskRun.load_from_file(run.path)
-    assert_usage(reloaded.usage, **total)
-    assert_usage(MessageUsage.from_trace(reloaded.trace), **total)
+    assert_usage(reloaded.usage, **ONE_CALL_TOTAL)
+    assert_usage(MessageUsage.from_trace(reloaded.trace), **ONE_CALL_TOTAL)
 
 
+@streamed_or_not
 async def test_each_call_is_counted_once_when_a_tool_is_called_several_times(
-    agents, provider
+    agents, provider, streamed
 ):
     child = agents.add("child")
     parent = agents.add("parent", sub_agents=(child,))
@@ -296,7 +362,7 @@ async def test_each_call_is_counted_once_when_a_tool_is_called_several_times(
         reply("three", cost=0.04, input_tokens=4000, output_tokens=4),
     )
 
-    run = await agents.adapter(parent).invoke("go")
+    run = await run_agent(agents.adapter(parent), "go", streamed)
 
     assert sorted(m["usage"].cost for m in tool_messages(run)) == [0.01, 0.02, 0.04]
     total = {"cost": 0.077, "input_tokens": 7700, "output_tokens": 77}
@@ -323,19 +389,41 @@ async def test_nested_sub_agents_are_counted_once(agents, provider):
             cost=0.01,
             input_tokens=1000,
             output_tokens=10,
+            cached_tokens=500,
         ),
         reply("child answer", cost=0.02, input_tokens=2000, output_tokens=20),
     )
     provider.script(
         grandchild,
-        reply("grandchild answer", cost=0.1, input_tokens=10000, output_tokens=100),
+        reply(
+            "grandchild answer",
+            cost=0.1,
+            input_tokens=10000,
+            output_tokens=100,
+            cached_tokens=4000,
+        ),
     )
 
-    run = await agents.adapter(parent).invoke("go")
+    run = await run_agent(agents.adapter(parent), "go", streamed=False)
 
-    grandchild_total = {"cost": 0.1, "input_tokens": 10000, "output_tokens": 100}
-    child_total = {"cost": 0.13, "input_tokens": 13000, "output_tokens": 130}
-    parent_total = {"cost": 0.133, "input_tokens": 13300, "output_tokens": 133}
+    grandchild_total = {
+        "cost": 0.1,
+        "input_tokens": 10000,
+        "output_tokens": 100,
+        "cached_tokens": 4000,
+    }
+    child_total = {
+        "cost": 0.13,
+        "input_tokens": 13000,
+        "output_tokens": 130,
+        "cached_tokens": 4500,
+    }
+    parent_total = {
+        "cost": 0.133,
+        "input_tokens": 13300,
+        "output_tokens": 133,
+        "cached_tokens": 4500,
+    }
 
     assert_usage(run.usage, **parent_total)
     assert_usage(run.cumulative_usage, **parent_total)
@@ -382,14 +470,14 @@ async def test_unknown_cost_is_left_out_of_the_sum_not_counted_as_zero(
         reply("child answer", cost=child_cost, input_tokens=1000, output_tokens=50),
     )
 
-    run = await agents.adapter(parent).invoke("go")
+    run = await run_agent(agents.adapter(parent), "go", streamed=False)
 
     total = {"cost": expected_cost, "input_tokens": 1220, "output_tokens": 65}
     assert_usage(run.usage, **total)
     assert_usage(run.cumulative_usage, **total)
 
 
-async def test_streamed_run_includes_its_sub_agent_call(agents, provider):
+async def test_a_failed_sub_agent_call_adds_no_usage(agents, provider):
     child = agents.add("child")
     parent = agents.add("parent", sub_agents=(child,))
     provider.script(
@@ -399,21 +487,21 @@ async def test_streamed_run_includes_its_sub_agent_call(agents, provider):
         ),
         reply("done", cost=0.002, input_tokens=120, output_tokens=5),
     )
-    provider.script(
-        child, reply("child answer", cost=0.01, input_tokens=1000, output_tokens=50)
-    )
+    provider.script(child, RuntimeError("the child's provider failed"))
 
-    stream = agents.adapter(parent).invoke_openai_stream("go")
-    async for _ in stream:
-        pass
+    run = await run_agent(agents.adapter(parent), "go", streamed=False)
 
-    total = {"cost": 0.013, "input_tokens": 1220, "output_tokens": 65}
-    assert_usage(stream.task_run.usage, **total)
-    assert_usage(stream.task_run.cumulative_usage, **total)
+    (tool_message,) = tool_messages(run)
+    assert tool_message["is_error"] is True
+    assert "usage" not in tool_message
+    own = {"cost": 0.003, "input_tokens": 220, "output_tokens": 15}
+    assert_usage(run.usage, **own)
+    assert_usage(run.cumulative_usage, **own)
 
 
+@streamed_or_not
 async def test_continued_conversation_keeps_earlier_sub_agent_calls_in_cumulative_usage(
-    agents, provider
+    agents, provider, streamed
 ):
     child = agents.add("child")
     parent = agents.add("parent", sub_agents=(child,))
@@ -434,8 +522,10 @@ async def test_continued_conversation_keeps_earlier_sub_agent_calls_in_cumulativ
         reply("two", cost=0.02, input_tokens=2000, output_tokens=20),
     )
 
-    first = await agents.adapter(parent).invoke("go")
-    second = await agents.adapter(parent).invoke("go on", prior_trace=first.trace)
+    first = await run_agent(agents.adapter(parent), "go", streamed)
+    second = await run_agent(
+        agents.adapter(parent), "go on", streamed, prior_trace=first.trace
+    )
 
     # `usage` is this turn only; `cumulative_usage` is the whole conversation.
     assert_usage(second.usage, cost=0.032, input_tokens=3200, output_tokens=32)
@@ -445,22 +535,10 @@ async def test_continued_conversation_keeps_earlier_sub_agent_calls_in_cumulativ
 
 
 async def test_eval_job_run_includes_a_sub_agent_whose_run_is_not_saved(
-    agents, provider
+    agents, one_sub_agent_call
 ):
-    child = agents.add("child")
-    parent = agents.add("parent", sub_agents=(child,))
-    provider.script(
-        parent,
-        reply(
-            calls=(("c1", "ask_child"),), cost=0.001, input_tokens=100, output_tokens=10
-        ),
-        reply("hello", cost=0.002, input_tokens=120, output_tokens=5),
-    )
-    provider.script(
-        child, reply("child answer", cost=0.01, input_tokens=1000, output_tokens=50)
-    )
-
-    eval = Eval(
+    parent, child = one_sub_agent_call
+    says_hello_eval = Eval(
         parent=parent,
         name="says hello",
         eval_set_filter_id="all",
@@ -473,9 +551,9 @@ async def test_eval_job_run_includes_a_sub_agent_whose_run_is_not_saved(
             )
         ],
     )
-    eval.save_to_file()
+    says_hello_eval.save_to_file()
     eval_config = EvalConfig(
-        parent=eval,
+        parent=says_hello_eval,
         name="exact match",
         config_type=EvalConfigType.v2,
         properties=ExactMatchProperties(expected_value="hello"),
@@ -492,7 +570,7 @@ async def test_eval_job_run_includes_a_sub_agent_whose_run_is_not_saved(
         ),
     )
     item.save_to_file()
-    split = resolve_split(parent, eval, "test")
+    split = resolve_split(parent, says_hello_eval, "test")
     assert split is not None
     runner = EvalRunner(
         eval_configs=[eval_config],
@@ -517,9 +595,8 @@ async def test_eval_job_run_includes_a_sub_agent_whose_run_is_not_saved(
         for run in parent.runs(include_eval_generated=True)
         if run.id == eval_run.scored_run_id
     ]
-    total = {"cost": 0.013, "input_tokens": 1220, "output_tokens": 65}
-    assert_usage(scored_run.usage, **total)
-    assert_usage(scored_run.cumulative_usage, **total)
+    assert_usage(scored_run.usage, **ONE_CALL_TOTAL)
+    assert_usage(scored_run.cumulative_usage, **ONE_CALL_TOTAL)
 
     # An eval job saves no run for the sub-agent, so the parent's trace is the
     # only record of what the sub-agent spent.

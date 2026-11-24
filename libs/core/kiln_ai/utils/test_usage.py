@@ -323,3 +323,21 @@ def test_from_trace_accepts_usage_with_legacy_latency_key():
     assert type(result) is MessageUsage
     assert result.input_tokens == 3
     assert result.cost == 0.01
+
+
+def test_usage_without_latency_keeps_tokens_and_cost():
+    usage = Usage(
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        cost=0.01,
+        cached_tokens=3,
+        total_llm_latency_ms=900,
+    )
+
+    result = usage.without_latency()
+
+    assert type(result) is MessageUsage
+    assert result == MessageUsage(
+        input_tokens=10, output_tokens=5, total_tokens=15, cost=0.01, cached_tokens=3
+    )

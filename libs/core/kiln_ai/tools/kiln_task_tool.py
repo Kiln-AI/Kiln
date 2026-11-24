@@ -20,16 +20,14 @@ class KilnTaskToolResult(ToolCallResult):
     kiln_task_tool_data: str
 
 
-def _token_and_cost_usage(usage: Usage | None) -> MessageUsage | None:
-    """A sub-task run's usage as the caller counts it: tokens and cost, no latency.
-
-    The caller's `total_llm_latency_ms` is the time it waited on its own model
-    calls, and tool calls run concurrently, so a sub-task's latency doesn't sum
-    into it.
-    """
-    if usage is None:
+def _sub_task_usage(run_usage: Usage | None) -> MessageUsage | None:
+    """Tokens and cost of a sub-task run, or None when the run reported none."""
+    if run_usage is None:
         return None
-    return MessageUsage(**usage.model_dump(include=set(MessageUsage.model_fields)))
+    usage = run_usage.without_latency()
+    if all(value is None for value in usage.model_dump().values()):
+        return None
+    return usage
 
 
 class KilnTaskTool(KilnToolInterface):
@@ -125,7 +123,7 @@ class KilnTaskTool(KilnToolInterface):
         return KilnTaskToolResult(
             output=task_run.output.output,
             kiln_task_tool_data=f"{self._project_id}:::{self._tool_id}:::{self._task.id}:::{task_run.id}",
-            usage=_token_and_cost_usage(task_run.usage),
+            usage=_sub_task_usage(task_run.usage),
         )
 
     @cached_property

@@ -13388,9 +13388,9 @@ export interface components {
              * @default []
              */
             tags: string[];
-            /** @description Usage information for the task run: the tokens and cost of its own model calls plus those of the Kiln task tools (sub-agents) it called, nested ones included. `total_llm_latency_ms` covers only this run's own model calls. Runs whose trace has no `usage` on its Kiln task tool messages hold only their own model calls. */
+            /** @description Usage information for the task run: the tokens and cost of its own model calls plus the usage that its tool calls reported, such as a Kiln task tool (sub-agent) with its own nested sub-agents. A failed tool call, and a sub-agent called from inside a code tool, report no usage. `total_llm_latency_ms` covers only this run's own model calls. Runs whose trace has no `usage` on its Kiln task tool messages hold only their own model calls. */
             usage?: components["schemas"]["Usage"] | null;
-            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace: model calls (assistant messages) and sub-agent calls (Kiln task tool messages). None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
+            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace: model calls (assistant messages) and the usage that tool calls reported (tool messages). None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
             cumulative_usage?: components["schemas"]["MessageUsage"] | null;
             /** @description The synthetic-user driver model's spend for an eval-driven conversation, recorded beside the assistant's own usage so `usage` stays assistant-only. None for ordinary runs, and for migrated legacy traces whose driver cost is fused into `usage`. */
             synthetic_user_usage?: components["schemas"]["Usage"] | null;
@@ -13473,9 +13473,9 @@ export interface components {
              * @default []
              */
             tags: string[];
-            /** @description Usage information for the task run: the tokens and cost of its own model calls plus those of the Kiln task tools (sub-agents) it called, nested ones included. `total_llm_latency_ms` covers only this run's own model calls. Runs whose trace has no `usage` on its Kiln task tool messages hold only their own model calls. */
+            /** @description Usage information for the task run: the tokens and cost of its own model calls plus the usage that its tool calls reported, such as a Kiln task tool (sub-agent) with its own nested sub-agents. A failed tool call, and a sub-agent called from inside a code tool, report no usage. `total_llm_latency_ms` covers only this run's own model calls. Runs whose trace has no `usage` on its Kiln task tool messages hold only their own model calls. */
             usage?: components["schemas"]["Usage"] | null;
-            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace: model calls (assistant messages) and sub-agent calls (Kiln task tool messages). None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
+            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace: model calls (assistant messages) and the usage that tool calls reported (tool messages). None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
             cumulative_usage?: components["schemas"]["MessageUsage"] | null;
             /** @description The synthetic-user driver model's spend for an eval-driven conversation, recorded beside the assistant's own usage so `usage` stays assistant-only. None for ordinary runs, and for migrated legacy traces whose driver cost is fused into `usage`. */
             synthetic_user_usage?: components["schemas"]["Usage"] | null;

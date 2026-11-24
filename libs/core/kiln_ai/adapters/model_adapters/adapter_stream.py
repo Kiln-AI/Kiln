@@ -123,9 +123,6 @@ class AdapterStream:
         # it during ``all_messages_to_trace`` at finalization.
         self._message_latency: dict[int, int] = {}
         self._message_usage: dict[int, MessageUsage] = {}
-        # Spend reported by tools that call models themselves (sub-agents). Part
-        # of what this run cost, so it joins the run's usage at finalization.
-        self._tool_usage = MessageUsage()
 
     @property
     def result(self) -> AdapterStreamResult:
@@ -205,7 +202,7 @@ class AdapterStream:
                 output_logprobs=logprobs,
                 trace=trace,
             ),
-            usage=usage + self._tool_usage,
+            usage=usage,
         )
         self._iterated = True
 
@@ -283,8 +280,18 @@ class AdapterStream:
                         return
 
                 # Existing flow: handle tool calls internally
+                first_tool_message = len(self._messages)
                 async for event in self._handle_tool_calls(tool_calls):
                     yield event
+                # A tool that called models (a sub-agent) reports that spend on
+                # its tool message; it is part of what this run cost.
+                usage += MessageUsage.from_trace(
+                    [
+                        m
+                        for m in self._messages[first_tool_message:]
+                        if isinstance(m, dict)
+                    ]
+                )
 
                 assistant_msg = self._extract_task_response(tool_calls)
                 if assistant_msg is not None:
@@ -352,7 +359,6 @@ class AdapterStream:
             )
 
         self._messages.extend(tool_msgs)
-        self._tool_usage += MessageUsage.from_trace(tool_msgs)
 
     @staticmethod
     def _extract_task_response(

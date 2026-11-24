@@ -69,7 +69,7 @@ class ToolCallResult(BaseModel):
     )
     usage: MessageUsage | None = Field(
         default=None,
-        description="Token usage and cost of the model calls the tool made while running. The adapter adds it to the usage of the run that called the tool. None for tools that call no model.",
+        description="Token usage and cost of the model calls the tool made while running, such as the sub-task run of a Kiln task tool. When the model of a run calls the tool, the model adapter adds it to the usage of that run. None for tools that call no model or report no usage.",
     )
 
 

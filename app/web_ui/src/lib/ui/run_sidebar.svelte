@@ -12,9 +12,10 @@
   import {
     calculate_subtask_usage,
     has_subtask_calls,
+    run_usage_totals,
     type SubtaskReference,
     type SubtaskUsage,
-  } from "$lib/ui/run_subtask_usage"
+  } from "$lib/utils/run_subtask_usage"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { formatDate, formatLatency } from "$lib/utils/formatters"
   import { bounceOut } from "svelte/easing"
@@ -256,9 +257,10 @@
 
     const label = (metric: string) => "Total " + metric
 
-    const run_cost = base_cost
-    const run_tokens = base_tokens
-    const run_latency = base_latency_ms
+    const totals = run_usage_totals(
+      { cost: base_cost, tokens: base_tokens, latency_ms: base_latency_ms },
+      subtask_usage,
+    )
     const subtask_cost = subtask_usage?.cost ?? 0
     const subtask_tokens = subtask_usage?.tokens ?? 0
     const subtask_latency_ms = subtask_usage?.latency_ms ?? 0
@@ -269,7 +271,7 @@
         value: "Loading...",
       })
     } else {
-      const total_cost = run_cost + (subtask_usage?.uncounted_cost ?? 0)
+      const total_cost = totals.cost
       if (total_cost > 0) {
         properties.push({
           name: label("Cost"),
@@ -296,7 +298,7 @@
         value: "Loading...",
       })
     } else {
-      const total_tokens = run_tokens + (subtask_usage?.uncounted_tokens ?? 0)
+      const total_tokens = totals.tokens
       if (total_tokens > 0) {
         properties.push({
           name: label("Tokens"),
@@ -323,7 +325,7 @@
         value: "Loading...",
       })
     } else {
-      const total_latency = run_latency + subtask_latency_ms
+      const total_latency = totals.latency_ms
       if (total_latency > 0) {
         properties.push({
           name: label("Latency"),

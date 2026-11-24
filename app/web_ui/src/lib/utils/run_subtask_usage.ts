@@ -110,3 +110,24 @@ export async function calculate_subtask_usage(
 
   return total
 }
+
+export type RunUsageTotals = {
+  cost: number
+  tokens: number
+  latency_ms: number
+}
+
+/**
+ * The run's totals for the Usage panel: its own usage plus the part of its
+ * subtasks' usage that the run's usage does not already hold.
+ */
+export function run_usage_totals(
+  run_usage: RunUsageTotals,
+  subtask_usage: SubtaskUsage | null,
+): RunUsageTotals {
+  return {
+    cost: run_usage.cost + (subtask_usage?.uncounted_cost ?? 0),
+    tokens: run_usage.tokens + (subtask_usage?.uncounted_tokens ?? 0),
+    latency_ms: run_usage.latency_ms + (subtask_usage?.latency_ms ?? 0),
+  }
+}

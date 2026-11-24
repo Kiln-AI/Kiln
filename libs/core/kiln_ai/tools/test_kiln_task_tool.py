@@ -173,6 +173,7 @@ class TestKilnTaskTool:
             mock_adapter_for_task.return_value = mock_adapter
 
             mock_task_run = MagicMock()
+            mock_task_run.usage = None
             mock_task_run.id = "run_789"
             mock_task_run.output.output = "Task completed successfully"
             mock_adapter.invoke.return_value = mock_task_run
@@ -245,6 +246,7 @@ class TestKilnTaskTool:
                 id="tokens_and_cost_without_latency",
             ),
             pytest.param(None, None, id="run_without_usage"),
+            pytest.param(Usage(), None, id="run_that_reported_nothing"),
         ],
     )
     @pytest.mark.asyncio
@@ -309,6 +311,7 @@ class TestKilnTaskTool:
             mock_adapter_for_task.return_value = mock_adapter
 
             mock_task_run = MagicMock()
+            mock_task_run.usage = None
             mock_task_run.id = "run_789"
             mock_task_run.output.output = "Structured task completed"
             mock_adapter.invoke.return_value = mock_task_run
@@ -566,6 +569,7 @@ class TestKilnTaskTool:
             mock_adapter_for_task.return_value = mock_adapter
 
             mock_task_run = MagicMock()
+            mock_task_run.usage = None
             mock_task_run.id = "run_789"
             mock_task_run.output.output = "Task completed"
             mock_adapter.invoke.return_value = mock_task_run
