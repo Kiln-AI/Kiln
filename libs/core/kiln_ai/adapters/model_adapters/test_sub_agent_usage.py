@@ -196,6 +196,9 @@ def agents(tmp_path) -> Agents:
 @pytest.fixture
 def provider():
     scripted = ScriptedProvider()
+    # An OpenAI adapter can't be built without a key. A fake one keeps these
+    # tests independent of the machine's keys, and unable to spend on a real one.
+    Config.shared().save_setting("open_ai_api_key", "fake-key-for-offline-tests")
     with (
         patch("litellm.acompletion", new=scripted.acompletion),
         patch(
