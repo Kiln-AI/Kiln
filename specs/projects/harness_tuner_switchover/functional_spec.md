@@ -13,7 +13,7 @@ Words used here:
 - **Loop agents** are the agent sessions HT starts (planner, builder, analyst and the others). **Loop code** is HT's own Python.
 - **The build branch** is `claude/kiln-mcp-server-impl`, where spec one is being built.
 
-A line marked **Proposed** is a call made while drafting. The owner can overrule it. Section 10 lists the questions that are still open.
+A line marked **Proposed** is a call made while drafting. The owner can overrule it.
 
 ## 1. What changes, in short
 
@@ -126,8 +126,8 @@ Compares a candidate with a baseline on one eval, from stored results, without r
 - **Out:** per score: `score_key`, `score_type`, `direction`, `n_items`, `baseline_score`, `candidate_score`, `delta`, `p_value`, `significant`, `ci_low`, `ci_high`, `headroom`, `fail_to_pass`, `pass_to_fail`. Also how many items each side has a result for, and `skipped` scores with the reason.
 - No item id and no per-item value is in the response.
 - `split` is required. `split=test` is refused: the method never compares on test.
+- One eval per call. It returns no headline number across evals.
 - This route is for MCP clients. **Proposed:** HT's loop keeps its own comparison code, which also folds replicates, counts gaps and weighs priorities.
-- Open: whether it returns a headline across evals, and whether one call covers all of a task's evals (section 10).
 
 ### 3.9 Skill bundles
 
@@ -185,7 +185,7 @@ The skill is still changing on the build branch. Each item below says what must 
 - The answer is the file's text, as Kiln serves it.
 - Loop code that needs the knowledge uses the same call. Today that is one place: the list of known smells (ids and titles) that the baseline review uses.
 - When the call fails, a loop agent gets a clear error that says Kiln's skill could not be read. Loop code keeps today's fallback: the review runs with no known-smell list, and the log says so.
-- **Proposed: the gateway limits the paths.** Kiln's skill has more than 400 files, written for a chat agent: the chat instructions, the modes, and a file that says reading project files directly is fine. The gateway passes through only what a loop agent needs: the knowledge trees (`references/improving_agents/`, `references/levers/`), the memory reference, the code tool authoring file and its templates, the train/val/test file, and the statistics file. A call with no path, or a path outside the list, gets an error that names what can be read.
+- The whole skill is passed through. There is one skill to maintain, and HT's role skills point each role at the files it needs.
 
 ### 5.2 What HT names in Kiln's skill
 
@@ -236,14 +236,23 @@ Kiln's skill is written for an agent in a chat with a person. A loop agent is no
 
 The map in rule 2 is built from the gateway's own tool list, and a test fails when a tool has no entry. It covers 24 of the 27 endpoint docs the knowledge names. The other three have no gateway tool, and the map says "not available".
 
-### 5.5 HT's memory skill and code tool authoring skill
+### 5.5 Which skills HT keeps
 
-Both have a port in Kiln's skill.
+HT keeps only what belongs to its roles. Of its 14 skills:
 
-**Proposed:** HT removes both and its agents read Kiln's files.
+| Skill | Outcome |
+|---|---|
+| The 7 role skills (baseline review, batch selection, experiment analysis, experiment build, probe, promote, report), with their own reference files | Stay |
+| The gateway skill | Stays. It is the reference for the gateway's tools, and it carries the map of 5.4 |
+| `kiln-harness-tuner-knowledge` | Removed. Kiln's skill replaces it. The six role entry files inside it move to a new home (5.3) |
+| `kiln-api` | Removed. Kiln's API reference replaces it |
+| `memory` | Removed. `references/knowledge/memory.md` in Kiln's skill replaces it |
+| `kiln-harness-tuner-code-tool-authoring` | Removed. `references/knowledge/code_tool_authoring.md` and its templates in Kiln's skill replace it |
+| `experiment-costing`, `kiln-task-setup` | **Proposed:** stay. Spec one did not port them, and two role skills name them. Removing them would lose their content |
 
-- For memory, this follows the owner's decision on the build branch: Kiln's memory reference serves HT and MCP agents, and its formats match HT's code exactly.
-- For code tools, Kiln's file has steps that only fit a chat (explaining trust to the user, and opening the trust page). Rule 1 above covers them, and the builder's role skill says that HT grants trust itself, once per run.
+Notes on the two ported skills:
+
+- Kiln's code tool file has steps that only fit a chat: explaining trust to the user, and opening the trust page. Rule 1 of 5.4 covers them, and the builder's role skill says that HT grants trust itself, once per run.
 - HT's 36 tests of the code tool templates move to Kiln, where the templates now live, unless Kiln already has the same tests.
 
 ### 5.6 Gateway tools and loop code that switch to Kiln's APIs
@@ -273,7 +282,7 @@ Notes:
 - The model catalogue, and the `--no-model-catalog` option.
 - The skill installer: the package, its console script and its tests.
 - The noise, detectability and significance-floor code that moved, and the five smell detectors with their limits.
-- The memory skill and the code tool authoring skill, if 5.5 is accepted.
+- The memory skill and the code tool authoring skill (5.5).
 
 The knowledge copy goes last, after the pass-through, the entry files and the re-pointed links all work.
 
@@ -288,22 +297,14 @@ HT checks both ways at start-up, before any spend:
 - HT's minimum is raised with every Kiln feature it starts to depend on. This spec raises it once.
 - Today's feature probes of Kiln's OpenAPI document are removed once the minimum version covers them.
 
-### 5.9 Interactive sessions and `harness-tuner-install-agents`
+### 5.9 `harness-tuner-install-agents --dest`
 
-Today this command installs HT's skills and the `kiln_api_mcp` server into a user's project, for a person who works with an agent by hand.
+Loop sessions never get `kiln_api_mcp`: every loop tool set denies it by name. It is used in one place only. The command `harness-tuner-install-agents --dest DIR` puts HT's skills into a person's own project for interactive sessions, and for Claude Code it also adds the `kiln_api_mcp` server to that project.
 
-**Proposed:**
+With `kiln_api_mcp` and the `kiln-api` docs removed, that command no longer adds an MCP server. It tells the user to connect Kiln's own MCP server instead.
 
-- It no longer installs an MCP server or the `kiln-api` docs. It tells the user to connect Kiln's own MCP server, and points at Kiln's Connect page.
-- It still installs HT's two interactive skills, `kiln-task-setup` and `experiment-costing`. Their links to the API reference are re-pointed at Kiln's skill.
+### 5.10 Docs and command line
 
-### 5.10 Small fixes found on the way
-
-- HT's error text helper prints a raw dump for every Kiln error, because it does not read the `message` key. It reads `message`.
-- HT's text says Kiln refuses a tool function name that another tool already uses. Kiln refuses only two tools with one name in the same run config. The text is corrected, or goes with the skill in 5.5.
-- **Proposed:** HT's start-up clean-up marks every running experiment record of the task as abandoned, including one that another writer opened. It marks only records HT opened.
-
-### 5.11 Docs and command line
 
 - The docs that name removed parts are updated: install, command line, architecture, agents, limitations, and the contributor guide.
 - Two console scripts and one option go (5.7). The command-line reference and its tests follow.
@@ -356,13 +357,13 @@ No reference run exists, runs differ each time, and the skills change. So the pr
 | SR7, SR8 gateway until the fence | Dropped. The gateway stays, and there is no fence project |
 | SR9 feature detection over REST | Mostly dropped. HT stays on REST; the version endpoint replaces the probes (5.8) |
 | SR10 memory formats | No HT change. Kiln's side is spec one's phase 18 |
-| SR11 the start-up clean-up | Proposed as a small fix (5.10) |
+| SR11 the start-up clean-up | Not in this spec. It is not caused by the switchover. Listed as a risk (section 9) |
 | SR12 reading other writers' records | No change. Listed as a risk (section 9) |
 | SR13 priorities and smell issues | No HT change |
 | SR14 tools that come over | Changed: only noise, detectability, the significance floor and the smells move. The rest stay in HT |
-| SR15 the `message` key | Not a break. A display fix (5.10) |
+| SR15 the `message` key | Not a break, and not in this spec. The claim was wrong: the model preflight already reads the key |
 | SR16 job limits and 404 texts | Verified: nothing to do |
-| SR17 unique tool function names | The claim is wrong: HT has no such rule. A text fix (5.10) |
+| SR17 unique tool function names | The claim is wrong: HT has no such rule. The sentence goes with the removed code tool skill |
 | SR18 skill bundle API | Kept (3.9), with a folder path, not an upload |
 
 ## 9. Out of scope, and risks
@@ -378,13 +379,6 @@ Risks:
 
 - **The skill can change under HT.** The knowledge now changes with the Kiln app, not with HT. The contract test, the start-up check and the version checks are the guard.
 - **Two vocabularies.** Kiln's knowledge speaks of endpoints and a user; loop agents have gateway tools and no user. The shared rules and the map carry this. Text that fits neither will be found by the audit and the demo run, not before.
-- **Records by other writers.** With Kiln's MCP in use, another agent can write memory records in a shape HT does not expect. HT reads such a record as unknown and acts only on its own.
+- **Loop agents can read all of Kiln's skill**, including files written only for a chat. The shared rules of 5.4 and the role skills keep each role on its own files.
+- **Records by other writers.** With Kiln's MCP in use, another agent can write memory records in a shape HT does not expect. HT reads such a record as unknown and acts only on its own. One known case: HT's start-up clean-up marks every running experiment record of the task as abandoned, including one that another writer opened.
 - **HT still reads the project folder** for split membership, split sizes and code tool files. This spec does not change that.
-
-## 10. Open for the owner
-
-1. **Headline for the paired comparison (3.8).** Should the comparison return a headline mean win rate? No code defines it today. Two readings: (a) the mean across evals of the candidate's score minus the baseline's; (b) the mean across evals of wins divided by wins plus losses.
-2. **One call for all evals (3.8).** Should one comparison call cover every eval of a task? As written it handles one eval.
-3. **Limiting what loop agents can read (5.1).** Should the gateway pass through only the listed paths, or the whole skill with prompt rules alone?
-4. **Memory and code tool skills (5.5).** Should HT remove its own two skills and read Kiln's?
-5. **`harness-tuner-install-agents` (5.9).** Is the proposed behaviour right?
