@@ -57,6 +57,7 @@ class ModelFamily(str, Enum):
     nex = "nex"
     motif = "motif"
     kt = "kt"
+    radixark = "radixark"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -205,6 +206,7 @@ class ModelName(str, Enum):
     gemini_3_pro_preview = "gemini_3_pro_preview"
     gemini_4_carbon = "gemini_4_carbon"
     gemini_4_argon = "gemini_4_argon"
+    gemini_4_neon = "gemini_4_neon"
     gemini_4_hydrogen = "gemini_4_hydrogen"
     gemini_3_8_flash = "gemini_3_8_flash"
     gemini_3_7_flash = "gemini_3_7_flash"
@@ -256,6 +258,7 @@ class ModelName(str, Enum):
     grok_4 = "grok_4"
     qwen_3p5_flash = "qwen_3p5_flash"
     qwen_3p5_9b = "qwen_3p5_9b"
+    qwen_3p5_4b = "qwen_3p5_4b"
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
@@ -373,6 +376,7 @@ class ModelName(str, Enum):
     mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling_2_small = "inkling_2_small"
+    inkling_2_mini = "inkling_2_mini"
     inkling = "inkling"
     inkling_small = "inkling_small"
     jev_1_13 = "jev_1_13"
@@ -388,6 +392,7 @@ class ModelName(str, Enum):
     nex_n2_6 = "nex_n2_6"
     motif_3 = "motif_3"
     midm_k_3_0_pro = "midm_k_3_0_pro"
+    daisyrose_27b = "daisyrose_27b"
 
 
 class ModelParserID(str, Enum):
@@ -679,7 +684,7 @@ GEMINI_4_HYDROGEN_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
-# Gemini 4 Hydrogen on the Gemini API and Vertex. Google lists xhigh too, but
+# Gemini 4 Hydrogen and Neon on the Gemini API and Vertex. Google lists xhigh too, but
 # LiteLLM rejects `xhigh` as a Gemini reasoning_effort, so it is left out here.
 GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS = {
     "Low": "low",
@@ -924,6 +929,13 @@ MUSE_EMBER_OPENROUTER_THINKING_LEVELS = {
     "High": "high",
     "Extra High": "xhigh",
     "Max": "max",
+}
+
+DAISYROSE_27B_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "Extra High": "xhigh",
 }
 
 NEX_N2_6_OPENROUTER_THINKING_LEVELS = {
@@ -4239,6 +4251,102 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.WAV,
                     KilnMimeType.OGG,
                     # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+        ],
+    ),
+    # Gemini 4 Neon
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_4_neon,
+        friendly_name="Gemini 4 Neon",
+        agent_notes=(
+            "Description: Google's mid-tier model in the Gemini 4 generation, adapted from Gemini 4 Carbon, for coding, analytical reasoning and enterprise workflows.\n"
+            "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon for the hardest long-horizon projects. Argon is the Pro-level model."
+        ),
+        tags=["current", "recommended"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-4-neon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_THINKING_LEVELS,
+                default_thinking_level="medium",
+                litellm_allowed_openai_params=["reasoning_effort"],
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-4-neon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-4-neon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
@@ -9475,6 +9583,32 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 3.5 4B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_4b,
+        friendly_name="Qwen 3.5 4B",
+        agent_notes=(
+            "Description: Qwen's small 4B dense open-weight model in the 3.5 generation.\n"
+            "Lineup: Qwen 3.5 open sizes run 0.8B < 2B < 4B < 9B < 27B, then larger MoE models. A step down from Qwen 3.5 9B."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.5-4B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                # Featherless returns the thinking text inline, ending in </think>.
+                reasoning_capable=True,
+                parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3.5-4B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+        ],
+    ),
     # Qwen 3 Next 80B A3B
     KilnModel(
         family=ModelFamily.qwen,
@@ -12493,6 +12627,11 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="tencent/Hy4",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Hy4 Flash is Tencent's lower-cost Hy4 variant. OpenRouter lists no reasoning efforts for it, so it has no thinking levels.
@@ -13383,6 +13522,12 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/inkling-2-small",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/thinkingmachines/inkling-2-small",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -13392,6 +13537,39 @@ built_in_models: List[KilnModel] = [
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.thinking_machines,
+        name=ModelName.inkling_2_mini,
+        friendly_name="Inkling 2 Mini",
+        editorial_notes="The smallest model of Thinking Machines' Inkling 2 generation (open weights). A 26.4B-parameter looped MoE (3.4B active) with image input, a 1M-token context and configurable reasoning.",
+        agent_notes=(
+            "Description: Thinking Machines' smallest open-weight multimodal model in the Inkling 2 generation, a looped MoE transformer whose middle layers run three times.\n"
+            "Lineup: Inkling 2 sizes are Mini < Small. Mini is a new size class with no Inkling 1 counterpart."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thinkingmachines/inkling-2-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=INKLING_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
                     KilnMimeType.JPG,
@@ -13888,6 +14066,52 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.radixark,
+        name=ModelName.daisyrose_27b,
+        friendly_name="DaisyRose 27B",
+        editorial_notes="RadixArk's open-weight multimodal reasoning model, trained from Qwen 3.8 27B with reinforcement learning on long-horizon agent tasks only.",
+        agent_notes=(
+            "Description: RadixArk's open-weight multimodal reasoning model, trained from Qwen 3.8 27B with reinforcement learning only, on long-horizon agent tasks.\n"
+            "Lineup: RadixArk's first public model. Same size class as its base, Qwen 3.8 27B."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="radixark/daisyrose-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DAISYROSE_27B_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="RadixArk/DaisyRose-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
