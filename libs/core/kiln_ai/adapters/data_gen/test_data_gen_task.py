@@ -27,8 +27,8 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 )
 from kiln_ai.adapters.provider_tools import get_model_and_provider
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
-from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+from kiln_ai.datamodel import Finetune, Project, Task
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, StructuredOutputMode
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -1116,6 +1116,30 @@ def test_guidance_reaches_a_run_config_prompt(saved_task, test_project):
     assert "TASK INSTRUCTION" not in prompt
     assert builder.chain_of_thought_prompt() == "THINK FIRST"
     assert builder.prompt_id() == prompt_id
+
+
+def test_guidance_reaches_a_fine_tune_prompt(saved_task, test_project):
+    finetune = Finetune(
+        name="Tuned",
+        system_message="FINE TUNE SYSTEM MESSAGE",
+        thinking_instructions="THINK FIRST",
+        parent=saved_task,
+        base_model_id="base_model",
+        dataset_split_id="split",
+        provider="openai",
+        data_strategy=ChatStrategy.two_message_cot,
+    )
+    finetune.save_to_file()
+    nested_id = f"{test_project.id}::{saved_task.id}::{finetune.id}"
+    builder = prompt_builder_with_guidance(
+        saved_task, _agent_rcp(f"fine_tune_prompt::{nested_id}"), "LABEL THIS AS SPAM"
+    )
+    assert builder is not None
+    assert builder.build_prompt(include_json_instructions=False) == (
+        wrap_task_with_guidance("FINE TUNE SYSTEM MESSAGE", "LABEL THIS AS SPAM")
+    )
+    assert builder.chain_of_thought_prompt() == "THINK FIRST"
+    assert builder.prompt_id() == nested_id
 
 
 @pytest.mark.parametrize("guidance", [None, "", "   "])
