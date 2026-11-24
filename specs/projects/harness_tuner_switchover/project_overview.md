@@ -71,3 +71,5 @@ In the harness-tuner repo:
 - Scopes for MCP connections, such as withholding val and test data from MCP clients. Wanted, as a later P2 project. The canceled spec holds the decisions reached so far.
 - The API cleanup and robustness project. It is a separate project, and this spec does not depend on it.
 - Moving the tuner code into the Kiln repo, bundled into the app (P2, nice to have).
+  - If that happens, and harness-tuner is then on the same release schedule as Kiln, its role skills move into Kiln's skill, at `references/client_guidance/harness_tuner/`. That folder is the place for guidance for one kind of client (`references/client_guidance/chat/` is there today). Harness-tuner's skill copying code and its skill files then go.
+  - Not before: the role files change often and are bound to harness-tuner's code, so in a separate repo with its own releases they stay in harness-tuner.
