@@ -101,7 +101,7 @@ Use the returned ID as the `prompt_id` in the run config body. If `.prompts` is 
 
 ## Creating a Run Config
 
-The properties of a run config cannot be changed after creation (PATCH changes only its name, starred flag and prompt name): a change is a new run config. For an experiment, the lever's rule applies: copy every property of the parent run config and change one (`references/levers/index.md`; the procedure is `references/knowledge/run_an_experiment.md`).
+The properties of a run config cannot be changed after creation (PATCH changes only its name, starred flag and prompt name): a change is a new run config. For an experiment, the lever's rule applies: copy every property of the parent run config and change one (`references/levers/index.md`; in a chat with a user, the procedure is `references/client_guidance/chat/running_an_experiment_from_chat.md`).
 
 ```
 # read first: references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_run_configs.md

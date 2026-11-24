@@ -52,7 +52,7 @@ app/mcp/                              new workspace member (no __init__.py here,
                                       harness-tuner), skill-tree check, API reference pipeline
     skill/                            the skill tree (package data)
       SKILL.md
-      references/{modes,knowledge,knowledge/api_docs,docs,levers,improving_agents}/
+      references/{client_guidance/chat,knowledge,knowledge/api_docs,docs,levers,improving_agents}/
 app/desktop/
   studio_server/kiln_mcp_mount.py     connect_kiln_mcp_server
   studio_server/model_info_api.py, api_models/..., services/model_info/...     model info endpoints
@@ -265,5 +265,6 @@ These were open; the owner has ruled on each.
 3. **No docs link until the docs page is live.** The Connect page has no "Read the Docs" link in this project. It is added when the docs page exists (section 8).
 4. **No licence field** is set in `app/mcp/pyproject.toml`: the package is covered by the repository's licence files and is not published. The package carries the same version as the other workspace members and is bumped with them at release.
 5. **Reviews by people are a phase of their own** (build step 9).
+6. **One skill, many kinds of client** (Phase 21, [decisions](harness_tuner_alignment_decisions.md) section 15). The skill is one body of knowledge read by chat clients (interactive agents working with a user) and by non-interactive agents with their own instructions (Kiln Harness Tuner). `SKILL.md` is a short router for every client. Guidance for chat clients only moves to `references/client_guidance/chat/`: the modes, the one-off experiment guide (`run_an_experiment.md` of item 1, now `references/client_guidance/chat/running_an_experiment_from_chat.md`) and the new `using_kiln_from_chat.md`. The rules for `call_kiln_api` move to `references/knowledge/api_docs/calling_the_kiln_api.md`, the one hand-written file of the generated folder, which the API reference pipeline keeps. The detail is in the skill component doc, section 4.6.
 
 Things to verify during implementation are in the "Open items" section of each component doc.

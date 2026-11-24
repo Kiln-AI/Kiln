@@ -105,5 +105,5 @@ Rules of the object:
   providers and the model info endpoints.
 - `references/knowledge/model_create_configs.md`: the run config payload,
   the model and provider check, and the name rules.
-- `references/knowledge/run_an_experiment.md`: how to measure the change,
-  judge it and keep it.
+- In a chat with a user:
+  `references/client_guidance/chat/running_an_experiment_from_chat.md`.

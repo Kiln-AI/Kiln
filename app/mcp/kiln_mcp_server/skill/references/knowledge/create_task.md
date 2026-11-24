@@ -55,7 +55,7 @@ Load the relevant endpoint doc **before** making each API call.
 
 ## Task Creation Approaches
 
-**Quality-motivated arrival.** If you arrived here from `references/modes/improve_task.md` (user wanted to fix a specific quality problem like hallucination, verbosity, or accuracy in a task that turned out not to exist), load `references/knowledge/prompt_audit.md` **before** drafting the prompt — not after. The original quality concern should shape the starter prompt and the suggested initial specs; record it in the task description so future runs carry the context.
+**Quality-motivated arrival.** In a chat with a user, if you arrived here from `references/client_guidance/chat/improve_task.md` (user wanted to fix a specific quality problem like hallucination, verbosity, or accuracy in a task that turned out not to exist), load `references/knowledge/prompt_audit.md` **before** drafting the prompt — not after. The original quality concern should shape the starter prompt and the suggested initial specs; record it in the task description so future runs carry the context.
 
 ### Name validation (applies to projects, tasks, run configs, prompts)
 
@@ -150,14 +150,14 @@ If the user's named task already exists **and they were asking to inspect/use it
 - **`default_run_config_id` is null** — no model is connected yet. Proceed directly to **Create Initial Run Config** without asking for direction.
 - **`default_run_config_id` is set** — the task is configured. Present its status and link to it, then offer next steps.
 
-**If the user explicitly said "create" / "make me a new" task and a same-named task already exists**, do NOT stop on a disambiguation table. List the matches in one line as a heads-up for context, then **execute the creation path** under the project the user named (or pick one per `references/modes/project_operations.md` defaults). The only override: if the user's current or prior turn explicitly says "use the existing one" / "just point me at it" / "open that one" — then treat it as inspect, not create. Otherwise the verb "create" wins; disambiguation is a side-note, not a gate. Aligns with `references/modes/project_operations.md` "Default to executing".
+In a chat with a user: **if the user explicitly said "create" / "make me a new" task and a same-named task already exists**, do NOT stop on a disambiguation table. List the matches in one line as a heads-up for context, then **execute the creation path** under the project the user named (or pick one per `references/client_guidance/chat/project_operations.md` defaults). The only override: if the user's current or prior turn explicitly says "use the existing one" / "just point me at it" / "open that one" — then treat it as inspect, not create. Otherwise the verb "create" wins; disambiguation is a side-note, not a gate. Aligns with `references/client_guidance/chat/project_operations.md` "Default to executing".
 
 ### Suggest Next Steps
 
 After the basics are set up:
 - **Run a test** — deep-link to the [Run page](http://localhost:8757/run)
 - **Run evals** once specs are created to get a baseline score
-- **Try alternate models** if quality or cost isn't right → `references/modes/improve_task.md`
+- **Try alternate models** if quality or cost isn't right → in a chat with a user, `references/client_guidance/chat/improve_task.md`
 - **Add tools or RAG** if the agent needs external capabilities or knowledge
 
 ### Verification checklist

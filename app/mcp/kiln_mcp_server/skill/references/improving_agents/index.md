@@ -36,32 +36,6 @@ noise does not refute a technique: see [dealing with a noisy
 eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md).
 When two options tie, the knowledge can settle the choice.
 
-## How to read these documents over MCP
-
-These documents are shared with Kiln Harness Tuner, whose agents run
-without a person and whose code does part of the work. Their rules apply
-to you as written. Read them this way:
-
-- A role of Kiln Harness Tuner (its planner, builder or analyzer) is you.
-- An input of Kiln Harness Tuner that the user decides (`allowed_models`,
-  the model policy, `measurement_prices`): ask the user. An input that
-  Kiln Harness Tuner measures (`train_noise`, `train_detectability`,
-  `probe_results`, `lever_attempts`): you do not have it, so follow the
-  document's rule for when it is absent.
-- "Code checks", "code refuses", "the code detection in your input":
-  Kiln Harness Tuner's code does this for its agents. Check it yourself,
-  with the same rule and threshold.
-- An output field (`open_questions`, `rejected_summary`, `rationale`):
-  tell the user.
-- A record line that Kiln Harness Tuner writes, such as
-  `— REJECTED AT VAL`: read it, and never write it
-  (`references/knowledge/memory.md`).
-- A Kiln Harness Tuner tool that Kiln does not have (the skill installer,
-  the screening): tell the user it needs Kiln Harness Tuner.
-- "The stop rules and the confirmation on val", in "A clear measurement
-  outranks a document" above: judge a result with
-  `references/knowledge/run_an_experiment.md`.
-
 **How to work through a playbook:**
 
 1. **Read the smells of the present baseline.** The detections in your

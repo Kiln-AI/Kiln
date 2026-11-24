@@ -24,7 +24,7 @@ By default `GET /api/model_info/models` lists only the provider entries the user
 
 > ⚠️ `search` is for a **specific named model**, not for enumerating a provider's catalog. Filter the list with `provider` for provider browsing — it's one call instead of a search loop.
 
-> ⚠️ **Model homepage / repo / paper / leaderboard URLs are not in the model info responses.** Don't emit them from priors — see `references/modes/improve_task.md` ("Reporting") and the matching item in `references/modes/learn_about_kiln.md` for the rule and the "no curated link" phrasing.
+> ⚠️ **Model homepage / repo / paper / leaderboard URLs are not in the model info responses.** Don't emit them from priors — in a chat with a user, see `references/client_guidance/chat/improve_task.md` ("Reporting") and the matching item in `references/client_guidance/chat/learn_about_kiln.md` for the rule and the "no curated link" phrasing.
 
 > ⚠️ **No latency number that no call returned.** The model info endpoints return capabilities, prices and notes, not latency or tokens per second. When you discuss speed, compare tiers ("a Fast-tier model", "a smaller model usually answers sooner"), quote a model's notes word for word, or use a latency that a call returned (the recorded usage of an eval run, `references/knowledge/eval_scores.md`). A figure such as "~50 tok/s" or "<2 s p95" from memory is made up. When the user gives a latency target, say which change moves toward it; claim no number.
 
@@ -182,7 +182,7 @@ Task type affects tier relevance:
 
 Group sections by relevance to the task ("High-Impact for Math (Reasoning Models)" vs. "Strong General Models You're Missing"). Lead with the highest-impact group.
 
-When a model swap is a good experiment for the task, and how to run it, is the technique's: [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md). To find out which model is better on the task, compare them as `references/knowledge/run_an_experiment.md` ("Variants") says, on train and then on val.
+When a model swap is a good experiment for the task, and how to run it, is the technique's: [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md). In a chat with a user, to find out which model is better on the task, compare them as `references/client_guidance/chat/running_an_experiment_from_chat.md` ("Variants") says, on train and then on val.
 
 ### Step 4 — Default Action After Recommendation (execute, don't stop)
 
@@ -197,7 +197,7 @@ After recommending a model, **immediately create a run config for it** — do no
 
 If the user asks "which model is best for this task?" or "what's the cheapest model that still passes?":
 
-- **Evals + scores exist** → hand off to `references/knowledge/eval_scores.md` for the scorecard + Compare link flow. A ranking that decides which run config to keep is an experiment: `references/knowledge/run_an_experiment.md` ("Variants").
+- **Evals + scores exist** → hand off to `references/knowledge/eval_scores.md` for the scorecard + Compare link flow. A ranking that decides which run config to keep is an experiment (in a chat with a user: `references/client_guidance/chat/running_an_experiment_from_chat.md`, "Variants").
 - **Specs configured, scores empty** (eval configs exist but no eval runs completed — `dataset_size: 0` everywhere) → hand off to the "Specs configured, scores empty — the Compare-link fallback" section of `references/knowledge/eval_scores.md`. Produce a cost ladder + Compare link, do not stop at "no scores yet."
 - **No evals yet** → hand off to the "No evals yet — minimum viable path" section of `references/knowledge/eval_scores.md` (Eval Builder → judge → run eval → re-check). Do not stop at "I can't help"; return the minimum viable path as the answer.
 

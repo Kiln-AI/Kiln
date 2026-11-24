@@ -18,7 +18,7 @@ description: Work with Kiln.
 
 # Kiln
 
-Modes: `references/modes/learn.md`.
+Modes: `references/client_guidance/chat/learn.md`.
 Knowledge: [RAG](references/knowledge/rag.md).
 API: start from `references/knowledge/api_docs/api_index.md`.
 Help: references/docs/ (the help articles).
@@ -73,7 +73,7 @@ online_url: https://docs.kiln.tech/docs/evals
 
 CLEAN_TREE = {
     "SKILL.md": SKILL_MD,
-    "references/modes/learn.md": LEARN_MD,
+    "references/client_guidance/chat/learn.md": LEARN_MD,
     "references/knowledge/rag.md": RAG_MD,
     "references/knowledge/api_docs/api_index.md": API_INDEX,
     "references/knowledge/api_docs/projects_api_list.md": CATALOGUE,
@@ -143,7 +143,7 @@ def test_wrong_case_path_fails(tmp_path):
         "Read `/SKILL.md`.",
         "Read /references/knowledge/rag.md first.",
         "Read `../references/nope.md`.",
-        "Read `./references/modes/learn.md`.",
+        "Read `./references/client_guidance/chat/learn.md`.",
         "Read `./SKILL.md`.",
         "Then see ../references/nope.md for more.",
         "Then see ./references/knowledge/rag.md.",
@@ -182,14 +182,14 @@ def test_bare_name_fails(tmp_path):
     lines = "Read rag.md first.\nThen `learn.md` and api_index.md."
     problems = problems_of(tmp_path, {"SKILL.md": with_line(SKILL_MD, lines)})
     assert [problem.message for problem in problems] == [
-        "line 13: `learn.md` is a bare file name; write the full path `references/modes/learn.md`",
+        "line 13: `learn.md` is a bare file name; write the full path `references/client_guidance/chat/learn.md`",
         "line 12: `rag.md` is a bare file name; write the full path `references/knowledge/rag.md`",
         "line 13: `api_index.md` is a bare file name; write the full path `references/knowledge/api_docs/api_index.md`",
     ]
 
 
 def test_bare_name_in_link_label_passes(tmp_path):
-    line = "[rag.md](references/knowledge/rag.md) and [`learn.md`](references/modes/learn.md)"
+    line = "[rag.md](references/knowledge/rag.md) and [`learn.md`](references/client_guidance/chat/learn.md)"
     assert problems_of(tmp_path, {"SKILL.md": with_line(SKILL_MD, line)}) == []
 
 
@@ -313,9 +313,12 @@ def test_folder_link_reaches_its_readme_only(tmp_path):
 )
 def test_call_syntax_fails(tmp_path, text):
     problems = problems_of(
-        tmp_path, {"references/modes/learn.md": with_line(LEARN_MD, text)}
+        tmp_path,
+        {"references/client_guidance/chat/learn.md": with_line(LEARN_MD, text)},
     )
-    assert rules_of(problems) == {("tree-call-syntax", "references/modes/learn.md")}
+    assert rules_of(problems) == {
+        ("tree-call-syntax", "references/client_guidance/chat/learn.md")
+    }
 
 
 @pytest.mark.parametrize(
@@ -353,12 +356,21 @@ def test_api_path_is_not_an_app_link(tmp_path, text):
 
 
 @pytest.mark.parametrize(
-    "folder", ["references/modes", "references/levers", "references/improving_agents"]
+    "folder",
+    [
+        "references/client_guidance/chat",
+        "references/levers",
+        "references/improving_agents",
+    ],
 )
 def test_split_wording_needs_the_pointer(tmp_path, folder):
-    key = f"{folder}/learn.md" if folder == "references/modes" else f"{folder}/index.md"
+    key = (
+        f"{folder}/learn.md"
+        if folder == "references/client_guidance/chat"
+        else f"{folder}/index.md"
+    )
     body = "Confirm on the val split.\nKeep a held-out set."
-    text = LEARN_MD if folder == "references/modes" else "# Index\n"
+    text = LEARN_MD if folder == "references/client_guidance/chat" else "# Index\n"
     changes = {key: with_line(text, body), "SKILL.md": with_line(SKILL_MD, f"`{key}`")}
     problems = problems_of(tmp_path, changes)
     assert [(p.rule, p.path) for p in problems] == [("tree-split-pointer", key)]
@@ -432,7 +444,7 @@ def test_test_split_reader_needs_the_pointer(tmp_path):
         ("SKILL.md", "---\nname: [kiln\n---\n", "front matter is not valid YAML"),
         ("SKILL.md", "---\n- kiln\n---\n", "front matter is not a map"),
         (
-            "references/modes/learn.md",
+            "references/client_guidance/chat/learn.md",
             LEARN_MD.replace("name: learn", "name: other"),
             "`name` must be the file stem, `learn`",
         ),
@@ -515,7 +527,9 @@ def test_unreachable_file_fails(tmp_path):
 def test_a_tree_without_skill_md_reaches_nothing(tmp_path):
     problems = problems_of(tmp_path, {"SKILL.md": None})
     assert ("tree-unreachable", "SKILL.md") in rules_of(problems)
-    assert ("tree-unreachable", "references/modes/learn.md") in rules_of(problems)
+    assert ("tree-unreachable", "references/client_guidance/chat/learn.md") in rules_of(
+        problems
+    )
 
 
 def test_many_unreachable_files_in_one_folder_are_one_line(tmp_path):
@@ -575,6 +589,32 @@ def test_banned_terms_by_scope(tmp_path):
     }
 
 
+CHAT_WORDS_LINE = "Other MCP clients reach Kiln. An MCP client can."
+
+
+@pytest.mark.parametrize(
+    ("key", "text", "banned"),
+    [
+        ("references/knowledge/rag.md", RAG_MD, True),
+        ("references/client_guidance/chat/learn.md", LEARN_MD, True),
+        ("references/knowledge/api_docs/calling_the_kiln_api.md", "# Rules\n", True),
+        ("references/knowledge/tools.md", RAG_MD.replace("rag", "tools"), False),
+        ("references/docs/evals.md", EVALS_ARTICLE, False),
+        ("references/knowledge/api_docs/get_api_projects.md", "# List\n", False),
+    ],
+)
+def test_mcp_client_means_the_protocol_role_only(tmp_path, key, text, banned):
+    changed = with_line(text, CHAT_WORDS_LINE)
+    changes = {key: changed, "SKILL.md": with_line(SKILL_MD, f"`{key}`")}
+    line = len(changed.splitlines())
+    expected = [
+        f"line {line}: banned term `MCP client`",
+        f"line {line}: banned term `MCP clients`",
+    ]
+    messages = sorted(p.message for p in problems_of(tmp_path, changes))
+    assert messages == (expected if banned else [])
+
+
 @pytest.mark.parametrize(
     "text, banned",
     [
@@ -583,18 +623,20 @@ def test_banned_terms_by_scope(tmp_path):
         ("Use the model_info tool.", True),
         ("Use the Model_Info tool.", True),
         ("Use model_info_featured.", True),
-        ("Read `references/modes/experiment_batch.md`.", True),
+        ("Read `references/client_guidance/chat/experiment_batch.md`.", True),
         ("This requires approval.", True),
     ],
 )
 def test_banned_terms_are_whole_tokens(tmp_path, text, banned):
     changes = {
         "references/knowledge/rag.md": with_line(RAG_MD, text),
-        "references/modes/experiment_batch.md": "---\nname: experiment_batch\ndescription: x.\n---\n",
+        "references/client_guidance/chat/experiment_batch.md": "---\nname: experiment_batch\ndescription: x.\n---\n",
         "references/knowledge/api_docs/get_api_model_info_models.md": "# Models\n",
         "references/knowledge/api_docs/projects_api_list.md": CATALOGUE
         + "|`/api/model_info/models`|GET|M||get_api_model_info_models.md|\n",
-        "SKILL.md": with_line(SKILL_MD, "`references/modes/experiment_batch.md`"),
+        "SKILL.md": with_line(
+            SKILL_MD, "`references/client_guidance/chat/experiment_batch.md`"
+        ),
     }
     rag_problems = [
         p

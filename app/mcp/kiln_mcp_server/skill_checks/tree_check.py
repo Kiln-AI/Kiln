@@ -22,7 +22,7 @@ from kiln_mcp_server.skill_checks.knowledge_schema import (
     INDEX_BLOCKS,
     Problem,
 )
-from kiln_mcp_server.skill_files import ROOT_FILE, list_tree
+from kiln_mcp_server.skill_files import API_RULES_PATH, ROOT_FILE, list_tree
 
 TREE_RULES: tuple[str, ...] = (
     "tree-path",
@@ -40,7 +40,7 @@ TREE_RULES: tuple[str, ...] = (
 
 API_DOCS_FOLDER = API_DOCS_PREFIX
 KNOWLEDGE_FOLDER = "references/knowledge/"
-MODES_FOLDER = "references/modes/"
+CLIENT_GUIDANCE_FOLDER = "references/client_guidance/"
 KNOWLEDGE_TREES = ("references/levers/", "references/improving_agents/")
 SPLIT_RULE_FILE = "references/knowledge/train_val_test.md"
 CATALOGUE_SUFFIX = API_CATALOGUE_SUFFIX
@@ -54,7 +54,9 @@ SKILL_DESCRIPTION_MAX = 1024
 CALL_SYNTAX = ("skill(name=", "kiln_skill")
 
 # Scope -> terms. "tree" is every file outside the API reference, "SKILL.md"
-# is the root file, "knowledge" is the two knowledge trees.
+# is the root file, "knowledge" is the two knowledge trees, and "guidance" is
+# every file outside the API reference and the help articles, which are
+# copies of the public docs.
 BANNED_TERMS: dict[str, tuple[str, ...]] = {
     "tree": (
         "kiln-chat",
@@ -71,6 +73,9 @@ BANNED_TERMS: dict[str, tuple[str, ...]] = {
         "optimize_performance",
     ),
     "SKILL.md": ("Kiln Assistant", "always in context", "turn 0"),
+    # Kiln Harness Tuner is an MCP client too: the interactive client is a
+    # chat client.
+    "guidance": ("MCP client", "MCP clients", "MCP agent", "MCP agents"),
     "knowledge": (
         # The operation names of Kiln Harness Tuner's gateway.
         "ping",
@@ -154,6 +159,16 @@ HARNESS_TUNER_RECORD_STRINGS: tuple[str, ...] = (
     "- blocked at the val gate",
 )
 
+# (file, term) pairs where a banned term holds its plain meaning. The Kiln
+# tools guide speaks of Kiln as an MCP client of other servers, and of the
+# protocol's clients of Kiln's project-tools server.
+BANNED_TERM_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("references/knowledge/tools.md", "MCP client"),
+        ("references/knowledge/tools.md", "MCP clients"),
+    }
+)
+
 # `/api/model_info/...` and `get_api_model_info_...` are the model info
 # endpoints, not the Assistant's tool. `references/knowledge/create_spec.md`
 # is a knowledge file of the skill, not the gateway operation.
@@ -214,8 +229,7 @@ _SPLIT_WORDING = re.compile(
     r"held-out|\b(val|validation|test) (split|set|gate)\b", re.IGNORECASE
 )
 _TEST_SPLIT_REQUEST = re.compile(r"\bsplit=test\b|\"split\"\s*:\s*\"test\"")
-_SPLIT_POINTER_FOLDERS = (MODES_FOLDER, *KNOWLEDGE_TREES)
-_NO_WORDING_RULE_FOLDERS = (DOCS_FOLDER, API_DOCS_FOLDER)
+_SPLIT_POINTER_FOLDERS = (CLIENT_GUIDANCE_FOLDER, *KNOWLEDGE_TREES)
 
 
 RefSource = Literal["link", "code", "bare", "catalogue"]
@@ -256,6 +270,13 @@ def _folders_of(tree: Iterable[str]) -> frozenset[str]:
         for end in range(1, len(parts) + 1):
             folders.add("/".join(parts[:end]))
     return frozenset(folders)
+
+
+def _is_api_reference(key: str) -> bool:
+    """A generated file of the API reference: an endpoint doc, a catalogue or
+    the catalogue index. They follow no wording rule of the hand-written
+    files."""
+    return key.startswith(API_DOCS_FOLDER) and key != API_RULES_PATH
 
 
 def _is_skill_path(text: str) -> bool:
@@ -409,10 +430,10 @@ class _TreeChecker:
         self.check_relative(key, scan)
         self.check_call_syntax(key, text)
         self.check_front_matter(key, text)
-        if not key.startswith(API_DOCS_FOLDER):
+        if not _is_api_reference(key):
             self.check_bare_names(key, scan)
             self.check_banned_terms(key, text)
-        if not key.startswith(_NO_WORDING_RULE_FOLDERS):
+        if not _is_api_reference(key) and not key.startswith(DOCS_FOLDER):
             self.check_app_links(key, scan)
             self.check_test_split(key, text)
         if key.startswith(_SPLIT_POINTER_FOLDERS):
@@ -490,6 +511,8 @@ class _TreeChecker:
 
     def check_banned_terms(self, key: str, text: str) -> None:
         scopes = ["tree"]
+        if not key.startswith(DOCS_FOLDER):
+            scopes.append("guidance")
         if key == ROOT_FILE:
             scopes.append("SKILL.md")
         if key.startswith(KNOWLEDGE_TREES):
@@ -500,6 +523,8 @@ class _TreeChecker:
                     _without_record_strings(line) if scope == "knowledge" else line
                 )
                 for term, pattern in self.banned[scope]:
+                    if (key, term) in BANNED_TERM_EXCEPTIONS:
+                        continue
                     if pattern.search(scanned):
                         self.problem(
                             "tree-banned-term",
@@ -603,9 +628,7 @@ def _expected_front_matter(
         return "none"
     if key.startswith(DOCS_FOLDER):
         return "help_article"
-    if (key.startswith(MODES_FOLDER) and key.count("/") == 2) or key.startswith(
-        KNOWLEDGE_FOLDER
-    ):
+    if key.startswith((CLIENT_GUIDANCE_FOLDER, KNOWLEDGE_FOLDER)):
         return "name_and_description"
     for folder in KNOWLEDGE_DOCUMENT_FOLDERS:
         if key.startswith(folder + "/"):

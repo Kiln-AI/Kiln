@@ -3,6 +3,9 @@ name: project_operations
 description: |
   Mode for creating, editing, or inspecting Kiln projects, tasks, evals, and prompts. Enter when the user wants to mutate or review their project setup.
 ---
+
+For chat clients working with a user. A non-interactive agent with its own instructions does not need this file.
+
 # Mode: Project Operations
 
 Create, edit, or inspect Kiln projects, tasks, evals, and prompts. This mode covers both mutations (creating/editing) and read operations (status checks, reviews).
@@ -21,7 +24,7 @@ Every substantive reply in this mode follows this shape:
 4. **Deep links** — clickable links to navigate to the new resources
 5. **End on the outcome, not a question.** A trailing "Shall I…?" / "Would you like A or B?" is a contract violation — pose the choice *instead of* reporting, never in addition. **Declarative deferred-action closers count too** — *"I'll apply this once you…"*, *"just say the word"*, *"let me know when ready and I'll…"*, *"happy to update it if you approve"* hand the next action back to the user in statement form and are the same violation. If the user's message directly asks for the change, draft and execute in the same turn; the ask is the consent.
 
-**Default to executing.** Creating projects, tasks, run configs, prompts, and evals are all direct actions — do them, then report. Confirm only for irreversible/destructive operations (DELETE, overwrite of user prompt text). Also ask first for the operations that the section "Working with the user" of `SKILL.md`, or the knowledge file you follow, names.
+**Default to executing.** Creating projects, tasks, run configs, prompts, and evals are all direct actions — do them, then report. Confirm only for irreversible/destructive operations (DELETE, overwrite of user prompt text). Also ask first for the operations that the section "Working with the user" of `references/client_guidance/chat/using_kiln_from_chat.md`, or the knowledge file you follow, names.
 
 ## Endpoint Conventions
 
@@ -62,7 +65,7 @@ Before any API call or POST in this mode, resolve `(project_id, task_id)` using 
 
 ## When the Request Changes
 
-Before each reply, check that the user's message still fits this mode. If the user pivots to improving an existing agent's quality or cost, or to learning about a Kiln feature, route again with the routing table of `SKILL.md`; read `references/modes/establish_intent.md` when the new goal is unclear.
+Before each reply, check that the user's message still fits this mode. If the user pivots to improving an existing agent's quality or cost, or to learning about a Kiln feature, route again with the routing table of `references/client_guidance/chat/using_kiln_from_chat.md`; read `references/client_guidance/chat/establish_intent.md` when the new goal is unclear.
 
 ## Suggested Questions
 
@@ -92,7 +95,7 @@ Before each reply, check that the user's message still fits this mode. If the us
 
 ### Kiln API
 
-`call_kiln_api(method, url_path, body?, jq_filter?)` calls the Kiln REST API. Returns JSON with `status_code` and `body`. See the section "Calling the Kiln API" of `SKILL.md` for the full contract (load endpoint docs first, jq filter writing, diagnose-before-retry). Mode-specific reminders:
+`call_kiln_api(method, url_path, body?, jq_filter?)` calls the Kiln REST API. Returns JSON with `status_code` and `body`. See `references/knowledge/api_docs/calling_the_kiln_api.md` for the full contract (load endpoint docs first, jq filter writing, diagnose-before-retry). Mode-specific reminders:
 
 ```
 # read first: references/knowledge/api_docs/<endpoint>.md
@@ -108,12 +111,12 @@ For model selection when creating run configs, use the model info endpoints: `GE
 
 ## Mode Transitions
 
-- User asks about improving quality/cost/speed → route to **Improve Task** (`references/modes/improve_task.md`)
-- User asks "how does X work?" or has an error → route to **Learn About Kiln** (`references/modes/learn_about_kiln.md`)
+- User asks about improving quality/cost/speed → route to **Improve Task** (`references/client_guidance/chat/improve_task.md`)
+- User asks "how does X work?" or has an error → route to **Learn About Kiln** (`references/client_guidance/chat/learn_about_kiln.md`)
 
 ## Freeform Fallback
 
-If no knowledge file covers what the user needs, load `references/knowledge/freeform_help.md` as a last resort. Prefer specific knowledge files whenever possible.
+If no knowledge file covers what the user needs, load `references/client_guidance/chat/freeform_help.md` as a last resort. Prefer specific knowledge files whenever possible.
 
 ## Starting Work in This Mode
 

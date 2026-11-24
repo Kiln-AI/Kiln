@@ -11,7 +11,8 @@ playbooks (`references/improving_agents/index.md`). It reads train items
 only: the split rule is in `references/knowledge/train_val_test.md`.
 
 Read each endpoint doc before the first call. `{project_id}` and `{task_id}`
-come from the task context of `references/modes/improve_task.md`.
+come from the task context (in a chat with a user, that of
+`references/client_guidance/chat/improve_task.md`).
 
 ## The agent as it is
 
@@ -109,5 +110,6 @@ it there: traces are large.
 ## Where to go next
 
 `references/improving_agents/index.md`: a smell or a playbook that fits what
-you found, then `references/knowledge/run_an_experiment.md` to measure the
-change.
+you found, then, in a chat with a user,
+`references/client_guidance/chat/running_an_experiment_from_chat.md`
+to measure the change.

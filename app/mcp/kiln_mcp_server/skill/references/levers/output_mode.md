@@ -105,5 +105,5 @@ Rules of the object:
   the modes ranked by reliability.
 - `references/knowledge/model_create_configs.md`: the fields of
   `run_config_properties`, and the run config payload.
-- `references/knowledge/run_an_experiment.md`: how to measure the change,
-  judge it and keep it.
+- In a chat with a user:
+  `references/client_guidance/chat/running_an_experiment_from_chat.md`.

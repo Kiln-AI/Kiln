@@ -12,7 +12,7 @@ Reference knowledge for moving agents to open-weight models for privacy, local d
 - `references/knowledge/model_work.md` — for open-weight model suggestions, VRAM-to-parameter sizing, tier guide, and provider reference
 - `references/knowledge/provider_setup.md` — when the user needs to connect OpenRouter or another provider
 - `references/knowledge/tools.md` — when the user needs dedicated MCP tools as an advanced fallback
-- `references/knowledge/run_an_experiment.md` — for comparing models on the task ("Variants"), on train and then on val
+- In a chat with a user, `references/client_guidance/chat/running_an_experiment_from_chat.md` — for comparing models on the task ("Variants"), on train and then on val
 
 ## API Docs
 
@@ -86,7 +86,7 @@ If the user really means VPC, the approach is different — they'll use the same
 
 ### Run Experiments
 
-Plan and run a set of experiments using open-weight models. Read `references/improving_agents/playbooks/working-inside-restrictions.md` for planning inside the user's restrictions, and `references/improving_agents/techniques/model-swap-inside-a-class.md` for the model scan. Read `references/knowledge/run_an_experiment.md` for how to run the experiments, using these constraints:
+Plan and run a set of experiments using open-weight models. Read `references/improving_agents/playbooks/working-inside-restrictions.md` for planning inside the user's restrictions, and `references/improving_agents/techniques/model-swap-inside-a-class.md` for the model scan. In a chat with a user, read `references/client_guidance/chat/running_an_experiment_from_chat.md` for how to run the experiments, using these constraints:
 - Only use models they have available
 - Only use models that fit their RAM/parameter limit
 - Only use open-weight models — use `GET /api/model_info/models` with `open_weights=true`, or find the model with `search` and check `open_weights` in `GET /api/model_info/model_details`. See also `references/knowledge/model_work.md` → Open-Weight Models for size guidance

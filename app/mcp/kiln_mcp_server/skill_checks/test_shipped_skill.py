@@ -41,6 +41,7 @@ from kiln_mcp_server.skill_checks.tree_check import (
 )
 from kiln_mcp_server.skill_files import (
     API_CATALOGUE_INDEX_PATH,
+    API_RULES_PATH,
     DEFAULT_ORIGIN,
     HINT,
     ROOT_FILE,
@@ -246,8 +247,10 @@ def test_wrapper_templates_are_listed_by_the_authoring_guide():
 
 # --- the glue files ------------------------------------------------------------
 
-RUN_AN_EXPERIMENT = "references/knowledge/run_an_experiment.md"
+RUN_AN_EXPERIMENT = "references/client_guidance/chat/running_an_experiment_from_chat.md"
 DIAGNOSE_AN_AGENT = "references/knowledge/diagnose_an_agent.md"
+CHAT_GUIDANCE = "references/client_guidance/chat/"
+USING_KILN_FROM_CHAT = f"{CHAT_GUIDANCE}using_kiln_from_chat.md"
 
 GLUE_FILE_PARTS = {
     RUN_AN_EXPERIMENT: (
@@ -289,16 +292,8 @@ def test_the_glue_files_have_their_parts(path):
     assert tuple(sections) == GLUE_FILE_PARTS[path]
 
 
-HARNESS_TUNER_FIRST_LINE = (
-    "If you are Kiln Harness Tuner, follow your system prompt. "
-    "It has similar concepts, but better enforcement."
-)
-
-
 def test_run_an_experiment_opens_with_the_two_paths():
     text = read_file(RUN_AN_EXPERIMENT, get_index())
-    body = read_front_matter(text).body
-    assert body.strip().splitlines()[0] == HARNESS_TUNER_FIRST_LINE
     two_paths = _sections(text)["Two paths"]
     assert "Kiln Harness Tuner" in two_paths
     assert "one-off" in two_paths
@@ -584,6 +579,11 @@ def test_memory_keeps_harness_tuners_rules(phrase):
     assert phrase in " ".join(read_file(MEMORY, get_index()).split())
 
 
+def test_memory_states_kilns_overview_limits():
+    # `Memory` refuses an overview with a newline (`kiln_ai.datamodel.memory`).
+    assert "`overview` (req, ≤280, no newlines)" in read_file(MEMORY, get_index())
+
+
 def test_the_baseline_record_says_how_it_is_seeded():
     text = " ".join(
         read_file(MEMORY_FORMATS + "baseline_and_val_records.md", get_index()).split()
@@ -613,8 +613,14 @@ API_RULES = (
 
 @pytest.mark.parametrize("phrase", API_RULES)
 def test_the_api_rules_keep_harness_tuners_discipline(phrase):
-    section = _sections(read_file(ROOT_FILE, get_index()))["Calling the Kiln API"]
-    assert phrase in " ".join(section.split())
+    text = read_file(API_RULES_PATH, get_index())
+    assert phrase in " ".join(text.split())
+
+
+def test_the_api_rules_open_with_their_condition():
+    lines = read_file(API_RULES_PATH, get_index()).splitlines()
+    assert lines[0] == "# Calling the Kiln API"
+    assert lines[2] == API_RULES[0]
 
 
 CODE_TOOL_AUTHORING = "references/knowledge/code_tool_authoring.md"
@@ -685,12 +691,19 @@ def test_the_knowledge_trees_have_no_harness_tuner_branch():
 IMPROVING_AGENTS_INDEX = "references/improving_agents/index.md"
 
 
-def test_the_index_explains_harness_tuner_words_to_mcp_agents():
-    section = _sections(read_file(IMPROVING_AGENTS_INDEX, get_index()))[
-        "How to read these documents over MCP"
+def test_the_chat_guide_explains_harness_tuner_words_to_chat_clients():
+    section = _sections(read_file(USING_KILN_FROM_CHAT, get_index()))[
+        "How to read the shared documents"
     ]
+    assert IMPROVING_AGENTS_INDEX in section
     assert RUN_AN_EXPERIMENT in section
     assert MEMORY in section
+
+
+def test_the_index_keeps_the_heading_harness_tuner_reads():
+    sections = _sections(read_file(IMPROVING_AGENTS_INDEX, get_index()))
+    assert "How to work through a playbook" in sections["How to read these documents"]
+    assert CHAT_GUIDANCE not in read_file(IMPROVING_AGENTS_INDEX, get_index())
 
 
 TRAIN_WINS_PLAYBOOK = (
@@ -741,7 +754,8 @@ WRITERS_OF_RECORDS = (
     ROOT_FILE,
     RUN_AN_EXPERIMENT,
     MEMORY,
-    "references/modes/improve_task.md",
+    f"{CHAT_GUIDANCE}improve_task.md",
+    USING_KILN_FROM_CHAT,
     "references/knowledge/local_private_on_prem.md",
 )
 
@@ -858,7 +872,7 @@ OVERLAP_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             f"{_P}ordering-work.md",
             f"{_P}spending-the-budget.md",
         ),
-        ("references/modes/improve_task.md",),
+        (f"{CHAT_GUIDANCE}improve_task.md",),
     ),
     (  # 2 measuring and judging a change
         (
@@ -986,19 +1000,41 @@ SKILL_MD_MAX_CHARS = 20_000
 # what Kiln is.
 SKILL_MD_PARTS = (
     "Reading skill files",
+    "Who reads this skill",
+    "The parts of the skill",
+)
+# The `### ` parts of "The parts of the skill", in order.
+SKILL_LAYOUT_PARTS = (
+    "Kiln's features",
+    "Improving agents",
+    "Memory",
+    "The Kiln API",
+    "Chat client guidance",
+)
+
+# The chat client guidance; each file opens with this line after its front
+# matter.
+CHAT_FIRST_LINE = (
+    "For chat clients working with a user. "
+    "A non-interactive agent with its own instructions does not need this file."
+)
+CHAT_CONDITION = "in a chat with a user"
+
+# The sections of the chat client guide, in order.
+USING_KILN_FROM_CHAT_PARTS = (
     "Routing",
-    "Calling the Kiln API",
     "Working with the user",
     "Links into the app",
-    "Other entry points",
     "What you cannot do over this connection",
+    "How to read the shared documents",
+    "The files of this folder",
 )
 
 MODE_PATHS = (
-    "references/modes/project_operations.md",
-    "references/modes/improve_task.md",
-    "references/modes/learn_about_kiln.md",
-    "references/modes/establish_intent.md",
+    f"{CHAT_GUIDANCE}project_operations.md",
+    f"{CHAT_GUIDANCE}improve_task.md",
+    f"{CHAT_GUIDANCE}learn_about_kiln.md",
+    f"{CHAT_GUIDANCE}establish_intent.md",
 )
 
 MAIN_PAGES = tuple(
@@ -1036,19 +1072,19 @@ BLOCKED_CAPABILITY_PAGES = tuple(
     )
 )
 
-# The entry points SKILL.md names beside the modes. A path is required once
-# its file is in the tree.
-ENTRY_POINTS = (
-    "references/docs/docs_index.md",
-    "references/levers/index.md",
-    "references/improving_agents/index.md",
-    "references/knowledge/run_an_experiment.md",
-    "references/knowledge/experiment_costing.md",
-    "references/knowledge/train_val_test.md",
-    "references/knowledge/memory.md",
-    "references/knowledge/working_with_project_files.md",
-    "references/knowledge/model_work.md",
-)
+# The entry points of the parts of SKILL.md other than "Kiln's features".
+ENTRY_POINTS = {
+    "Kiln's features": (DOCS_INDEX_PATH,),
+    "Improving agents": (
+        "references/levers/index.md",
+        "references/improving_agents/index.md",
+        "references/knowledge/train_val_test.md",
+        "references/knowledge/experiment_costing.md",
+    ),
+    "Memory": (MEMORY,),
+    "The Kiln API": (API_CATALOGUE_INDEX_PATH, API_RULES_PATH),
+    "Chat client guidance": (USING_KILN_FROM_CHAT,),
+}
 
 
 def _skill_md_sections() -> tuple[str, dict[str, str]]:
@@ -1058,23 +1094,103 @@ def _skill_md_sections() -> tuple[str, dict[str, str]]:
     return re.split(r"^## ", text, flags=re.M)[0], _sections(text)
 
 
+def _subsections(text: str) -> dict[str, str]:
+    """Each `### ` part's text by heading, in order of the text."""
+    parts = {}
+    for part in re.split(r"^### ", text, flags=re.M)[1:]:
+        heading, _, body = part.partition("\n")
+        parts[heading.strip()] = body
+    return parts
+
+
 def test_skill_md_has_the_required_parts():
     intro, sections = _skill_md_sections()
     assert tuple(sections) == SKILL_MD_PARTS
     assert WHAT_KILN_IS in intro
+    assert "served over MCP" in intro
     assert "while you do Kiln work" in intro
 
+    assert USING_KILN_FROM_CHAT in sections["Who reads this skill"]
+    layout = _subsections(sections["The parts of the skill"])
+    assert tuple(layout) == SKILL_LAYOUT_PARTS
+    for part, paths in ENTRY_POINTS.items():
+        for path in paths:
+            assert path in layout[part], (part, path)
+
+
+def test_skill_md_names_every_knowledge_file():
+    skill_md = read_file(ROOT_FILE, get_index())
+    knowledge = [
+        key
+        for key in get_index().files
+        if key.startswith("references/knowledge/") and key.count("/") == 2
+    ]
+    assert knowledge
+    assert [key for key in knowledge if f"`{key}`" not in skill_md] == []
+
+
+def test_skill_md_names_only_the_chat_guide_of_the_chat_files():
+    skill_md = read_file(ROOT_FILE, get_index())
+    named = set(re.findall(rf"{re.escape(CHAT_GUIDANCE)}[A-Za-z0-9_.-]+\.md", skill_md))
+    assert named == {USING_KILN_FROM_CHAT}
+
+
+def _chat_files() -> list[str]:
+    return [key for key in get_index().files if key.startswith(CHAT_GUIDANCE)]
+
+
+@pytest.mark.parametrize("path", _chat_files())
+def test_each_chat_file_opens_with_the_chat_line(path):
+    body = read_front_matter(read_file(path, get_index())).body
+    assert body.strip().splitlines()[0] == CHAT_FIRST_LINE
+
+
+def test_the_chat_guide_lists_every_chat_file():
+    sections = _sections(read_file(USING_KILN_FROM_CHAT, get_index()))
+    assert tuple(sections) == USING_KILN_FROM_CHAT_PARTS
+    for path in _chat_files():
+        assert f"`{path}`" in sections["The files of this folder"], path
+
+
+def test_the_chat_guide_has_the_rules_for_working_with_the_user():
+    sections = _sections(read_file(USING_KILN_FROM_CHAT, get_index()))
     for path in MODE_PATHS:
         assert path in sections["Routing"], path
-    assert API_CATALOGUE_INDEX_PATH in sections["Calling the Kiln API"]
+    assert "**Keep the user in the loop.**" in sections["Working with the user"]
     for page in MAIN_PAGES:
         assert f"`{page}`" in sections["Links into the app"], page
-    tree = get_index().files
-    for path in ENTRY_POINTS:
-        if path in tree:
-            assert path in sections["Other entry points"], path
     for page in BLOCKED_CAPABILITY_PAGES:
         assert f"`{page}`" in sections["What you cannot do over this connection"], page
+
+
+def _blocks(text: str) -> list[str]:
+    """The paragraphs of `text`, with each list item and table row a block of
+    its own, its wrapped lines joined."""
+    blocks: list[str] = []
+    for paragraph in re.split(r"\n\s*\n", text):
+        for line in paragraph.split("\n"):
+            starts_item = re.match(r"\s*(?:[-*|]|\d+\.)\s", line) is not None
+            if starts_item or not blocks or blocks[-1] == "":
+                blocks.append(line)
+            else:
+                blocks[-1] += " " + line
+        blocks.append("")
+    return [" ".join(block.split()) for block in blocks if block.strip()]
+
+
+def test_a_shared_file_names_a_chat_file_only_for_a_chat_with_a_user():
+    """A non-interactive agent reads the shared files, so a pointer to a chat
+    file says that it is for a chat with a user. `SKILL.md` names the chat
+    guide for chat clients."""
+    index = get_index()
+    hits = [
+        (key, block)
+        for key in index.files
+        if key != ROOT_FILE and not key.startswith(CHAT_GUIDANCE)
+        for block in _blocks(read_file(key, index))
+        if CHAT_GUIDANCE in block and CHAT_CONDITION not in block.lower()
+    ]
+    assert hits == []
 
 
 def test_skill_md_size():

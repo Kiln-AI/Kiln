@@ -265,7 +265,7 @@ def test_a_valid_minimal_tree_passes_the_tree_check(tree):
 
 def test_a_skill_with_no_knowledge_tree_has_no_problem(tmp_path):
     root = tmp_path / "skill"
-    (root / "references" / "modes").mkdir(parents=True)
+    (root / "references" / "client_guidance" / "chat").mkdir(parents=True)
     (root / "SKILL.md").write_text("# Kiln\n")
     assert check(load(root), tree=tree_paths(root)) == []
 
@@ -889,7 +889,7 @@ def test_stray_is_reported(tree, path):
 
 def test_a_file_outside_the_knowledge_trees_is_not_a_stray(tree):
     tree.write("references/knowledge/rag.md", "x")
-    tree.write("references/modes/a/b.txt", "x")
+    tree.write("references/client_guidance/chat/a/b.txt", "x")
     assert tree.problems() == []
 
 

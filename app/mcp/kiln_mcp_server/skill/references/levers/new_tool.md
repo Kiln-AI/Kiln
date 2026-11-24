@@ -102,5 +102,5 @@ Rules of the object:
 - `references/knowledge/code_tool_authoring.md`: the contract, the
   allowlist rule, the build rules, a worked example, and eight wrapper
   templates, one for each mechanical failure.
-- `references/knowledge/run_an_experiment.md`: how to measure the change,
-  judge it and keep it.
+- In a chat with a user:
+  `references/client_guidance/chat/running_an_experiment_from_chat.md`.

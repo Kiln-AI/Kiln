@@ -15,6 +15,8 @@ else:
 
 DEFAULT_ORIGIN = "http://localhost:8757"
 API_CATALOGUE_INDEX_PATH = "references/knowledge/api_docs/api_index.md"
+# The one hand-written file of the generated API reference folder.
+API_RULES_PATH = "references/knowledge/api_docs/calling_the_kiln_api.md"
 
 ROOT_FILE = "SKILL.md"
 _API_DOCS_FOLDER = "references/knowledge/api_docs"
@@ -176,13 +178,14 @@ def _file_lines(folder: str, index: SkillIndex) -> list[str]:
 
     # The full listing of endpoint docs would flood the agent's context; the
     # catalogues are the way to find one.
-    catalogues = [
+    listed = [
         key
         for key in files
-        if key == API_CATALOGUE_INDEX_PATH or key.endswith(_API_CATALOGUE_SUFFIX)
+        if key in (API_CATALOGUE_INDEX_PATH, API_RULES_PATH)
+        or key.endswith(_API_CATALOGUE_SUFFIX)
     ]
-    lines = catalogues or ["(none)"]
-    unlisted = len(files) - len(catalogues)
+    lines = listed or ["(none)"]
+    unlisted = len(files) - len(listed)
     if unlisted:
         lines.append(
             f"Plus {unlisted} endpoint docs, not listed. Find an endpoint doc through a catalogue."

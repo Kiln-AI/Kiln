@@ -10,7 +10,7 @@ A review checklist for the task instruction and a prompt. It has two uses:
 - **A new prompt.** `references/knowledge/create_task.md` reads it before a starter prompt is drafted.
 - **A user who asks for a review** of a prompt, with no other direction.
 
-It is not the first step of an improvement. To make an agent better, start from `references/modes/improve_task.md`: the evidence of the agent and its train items decides what to change, through the playbooks. A finding of this checklist is a hypothesis to measure (`references/knowledge/run_an_experiment.md`), not a fix to apply in place: a change is a new saved prompt and a new run config (`references/levers/prompt.md`).
+It is not the first step of an improvement. In a chat with a user, to make an agent better, start from `references/client_guidance/chat/improve_task.md`: the evidence of the agent and its train items decides what to change, through the playbooks. A finding of this checklist is a hypothesis to measure (in a chat with a user, `references/client_guidance/chat/running_an_experiment_from_chat.md`), not a fix to apply in place: a change is a new saved prompt and a new run config (`references/levers/prompt.md`).
 
 ## API Docs
 

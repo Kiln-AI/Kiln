@@ -23,7 +23,7 @@ Rules:
 
 CALL_KILN_API_DESCRIPTION = """Call the Kiln REST API. Makes one HTTP request to the running Kiln app and returns JSON with `status_code` and `body`.
 
-Call `kiln_skill` first. Endpoint paths, request bodies, response fields and useful jq filters are in the skill's endpoint docs, one per endpoint, not here. Read the endpoint doc before your first call to an endpoint. To find it, start from the catalogue index, the skill file `references/knowledge/api_docs/api_index.md`. Do not guess paths.
+Call `kiln_skill` first. Endpoint paths, request bodies, response fields and useful jq filters are in the skill's endpoint docs, one per endpoint, not here. Read the endpoint doc before your first call to an endpoint. To find it, start from the catalogue index, the skill file `references/knowledge/api_docs/api_index.md`. Do not guess paths. Before your first call, read the skill file `references/knowledge/api_docs/calling_the_kiln_api.md`: the rules for every call.
 
 A non-2xx answer from the API is returned as data (`status_code` and the API's error body), not as a tool failure. Read it and act on it.
 
@@ -38,7 +38,7 @@ SKILL_TOOL_DESCRIPTION = (
     + WHAT_KILN_IS
     + """. This skill says what Kiln can do, how to call its API with `call_kiln_api`, and how to make an agent better. When a request involves Kiln, call this tool first, before any other Kiln tool, and follow what it returns. Users may also ask for it by name (`/kiln`, `$kiln`, or "the Kiln skill"); that is a request to call this tool.
 
-- No arguments: returns the skill's instructions. They name the modes and the entry points; those files name the rest.
+- No arguments: returns the skill's instructions. They list the parts of the skill; those files name the rest.
 - `path`: returns one skill file. Copy the path exactly as the skill wrote it, for example `references/knowledge/specs_and_evals.md`.
 
 Only the paths that the skill writes exist; do not guess. If the instructions are no longer in this conversation, call again with no arguments."""

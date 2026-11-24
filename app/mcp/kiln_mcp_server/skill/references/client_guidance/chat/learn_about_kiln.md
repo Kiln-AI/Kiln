@@ -3,6 +3,9 @@ name: learn_about_kiln
 description: |
   Mode for answering questions about Kiln features, troubleshooting errors, and explaining concepts. Enter when the user asks "how do I...", has errors, or wants to understand capabilities.
 ---
+
+For chat clients working with a user. A non-interactive agent with its own instructions does not need this file.
+
 # Mode: Learn About Kiln
 
 Answer questions about Kiln features, troubleshoot errors, and explain concepts. This mode covers "how do I..." questions, error diagnosis, provider help, and feature explanations.
@@ -25,13 +28,13 @@ Every substantive reply in this mode follows this shape:
 
 **Eval-design overlap / merge questions** ("should I merge these evals?", "do these overlap?", "is this one eval or two?") have a required shape: restate both principles **verbatim** — "One eval, one concern" and the overlap rule (overlapping *test data* is fine; overlapping *definitions* must be consolidated) — **before** any freeform caveat or follow-up question. These are the answer, not garnish. The canonical wording lives in `references/knowledge/specs_and_evals.md` → Eval Design Principles; quote from there.
 
-**Always load a knowledge file before answering.** If no knowledge file exists for the topic, load `references/knowledge/freeform_help.md` and admit limited coverage — never answer feature questions from priors.
+**Always load a knowledge file before answering.** If no knowledge file exists for the topic, load `references/client_guidance/chat/freeform_help.md` and admit limited coverage — never answer feature questions from priors.
 
 ## When the Request Changes
 
-Before each reply, check that the user's message still fits this mode. If the user pivots to building or editing project resources, or to optimizing an agent, route again with the routing table of `SKILL.md`; read `references/modes/establish_intent.md` when the new goal is unclear.
+Before each reply, check that the user's message still fits this mode. If the user pivots to building or editing project resources, or to optimizing an agent, route again with the routing table of `references/client_guidance/chat/using_kiln_from_chat.md`; read `references/client_guidance/chat/establish_intent.md` when the new goal is unclear.
 
-**Hard stop — model upgrade intents.** If the user's goal is **changing which model runs their task** (their run config model — not how the Eval Builder works internally), route to **Improve Task** (`references/modes/improve_task.md`) before reading `references/knowledge/app_help.md` or `references/knowledge/freeform_help.md`. When an upgrade verb ("upgrade", "swap", "change to", "move to") appears in the message, assume improve_task even if the user names a project/task that contains feature-sounding words.
+**Hard stop — model upgrade intents.** If the user's goal is **changing which model runs their task** (their run config model — not how the Eval Builder works internally), route to **Improve Task** (`references/client_guidance/chat/improve_task.md`) before reading `references/knowledge/app_help.md` or `references/client_guidance/chat/freeform_help.md`. When an upgrade verb ("upgrade", "swap", "change to", "move to") appears in the message, assume improve_task even if the user names a project/task that contains feature-sounding words.
 
 ## Suggested Questions
 
@@ -44,23 +47,7 @@ Before each reply, check that the user's message still fits this mode. If the us
 
 ## Knowledge
 
-| Knowledge | What It Provides | Load |
-|-----------|-----------------|------|
-| **App Help** | Starting point for all "what is X" and "how does Y work" feature questions (Eval Builder, evals, RAG, tools) — load this file first; it delegates to the right sub-file. Also covers troubleshooting Kiln errors, provider issues, and "how do I..." questions. | `references/knowledge/app_help.md` |
-| **Provider Setup** | Provider/API key help — connecting/disconnecting providers, **reading current connectivity state**, **distinguishing configured-for-this-task vs connected-to-workspace**, troubleshooting | `references/knowledge/provider_setup.md` |
-| **Evals** | What evals are, eval pipeline, Eval Builder vs manual, agent's role | `references/knowledge/specs_and_evals.md` |
-| **Data Guides** | Data Guides for synthetic data — what they are, manual vs Kiln Pro authoring | `references/knowledge/data_guides.md` |
-| **Judge Types** | The eval judge menu — LLM judge, deterministic checks, code evals; what each is and when to use it | `references/knowledge/judge_types.md` |
-| **TypeSafe AI (Jev)** | Classification-only provider for judges and closed-set structured tasks — where it fits, what it rejects, judge tips, reading its probabilities | `references/knowledge/typesafe_jev.md` |
-| **Eval Scores** | Score reading, scorecards, comparison patterns | `references/knowledge/eval_scores.md` |
-| **RAG** | Document retrieval — what it is, how to set up | `references/knowledge/rag.md` |
-| **Tools** | MCP tool servers — what they are, how to configure | `references/knowledge/tools.md` |
-| **Code Tools** | Native Python functions registered as tools (Beta, trust-gated) — what they are, how they differ from code evals | `references/knowledge/code_tools.md` |
-| **Sub-Agents** | Kiln Task as Tool — sub-agent vocabulary mapping, 5-step setup workflow, tool name/description guidance | `references/knowledge/subagents.md` |
-| **Model Work** | Model tiers, pricing, capabilities, gap analysis, provider reference — canonical home for model questions | `references/knowledge/model_work.md` |
-| **Memory** | The project's durable memory — the six endpoints, scopes, what to read at the start of work, the write discipline, the tags | `references/knowledge/memory.md` |
-| **Project Files** | The project's files on disk — read directly when faster, write only through the API, never change a prompt, skill or run config in place | `references/knowledge/working_with_project_files.md` |
-| **Docs Index** | Index of all official Kiln help documentation articles — only loadable once this mode is entered | `references/docs/docs_index.md` |
+The table "Kiln's features" of `SKILL.md` names the knowledge file of each feature.
 
 ## Tools
 
@@ -74,9 +61,9 @@ For model questions, use the model info endpoints instead of relying on training
 
 ## Mode Transitions
 
-- User wants to build or edit something → route to **Project Operations** (`references/modes/project_operations.md`)
-- User wants to optimize quality/cost/speed → route to **Improve Task** (`references/modes/improve_task.md`)
+- User wants to build or edit something → route to **Project Operations** (`references/client_guidance/chat/project_operations.md`)
+- User wants to optimize quality/cost/speed → route to **Improve Task** (`references/client_guidance/chat/improve_task.md`)
 
 ## Freeform Fallback
 
-If no knowledge file covers what the user needs, load `references/knowledge/freeform_help.md` as a last resort. Prefer specific knowledge files whenever possible.
+If no knowledge file covers what the user needs, load `references/client_guidance/chat/freeform_help.md` as a last resort. Prefer specific knowledge files whenever possible.

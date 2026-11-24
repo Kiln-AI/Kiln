@@ -52,7 +52,9 @@ the side effects that a write needs: ids, the links between parent and
 child, the checks of each schema, and the secrets that must stay out of the
 files. A file written by hand can make the whole project fail to load
 in Kiln. When no endpoint does the change, say so to the user, or give the
-app link of the page that does it (the end of `SKILL.md`).
+app link of the page that does it (in a chat with a user:
+`references/client_guidance/chat/using_kiln_from_chat.md`,
+"What you cannot do over this connection").
 
 ## Respect immutability
 

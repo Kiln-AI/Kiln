@@ -10,7 +10,8 @@ Covers the `kiln_skill` tool, the skill tree and its packaging, the API referenc
 
 ```
 app/mcp/kiln_mcp_server/
-  skill_files.py            index, path resolution, read, address replacement, API_CATALOGUE_INDEX_PATH.
+  skill_files.py            index, path resolution, read, address replacement, API_CATALOGUE_INDEX_PATH,
+                            API_RULES_PATH.
                             No MCP SDK import.
   skill_tool.py             the tool function and register_skill_tool()
   texts.py                  server doc 2.4; holds SKILL_TOOL_DESCRIPTION and PATH_DESCRIPTION (2.2)
@@ -21,7 +22,8 @@ app/mcp/kiln_mcp_server/
     knowledge_schema.py  knowledge_load.py  knowledge_check.py  knowledge_index.py     section 7
     docs_index.py           online_url_for(), render_docs_index()
     test_knowledge_backlog.py   the format of app/mcp/knowledge_backlog.md (section 7)
-    api_reference.py        render / write / diff of api_docs from a spec dict (section 6).
+    api_reference.py        render / write / diff of api_docs from a spec dict (section 6). Keeps the
+                            hand-written calling_the_kiln_api.md (HAND_WRITTEN_NAMES).
                             It never imports app.desktop; the spec is built in app/desktop.
   test_*.py                 beside each module
 app/mcp/knowledge_backlog.md   the knowledge backlog (section 7). Beside the package, not inside it,
@@ -179,17 +181,20 @@ Copy a path exactly as the skill's instructions wrote it.
 
 ```
 skill/
-  SKILL.md
+  SKILL.md                              a short router for every kind of client (4.3, 4.6)
   references/
-    modes/*.md
+    client_guidance/chat/*.md           for chat clients only (4.6): using_kiln_from_chat.md, the
+                                        four modes, freeform_help.md and
+                                        running_an_experiment_from_chat.md (section 9.3)
     knowledge/*.md                      hand-written; includes memory.md, train_val_test.md,
                                         working_with_project_files.md, code_tool_authoring.md,
-                                        run_an_experiment.md, diagnose_an_agent.md (section 9.3)
+                                        experiment_costing.md, diagnose_an_agent.md (section 9.3)
     knowledge/code_tool_wrappers/*.md   one wrapper template per file, as a fenced block
     knowledge/memory_formats/*.md       the read-only formats of the memory records that Kiln
                                         Harness Tuner's code writes, one file per kind; memory.md
                                         names each by its path
-    knowledge/api_docs/*.md             generated, committed (section 6)
+    knowledge/api_docs/*.md             generated, committed (section 6); plus the hand-written
+                                        calling_the_kiln_api.md, the rules for every call
     docs/**/*.md  docs/docs_index.md    copied help articles; generated index
     levers/*.md  levers/index.md
     improving_agents/index.md
@@ -210,16 +215,16 @@ skill/
 |---|---|
 | C1 | A reference to a skill file is the full path from the skill root, in backticks or as a Markdown link target: `references/knowledge/rag.md`. No bare file name, no `./`, no `../`. |
 | C2 | No call syntax and no mention of the skill tool: the strings `skill(name=` and `kiln_skill` never occur. `call_kiln_api` may be named. |
-| C3 | Every file is reachable from `SKILL.md`. A hand-written file is listed by `SKILL.md` or a mode with its full path and one line: what it holds and when to read it. |
+| C3 | Every file is reachable from `SKILL.md`. A hand-written file is listed by `SKILL.md`, or by a file on its path (an index, a chat guidance file), with its full path and one line: what it holds and when to read it. |
 | C4 | A page of the Kiln app is written as `http://localhost:8757/<path>`, in rule statements, tables and examples. Placeholders are `{project_id}`, `{task_id}`. Never a bare app path, never another host. |
 | C5 | A placeholder path contains one of `* < > { }` or ends in `X.md`. It is not a reference. |
 | C6 | No file names a tool, role or folder that does not exist on this MCP (banned terms, section 8). |
-| C7 | Only `references/knowledge/train_val_test.md` states the train/val/test rule. A mode or knowledge-tree file that uses split wording names its path. |
+| C7 | Only `references/knowledge/train_val_test.md` states the train/val/test rule. A chat guidance or knowledge-tree file that uses split wording names its path. |
 | C8 | Help articles are copies. A one-off import script, run in the content phase and not kept in the repository, adds `online_url`, rewrites links and removes images (batches 1 and 6). After that the only hand edits are spelling fixes. `tree-front-matter` then enforces that every help article has its `online_url`. A later refresh of the copies is a follow-up (architecture section 8). |
 | C9 | The two knowledge trees (`references/levers/`, `references/improving_agents/`) follow the knowledge schema (section 7) and are written in Simplified Technical English. The rest of the skill has no language rule. |
 | C10 | For a capability whose endpoint is MCP-blocked, the text says "ask the user to do this in the app" and gives the link to the app page of 4.4. No hand-written file names the path of a blocked endpoint. The same wording is used when an API error says that Kiln Pro or a provider is not connected. |
 | C11 | **A port, not a redesign of the method.** The method of the knowledge is harness-tuner's, ported as it is: no rule is loosened, extended or added. Only vocabulary changes. The Assistant's content stays as "how to do it in Kiln". The full rule is 4.5. |
-| C12 | Each question has one owner (the five owners, 4.5). Only `references/knowledge/run_an_experiment.md` states how a change is measured, judged and kept. Another file names its path. |
+| C12 | Each question has one owner (the five owners, 4.5). Only `references/client_guidance/chat/running_an_experiment_from_chat.md` states how a change is measured, judged and kept in a chat with a user. Another file names its path, in a sentence for a chat with a user (4.6). |
 | C13 | No file selects, compares or keeps a candidate on the test split: these use train and val, as `references/knowledge/train_val_test.md` states. No file asks for the test split in a call. A file that names a call or an app page that reads the test split when no split is asked for says which split it reads and how to ask for train or val, or names the path of the file that does. |
 
 ### 4.2 Front matter by file type
@@ -227,8 +232,8 @@ skill/
 | Files | Front matter | Served |
 |---|---|---|
 | `SKILL.md` | `name: kiln`, `description` (1–1024 characters): a valid Agent Skill | removed |
-| `references/modes/*.md`, hand-written `references/knowledge/**/*.md` | exactly `name` (the file stem) and `description` | kept |
-| `references/knowledge/api_docs/*.md` | none (as generated) | — |
+| `references/client_guidance/**/*.md`, hand-written `references/knowledge/**/*.md` | exactly `name` (the file stem) and `description` | kept |
+| `references/knowledge/api_docs/*.md`, the hand-written `calling_the_kiln_api.md` included | none (as generated) | — |
 | `references/docs/**/*.md` except the index | as copied, plus `online_url` equal to `online_url_for(path)` | kept |
 | `docs_index.md`, `levers/index.md`, `improving_agents/index.md` | none | — |
 | Levers, techniques, playbooks, smells | the knowledge schema, unknown keys refused | kept |
@@ -238,20 +243,23 @@ skill/
 
 ### 4.3 What `SKILL.md` must contain
 
-The agent gets it from one tool call, and it can leave the context at compaction. It has at most 300 lines and 20,000 characters, and these parts in this order:
+The agent gets it from one tool call, and it can leave the context at compaction. Every kind of client reads it (4.6), so it is short: it says what the skill is and how to use it, and trusts the reader with the rest. It has at most 300 lines and 20,000 characters, and these parts in this order (Phase 21):
 
-1. What Kiln is, in three sentences. The rules below apply only while the agent does Kiln work.
-2. How to read files: paths are from the skill root; give a path to the tool that returned this text; only listed paths exist; when this text is no longer in the conversation, load it again before more Kiln work.
-3. Routing: one row per mode with its full path and when to read it. The routing table stays here; `references/modes/establish_intent.md` keeps only the steps for an unclear request.
-4. API rules for `call_kiln_api`: read the endpoint doc before the first call to an endpoint; start from `references/knowledge/api_docs/api_index.md`; a non-2xx answer is data; narrow large answers with `jq_filter`, paging, or `save_to_tmpfile`; the end of an event stream does not mean success, so check status.
-5. Working with the user: confirm with the user before a destructive or irreversible operation, and always involve the user before the operations that run code on the Kiln machine: code trust (only the user grants it, at the link of 4.4) and adding a local MCP server. Then the general reply rules, one line each: lead with the recommendation, be concise, match the user's scope (check completion before reporting scores), admit uncertainty.
-6. Links into the app: the C4 rule and the table of main pages below.
-7. Map of the other entry points, one line each: `references/docs/docs_index.md`, `references/levers/index.md`, `references/improving_agents/index.md`, `references/knowledge/run_an_experiment.md`, `references/knowledge/experiment_costing.md`, `references/knowledge/train_val_test.md`, `references/knowledge/memory.md`, `references/knowledge/working_with_project_files.md`, `references/knowledge/model_work.md`.
-8. What the agent cannot do over MCP: the rule of C10 and the table of 4.4, in short form (capability and page).
+1. The intro: "This is the Kiln skill: an agent-skill-shaped tool for Kiln, served over MCP." Then what Kiln is. The rules apply only while the agent does Kiln work.
+2. "Reading skill files": paths are from the skill root; give a path to the tool that returned this text; the tool cannot list a folder, so every file is reached by a path that some file names; when this text, or a file the work depends on, is no longer in the conversation, read it again.
+3. "Who reads this skill": the kinds of client. A chat client always reads `references/client_guidance/chat/using_kiln_from_chat.md` at the start of a session. A non-interactive agent with its own instructions (such as Kiln Harness Tuner) follows them on any conflict, ignores "ask the user" instructions, and does not read `references/client_guidance/chat/`; if it reads a file there, it fits any lesson to its own process.
+4. "The parts of the skill", the glossary, each part with a link to the next file of its chain:
+   - **Kiln's features**: a table, feature → one line → knowledge file, with a row for every knowledge file directly in `references/knowledge/` that another part does not name. It moved here from the Learn About Kiln mode, which now points to it. One line after it: the help articles (`references/docs/docs_index.md`) rank below the knowledge files.
+   - **Improving agents**: what levers, smells, playbooks and techniques are, and how they connect (smell or playbook → technique → lever), with `references/levers/index.md` and `references/improving_agents/index.md`; and `references/knowledge/train_val_test.md` and `references/knowledge/experiment_costing.md`.
+   - **Memory**: `references/knowledge/memory.md`.
+   - **The Kiln API**: if the agent has `call_kiln_api`, `references/knowledge/api_docs/calling_the_kiln_api.md` before its first call, and `references/knowledge/api_docs/api_index.md`.
+   - **Chat client guidance**: `references/client_guidance/chat/using_kiln_from_chat.md`, labelled for chat clients.
 
-It has no persona, no session-start steps and no "always in a mode" rule.
+The term definitions fit in "Improving agents", so there is no second-level glossary file. `SKILL.md` names no chat file but `using_kiln_from_chat.md`. It has no persona, no session-start steps and no "always in a mode" rule.
 
-The table of main pages (part 6). The paths are the ones the app's sidebar links to (`app/web_ui/src/routes/(app)/+layout.svelte`); batch 4 writes the table and checks each against the routes folder:
+What the earlier `SKILL.md` held for chat clients moved, unchanged, to `references/client_guidance/chat/using_kiln_from_chat.md`: the routing table of the modes, "Working with the user" (confirm before a destructive or irreversible operation; involve the user before code trust and before adding a local MCP server; the reply rules) with the rule "Keep the user in the loop", "Links into the app" (the C4 rule and the table of main pages below), and "What you cannot do over this connection" (the rule of C10 and the table of 4.4, in short form). The API rules moved, word for word, to `references/knowledge/api_docs/calling_the_kiln_api.md`, which opens with "These rules apply if you have the `call_kiln_api` tool. If you do not, you need not read them."
+
+The table of main pages ("Links into the app" of `using_kiln_from_chat.md`). The paths are the ones the app's sidebar links to (`app/web_ui/src/routes/(app)/+layout.svelte`); batch 4 writes the table and checks each against the routes folder:
 
 | Page | Link |
 |---|---|
@@ -293,7 +301,7 @@ The MCP block list is the server doc, section 6.3. The skill and that table must
 - An API error says that Kiln Pro is not connected, or that its key is not valid: tell the user which function needs Kiln Pro, and ask them to sign in at `http://localhost:8757/settings/providers/kiln_pro`. Then try again.
 - No provider is connected for the model asked for (the model info endpoints show the status `not_connected`): name the provider, and ask the user to connect it at `http://localhost:8757/settings/providers`. Or offer a model that is `ready`.
 
-This text goes in `SKILL.md` part 8 in short form, and in full in the files that batch 5 edits.
+This text goes in `references/client_guidance/chat/using_kiln_from_chat.md`, "What you cannot do over this connection", in short form, and in full in the files that batch 5 edits.
 
 ### 4.5 The governing rule and the five owners
 
@@ -301,7 +309,7 @@ This text goes in `SKILL.md` part 8 in short form, and in full in the files that
 
 - The method of the knowledge (the levers, techniques, smells and playbooks, and the split rule) is ported as it is. No rule is loosened for interactive use. No rule is extended. No rule is added.
 - The only rewording is vocabulary: loop roles, gateway operation names, run-folder paths and the loop words of `LOOP_WORDS` (section 9) become words that a general agent understands. What a rule requires does not change.
-- Harness-tuner's rules apply to every agent as it states them. Its inputs, outputs, code checks, tools and record strings are named plainly as Kiln Harness Tuner's, and a record string is quoted exactly. A rule keeps its case for an absent input, and that case is the rule for an agent that does not have the input. No document branches on "when running Kiln Harness Tuner". How an agent on the MCP reads these words is said once, in the section "How to read these documents over MCP" of `references/improving_agents/index.md` (Phase 17).
+- Harness-tuner's rules apply to every agent as it states them. Its inputs, outputs, code checks, tools and record strings are named plainly as Kiln Harness Tuner's, and a record string is quoted exactly. A rule keeps its case for an absent input, and that case is the rule for an agent that does not have the input. No document branches on "when running Kiln Harness Tuner". How a chat client reads these words is said once, in the section "How to read the shared documents" of `references/client_guidance/chat/using_kiln_from_chat.md` (written in Phase 17 in `references/improving_agents/index.md`; moved in Phase 21, 4.6).
 - The Assistant's content survives as "how to do it in Kiln": API procedures, payloads, app links, how to talk to the user. Where an Assistant file and the knowledge both teach a method for one thing, the skill keeps the knowledge's. One case is inside "how to do it in Kiln": an API procedure that carries out one of the knowledge's own rules by hand. The example is the paired statistics call, used on train and val.
 - Advice of an Assistant file that the knowledge does not have is not added to a knowledge document in this port. The batch reports it. A backlog entry for it (section 7) is the owner's decision.
 
@@ -319,7 +327,7 @@ Four fixed points, by the owner's ruling:
 | What to try, in what order, under which condition (when and why) | The playbooks, smells and techniques |
 | How to change one part of a run config as an experiment: a new copy, what to copy from the parent, the limits | The lever |
 | How to do it in Kiln: request bodies, name rules, known traps, app links, how to talk to the user | The Assistant's knowledge file |
-| How to measure a change, judge it and keep it | `references/knowledge/run_an_experiment.md` |
+| How to measure a change, judge it and keep it | In a chat with a user, `references/client_guidance/chat/running_an_experiment_from_chat.md`; a non-interactive agent, its own instructions |
 | The split rule and the leak rules | `references/knowledge/train_val_test.md` |
 
 A file that needs a statement of another owner names that owner's path. It does not state it again.
@@ -334,7 +342,42 @@ Each lever's "See also" names harness-tuner skills that are not ported. Their pl
 | `skill` | `references/knowledge/adding_skills.md` |
 | `tool_config` | `references/knowledge/tools.md`, `references/knowledge/subagents.md`, `references/knowledge/rag.md` |
 | `new_tool` | `references/knowledge/code_tools.md`, `references/knowledge/code_tool_authoring.md` (batch 11) |
-| every lever | `references/knowledge/run_an_experiment.md` (batch 13a) |
+| every lever | In a chat with a user: `references/client_guidance/chat/running_an_experiment_from_chat.md` (batch 13a; the label since Phase 21) |
+
+### 4.6 One skill, many kinds of client (Phase 21)
+
+Owner decision, 2026-11-24 ([decisions](../harness_tuner_alignment_decisions.md) section 15).
+
+**The principle.** The Kiln skill is one body of knowledge, read by more than one kind of client. Two today, and more may come:
+
+- **Chat clients**: interactive agents working with a user, such as Claude Code, Claude Desktop, Codex and OpenCode.
+- **Non-interactive agents with their own instructions**, such as Kiln Harness Tuner, which deep-link into the skill from their role prompts.
+
+Shared files serve every client. A branch states its real condition ("In a chat with a user: …", "if you have the `call_kiln_api` tool"), never a client's name: no "if you are Kiln Harness Tuner" where a real condition works. Guidance only for chat clients lives in `references/client_guidance/chat/`. "MCP client", "MCP agent" and "over MCP" never mean the interactive client, since Kiln Harness Tuner is an MCP client too; the words are "chat clients", or "a non-interactive agent with its own instructions (such as Kiln Harness Tuner)".
+
+**`SKILL.md`** is the short router of 4.3, for every client.
+
+**`references/client_guidance/chat/`.** Each file opens, after its front matter, with: "For chat clients working with a user. A non-interactive agent with its own instructions does not need this file."
+
+| File | From | Change |
+|---|---|---|
+| `using_kiln_from_chat.md` | New | From the earlier `SKILL.md`: the routing table, "Working with the user" with its reply rules, "Keep the user in the loop", "Links into the app", "What you cannot do over this connection". From `references/improving_agents/index.md`: the section "How to read these documents over MCP", now "How to read the shared documents", with one opening sentence that names the shared documents and one pointer that names the index. "How to work through a playbook" stays in the index. Ends with the table of the folder's files |
+| `establish_intent.md`, `project_operations.md`, `improve_task.md` | `references/modes/` | Moved whole; path fixes only |
+| `freeform_help.md` | `references/knowledge/` | Moved whole; path fixes only |
+| `learn_about_kiln.md` | `references/modes/` | Moved, minus its feature table, which is now in `SKILL.md`; the mode points to it, with no second copy |
+| `running_an_experiment_from_chat.md` | `references/knowledge/run_an_experiment.md` | Renamed. The chat line replaces "If you are Kiln Harness Tuner, follow your system prompt. …", which named a client where the real condition works |
+
+`references/modes/` is gone.
+
+**The API rules.** `SKILL.md`'s "Calling the Kiln API" (re-ported in Phase 20) moves word for word to `references/knowledge/api_docs/calling_the_kiln_api.md`, minus "Keep the user in the loop", which goes to the chat guide. It opens with its condition. The endpoint docs carry no such line. It is the one hand-written file of the generated folder: `write_folder` keeps it, `diff_folder` leaves it out, and the tree check holds it to the wording rules of a hand-written file (section 8).
+
+**What stays where it is.** Everything else in `references/knowledge/` (`diagnose_an_agent.md`, `project_status.md`, `app_help.md`, `memory.md`, `memory_formats/`, `experiment_costing.md`, `train_val_test.md`, the Assistant's feature knowledge with its "ask the user" lines), `api_docs/`, `levers/`, `improving_agents/` and `docs/`, at the same paths. The only edits are the path fixes for the moved files. There is no `using_kiln` folder and no `references/knowledge/index.md`.
+
+**Shared files that point to a chat file.** No shared file needs a chat file to make sense. Some name one: the levers' "See also", a technique step, and Assistant knowledge files that send the user to a mode or to the experiment guide. Each such path sits in a sentence for a chat with a user ("In a chat with a user: …"), the condition the Phase 20 ports already use. A test checks the words "in a chat with a user" in the paragraph, list item or table row of each such path. `SKILL.md` names only `using_kiln_from_chat.md`, in its parts for chat clients. The owner ruled that a loop agent may follow a link into chat procedure (switchover `components/ht_skill_reading_and_roles.md`, section 10, point 6), and `SKILL.md` tells it to fit any lesson to its own process.
+
+The brief asked for a stricter test: no shared file links into `references/client_guidance/` at all. That cannot hold with "only path fixes" for the shared files, since 35 places in them named the moved files. The labelled form keeps every link and states its condition. The levers' line is the shortest form, "In a chat with a user: `<path>`.", because `output_mode.md` would pass its 6,000-character limit with the old description beside the longer path.
+
+**Reachability.** `kiln_skill` cannot list a folder: `SKILL.md` names `using_kiln_from_chat.md`, which names every chat file in its table; `SKILL.md`'s feature table names every knowledge file directly in `references/knowledge/` that another part does not.
 
 ## 5. Commands and CI entries
 
@@ -383,7 +426,7 @@ Steps of `generate` (and `check`, up to step 7):
    ```
 
 7. `check`: `diff_folder` against the committed folder (same names, same bytes). On a difference, print the lines and the fix command; exit 1.
-8. `generate`: `write_folder` writes to a sibling temp folder, removes the target, and renames. The folder is always replaced whole.
+8. `generate`: `write_folder` writes to a sibling temp folder, removes the target, and renames. The folder is always replaced whole, except for the hand-written files of `HAND_WRITTEN_NAMES` (`calling_the_kiln_api.md`, 4.6), which it carries over; `diff_folder` leaves them out.
 
 The folder is generated for the first time in build step 4, after the block list (step 2) and the model info endpoints (step 3), so the first version already has both. From then on, every change that alters an unblocked route regenerates it in the same change.
 
@@ -552,9 +595,9 @@ def check_tree(root: Path) -> list[Problem]
 | `tree-relative` | A path is not written from the skill root: a link target (no scheme, not a pure anchor) contains `../` or `./`, starts with `/references/` or is `/SKILL.md`, or ends in `.md` and is not a skill path (a bare `name.md`, or a partial path such as `modes/a.md`); or a backticked span or prose token starts with `/references/` or is `/SKILL.md`, or starts with `./` or `../` followed by `references/` or `SKILL.md` (`(?<![\w.-])\.\.?/(?:references/|SKILL\.md\b)`). A placeholder target (C5) is exempt. `kiln_skill` refuses a leading `/` (`E_ABS`), and a partial path names no file |
 | `tree-bare-name` | A backticked span or prose token equals the base name of a tree file and is not a full path. The dictionary is the base names that are unique in the tree, without `SKILL.md` |
 | `tree-call-syntax` | A file contains `skill(name=` or `kiln_skill` |
-| `tree-banned-term` | A file contains a term of `BANNED_TERMS` for its scope (table in section 9). The generated files under `references/knowledge/api_docs/` are exempt: their text comes from the API, and a route name may hold such a term. In the knowledge trees, the record strings of `HARNESS_TUNER_RECORD_STRINGS` are blanked out before the scan |
+| `tree-banned-term` | A file contains a term of `BANNED_TERMS` for its scope (table in section 9). The generated files under `references/knowledge/api_docs/` are exempt: their text comes from the API, and a route name may hold such a term. The hand-written `calling_the_kiln_api.md` is not exempt from this rule, `tree-bare-name`, `tree-app-link` or `tree-test-split`. In the knowledge trees, the record strings of `HARNESS_TUNER_RECORD_STRINGS` are blanked out before the scan |
 | `tree-app-link` | Outside `references/docs/` and `api_docs/`: a backticked span or link target matches `^/(specs\|settings\|optimize\|run\|generate\|dataset\|skills\|docs\|prompts\|models\|tools\|fine_tune\|jobs)(/\|\?\|$)` |
-| `tree-split-pointer` | In `references/modes/`, `references/levers/` and `references/improving_agents/`: a file matches `held-out\|\b(val\|validation\|test) (split\|set\|gate)\b` and does not contain `references/knowledge/train_val_test.md`. Other files (fine-tuning uses "test split" for a dataset tag) are covered by review |
+| `tree-split-pointer` | In `references/client_guidance/`, `references/levers/` and `references/improving_agents/`: a file matches `held-out\|\b(val\|validation\|test) (split\|set\|gate)\b` and does not contain `references/knowledge/train_val_test.md`. Other files (fine-tuning uses "test split" for a dataset tag) are covered by review |
 | `tree-test-split` | Outside `references/docs/` and `references/knowledge/api_docs/`: (a) a line gives `test` as the value of a `split` argument, in the query form `split=test` or the body form `"split": "test"`; or (b) a file other than `references/knowledge/train_val_test.md` contains an entry of `TEST_SPLIT_READERS` (section 9) and does not contain the path `references/knowledge/train_val_test.md`. This is the mechanical part of C13. That no sentence picks, compares or keeps a candidate from a number of the test split is a review rule (batches 9, 13a and 13b) |
 | `tree-front-matter` | A file breaks the table in 4.2 |
 | `tree-file` | A file is not `.md`, is not UTF-8, contains `\r`, or has a name outside the pattern in section 3 |
@@ -575,7 +618,7 @@ Tests: `test_the_shipped_tree_passes_every_check` and `test_no_rule_is_pending` 
 
 ## 9. The content port and edit
 
-A large phase (build step 6), run by sub-agents, one batch per pull request. Rules for the phase:
+A large phase (build step 6), run by sub-agents, one batch per pull request. The batch rows and sections 9.1 to 9.4 below keep the paths of their time; Phase 21 moved `references/modes/*.md`, `references/knowledge/run_an_experiment.md` (renamed `running_an_experiment_from_chat.md`) and `references/knowledge/freeform_help.md` to `references/client_guidance/chat/`, and `SKILL.md`'s parts as 4.3 says (4.6). Rules for the phase:
 
 - **Pending rules.** `test_shipped_skill.py` has `PENDING_RULES: set[str]`. A problem of a pending rule does not fail the shipped-tree tests. The phase starts with every tree and knowledge rule pending. Each batch removes the rules it must satisfy. `test_no_rule_is_pending` is enabled in batch 13b.
 - **Order.** Batches 1–6 edit the Assistant files, in order. Batch 7 imports the knowledge trees and can run beside 2–6. Batch 8 needs 1 and 7: its lever "See also" lines name Assistant files. Batches 9–12 need both sources. Batch 13a needs 5 and 8–12: it uses the eval job calls of batch 5, the wording of batch 8, `train_val_test.md` (batch 9, which is merged before 13a starts) and `memory.md` (batch 10). Batch 13b needs 13a. Batch 14 is last: it needs the final `SKILL.md`.
@@ -592,7 +635,7 @@ Sources: the Assistant export is 66 files, 548,010 bytes (`SKILL.md`, 4 modes, 2
 
 Later fixes from harness-tuner, while two copies of the knowledge exist (functional spec 7.5): diff harness-tuner's knowledge folder (`src/kiln_harness_tuner/agent_files/skills/kiln-harness-tuner-knowledge/`) from the recorded commit to its head; port each change by hand, with the mechanical rewrites of batch 7 and the vocabulary rows of batch 8 (as revised by Phase 17: Kiln Harness Tuner's text is ported as written, and its inputs, outputs, checks and record strings stay named as its own); run `skill_checks build` and the checks; then update the recorded commit. The recorded commit lives in `.agents/skills/knowledge-maintenance/SKILL.md`, which also holds this procedure. A fix made first in Kiln's copy is not ported back.
 
-Not in this port: the skill-authoring guide, a separate decision (architecture section 8). Phase 19 ports the harness-tuner skills `experiment-costing` and `kiln-task-setup` (deep PR goals section 8): `experiment-costing` close to as is, as `references/knowledge/experiment_costing.md`; the facts of `kiln-task-setup` into the Kiln files that own each one: `references/knowledge/create_task.md` (the Task body, `turn_mode`, setting the default and the run config PATCH beside it, running and driving a multi-turn conversation, the check of the setup), `references/knowledge/model_create_configs.md` (`supports_function_calling`, the `run_config_properties` fields), `references/knowledge/tools.md` (the tool id forms, the local MCP body, `call_kiln_api` hidden from the UI's tool pickers), `references/knowledge/adding_skills.md` (what the create call writes, reference files) and `references/knowledge/prompt_rewrite.md` (the prompt body). Both are checked by a sentence diff against HT at `b49f159`. Where HT's text was wrong for Kiln's code, the code won, as an approved correction ([harness_tuner_alignment_decisions.md](../harness_tuner_alignment_decisions.md) section 13). Dropped on purpose from `kiln-task-setup`: "write [`references/*` files] to disk under `<project>/skills/<id> - <name>/references/`", its sentence on HT experiment-build sessions, and "For a pre-existing task, edit `task.kiln` on disk" with its HT note. MCP agents never edit the project folder (`references/knowledge/working_with_project_files.md`), and HT's project tree is write-denied. The role skills and the five role entry files are not ported either (functional spec 7.2). `references/knowledge/run_an_experiment.md` (9.3) is the by-hand form of the build, measure and promote steps that they and harness-tuner's code hold.
+Not in this port: the skill-authoring guide, a separate decision (architecture section 8). Phase 19 ports the harness-tuner skills `experiment-costing` and `kiln-task-setup` (deep PR goals section 8): `experiment-costing` close to as is, as `references/knowledge/experiment_costing.md`; the facts of `kiln-task-setup` into the Kiln files that own each one: `references/knowledge/create_task.md` (the Task body, `turn_mode`, setting the default and the run config PATCH beside it, running and driving a multi-turn conversation, the check of the setup), `references/knowledge/model_create_configs.md` (`supports_function_calling`, the `run_config_properties` fields), `references/knowledge/tools.md` (the tool id forms, the local MCP body, `call_kiln_api` hidden from the UI's tool pickers), `references/knowledge/adding_skills.md` (what the create call writes, reference files) and `references/knowledge/prompt_rewrite.md` (the prompt body). Both are checked by a sentence diff against HT at `b49f159`. Where HT's text was wrong for Kiln's code, the code won, as an approved correction ([harness_tuner_alignment_decisions.md](../harness_tuner_alignment_decisions.md) section 13). Dropped on purpose from `kiln-task-setup`: "write [`references/*` files] to disk under `<project>/skills/<id> - <name>/references/`", its sentence on HT experiment-build sessions, and "For a pre-existing task, edit `task.kiln` on disk" with its HT note. Chat clients never edit the project folder (`references/knowledge/working_with_project_files.md`), and HT's project tree is write-denied. The role skills and the five role entry files are not ported either (functional spec 7.2). `references/knowledge/run_an_experiment.md` (9.3) is the by-hand form of the build, measure and promote steps that they and harness-tuner's code hold.
 
 **Fixed lists and named outputs.** These are decided here, or are an output of one batch with the rule that decides them:
 
@@ -615,7 +658,7 @@ Not in this port: the skill-authoring guide, a separate decision (architecture s
 | 7 | Knowledge import and link rewrite | Add 74 files in 4 folders. 367 file-relative links become root paths (levers 18, techniques 168, smells 47, playbooks 134). `gateway_ops` (34 entries, 7 levers) becomes `api_docs`. `detected_by` and `detectors` leave 15 smells. The lever heading is renamed in 7 files. Write the 2 index files and run `build`. The hand-written part of `references/improving_agents/index.md` carries the part "How to read these documents" of the knowledge skill's own `SKILL.md` (the documents are ideas to try; the hard limits; when a clear measurement outranks a document), because the role entry files that lead to it are not ported | First write `OPERATION_ENDPOINTS` (rule above) from harness-tuner's `gateway/ops.py` (reference only; no code is copied). An operation that maps to `none` gets no `api_docs` entry; batch 8 rewords the text. Nothing else in a document changes in this batch (C11) | Every knowledge rule except `size`; `index` current; `tree-relative` |
 | 8 | Loop vocabulary (revised by Phase 17) | 83 gateway operation names in 12 files (72 in the levers); "gateway" 5; role names 95 in 38 files; "the tuner" as the actor; other harness-tuner skills by name 27 in 13; 1 run-folder path. The loop's own words get the rows of `LOOP_WORDS`: "arm" 173 in 52 files, "val gate" 22 in 20, "probe" 44, "screening round", "the owner", "the guidance". Each lever's "See also" loses the names of the skills that are not ported and gets the Assistant files of the table in 4.5. `levers/output_mode.md` and `smells/tools-on-a-live-server.md` are over the size limit and are shortened in their wording; no rule is dropped. Phase 17 reverted the first version of this batch (`919fb6a`), which also turned loop inputs, code checks and record strings into "ask the user", "check it yourself" and "applies when running Kiln Harness Tuner", and re-applied only the changes of this row | C11: vocabulary only. A role becomes "you". "The tuner" (owner, Phase 17): where "the tuner" is the subject of a rule that limits what may be changed (the task, an eval, a fine-tune, a RAG config), the subject becomes "an experiment" or "this lever"; everywhere else, "the tuner" becomes "you"; a role's skill or entry file that holds a procedure is named as Kiln Harness Tuner's, or as the Kiln file that now holds its table. An operation becomes its endpoint doc path from `OPERATION_ENDPOINTS`; where the sentence states what the gateway does and the endpoint does not, the subject is "code". A loop word becomes its row of `LOOP_WORDS`. Kiln Harness Tuner's inputs, outputs, code checks, verdicts and record strings stay as the source writes them (section 4.5); the five detector smells add their threshold where the source names only the reference. No rule is deleted, softened, extended or added: a hard limit stays a hard limit. A sentence that cannot be reworded without a change to its rule is reported, not changed. "experiment", "budget", "hypothesis", "smoke", "promotion", "wave", "drive", "objective" stay | `tree-banned-term` (scope: the knowledge trees); knowledge `size`, `sections`; `test_the_knowledge_trees_have_no_harness_tuner_branch` |
 | 9 | Train/val/test | New `references/knowledge/train_val_test.md`. It states harness-tuner's rule, unchanged: tune on train; confirm on val by metrics only; never read test. "Metrics only" is harness-tuner's definition, copied from its source at the pinned commit. The server does not enforce the rule: the agent applies it. The file also has: (a) which call and which app page reads which split, and how to ask for train or val (first write `TEST_SPLIT_READERS`, rule above); (b) what to do when an eval has only a test split: add the train and val splits first, with the user; the agent does not go on with the test split; (c) the leak rules, which the levers state today: no value of a train item in a prompt, a skill or a tool; no copied text of an eval, a judge or a spec; examples use invented values. 79 split mentions in 40 files are reviewed, and the levers name the path for the leak rules | A file may use the words. Only the central file states the rule. Any other statement of the rule is replaced by the path. The file states harness-tuner's rule and nothing weaker or wider (C11): no ruling of its own on per-item pass or fail on val, and none on noise. A case that the source does not cover is reported to the owner, not ruled on | `tree-split-pointer`; `TEST_SPLIT_READERS` lands as test data (`tree-test-split` stays pending until batch 13a); owner reads the file |
-| 10 | Memory | New `references/knowledge/memory.md` (at most 12,000 characters) from harness-tuner's `memory` skill (28,273 bytes, 9 gateway mentions): the 6 Memory endpoints with their doc paths, tags, write discipline. Listed in `SKILL.md` and the modes. Phase 18 (owner, 2026-11-23 and 2026-11-24): the file is a reference for every agent. Kiln Harness Tuner's code writes `baseline`, `val`, `experiment`, `OPEN: `, the issue state prefixes, the setup head and the `SCREEN` and `PROBE` records; these are read-only for an MCP agent, which writes only `lesson`, `dead_end`, a new `issue` and `constraint`. `hypothesis` is reserved for Kiln Harness Tuner. The read-only formats, string for string as Harness Tuner's code writes them, are in `references/knowledge/memory_formats/`, one small file per kind, and `memory.md` names each by its path | Run and loop scopes go | `tree-path`, `tree-unreachable`, `tree-banned-term` |
+| 10 | Memory | New `references/knowledge/memory.md` (at most 12,000 characters) from harness-tuner's `memory` skill (28,273 bytes, 9 gateway mentions): the 6 Memory endpoints with their doc paths, tags, write discipline. Listed in `SKILL.md` and the modes. Phase 18 (owner, 2026-11-23 and 2026-11-24): the file is a reference for every agent. Kiln Harness Tuner's code writes `baseline`, `val`, `experiment`, `OPEN: `, the issue state prefixes, the setup head and the `SCREEN` and `PROBE` records; these are read-only for a chat client, which writes only `lesson`, `dead_end`, a new `issue` and `constraint`. `hypothesis` is reserved for Kiln Harness Tuner. The read-only formats, string for string as Harness Tuner's code writes them, are in `references/knowledge/memory_formats/`, one small file per kind, and `memory.md` names each by its path | Run and loop scopes go | `tree-path`, `tree-unreachable`, `tree-banned-term` |
 | 11 | Code tools and MCP wiring | Rewrite `code_tools.md`, the wiring part of `tools.md` and of `subagents.md` for the API: read the trust state; for code trust, which only the user grants, say what will run and that there is no sandbox, give the trust page link of 4.4, and confirm the grant with the GET; ask the user before adding a local MCP server (both run code on the Kiln machine); create, test, iterate. New `code_tool_authoring.md` and 8 files in `code_tool_wrappers/` from harness-tuner's authoring skill (10 files, 46,063 bytes, 16 gateway mentions). The lever `new_tool` gets the path of `code_tool_authoring.md` in its "See also" | Say what the user's own agent can do that the Assistant cannot: run the tool's tests | Tree rules; `test_wrapper_templates_compile` |
 | 12 | Project files guide | New `references/knowledge/working_with_project_files.md` with the three rules of functional spec 7.4. Listed in `SKILL.md` and 3 modes | It says nothing about val or test data | `tree-unreachable` |
 | 13a | The experiment glue and the router | Write `references/knowledge/run_an_experiment.md` and `references/knowledge/diagnose_an_agent.md` (9.3). Rewrite `references/modes/improve_task.md` as the router (9.4). Apply the partial rewrites of 9.2 to 8 knowledge files. Write each piece of unique content of the three files that are not imported in its destination (9.2), and refine the 17 references of batch 1. Each lever's "See also" gets the path of `run_an_experiment.md`. `SKILL.md` part 7 lists `run_an_experiment.md` | C11, C12 and C13. A method statement in an Assistant file is replaced by the path of its owner; it is not reworded into a second statement. Neither glue file holds a rule without a harness-tuner source at the pinned commit; a step with no such source is an API step or a rule for how to talk to the user. Phase 18: the shared rules are stated once, for every agent, with no "applies when running Kiln Harness Tuner" branch | `tree-path`, `tree-unreachable`, `tree-split-pointer`, `tree-test-split`; `tree-banned-term` (the three file names); `test_the_glue_files_have_their_parts`; owner reads the two glue files |
@@ -628,9 +671,10 @@ Not in this port: the skill-authoring guide, a separate decision (architecture s
 |---|---|
 | Whole tree | `kiln-chat`, `model_info_featured`, `model_search`, `model_info` (not after `/` or `_`), `compacted_digest`, `UI-only`, `approval-gated`, `requires approval`, `requires user approval`; the names of the three files that are not imported: `experiment_batch`, `optimize_quality`, `optimize_performance` |
 | `SKILL.md` | `Kiln Assistant`, `always in context`, `turn 0` |
+| Whole tree but the help articles (Phase 21) | `MCP client`, `MCP clients`, `MCP agent`, `MCP agents`: Kiln Harness Tuner is an MCP client too, so the interactive client is a chat client. `BANNED_TERM_EXCEPTIONS` allows the first two in `references/knowledge/tools.md`, where they mean the protocol's role (Kiln as a client of other servers; the clients of Kiln's project-tools server) |
 | Knowledge trees | the 54 operation names of harness-tuner's gateway (names only, from its `gateway/ops.py`), `gateway`, `the tuner`, `harness-tuner`, `kiln-harness-tuner`, `the planner`, `the builder`, `the analyzer`, `the probe`, `scratch folder`; the loop's words: `arm`, `arms`, `val gate`, `probe`, `probes`, `screening round`. Kiln Harness Tuner's input and output names, `install_skill_bundle` and `REJECTED AT VAL` are allowed (owner, Phase 17) |
 
-The product name, written `Kiln Harness Tuner`, is not a banned term: C11 uses it, and so does `run_an_experiment.md`. The test data must not match it.
+The product name, written `Kiln Harness Tuner`, is not a banned term: C11 uses it, and so does `running_an_experiment_from_chat.md`. The test data must not match it.
 
 `LOOP_WORDS` (batch 8, as revised by Phase 17). Each row changes a word, never what a rule requires (C11). Kiln Harness Tuner's inputs, outputs, code checks and record strings are not loop words: they stay as the source writes them (section 4.5):
 
@@ -732,9 +776,9 @@ The rest of the three files is method on subjects that the knowledge owns (the o
 
 Neither source has them. Both are hand-written knowledge files with the front matter of 4.2, and both follow C11: they add no rule, and they change none.
 
-**`references/knowledge/run_an_experiment.md`** (about 10,000 characters). The owner of "how to measure a change, judge it and keep it" (C12).
+**`references/knowledge/run_an_experiment.md`**, since Phase 21 `references/client_guidance/chat/running_an_experiment_from_chat.md` (4.6) (about 10,000 characters). The owner of "how to measure a change, judge it and keep it" in a chat with a user (C12).
 
-Phase 18 reshaped it into the one-off experimentation guide (owner, 2026-11-23; decisions sections 9 and 10). Its first line is "If you are Kiln Harness Tuner, follow your system prompt. It has similar concepts, but better enforcement." Its opening pushes hard to Kiln Harness Tuner for advanced optimization: it enforces the loop and these principles in code and is much more robust. The rest carries the shared method rules of Phase 18 item 5 as key lessons for a one-off, in the parts below and a new part, "A quick check", after "The hypothesis". It writes no code-owned memory record. The leak and judge-copy definitions are in `train_val_test.md`.
+Phase 18 reshaped it into the one-off experimentation guide (owner, 2026-11-23; decisions sections 9 and 10). Its first line was "If you are Kiln Harness Tuner, follow your system prompt. It has similar concepts, but better enforcement."; since Phase 21 it is the chat line of 4.6. Its opening pushes hard to Kiln Harness Tuner for advanced optimization: it enforces the loop and these principles in code and is much more robust. The rest carries the shared method rules of Phase 18 item 5 as key lessons for a one-off, in the parts below and a new part, "A quick check", after "The hypothesis". It writes no code-owned memory record. The leak and judge-copy definitions are in `train_val_test.md`.
 
 It opens by offering two paths and telling the agent how to choose. This opening is the owner's ruling:
 
@@ -770,7 +814,7 @@ The file has no part on noise and none on per-item pass or fail on val: it names
 | 4 | The failing train items | For each: the output, the expected output, the judge's reasoning and the trace. For a multi-turn eval: the reference data and the driven conversation | The failure playbooks | The results call; `project_status.md` (one run and its trace); `benchmark_eval_inputs.md` |
 | 5 | Where to go next | No steps: the path of `references/improving_agents/index.md` | — | — |
 
-### 9.4 The router: `references/modes/improve_task.md`
+### 9.4 The router: `references/client_guidance/chat/improve_task.md`
 
 About 8,000 characters. The mode states no method of its own (C12). Its parts, in order:
 
@@ -807,12 +851,12 @@ The "Step" column is the build step of architecture section 6 in which the tests
 |---|---|---|
 | `test_skill_files.py` | 1 | `test_index_holds_skill_md_and_posix_keys`; `test_index_without_skill_md_raises`; `test_index_skips_hidden_and_pycache`; `test_resolve_path` (parametrised: every row of the table in 2.4); `test_each_error_text` (exact strings of 2.5); `test_not_found_lists_nearest_folder`; `test_not_found_lists_sub_folders`; `test_not_found_suggests_case_fix`; `test_folder_path_is_an_error`; `test_api_docs_listing_is_short`; `test_raw_is_cleaned_and_cut`; `test_strip_front_matter` (present, absent, unclosed); `test_reference_file_keeps_front_matter`; `test_apply_origin_only_when_different`; `test_read_is_byte_exact`. The cases of `app_origin` are in the server doc's `test_addresses.py` |
 | `test_skill_tool.py` (through a FastMCP client session) | 1 | `test_schema_has_only_optional_path` (one property, no `required` key); `test_meta_always_load`; `test_no_args_returns_skill_md_without_front_matter`; `test_path_returns_file_text`; `test_resource_alias`; `test_stray_name_skill_id_ignored`; `test_error_is_iserror_without_sdk_prefix`; `test_no_structured_content`; `test_non_default_origin_is_replaced` (registered with port 9000); `test_host_header_is_not_used` (a request with `Host: example.test:1234` gets the address of the bound host and port); `test_wrong_type_is_an_error`; `test_description_is_100_to_150_words_and_front_loaded` |
-| `skill_checks/test_tree_check.py` | 4 | Section 8 |
-| `skill_checks/test_api_reference.py` | 4 | `test_drop_blocked_removes_operations_and_empty_paths`; `test_other_method_stops`; `test_version_is_normalised`; `test_catalogue_index_rows`; `test_write_folder_replaces_whole_folder`; `test_diff_folder_reports_added_removed_changed`; `test_collision_warning_stops` (fake generator) |
+| `skill_checks/test_tree_check.py` | 4 | Section 8; Phase 21: `test_mcp_client_means_the_protocol_role_only` |
+| `skill_checks/test_api_reference.py` | 4 | `test_drop_blocked_removes_operations_and_empty_paths`; `test_other_method_stops`; `test_version_is_normalised`; `test_catalogue_index_rows`; `test_write_folder_replaces_whole_folder`; `test_diff_folder_reports_added_removed_changed`; `test_collision_warning_stops` (fake generator); Phase 21: `test_the_api_rules_are_the_hand_written_file_of_the_folder`, `test_write_folder_keeps_the_hand_written_files`, `test_diff_folder_leaves_out_the_hand_written_files` |
 | `app/desktop/test_skill_api_reference.py` | 4; the last test in batch 5 of step 6 | `test_the_committed_api_reference_is_current` (skips below 3.13; `slow`); `test_committed_docs_match_the_block_list` (all versions); `test_no_skill_file_names_a_blocked_endpoint` (below) |
 | `skill_checks/test_knowledge_check.py` | 5 | Section 7 |
 | `skill_checks/test_knowledge_backlog.py` | 5 | The format tests of `app/mcp/knowledge_backlog.md`, ported from harness-tuner's `tests/test_backlog.py`, with the `Kind` and `Where` values of section 7: the real file has no problem of any rule; one small text per rule, each with one deliberate violation. `test_the_backlog_is_outside_the_package` (the file is not under `kiln_mcp_server/`) |
-| `skill_checks/test_shipped_skill.py` | 4, 5, then per batch in 6 | Step 4: `test_the_shipped_tree_passes_every_check` (with `PENDING_RULES`), `test_the_catalogue_index_exists` (`skill_files.API_CATALOGUE_INDEX_PATH` is a file of the tree), `test_no_file_over_body_limit` (each file at most 30,000 characters; the allow-list of section 9). Step 5: `test_the_shipped_knowledge_passes_every_check`, `test_each_template_gives_a_valid_document`, `test_the_maintenance_skill_names_the_commands`. Step 6, with the batch that makes each pass: `test_docs_index_is_current` (batch 6), `test_the_generated_blocks_are_current` and `test_a_document_of_each_type_exists` (batch 7), `test_example_paths_exist` (the paths in `SKILL_TOOL_DESCRIPTION`, `PATH_DESCRIPTION` and `HINT`; batch 1), `test_address_replacement_covers_every_app_link` (no file holds `127.0.0.1:8757`, `https://localhost:8757`, or `localhost:8757` without `http://`: forms the replacement would miss; batch 3), `test_skill_md_has_the_required_parts` and `test_skill_md_size` (batch 4), `test_wrapper_templates_compile` (batch 11), `test_the_glue_files_have_their_parts` (batch 13a: `run_an_experiment.md` has the parts of 9.3 in order, and its first part names Kiln Harness Tuner and the one-off path; `diagnose_an_agent.md` has its parts), `test_no_rule_is_pending` (batch 13b). Phase 18: `test_the_memory_formats_are_one_file_each`, `test_memory_lists_harness_tuner_formats`, `test_memory_names_each_format_file`, `test_the_setup_delimiter_is_on_a_line_of_its_own`, `test_glue_files_have_no_harness_tuner_branch`, `test_glue_files_do_not_write_code_owned_records`; `run_an_experiment.md`'s first body line is the Kiln Harness Tuner line |
+| `skill_checks/test_shipped_skill.py` | 4, 5, then per batch in 6 | Step 4: `test_the_shipped_tree_passes_every_check` (with `PENDING_RULES`), `test_the_catalogue_index_exists` (`skill_files.API_CATALOGUE_INDEX_PATH` is a file of the tree), `test_no_file_over_body_limit` (each file at most 30,000 characters; the allow-list of section 9). Step 5: `test_the_shipped_knowledge_passes_every_check`, `test_each_template_gives_a_valid_document`, `test_the_maintenance_skill_names_the_commands`. Step 6, with the batch that makes each pass: `test_docs_index_is_current` (batch 6), `test_the_generated_blocks_are_current` and `test_a_document_of_each_type_exists` (batch 7), `test_example_paths_exist` (the paths in `SKILL_TOOL_DESCRIPTION`, `PATH_DESCRIPTION` and `HINT`; batch 1), `test_address_replacement_covers_every_app_link` (no file holds `127.0.0.1:8757`, `https://localhost:8757`, or `localhost:8757` without `http://`: forms the replacement would miss; batch 3), `test_skill_md_has_the_required_parts` and `test_skill_md_size` (batch 4), `test_wrapper_templates_compile` (batch 11), `test_the_glue_files_have_their_parts` (batch 13a: `run_an_experiment.md` has the parts of 9.3 in order, and its first part names Kiln Harness Tuner and the one-off path; `diagnose_an_agent.md` has its parts), `test_no_rule_is_pending` (batch 13b). Phase 18: `test_the_memory_formats_are_one_file_each`, `test_memory_lists_harness_tuner_formats`, `test_memory_names_each_format_file`, `test_the_setup_delimiter_is_on_a_line_of_its_own`, `test_glue_files_have_no_harness_tuner_branch`, `test_glue_files_do_not_write_code_owned_records`; `run_an_experiment.md`'s first body line is the Kiln Harness Tuner line. Phase 21: `test_skill_md_has_the_required_parts` (the parts of 4.3), `test_skill_md_names_every_knowledge_file`, `test_skill_md_names_only_the_chat_guide_of_the_chat_files`, `test_each_chat_file_opens_with_the_chat_line`, `test_the_chat_guide_lists_every_chat_file`, `test_the_chat_guide_has_the_rules_for_working_with_the_user`, `test_a_shared_file_names_a_chat_file_only_for_a_chat_with_a_user`, `test_the_chat_guide_explains_harness_tuner_words_to_chat_clients` (in place of `test_the_index_explains_harness_tuner_words_to_mcp_agents`), `test_the_index_keeps_the_heading_harness_tuner_reads`, `test_the_api_rules_open_with_their_condition`; `run_an_experiment.md`'s first body line became the chat line |
 
 `test_no_skill_file_names_a_blocked_endpoint` (C10). It needs the app, so it is in `app/desktop`. It reads the blocked operations from `make_app().routes` with `is_mcp_denied`, and turns each path template into a pattern in which a `{param}` matches `{…}` or one path segment, and which must not be followed by another path character. It searches every file of the shipped tree outside `references/knowledge/api_docs/`. A hit fails when every method of that path is blocked. When the path also has an allowed method (today only `/api/settings`: `GET` allowed, `POST` blocked), a hit fails only when the blocked method is on the same line. The generated reference already has no blocked endpoint (`test_committed_docs_match_the_block_list`).
 

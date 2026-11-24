@@ -3,6 +3,9 @@ name: freeform_help
 description: |
   Fallback knowledge for ad-hoc problem solving when no established knowledge file matches the user's need. Discouraged — prefer specific knowledge files when possible.
 ---
+
+For chat clients working with a user. A non-interactive agent with its own instructions does not need this file.
+
 # Freeform Help
 
 The user's request doesn't clearly match any specific knowledge file. Assess what they need, load relevant knowledge, and improvise a solution. This is a **discouraged fallback** — if a specific knowledge file exists for the topic, load that instead.

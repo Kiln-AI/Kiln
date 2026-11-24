@@ -8,7 +8,7 @@ status: approved
 
 Batch 8 of phase 8 (commit `919fb6a`, "loop vocabulary in the knowledge trees") is the batch that reworded the knowledge trees: the levers, techniques, playbooks and smells. The Harness Tuner alignment audits found that it changed what those documents tell an agent. This phase revisits that work.
 
-The owner's decision is in [harness_tuner_alignment_decisions.md](harness_tuner_alignment_decisions.md), section 6. This file sets out the evidence, the approach and the owner's answers.
+The owner's decision is in [harness_tuner_alignment_decisions.md](harness_tuner_alignment_decisions.md), section 6. This file sets out the evidence, the approach and the owner's answers. Phase 21 changed two things since: this file says "chat clients" where it said "MCP agents" (Kiln Harness Tuner reads the skill over MCP too), and the section of 5.4 moved to `references/client_guidance/chat/using_kiln_from_chat.md`, as "How to read the shared documents" (decisions section 15).
 
 **Citations.** All audits are in `research/harness_tuner_alignment_audit/`:
 - `KT-` is an item of `knowledge_tree.md`.
@@ -127,8 +127,8 @@ Totals: 74 imported documents and the two indexes. Batch 8 left 7 documents unto
 |---|---|---|---|---|
 | D1 | "Ask the user" in place of HT's inputs | An HT input (`allowed_models`, `model_policy`, `flagged_models`, `measurement_prices`, `should_wrap_up`) became a question to the user | `levers/model.md:70-71`: "Ask the user which models and providers are allowed before you create a run config" (HT: the models in `allowed_models` and the model policy). `levers/new_tool.md:42-44`: HT's "Grant trust once in the session" became "Ask the user first" | `KT-A4`, `KT-A5` |
 | D2 | "Measure it yourself" or "check it yourself" in place of HT's code | A code detection, a code check or a code-built screening became a by-hand step, and the verdict words went | `smells/very-long-prompt.md`: "the code detection in your input gives …" became "measure it yourself". `levers/params.md:38`: "Code makes each candidate's run config … No agent builds them" became "Make one run config for each candidate". Lost: the verdicts `lever not applied`, `lever unverified`, `applied`, and the stop rule `invalid_output_rate` | `KT-A3`, `KT-B8`, `KT-B9` |
-| D3 | "Applies when running Kiln Harness Tuner" branches | A rule with an HT input became a rule that applies only under HT, which leaves MCP agents with no rule, or a weaker one | `playbooks/dealing-with-a-noisy-eval.md:28-37`: "Kiln Harness Tuner measures it … This rule applies when running it". HT has one rule for both cases ("When `train_noise` is absent … the stop rules use a flip rate of 10%"). Also the skill bundle (`levers/skill.md:43,50,67` and four techniques), detectability, the speed/cost screening, and merge timing | `KT-B1`, `KT-B2`, `KT-B3`, `KT-B4`, `KT-B6`, `HS-L1`, `KT-C3` |
-| D4 | HT's record strings and check names dropped | Exact strings that HT writes, and the names of its checks, became paraphrase. One claim about them is now wrong | `playbooks/dealing-with-train-wins-rejected-at-val.md:13-29`: HT's `— REJECTED AT VAL`, `- rejected at the val gate <MM-DD> vs baseline <rc> — `, `no gain at val: no targeted eval improved.` and others became words. The playbook says HT "gives the reason in the same words", which it does not. "The judge-copy check" became "a check for copied judge text", which implies a check MCP agents do not have | `KT-B5`, `KT-B7`, `KT-B15`, `CT-5` |
+| D3 | "Applies when running Kiln Harness Tuner" branches | A rule with an HT input became a rule that applies only under HT, which leaves chat clients with no rule, or a weaker one | `playbooks/dealing-with-a-noisy-eval.md:28-37`: "Kiln Harness Tuner measures it … This rule applies when running it". HT has one rule for both cases ("When `train_noise` is absent … the stop rules use a flip rate of 10%"). Also the skill bundle (`levers/skill.md:43,50,67` and four techniques), detectability, the speed/cost screening, and merge timing | `KT-B1`, `KT-B2`, `KT-B3`, `KT-B4`, `KT-B6`, `HS-L1`, `KT-C3` |
+| D4 | HT's record strings and check names dropped | Exact strings that HT writes, and the names of its checks, became paraphrase. One claim about them is now wrong | `playbooks/dealing-with-train-wins-rejected-at-val.md:13-29`: HT's `— REJECTED AT VAL`, `- rejected at the val gate <MM-DD> vs baseline <rc> — `, `no gain at val: no targeted eval improved.` and others became words. The playbook says HT "gives the reason in the same words", which it does not. "The judge-copy check" became "a check for copied judge text", which implies a check chat clients do not have | `KT-B5`, `KT-B7`, `KT-B15`, `CT-5` |
 | D5 | HT's output fields became "report it to the user" | An output field of a role became a chat instruction | `open_questions` and `rejected_summary` in 11 places; `rationale` became "your report" (`dealing-with-a-noisy-eval.md:28`); `build_notes` became "the `notes` of the tool's `provenance`" (`techniques/errors-the-agent-can-act-on.md:92`), so HT's builder would now write its reasoning to another place | `KT-B11` |
 | D6 | HT's input names replaced by by-hand steps | The input that feeds a rule is no longer named | `probe_results` became "do a quick check" (`levers/output_mode.md:91`); `lever_attempts` became "count from your records"; `measure_issue_baseline` and `evaluation_target` were dropped | `KT-B10` |
 | D7 | Statements that are false under HT, or a rule's meaning changed | A sentence about what HT's code does was turned into its opposite, or into another rule | `playbooks/working-inside-restrictions.md:23-26`: "Nothing refuses a run config whose model the user does not allow", where HT's gateway refuses it. `improving_agents/index.md:32-34`: "as the stop rules and the val gate judge it" became "as the measurement on train and the confirmation on val judge it" | `KT-B12`, `KT-B14` |
@@ -177,7 +177,7 @@ The audits' own "Fix" lines mostly add "Kiln Harness Tuner: X; otherwise Y" bran
    - HT's rules apply to every agent as HT states them;
    - HT's inputs, outputs, checks and record strings are named plainly as HT's;
    - no document branches on "when running Kiln Harness Tuner";
-   - how an MCP agent reads HT's words is said once, in the index (5.4).
+   - how a chat client reads HT's words is said once, in the index (5.4).
 2. Cut `LOOP_WORDS` to its vocabulary rows (arm, val gate, probe, screening round, owner, "the guidance"), and drop the five procedural rows.
 3. Cut the knowledge-tree scope of `BANNED_TERMS` to the gateway operation names, the role names and the loop words of the kept rows. Allow HT's input and output names, `install_skill_bundle` and `REJECTED AT VAL` (question 3).
 4. Rewrite `knowledge-maintenance` 4.6 step 2 to the same rules (backlog B12).
@@ -206,14 +206,14 @@ The later commits were made on top of batch 8's text, so their diffs may not app
 Where the reverted text names something only HT has, it is stated once, plainly, for every agent. There is no branch.
 
 - **An HT tool** is named as HT's: "Kiln Harness Tuner has a run-to-run noise check (`--noise-check N`); its result is `train_noise`."
-- **A rule** keeps HT's case for an absent input. That case is the rule an MCP agent follows. For example: "When `train_noise` is absent, the noise is not known: use a flip rate of 10%."
+- **A rule** keeps HT's case for an absent input. That case is the rule a chat client follows. For example: "When `train_noise` is absent, the noise is not known: use a flip rate of 10%."
 - **A by-hand form** is added only where it is the same rule, computed by hand: the detectability room and floor (question 6).
 - **A record string** is quoted exactly, as HT writes it (D4). `references/knowledge/memory.md` lists it as read-only (Phase 18).
 - **The five detector smells** keep HT's text. Each states its threshold (200,000 characters; 4,096; 1,024; 40 tools; 8 months). Where HT's sentence names only the code detection, the number is added; that is a mechanical change.
 
-### 5.4 One section for MCP agents in `references/improving_agents/index.md`
+### 5.4 One section for chat clients in `references/improving_agents/index.md`
 
-The 74 files are not rewritten for MCP agents. `index.md`, the entry point of the trees, gets one short section. A draft, for the owner to approve (question 4):
+The 74 files are not rewritten for chat clients. `index.md`, the entry point of the trees, gets one short section. A draft, for the owner to approve (question 4):
 
 > **How to read these documents over MCP.** These documents are shared with Kiln Harness Tuner, whose agents run without a person and whose code does part of the work. Their rules apply to you as written. Read them this way:
 > - A role (the planner, the builder, the analyzer) is you.
@@ -225,7 +225,7 @@ The 74 files are not rewritten for MCP agents. `index.md`, the entry point of th
 
 The section also gets the playbook-step flow, which the owner moved here from Phase 18's one-off guide (row M11 of its content list, `HS-M11`; HT `kiln-harness-tuner-knowledge/references/planner.md` 13–42): the smells of the present baseline first, and a smell that blocks other work before the rest; steps in order, each with a condition; Landed → the next step only if the issue is still open; Refuted → the next step; Capped → run again; Inconclusive → the step stays open and the next can run in parallel; an idea of your own is marked "not in the knowledge".
 
-The section also fixes `KT-B14` ("as the stop rules and the val gate judge it"): it points to `references/knowledge/run_an_experiment.md` for how an MCP agent judges. HT's role prompts tell HT agents to skip it (switchover SR6).
+The section also fixes `KT-B14` ("as the stop rules and the val gate judge it"): it points to `references/knowledge/run_an_experiment.md` for how a chat client judges. HT's role prompts tell HT agents to skip it (switchover SR6).
 
 ### 5.5 Checks
 
@@ -251,12 +251,12 @@ A diff check like the audit's: re-run the audit's normalisation and sentence dif
 ## 7. Questions for the owner
 
 1. **The approach.** Approve revert-and-re-apply (5.2) over the other way, a targeted fix of the about 86 damaged sentence groups? The targeted fix would follow the audits' "Fix" lines, which mostly add branches.
-2. **The vocabulary rows.** Re-apply all of them? These are role → you, gateway operation → endpoint doc path, arm → candidate, val gate → the confirmation on val, probe → a quick check, screening round → a screening, owner → the user. Recommended: all. They keep the text readable for MCP agents and change no rule, and HT's role prompts handle the reverse (switchover SR6 b).
+2. **The vocabulary rows.** Re-apply all of them? These are role → you, gateway operation → endpoint doc path, arm → candidate, val gate → the confirmation on val, probe → a quick check, screening round → a screening, owner → the user. Recommended: all. They keep the text readable for chat clients and change no rule, and HT's role prompts handle the reverse (switchover SR6 b).
 3. **The banned terms.** Allow HT's input and output names, `install_skill_bundle` and `REJECTED AT VAL` in the trees, and keep the gateway operation names and role names banned? Recommended: yes.
 4. **The index section.** Approve the draft of 5.4, or give its wording. Is `index.md` the only place it goes, or do `SKILL.md` part 7 and `references/modes/improve_task.md` name it too?
-5. **Noise.** HT's rule for an absent `train_noise` (a flip rate of 10%) then applies to MCP agents. That changes the section 4.5 fixed point "Noise" (`KT-B2`). Agree?
-6. **Detectability.** Give MCP agents the by-hand form (the room is a count over the train results; the floor is 6 changed items, all one way, for p < .05 on pass/fail), or treat `train_detectability` as an absent input? (`KT-B3`)
-7. **Screening and skill bundles.** HT's code builds screenings (`KT-B9`, `KT-B4`), and HT's installer builds skill bundles (`KT-B1`). Kiln has neither, and a bundle has no API until the switchover project builds one. Is the index line "tell the user it needs Kiln Harness Tuner" right for both? Or should an MCP agent build a small screening by hand, within `run_an_experiment.md`'s rule to ask before 3 or more run configs?
+5. **Noise.** HT's rule for an absent `train_noise` (a flip rate of 10%) then applies to chat clients. That changes the section 4.5 fixed point "Noise" (`KT-B2`). Agree?
+6. **Detectability.** Give chat clients the by-hand form (the room is a count over the train results; the floor is 6 changed items, all one way, for p < .05 on pass/fail), or treat `train_detectability` as an absent input? (`KT-B3`)
+7. **Screening and skill bundles.** HT's code builds screenings (`KT-B9`, `KT-B4`), and HT's installer builds skill bundles (`KT-B1`). Kiln has neither, and a bundle has no API until the switchover project builds one. Is the index line "tell the user it needs Kiln Harness Tuner" right for both? Or should a chat client build a small screening by hand, within `run_an_experiment.md`'s rule to ask before 3 or more run configs?
 8. **`KT-B13`.** Add "train" to the item-reading steps that name no split (a one-word change, consistent with the leak rules)? Or leave them, since the follow-up project removes MCP read access to val and test?
 9. **`KT-B19`.** The revert drops the lines that batch 8 added from HT's own role skills: "rare exception / none for a closed issue / won't fix, never reopen", and "no number, no item id and no trace". Re-add them, or leave them to Phase 18's one-off guide?
 10. **The kept list.** Is the table of 5.2 the full list of changes to keep? Or did the owner approve other edits to the trees since batch 7, beyond B23 and B30?
@@ -268,7 +268,7 @@ A diff check like the audit's: re-run the audit's normalisation and sentence dif
 2. **The vocabulary rows:** re-apply them all: role → you, gateway operation → endpoint doc path, arm → candidate, val gate → the confirmation on val, probe → a quick check, screening round → a screening, owner → the user.
 3. **The banned terms:** allow HT's input and output names, `install_skill_bundle` and `REJECTED AT VAL` in the trees. Keep the gateway operation names and the role names banned. `tree_check.py` `BANNED_TERMS`, its tests and skill_and_content section 8 change with it.
 4. **The index section:** approved as drafted in 5.4, in `references/improving_agents/index.md` only. It includes the M11 playbook-step flow, and the `KT-B14` fix that points to `references/knowledge/run_an_experiment.md`.
-5. **Noise** and 6. **Detectability:** say plainly that Kiln Harness Tuner has a noise check and a detectability check. For MCP agents, the document's rule for an absent input applies: the flip rate of 10% for noise, and the floor of 6 wins for detectability.
+5. **Noise** and 6. **Detectability:** say plainly that Kiln Harness Tuner has a noise check and a detectability check. For chat clients, the document's rule for an absent input applies: the flip rate of 10% for noise, and the floor of 6 wins for detectability.
 7. **Screening and skill bundles:** "tell the user it needs Kiln Harness Tuner", for now. The bundle API comes in the next project.
 8. **`KT-B13`:** add "train" to the item-reading steps that name no split.
 9. **`KT-B19`:** re-add the commissioning rules of HT's role skills to the saturated-eval and wrong-eval playbooks: building a new eval is the rare exception; none for a closed issue; close the issue as won't fix when the new eval cannot reproduce it; never reopen a fixed issue. Do not re-add the "no number, no item id and no trace" recording rule: after Phase 18, only HT's code writes experiment records.
@@ -276,8 +276,8 @@ A diff check like the audit's: re-run the audit's normalisation and sentence dif
 11. **Order:** Phase 18 ran first (it touches no file of the trees).
 
 Given with the answers:
-- The record lines that HT writes are read-only for MCP agents (Phase 18).
-- **"The tuner"** (owner, option B, after review): where "the tuner" is the subject of a rule that limits what may be changed (the task, an eval, a fine-tune, a RAG config), the subject becomes "an experiment" or "this lever"; everywhere else, "the tuner" becomes "you". Reason: Kiln Harness Tuner's agents act only through experiments, so for them the meaning is the same; for MCP agents it limits the rule to experiments, so an agent does not refuse a user who asks it to change a task or an eval. This is an approved rename.
+- The record lines that HT writes are read-only for chat clients (Phase 18).
+- **"The tuner"** (owner, option B, after review): where "the tuner" is the subject of a rule that limits what may be changed (the task, an eval, a fine-tune, a RAG config), the subject becomes "an experiment" or "this lever"; everywhere else, "the tuner" becomes "you". Reason: Kiln Harness Tuner's agents act only through experiments, so for them the meaning is the same; for chat clients it limits the rule to experiments, so an agent does not refuse a user who asks it to change a task or an eval. This is an approved rename.
 - **B7:** in `app/mcp/knowledge_backlog.md`, drop "Smell: an old model". Keep the renames "A repeat measurement on request" and "A quick check for room to improve", and add a Kiln Harness Tuner example line to each.
 - **B11:** the revert restores the `output_mode` sentence on the test call with no tools attached and the `params` wording; check that they are back. Add `post_api_projects_project_id_skills.md` to the `api_docs` of `levers/skill.md`. Close B11.
-- **B12:** close it as moot, because batch 8 is reverted. Instead, `.agents/skills/knowledge-maintenance/SKILL.md` 4.6 describes the new rules: HT's text is ported as written with only the mechanical changes and the approved renames, and the section "How to read these documents over MCP" of `references/improving_agents/index.md` explains HT's inputs, code checks, outputs and tools to MCP agents.
+- **B12:** close it as moot, because batch 8 is reverted. Instead, `.agents/skills/knowledge-maintenance/SKILL.md` 4.6 describes the new rules: HT's text is ported as written with only the mechanical changes and the approved renames, and the section "How to read these documents over MCP" of `references/improving_agents/index.md` explains HT's inputs, code checks, outputs and tools to chat clients.

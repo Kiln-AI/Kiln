@@ -3,6 +3,9 @@ name: improve_task
 description: |
   Mode for making an existing AI agent better — quality, cost, speed, model selection, experiments, tools and skills, fine-tuning, local/on-prem deployment. Enter when the user wants to improve or compare. It routes to the knowledge that owns each question.
 ---
+
+For chat clients working with a user. A non-interactive agent with its own instructions does not need this file.
+
 # Mode: Improve Task
 
 Make an existing agent better: its quality, cost or speed, its model, its tools and skills. This mode states no method of its own. It finds the task, then sends you to the file that owns each question:
@@ -10,13 +13,13 @@ Make an existing agent better: its quality, cost or speed, its model, its tools 
 - **What to try, in what order, and when**: the playbooks, smells and techniques, from `references/improving_agents/index.md`.
 - **How to change one part of a run config as an experiment**: its lever, from `references/levers/index.md`.
 - **How to do it in Kiln** (request bodies, name rules, traps, app links): the knowledge file of that feature, in the table at the end.
-- **How to measure a change, judge it and keep it**: `references/knowledge/run_an_experiment.md`.
+- **How to measure a change, judge it and keep it**: `references/client_guidance/chat/running_an_experiment_from_chat.md`.
 - **The split rule and the leak rules**: `references/knowledge/train_val_test.md`.
 
 ## Two paths
 
-- **Experimentation at scale** (many rounds, "take it as far as it goes", a search over many ideas) goes to Kiln Harness Tuner: recommend it to the user. Never manage many waves of experiments yourself. `references/knowledge/run_an_experiment.md` ("Two paths").
-- **One or two clear ideas** are done in the chat, with the by-hand procedure of `references/knowledge/run_an_experiment.md`.
+- **Experimentation at scale** (many rounds, "take it as far as it goes", a search over many ideas) goes to Kiln Harness Tuner: recommend it to the user. Never manage many waves of experiments yourself. `references/client_guidance/chat/running_an_experiment_from_chat.md` ("Two paths").
+- **One or two clear ideas** are done in the chat, with the by-hand procedure of `references/client_guidance/chat/running_an_experiment_from_chat.md`.
 
 ## Task context
 
@@ -50,7 +53,7 @@ At the start, ask what is not yet known: the goal (quality, cost, speed, a model
 
 1. `references/knowledge/diagnose_an_agent.md`: read the agent, its scores on train and its failing train items.
 2. The playbook that fits, through `references/improving_agents/index.md`. Inside the knowledge the path is a smell or a playbook, then a technique, then the lever it uses. Prefer a playbook.
-3. `references/knowledge/run_an_experiment.md`: build, measure, confirm and keep.
+3. `references/client_guidance/chat/running_an_experiment_from_chat.md`: build, measure, confirm and keep.
 
 Do not build an eval in the middle of another request. When no eval measures the user's problem, list the gap, and build the eval only when the user agrees (`references/knowledge/create_spec.md`).
 
@@ -59,9 +62,9 @@ Do not build an eval in the middle of another request. When no eval measures the
 | The user asks | Start from |
 |---|---|
 | Make it better; fix a named problem | `references/knowledge/diagnose_an_agent.md`, then the failure playbook that fits |
-| Many rounds of experiments; take it as far as it goes | The Kiln Harness Tuner path of `references/knowledge/run_an_experiment.md` |
+| Many rounds of experiments; take it as far as it goes | The Kiln Harness Tuner path of `references/client_guidance/chat/running_an_experiment_from_chat.md` |
 | Cheaper or faster | [cheaper or faster](references/improving_agents/playbooks/cheaper-or-faster.md), with `references/knowledge/model_work.md` |
-| Which model is best; compare these run configs | `references/knowledge/run_an_experiment.md` ("Variants"), with `references/knowledge/model_work.md` and [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md) |
+| Which model is best; compare these run configs | `references/client_guidance/chat/running_an_experiment_from_chat.md` ("Variants"), with `references/knowledge/model_work.md` and [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md) |
 | The scores jump, all pass, none pass, the judge looks wrong | The eval playbook that fits (`references/improving_agents/index.md`, "Eval problems"), then `references/knowledge/judge_types.md` or `references/knowledge/create_spec.md` for the change |
 | A provider, origin or privacy limit; a local model | [working inside restrictions](references/improving_agents/playbooks/working-inside-restrictions.md), `references/knowledge/local_private_on_prem.md` |
 | Add a tool, a skill, retrieval, a sub-agent | The knowledge file for the setup (`references/knowledge/tools.md`, `references/knowledge/code_tools.md`, `references/knowledge/adding_skills.md`, `references/knowledge/rag.md`, `references/knowledge/subagents.md`), the lever (`references/levers/index.md`), and the technique or smell that says when it helps |
@@ -72,7 +75,7 @@ Do not build an eval in the middle of another request. When no eval measures the
 | Synthetic data; a data guide | `references/knowledge/data_guides.md` |
 | There is no eval yet | An eval first: `references/knowledge/create_spec.md` |
 
-When the request changes to creating project resources that are not about an improvement, route to `references/modes/project_operations.md`; to learning about a feature or an error, `references/modes/learn_about_kiln.md`; when the new goal is unclear, `references/modes/establish_intent.md`.
+When the request changes to creating project resources that are not about an improvement, route to `references/client_guidance/chat/project_operations.md`; to learning about a feature or an error, `references/client_guidance/chat/learn_about_kiln.md`; when the new goal is unclear, `references/client_guidance/chat/establish_intent.md`.
 
 ## Reporting
 
@@ -90,7 +93,7 @@ When the request changes to creating project resources that are not about an imp
 | `references/improving_agents/index.md` | The smells, playbooks and techniques, and how to read them: to choose what to try |
 | `references/levers/index.md` | The parts of a run config an experiment can change, and the rules of each: before you build a candidate |
 | `references/knowledge/diagnose_an_agent.md` | The calls that read the agent, its train scores and its failing items: before you choose a playbook |
-| `references/knowledge/run_an_experiment.md` | The two paths, and how to measure, judge and keep a change: before any experiment or comparison |
+| `references/client_guidance/chat/running_an_experiment_from_chat.md` | The two paths, and how to measure, judge and keep a change: before any experiment or comparison |
 | `references/knowledge/experiment_costing.md` | The cost of an experiment, lane by lane, from measured usage, and when to ask before you spend: before any eval run or experiment that spends tokens |
 | `references/knowledge/train_val_test.md` | Which split may decide what, which call reads which split, the leak rules: before you measure or change anything |
 | `references/knowledge/memory.md` | The project's durable memory: at the start of work, and to record lessons, dead ends and new issues |
@@ -130,7 +133,7 @@ When the request changes to creating project resources that are not about an imp
 | `references/knowledge/adding_skills.md` | Project skills, the name limits, attaching one: to add a skill |
 | `references/knowledge/rag.md` | Document retrieval setup: to ground the agent in the user's documents |
 
-When no file covers what the user needs, read `references/knowledge/freeform_help.md` as a last resort.
+When no file covers what the user needs, read `references/client_guidance/chat/freeform_help.md` as a last resort.
 
 ## See also
 

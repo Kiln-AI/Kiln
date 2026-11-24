@@ -7,7 +7,7 @@ description: How to write a code tool for the subject task as an experiment leve
 
 You are building a code tool as an **experiment lever**: it ships wired into
 ONE new run config, additive to the baseline, per your role's build
-discipline (in a chat with a user: `references/knowledge/run_an_experiment.md`,
+discipline (in a chat with a user: `references/client_guidance/chat/running_an_experiment_from_chat.md`,
 "Build the candidate"). The
 tool surface is the subject model's decision point — a wrapper can reshape
 what the model sees (smaller responses, previews, batch semantics,
@@ -296,7 +296,7 @@ tool: the technique's "Check that it took effect").
 
 The build discipline this slots into — provenance, smoke, one-crack: your
 role's build skill; in a chat with a user,
-`references/knowledge/run_an_experiment.md` · every operation above: the
+`references/client_guidance/chat/running_an_experiment_from_chat.md` · every operation above: the
 endpoint docs of "The calls" · rc composition + known bugs:
 `references/knowledge/model_create_configs.md` and
 `references/knowledge/create_task.md`.

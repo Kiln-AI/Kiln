@@ -9,8 +9,10 @@ description: Add to, change and audit the knowledge of the Kiln skill (its lever
 
 The knowledge is part of the Kiln skill, the skill that the Kiln MCP server
 serves to users' own agents (`app/mcp/kiln_mcp_server/skill/`). It holds what is
-known about how to improve an agent built in Kiln. Any agent connected to the
-Kiln MCP reads it, when a user asks it to improve a task.
+known about how to improve an agent built in Kiln. Two kinds of client read it:
+chat clients, agents that work with a user (Claude Code, Codex and others), and
+non-interactive agents with their own instructions, such as Kiln Harness Tuner,
+which deep-link into it from their role prompts.
 
 It is two trees of the skill, with four component types. Each component is
 one Markdown file, and its folder gives its type. Paths in this skill are
@@ -34,6 +36,26 @@ package, so no agent on the MCP reads it.
 
 You, a coding agent that works on this repository, read this skill. Agents on
 the MCP never read it: it is outside the package.
+
+### Where each kind of content lives
+
+One skill serves every kind of client. A shared file serves them all, and
+states a branch by its real condition, never by the name of a client.
+
+| Content | Where |
+|---|---|
+| The knowledge: levers, techniques, playbooks, smells | The two trees above. Shared |
+| How to do one feature in Kiln | `references/knowledge/<feature>.md`, listed in the table "Kiln's features" of `SKILL.md`. Shared |
+| The ports of Kiln Harness Tuner's shared skills: memory, its formats, experiment costing, code tool authoring, the split rule | `references/knowledge/`. Shared, ported word for word |
+| The rules for every call of `call_kiln_api` | `references/knowledge/api_docs/calling_the_kiln_api.md`, the one hand-written file of the generated folder. It opens with its condition: "if you have the `call_kiln_api` tool" |
+| Guidance only for chat clients: working with the user, the modes, the one-off experiment guide, how to read Kiln Harness Tuner's words | `references/client_guidance/chat/`. Each file opens with the line "For chat clients working with a user. …", and `references/client_guidance/chat/using_kiln_from_chat.md` lists them |
+| A rule that differs in a chat | An "In a chat with a user: …" clause beside the shared sentence, which stays the main text |
+
+A shared file never needs a chat file to make sense. It names a chat file
+only in a sentence for a chat with a user, and a test checks the words "in a
+chat with a user" beside each such path. Never write "MCP client", "MCP
+agent" or "over MCP" for a chat client: Kiln Harness Tuner reads the skill
+over MCP too. The tree check bans the first two.
 
 ## 2. Before you start
 
@@ -205,9 +227,10 @@ The port was last brought up to date with Kiln Harness Tuner at commit
    and record strings as it writes them, named as its own. Do not turn them
    into "ask the user" or "check it yourself", and do not add a rule that
    "applies when running Kiln Harness Tuner". The section "How to read
-   these documents over MCP" of `references/improving_agents/index.md`
-   tells an agent on the MCP how to read those words; change that section
-   when a port adds a new kind of input, check or tool. A sentence that
+   the shared documents" of
+   `references/client_guidance/chat/using_kiln_from_chat.md` tells a chat
+   client how to read those words; change that section when a port adds a
+   new kind of input, check or tool. A sentence that
    names the split rule names `references/knowledge/train_val_test.md`.
    In the knowledge trees, the check bans the gateway operation names, the
    role names, the loop words and a few other words of the tuner

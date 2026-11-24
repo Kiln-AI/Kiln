@@ -5,7 +5,7 @@ description: |
 ---
 # Knowledge: Fine-Tuning
 
-One-file home for fine-tuning questions: **when to fine-tune** (vs. prompt engineering, model upgrade, RAG), **how to run a job**, **the three archetypes** (standard, reasoning, tool-use), **dataset/tag requirements**, and **status checking**. When the next step is comparing the fine-tuned model with existing configs, follow `references/knowledge/run_an_experiment.md` ("Variants").
+One-file home for fine-tuning questions: **when to fine-tune** (vs. prompt engineering, model upgrade, RAG), **how to run a job**, **the three archetypes** (standard, reasoning, tool-use), **dataset/tag requirements**, and **status checking**. When the next step is comparing the fine-tuned model with existing configs, follow, in a chat with a user, `references/client_guidance/chat/running_an_experiment_from_chat.md` ("Variants").
 
 ## Knowledge Required
 
@@ -15,7 +15,7 @@ The Kiln docs have three end-to-end guides — load the relevant one when the us
 - `references/docs/fine-tuning/guide-train-a-reasoning-model.md` — distill a reasoning model (R1-style). Use when the user's task benefits from reasoning / "thinking" outputs.
 - `references/docs/fine-tuning/fine-tuning-for-tool-use.md` — fine-tune for tool calling. Use when the user's task is tool/agent-shaped and they want a smaller model to reliably call a fixed tool set.
 
-Also read `references/modes/improve_task.md` when the user is weighing fine-tuning against prompt-level fixes.
+In a chat with a user, also read `references/client_guidance/chat/improve_task.md` when the user is weighing fine-tuning against prompt-level fixes.
 
 ## Try First (before fine-tuning)
 
@@ -134,7 +134,7 @@ When the user wants to try several fine-tune variants (different base models, di
 1. Confirm the dataset and split with the user (one shared dataset across all jobs).
 2. List the variants in a table — one row per intended job, columns for `provider`, `base_model_id`, varying parameters, and constants.
 3. Apply Prepare-the-Config / Let-the-User-Submit. Hand the user the deep-link and tell them which variants to launch. Do not POST a batch from chat unless the user explicitly asks for it — multiple training runs is multiple training charges.
-4. After the jobs run, compare the resulting fine-tuned models (`kiln_fine_tune` provider run configs, one per resulting model) as `references/knowledge/run_an_experiment.md` ("Variants") says; `references/knowledge/eval_scores.md` reads the scores.
+4. After the jobs run, compare the resulting fine-tuned models (`kiln_fine_tune` provider run configs, one per resulting model), in a chat with a user as `references/client_guidance/chat/running_an_experiment_from_chat.md` ("Variants") says; `references/knowledge/eval_scores.md` reads the scores.
 
 A grid of more than ~4 jobs is rarely the right answer — costs multiply linearly. Lead with 2–3 well-chosen variants and add more only if the first batch is inconclusive.
 
@@ -179,7 +179,7 @@ When `latest_status = completed`, `fine_tune_model_id` contains the provider's m
 
 To use the model in Kiln:
 1. Create a run config with `model_provider_name: kiln_fine_tune` and `model_name: {fine_tune_model_id}`.
-2. Compare it with the existing base-model configs as `references/knowledge/run_an_experiment.md` ("Variants") says; `references/knowledge/eval_scores.md` reads the scores.
+2. Compare it with the existing base-model configs, in a chat with a user as `references/client_guidance/chat/running_an_experiment_from_chat.md` ("Variants") says; `references/knowledge/eval_scores.md` reads the scores.
 
 ### Iteration loop (recurring patterns)
 

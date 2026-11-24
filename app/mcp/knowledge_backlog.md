@@ -659,9 +659,20 @@ Absent: Kiln Harness Tuner's zero-number val→train signals (rejection reason, 
 - Depends on: None
 - Source: kiln_mcp_server backlog B31; `specs/projects/kiln_mcp_server/phase_plans/phase_13.md`, section 3
 
-Review `SKILL.md`, and `train_val_test.md`, `run_an_experiment.md` and `diagnose_an_agent.md` of
-`references/knowledge/`, against the port rules: Kiln Harness Tuner's method unchanged (vocabulary
-only); one owner per question; nothing selects on test. The questions: phase_13.md, section 3.
+Review `SKILL.md`, `train_val_test.md` and `diagnose_an_agent.md` (knowledge/), and
+`running_an_experiment_from_chat.md` (client_guidance/chat/), against the port rules: Kiln Harness
+Tuner's method unchanged (vocabulary only); one owner per question; nothing selects on test.
+
+### Shared knowledge files that lean on the chat modes by name
+
+- Kind: guide
+- Where: knowledge
+- Depends on: None
+- Source: Phase 21 code review
+
+`project_status.md` (17, 28, 34), `model_work.md:155` and `provider_setup.md:32` name a mode's step
+("the mode's bootstrap", "Task Context Discovery"): a non-interactive reader meets `agent_overview`
+with no source. Name the step in the file itself, or label it "in a chat with a user".
 
 ### using_harness_tuner
 

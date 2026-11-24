@@ -1,9 +1,9 @@
 ---
-name: run_an_experiment
+name: running_an_experiment_from_chat
 description: How to measure a change to an agent, judge it and keep it - why Kiln Harness Tuner is the path for real optimization, then the key lessons for a one-off idea in the chat - before you start, the hypothesis, a quick check, cost, build, measure on train, confirm on val, keep or discard, record and report, and comparisons the user asks for.
 ---
 
-If you are Kiln Harness Tuner, follow your system prompt. It has similar concepts, but better enforcement.
+For chat clients working with a user. A non-interactive agent with its own instructions does not need this file.
 
 # Run an experiment
 

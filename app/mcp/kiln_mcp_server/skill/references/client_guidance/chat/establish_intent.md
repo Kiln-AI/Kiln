@@ -1,11 +1,14 @@
 ---
 name: establish_intent
 description: |
-  The steps for a request whose mode is unclear: questions to ask, routing examples, and what to offer a user who is unsure. The routing table itself is in SKILL.md.
+  The steps for a request whose mode is unclear: questions to ask, routing examples, and what to offer a user who is unsure. The routing table itself is in references/client_guidance/chat/using_kiln_from_chat.md.
 ---
+
+For chat clients working with a user. A non-interactive agent with its own instructions does not need this file.
+
 # Mode: Establish Intent
 
-Read this file when the user's request is unclear, or fits more than one mode of the routing table in `SKILL.md`. The goal is to get the user into the right mode quickly.
+Read this file when the user's request is unclear, or fits more than one mode of the routing table in `references/client_guidance/chat/using_kiln_from_chat.md`. The goal is to get the user into the right mode quickly.
 
 ## Route before discovery
 

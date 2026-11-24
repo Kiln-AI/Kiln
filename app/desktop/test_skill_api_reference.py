@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from kiln_mcp_server.skill_checks.api_reference import (
     CATALOGUE_SUFFIX,
+    HAND_WRITTEN_NAMES,
     INDEX_NAME,
     TARGET,
     ApiReferenceError,
@@ -49,6 +50,7 @@ def test_committed_docs_match_the_block_list():
         path.name
         for path in skill_api_reference.default_target().iterdir()
         if path.name != INDEX_NAME
+        and path.name not in HAND_WRITTEN_NAMES
         and not path.name.endswith(CATALOGUE_SUFFIX)
         and not path.name.startswith(".")
     }

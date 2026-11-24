@@ -37,12 +37,12 @@ shape. Read it before the first call.
 
 | Operation | Call | Endpoint doc |
 |---|---|---|
-| save | `POST /api/projects/{project_id}/memories` — body: `overview` (req, ≤280), `scope` (req — no default), `content?` (≤4000), `tags?` | `references/knowledge/api_docs/post_api_projects_project_id_memories.md` |
+| save | `POST /api/projects/{project_id}/memories` — body: `overview` (req, ≤280, no newlines), `scope` (req — no default), `content?` (≤4000), `tags?` | `references/knowledge/api_docs/post_api_projects_project_id_memories.md` |
 | list | `GET /api/projects/{project_id}/memories` with `scope`, `tags`, `content_match` (a regex), `limit=50`, `offset=0` — repeat `tags` = AND; newest-first; truncation nudge includes tag counts | `references/knowledge/api_docs/get_api_projects_project_id_memories.md` |
 | summary | `GET /api/projects/{project_id}/memories/summary` with `scope` — omit scope for all scopes; counts + tag cardinalities + newest, no content | `references/knowledge/api_docs/get_api_projects_project_id_memories_summary.md` |
 | get | `GET /api/projects/{project_id}/memories/by_ids` with `ids` — full records; unknown ids omitted | `references/knowledge/api_docs/get_api_projects_project_id_memories_by_ids.md` |
 | update | `PATCH /api/projects/{project_id}/memories/{memory_id}` — partial: omitted fields untouched; explicit null clears `content`; last-writer-wins | `references/knowledge/api_docs/patch_api_projects_project_id_memories_memory_id.md` |
-| delete | `DELETE /api/projects/{project_id}/memories/{memory_id}` — hard delete, confirmed junk only. In a chat with a user, ask the user first (`SKILL.md`, "Working with the user") | `references/knowledge/api_docs/delete_api_projects_project_id_memories_memory_id.md` |
+| delete | `DELETE /api/projects/{project_id}/memories/{memory_id}` — hard delete, confirmed junk only. In a chat with a user, ask the user first (`references/client_guidance/chat/using_kiln_from_chat.md`, "Working with the user") | `references/knowledge/api_docs/delete_api_projects_project_id_memories_memory_id.md` |
 
 With `call_kiln_api`, a repeated parameter is a list:
 `query_params={"scope": "project", "tags": ["lesson"]}`.

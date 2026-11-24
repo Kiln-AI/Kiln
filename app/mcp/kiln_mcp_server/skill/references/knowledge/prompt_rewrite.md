@@ -17,7 +17,7 @@ Reference knowledge for the agent's task instruction and saved prompts in Kiln: 
 
 Load the relevant endpoint doc **before** making each API call — they have request body schemas, response fields, and parameter details.
 
-If your endpoint isn't listed below, load the matching `*_api_list.md` catalog (see the section "Calling the Kiln API" of `SKILL.md`).
+If your endpoint isn't listed below, load the matching `*_api_list.md` catalog (see `references/knowledge/api_docs/calling_the_kiln_api.md`).
 
 | Endpoint | Load |
 |----------|------|
@@ -43,7 +43,7 @@ Load the current prompt and schemas — see `references/knowledge/prompt_audit.m
 
 ## A Prompt Change to Improve an Agent
 
-What to change, and how to change a prompt as an experiment, is the lever's: `references/levers/prompt.md`, reached through the playbook that fits (`references/modes/improve_task.md`). How to measure the new prompt against the baseline and keep it is `references/knowledge/run_an_experiment.md`. In Kiln the change is a **new saved prompt** and a **new run config** that names it; the task instruction and the saved prompt that the baseline uses stay as they are.
+What to change, and how to change a prompt as an experiment, is the lever's: `references/levers/prompt.md`, reached through the playbook that fits (in a chat with a user, through `references/client_guidance/chat/improve_task.md`). In a chat with a user, how to measure the new prompt against the baseline and keep it is `references/client_guidance/chat/running_an_experiment_from_chat.md`. In Kiln the change is a **new saved prompt** and a **new run config** that names it; the task instruction and the saved prompt that the baseline uses stay as they are.
 
 1. **Create a saved prompt**:
    Read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_prompts.md`, then:

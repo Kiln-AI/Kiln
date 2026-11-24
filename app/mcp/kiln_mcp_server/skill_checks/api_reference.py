@@ -15,7 +15,7 @@ from pathlib import Path, PurePosixPath
 
 from kiln_server.utils.agent_checks import is_mcp_denied
 
-from kiln_mcp_server.skill_files import API_CATALOGUE_INDEX_PATH
+from kiln_mcp_server.skill_files import API_CATALOGUE_INDEX_PATH, API_RULES_PATH
 
 ALLOWED_METHODS = ("get", "post", "patch", "delete")
 TARGET = "references/knowledge/api_docs"
@@ -23,6 +23,9 @@ GENERATOR_COMMAND: tuple[str, ...] = (sys.executable, "-m", "openapi2skill")
 
 CATALOGUE_SUFFIX = "_api_list.md"
 INDEX_NAME = PurePosixPath(API_CATALOGUE_INDEX_PATH).name
+# Files of the folder that a person writes, not the generator: a write keeps
+# them, and a diff does not report them.
+HAND_WRITTEN_NAMES = frozenset({PurePosixPath(API_RULES_PATH).name})
 
 # The OpenAPI keys of a path item that hold an operation.
 _OPERATION_KEYS = frozenset(
@@ -242,12 +245,16 @@ def render(
 
 
 def write_folder(files: Mapping[str, bytes], target: Path) -> None:
-    """Replace the folder `target` with exactly `files`."""
+    """Replace the folder `target` with exactly `files`, plus the hand-written
+    files it already holds."""
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = target.parent / f".{target.name}_staging"
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir()
     try:
+        for name in sorted(HAND_WRITTEN_NAMES - set(files)):
+            if (target / name).is_file():
+                shutil.copyfile(target / name, staging / name)
         for name, content in files.items():
             (staging / name).write_bytes(content)
         if target.exists():
@@ -261,12 +268,14 @@ def write_folder(files: Mapping[str, bytes], target: Path) -> None:
 def diff_folder(files: Mapping[str, bytes], target: Path) -> list[str]:
     """How the folder `target` differs from `files`: one sorted line per file,
     `added x.md` (in `files` only), `removed x.md` (in `target` only) or
-    `changed x.md`."""
+    `changed x.md`. The hand-written files of `target` are left out."""
     committed = (
         {
             path.name: path
             for path in target.iterdir()
-            if path.is_file() and not path.name.startswith(".")
+            if path.is_file()
+            and not path.name.startswith(".")
+            and path.name not in HAND_WRITTEN_NAMES
         }
         if target.is_dir()
         else {}

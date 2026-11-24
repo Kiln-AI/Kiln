@@ -60,7 +60,7 @@ The user types `/kiln`. With the stub skill installed, the agent loads the stub,
 
 ### 3.4 Kiln is not running
 
-The MCP runs inside the Kiln app, so when Kiln is not running the server cannot answer and the agent's MCP client fails to connect. The MCP cannot explain this itself. Two places do:
+The MCP runs inside the Kiln app, so when Kiln is not running the server cannot answer and the agent cannot connect to it. The MCP cannot explain this itself. Two places do:
 
 - The stub skill: "If the `kiln_skill` tool is not available, Kiln is installed but offline: ask the user to start the Kiln app."
 - The install guide and docs.
@@ -189,28 +189,32 @@ It is short, about 100–150 words. The same trigger text is in the server instr
 The skill keeps the layout of the Kiln Assistant's skill, whose files link to each other by full path, and adds the harness-tuner knowledge beside it:
 
 ```
-SKILL.md                         what Kiln is, how to route a request, the rules for
-                                 using the API, and a map of the files below
+SKILL.md                         what the skill and Kiln are, how to read its files, who
+                                 reads it, and a map of its parts, for every kind of client
 references/
-  modes/                         one file per kind of request (learn about Kiln,
-                                 project operations, improve a task, ...)
+  client_guidance/chat/          for chat clients only: working with the user, the routing
+                                 table and one mode per kind of request (learn about Kiln,
+                                 project operations, improve a task, ...), the one-off
+                                 experiment guide
   knowledge/                     how to do specific things in Kiln
-  knowledge/api_docs/            generated API reference: catalogues, and one doc per endpoint
+  knowledge/api_docs/            generated API reference: catalogues, and one doc per endpoint;
+                                 plus one hand-written file, the rules for every call
   docs/                          a copy of Kiln's public help articles, with an index
   levers/                        what in Kiln an agent builder can change, and how
   improving_agents/              techniques, smells and playbooks for making an agent better
 ```
 
 - The tree is self-contained, with every path written from the skill root, so it could be served another way later without changing the content.
-- Every file is reachable: each knowledge, lever and improving-agents file is listed by a mode (or by a file a mode lists), with its full path and a line on what it holds and when to read it.
+- Every file is reachable: each knowledge, lever and improving-agents file is listed by `SKILL.md` or by a file it leads to, with its full path and a line on what it holds and when to read it.
+- **One skill, many kinds of client** (Phase 21). Two kinds read the skill today: chat clients, interactive agents working with a user (Claude Code, Claude Desktop, Codex, OpenCode), and non-interactive agents with their own instructions (Kiln Harness Tuner), which deep-link into it. Shared files serve every client and state each branch by its real condition ("In a chat with a user: …", "if you have the `call_kiln_api` tool"), never by a client's name. Guidance for chat clients only is in `references/client_guidance/chat/`; `SKILL.md` tells a chat client to read `references/client_guidance/chat/using_kiln_from_chat.md` at the start of every session, and tells a non-interactive agent that its own instructions win and that it skips that folder. The detail is in the skill component doc, section 4.6.
 - Files refer to each other by the full path from the skill root (`references/knowledge/rag.md`), never by a bare filename, and never by writing out a tool call. The description of the `path` argument says how to read a file (6.1).
 
 ### 7.2 Sources
 
-- **Kiln Assistant's skill** → `SKILL.md`, `references/modes/`, `references/knowledge/`, `references/docs/`. It comes from a private repo as a filtered export that a person has reviewed.
+- **Kiln Assistant's skill** → `SKILL.md`, `references/client_guidance/chat/` (its modes, since Phase 21), `references/knowledge/`, `references/docs/`. It comes from a private repo as a filtered export that a person has reviewed.
 - **Harness-tuner knowledge** (`kiln-harness-tuner-knowledge`) → `references/levers/` and `references/improving_agents/` (`techniques/`, `smells/`, `playbooks/`).
   - The five role entry files (`planner.md`, `builder.md`, `analyzer.md`, `report.md`, `smells.md`) are not ported. They stay in harness-tuner, in a new home among its own skills (spec two, section 5.3).
-  - In their place, the knowledge is wired into the skill's modes, mainly "improve a task".
+  - In their place, the knowledge is wired into `SKILL.md` and the chat clients' modes, mainly "improve a task".
 - **API reference** → `references/knowledge/api_docs/`, generated from Kiln's OpenAPI document with `openapi2skill`, the OSS generator that already produces the Assistant's API docs. Its file names are kept as generated.
 
 ### 7.3 Adapting the content

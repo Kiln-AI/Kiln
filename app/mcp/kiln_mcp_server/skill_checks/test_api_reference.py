@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from kiln_mcp_server.skill_checks.api_reference import (
+    HAND_WRITTEN_NAMES,
     INDEX_NAME,
     TARGET,
     ApiReferenceError,
@@ -19,7 +20,7 @@ from kiln_mcp_server.skill_checks.api_reference import (
     run_generator,
     write_folder,
 )
-from kiln_mcp_server.skill_files import API_CATALOGUE_INDEX_PATH
+from kiln_mcp_server.skill_files import API_CATALOGUE_INDEX_PATH, API_RULES_PATH
 
 DENY = {"x-mcp-policy": {"permission": "deny"}}
 
@@ -179,6 +180,30 @@ def test_write_folder_creates_a_missing_folder(tmp_path):
     target = tmp_path / "a" / "api_docs"
     write_folder({"x.md": b"x"}, target)
     assert (target / "x.md").read_bytes() == b"x"
+
+
+def test_the_api_rules_are_the_hand_written_file_of_the_folder():
+    assert API_RULES_PATH == f"{TARGET}/calling_the_kiln_api.md"
+    assert HAND_WRITTEN_NAMES == {"calling_the_kiln_api.md"}
+
+
+def test_write_folder_keeps_the_hand_written_files(tmp_path):
+    target = tmp_path / "api_docs"
+    write_folder({"old.md": b"old"}, target)
+    (target / "calling_the_kiln_api.md").write_bytes(b"rules")
+    write_folder({"new.md": b"new"}, target)
+    assert sorted(p.name for p in target.iterdir()) == [
+        "calling_the_kiln_api.md",
+        "new.md",
+    ]
+    assert (target / "calling_the_kiln_api.md").read_bytes() == b"rules"
+
+
+def test_diff_folder_leaves_out_the_hand_written_files(tmp_path):
+    target = tmp_path / "api_docs"
+    write_folder({"same.md": b"s"}, target)
+    (target / "calling_the_kiln_api.md").write_bytes(b"rules")
+    assert diff_folder({"same.md": b"s"}, target) == []
 
 
 def test_diff_folder_reports_added_removed_changed(tmp_path):

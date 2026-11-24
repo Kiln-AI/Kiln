@@ -3,6 +3,7 @@ import pytest
 from kiln_mcp_server.conftest import write_tree
 from kiln_mcp_server.skill_files import (
     API_CATALOGUE_INDEX_PATH,
+    API_RULES_PATH,
     DEFAULT_ORIGIN,
     E_ABS,
     E_CTRL,
@@ -28,10 +29,11 @@ TREE = {
     "references/knowledge/rag.md": RAG_MD,
     "references/knowledge/specs_and_evals.md": "Specs.\n",
     "references/knowledge/api_docs/api_index.md": "Catalogues.\n",
+    "references/knowledge/api_docs/calling_the_kiln_api.md": "Rules.\n",
     "references/knowledge/api_docs/projects_api_list.md": "Projects.\n",
     "references/knowledge/api_docs/get_api_projects.md": "GET.\n",
     "references/knowledge/api_docs/post_api_projects.md": "POST.\n",
-    "references/modes/learn.md": "Learn.\n",
+    "references/client_guidance/chat/learn.md": "Learn.\n",
     "references/docs/README.md": "Docs.\n",
 }
 
@@ -55,13 +57,16 @@ def test_index_holds_skill_md_and_posix_keys(index):
         "references",
         "references/knowledge",
         "references/knowledge/api_docs",
-        "references/modes",
+        "references/client_guidance",
+        "references/client_guidance/chat",
         "references/docs",
     }
 
 
 def test_index_without_skill_md_raises(tmp_path):
-    root = write_tree(tmp_path / "skill", {"references/modes/learn.md": "x"})
+    root = write_tree(
+        tmp_path / "skill", {"references/client_guidance/chat/learn.md": "x"}
+    )
     with pytest.raises(
         RuntimeError,
         match=r"^Kiln skill files are missing from the package \(no SKILL\.md\)$",
@@ -189,9 +194,9 @@ def test_not_found_lists_sub_folders(index):
         "Files in `references`:\n"
         "(none)\n"
         "Folders in `references`:\n"
+        "references/client_guidance/\n"
         "references/docs/\n"
         "references/knowledge/\n"
-        "references/modes/\n"
         "Copy a path exactly as the skill's instructions wrote it."
     )
 
@@ -231,6 +236,7 @@ def test_api_docs_listing_is_short(index):
         "No skill file at `references/knowledge/api_docs/get_api_nope.md`.\n"
         "Files in `references/knowledge/api_docs`:\n"
         f"{API_CATALOGUE_INDEX_PATH}\n"
+        f"{API_RULES_PATH}\n"
         "references/knowledge/api_docs/projects_api_list.md\n"
         "Plus 2 endpoint docs, not listed. Find an endpoint doc through a catalogue.\n"
         "Copy a path exactly as the skill's instructions wrote it."
