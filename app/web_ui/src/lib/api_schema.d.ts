@@ -9329,6 +9329,8 @@ export interface components {
              * @description Optional transform applied to the task input at run time, producing the first user message sent to the model. Default None preserves the identity path.
              */
             input_transform?: components["schemas"]["JinjaInputTransform"] | null;
+            /** @description Provider routing choices for calls made through OpenRouter, such as zero data retention. If None, Kiln's default routing is used. */
+            openrouter_routing?: components["schemas"]["OpenRouterRouting"] | null;
         };
         /**
          * KilnArtifactProvenance
@@ -10612,6 +10614,25 @@ export interface components {
              * @description The filesystem path to the file.
              */
             path: string;
+        };
+        /**
+         * OpenRouterRouting
+         * @description Choices a run config makes about which OpenRouter providers may serve its model calls.
+         *
+         *     See https://openrouter.ai/docs/guides/routing/provider-selection
+         */
+        OpenRouterRouting: {
+            /**
+             * Zero Data Retention
+             * @description When true, the call is sent with OpenRouter's `provider.zdr`, so OpenRouter routes it only to zero-data-retention endpoints and rejects it when none serves the model. A call that does not go through OpenRouter is refused. Endpoints OpenRouter labels Safety Retention stay eligible unless the OpenRouter account's privacy settings are set to ZDR only.
+             * @default false
+             */
+            zero_data_retention: boolean;
+            /**
+             * Sort
+             * @description Sent as OpenRouter's `provider.sort`, in place of Kiln's default provider order. Not applied to models Kiln pins to specific providers, nor to calls that do not go through OpenRouter. If None, Kiln's default order is used.
+             */
+            sort?: ("price" | "throughput" | "latency") | null;
         };
         /**
          * OutputFormat

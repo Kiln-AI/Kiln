@@ -13,6 +13,7 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
     MCPToolReference,
+    OpenRouterRouting,
     RunConfigProperties,
     ToolsRunConfig,
 )
@@ -473,3 +474,44 @@ class TestInputTransformField:
         assert isinstance(restored, KilnAgentRunConfigProperties)
         assert isinstance(restored.input_transform, JinjaInputTransform)
         assert restored.input_transform.template == "{{ input.x }}"
+
+
+class TestOpenRouterRoutingField:
+    def test_backcompat_no_openrouter_routing_key(self):
+        config = run_config_adapter.validate_python(KILN_AGENT_JSON)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.openrouter_routing is None
+
+    def test_defaults_request_nothing(self):
+        routing = OpenRouterRouting()
+        assert routing.zero_data_retention is False
+        assert routing.sort is None
+
+    def test_roundtrip(self):
+        raw = {
+            **KILN_AGENT_JSON,
+            "model_provider_name": "openrouter",
+            "openrouter_routing": {"zero_data_retention": True, "sort": "price"},
+        }
+        config = run_config_adapter.validate_python(raw)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.openrouter_routing == OpenRouterRouting(
+            zero_data_retention=True, sort="price"
+        )
+        restored = run_config_adapter.validate_json(config.model_dump_json())
+        assert restored == config
+
+    @pytest.mark.parametrize(
+        "routing",
+        [
+            # OpenRouter's own name for the field: must not load as "no restriction"
+            {"zdr": True},
+            {"zero_data_retention": True, "data_collection": "deny"},
+            {"sort": "cheapest"},
+        ],
+    )
+    def test_rejects_unknown_keys_and_values(self, routing):
+        with pytest.raises(ValidationError):
+            run_config_adapter.validate_python(
+                {**KILN_AGENT_JSON, "openrouter_routing": routing}
+            )

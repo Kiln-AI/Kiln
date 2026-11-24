@@ -2,6 +2,7 @@ from typing import Annotated, Any, List, Literal, Union
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Discriminator,
     Field,
     Tag,
@@ -45,6 +46,37 @@ class ToolsRunConfig(BaseModel):
     )
 
 
+class OpenRouterRouting(BaseModel):
+    """
+    Choices a run config makes about which OpenRouter providers may serve its model calls.
+
+    See https://openrouter.ai/docs/guides/routing/provider-selection
+    """
+
+    # An unknown key is a restriction this version can't enforce, or a misspelt one:
+    # loading must fail, not drop it.
+    model_config = ConfigDict(extra="forbid")
+
+    zero_data_retention: bool = Field(
+        default=False,
+        description=(
+            "When true, the call is sent with OpenRouter's `provider.zdr`, so OpenRouter "
+            "routes it only to zero-data-retention endpoints and rejects it when none "
+            "serves the model. A call that does not go through OpenRouter is refused. "
+            "Endpoints OpenRouter labels Safety Retention stay eligible unless the "
+            "OpenRouter account's privacy settings are set to ZDR only."
+        ),
+    )
+    sort: Literal["price", "throughput", "latency"] | None = Field(
+        default=None,
+        description=(
+            "Sent as OpenRouter's `provider.sort`, in place of Kiln's default provider "
+            "order. Not applied to models Kiln pins to specific providers, nor to calls "
+            "that do not go through OpenRouter. If None, Kiln's default order is used."
+        ),
+    )
+
+
 class KilnAgentRunConfigProperties(BaseModel):
     """
     A configuration for running a task using a Kiln AI agent.
@@ -85,6 +117,13 @@ class KilnAgentRunConfigProperties(BaseModel):
             "Optional transform applied to the task input at run time, producing "
             "the first user message sent to the model. Default None preserves "
             "the identity path."
+        ),
+    )
+    openrouter_routing: OpenRouterRouting | None = Field(
+        default=None,
+        description=(
+            "Provider routing choices for calls made through OpenRouter, such as "
+            "zero data retention. If None, Kiln's default routing is used."
         ),
     )
 
