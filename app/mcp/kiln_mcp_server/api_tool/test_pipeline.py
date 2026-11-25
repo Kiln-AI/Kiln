@@ -376,15 +376,52 @@ async def test_an_event_stream_is_summarised(call):
             "Could not connect to server for /api/items/1. The PATCH may have taken "
             "effect. Check the state before you repeat it.",
         ),
+        (
+            httpx.ReadError("reset"),
+            "GET",
+            "Request to /api/items/1 failed: ReadError",
+        ),
+        (
+            httpx.RemoteProtocolError("peer closed connection"),
+            "PATCH",
+            "Request to /api/items/1 failed: RemoteProtocolError. The PATCH may have "
+            "taken effect. Check the state before you repeat it.",
+        ),
+        (
+            httpx.WriteError("broken pipe"),
+            "PATCH",
+            "Request to /api/items/1 failed: WriteError. The PATCH may have taken "
+            "effect. Check the state before you repeat it.",
+        ),
     ],
 )
-async def test_timeouts_and_connection_failures(
-    call, make_deps, error, method, expected
-):
+async def test_transport_failures(call, make_deps, error, method, expected):
     body = {"name": "n"} if method == "PATCH" else None
     assert await call(
         method, "/api/items/1", body=body, deps=make_deps(raising(error))
     ) == (expected, True)
+
+
+class _StreamCutAfterOneEvent(httpx.AsyncByteStream):
+    async def __aiter__(self):
+        yield b"data: {}\n\n"
+        raise httpx.RemoteProtocolError("peer closed connection")
+
+
+async def test_an_event_stream_cut_part_way_warns_it_may_have_run(call, make_deps):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=_StreamCutAfterOneEvent(),
+        )
+
+    deps = make_deps(httpx.MockTransport(handler))
+    assert await call("POST", "/api/stream", deps=deps) == (
+        "Request to /api/stream failed: RemoteProtocolError. The POST may have "
+        "taken effect. Check the state before you repeat it.",
+        True,
+    )
 
 
 async def test_an_unexpected_exception(call, make_deps, caplog):

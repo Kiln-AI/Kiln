@@ -5,6 +5,7 @@
 """
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -22,8 +23,8 @@ from kiln_mcp_server.skill_checks.knowledge_schema import (
 from kiln_mcp_server.skill_files import list_tree
 
 # Inline Markdown links. Reference-style links are not used in the trees.
-LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
-SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:|^//")
+_LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
+_SCHEME_RE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*:|//)")
 FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 
 # The folders that hold the component roots. A file directly in one of them is
@@ -35,7 +36,7 @@ KNOWLEDGE_AREAS = ("references/levers/", "references/improving_agents/")
 @dataclass(frozen=True)
 class Link:
     target: str
-    """As written in the file."""
+    """As written in the file, without the `<>` of a CommonMark destination."""
     resolved: str | None
     """A tree key; None when the link is external or names no file of the tree."""
     external: bool = False
@@ -169,7 +170,7 @@ def _load_document(root: Path, key: str, kind: str, tree: frozenset[str]) -> Doc
             close()
             heading, lines, section_links = line[3:].strip(), [], []
             continue
-        found = [_link(key, t, tree) for t in LINK_RE.findall(line)]
+        found = [_link(key, t, tree) for _, t in inline_links(line)]
         links.extend(found)
         section_links.extend(found)
         lines.append(line)
@@ -210,8 +211,23 @@ def fence_marked(text: str) -> list[tuple[str, bool]]:
     return out
 
 
+def inline_links(line: str) -> Iterator[tuple[re.Match[str], str]]:
+    """Each inline link of `line`: the match of its `](...)` part, and its
+    target without the `<>` of a CommonMark destination."""
+    for match in _LINK_RE.finditer(line):
+        target = match.group(1)
+        if len(target) > 1 and target.startswith("<") and target.endswith(">"):
+            target = target[1:-1]
+        yield match, target
+
+
+def has_scheme(target: str) -> bool:
+    """An external target, such as `https://...` or `//host/...`."""
+    return _SCHEME_RE.match(target) is not None
+
+
 def _link(source: str, target: str, tree: frozenset[str]) -> Link:
-    if SCHEME_RE.match(target):
+    if has_scheme(target):
         return Link(target, None, external=True)
     bare = target.split("#", 1)[0]
     if not bare:  # a link to a heading of the same file

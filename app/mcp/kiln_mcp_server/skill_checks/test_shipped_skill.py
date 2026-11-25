@@ -364,11 +364,9 @@ def test_the_named_task_setup_facts_are_in_their_files(path, phrase):
 MEMORY = "references/knowledge/memory.md"
 MEMORY_FORMATS = "references/knowledge/memory_formats/"
 
-# The strings Kiln Harness Tuner's code writes and parses back, by the file
-# that lists them for readers. The source is its `memory_schema.py` and
-# `memory.py` at b49f159, as section 3 of
-# `specs/projects/kiln_mcp_server/research/harness_tuner_alignment_audit/contract.md`
-# lists them. Placeholders in `<>` stand for the values its code fills in.
+# The strings Kiln Harness Tuner's code writes and parses back (its
+# `memory_schema.py` and `memory.py` at b49f159), by the file that lists them
+# for readers. Placeholders in `<>` stand for the values its code fills in.
 HARNESS_TUNER_FORMATS: dict[str, tuple[str, ...]] = {
     "experiment_records.md": (
         "EXP <MMDD>-w<k>-<n>",
@@ -545,8 +543,8 @@ def test_memory_names_each_format_file():
         assert f"`{key}`" in formats, key
 
 
-# The rules of Kiln Harness Tuner's `memory/SKILL.md` at b49f159 that a
-# rewrite once lost, each as a phrase of its port.
+# Rules of Kiln Harness Tuner's `memory/SKILL.md` at b49f159, each as the
+# phrase that states it in `references/knowledge/memory.md`.
 MEMORY_RULES = (
     # A failed write: the return field, once, a summary, exempt from budgets.
     "disclose it in your return",
@@ -860,9 +858,8 @@ def _tool_documents() -> tuple[str, ...]:
 
 ALL_LEVERS = tuple(sorted(d.path for d in _KNOWLEDGE.by_kind("levers")))
 
-# The overlap groups of skill_and_content 9.1, in its order: the knowledge
-# documents of each subject, then the Assistant files that teach it. Groups 7,
-# 10 and 12 are built from the tree by the rules of 9.1, so a new document
+# Each group: the knowledge documents of one subject, then the Assistant files
+# that teach it. Groups 7, 10 and 12 are built from the tree, so a new document
 # that belongs to one of them fails `test_each_overlap_file_has_its_see_also_line`
 # until the "See also" lines name it.
 OVERLAP_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (

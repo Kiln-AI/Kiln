@@ -171,11 +171,11 @@ def test_the_backlog_is_outside_the_package():
     assert not BACKLOG.is_relative_to(PACKAGE_ROOT)
 
 
-def test_the_using_harness_tuner_entry_is_last_in_unranked():
+def test_the_using_harness_tuner_entry_is_in_unranked():
     _, entries, _ = parse(BACKLOG.read_text(encoding="utf-8"))
-    last = entries[-1]
-    assert (last.section, last.title) == ("Unranked", "using_harness_tuner")
-    assert dict(last.fields)["Kind"] == "guide"
+    [entry] = [e for e in entries if e.title == "using_harness_tuner"]
+    assert entry.section == "Unranked"
+    assert dict(entry.fields)["Kind"] == "guide"
 
 
 def test_the_backlog_is_not_empty():

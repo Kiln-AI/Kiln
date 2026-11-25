@@ -8,8 +8,6 @@ import pytest
 
 from kiln_mcp_server.skill_checks.api_reference import (
     HAND_WRITTEN_NAMES,
-    INDEX_NAME,
-    TARGET,
     ApiReferenceError,
     catalogue_index,
     diff_folder,
@@ -20,7 +18,12 @@ from kiln_mcp_server.skill_checks.api_reference import (
     run_generator,
     write_folder,
 )
-from kiln_mcp_server.skill_files import API_CATALOGUE_INDEX_PATH, API_RULES_PATH
+from kiln_mcp_server.skill_files import (
+    API_CATALOGUE_INDEX_NAME,
+    API_CATALOGUE_INDEX_PATH,
+    API_DOCS_FOLDER,
+    API_RULES_PATH,
+)
 
 DENY = {"x-mcp-policy": {"permission": "deny"}}
 
@@ -141,15 +144,14 @@ def test_catalogue_index_rows():
     assert table == [
         "| Catalogue | Area | Endpoints | What it covers |",
         "|---|---|---|---|",
-        f"| `{TARGET}/projects_api_list.md` | Projects | 3 | Create and read projects. |",
-        f"| `{TARGET}/runs_api_list.md` | Runs | 1 | Run \\| view tasks. |",
-        f"| `{TARGET}/other_api_list.md` | Other | 1 |  |",
+        f"| `{API_DOCS_FOLDER}/projects_api_list.md` | Projects | 3 | Create and read projects. |",
+        f"| `{API_DOCS_FOLDER}/runs_api_list.md` | Runs | 1 | Run \\| view tasks. |",
+        f"| `{API_DOCS_FOLDER}/other_api_list.md` | Other | 1 |  |",
     ]
     assert text.startswith("# Kiln API catalogues\n")
-    assert f"Read an endpoint doc at `{TARGET}/<file name>`." in text
+    assert f"Read an endpoint doc at `{API_DOCS_FOLDER}/<file name>`." in text
     assert text.endswith("|\n")
-    assert INDEX_NAME == API_CATALOGUE_INDEX_PATH.rsplit("/", 1)[1]
-    assert API_CATALOGUE_INDEX_PATH == f"{TARGET}/{INDEX_NAME}"
+    assert API_CATALOGUE_INDEX_PATH == "references/knowledge/api_docs/api_index.md"
 
 
 def test_write_folder_replaces_whole_folder(tmp_path):
@@ -183,7 +185,7 @@ def test_write_folder_creates_a_missing_folder(tmp_path):
 
 
 def test_the_api_rules_are_the_hand_written_file_of_the_folder():
-    assert API_RULES_PATH == f"{TARGET}/calling_the_kiln_api.md"
+    assert API_RULES_PATH == "references/knowledge/api_docs/calling_the_kiln_api.md"
     assert HAND_WRITTEN_NAMES == {"calling_the_kiln_api.md"}
 
 
@@ -310,10 +312,10 @@ def test_no_reference_folder_stops(tmp_path):
 
 def test_render_adds_the_index_and_drops_blocked_operations(tmp_path):
     files = render(make_spec(), command=fake_generator(tmp_path))
-    assert INDEX_NAME in files
+    assert API_CATALOGUE_INDEX_NAME in files
     assert "delete_api_projects_project_id.md" not in files
     assert list(files) == sorted(files)
-    assert b"| Projects | 1 |" in files[INDEX_NAME]
+    assert b"| Projects | 1 |" in files[API_CATALOGUE_INDEX_NAME]
 
 
 @pytest.mark.skipif(sys.version_info < (3, 13), reason="the generator needs 3.13")
@@ -323,7 +325,7 @@ def test_render_with_the_real_generator():
     first = render(spec)
     assert render(spec) == first
     assert set(first) == {
-        INDEX_NAME,
+        API_CATALOGUE_INDEX_NAME,
         "projects_api_list.md",
         "runs_api_list.md",
         "get_api_projects.md",
@@ -333,4 +335,4 @@ def test_render_with_the_real_generator():
         "get_api_runs.md",
     }
     assert b"\r" not in b"".join(first.values())
-    assert b"| Projects | 4 |" in first[INDEX_NAME]
+    assert b"| Projects | 4 |" in first[API_CATALOGUE_INDEX_NAME]

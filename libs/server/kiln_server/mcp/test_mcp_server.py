@@ -372,7 +372,7 @@ class TestParseToolIds:
 
 
 def test_create_server_keeps_protocol_name() -> None:
-    # Clients may show or log serverInfo.name, so the docs rename leaves it alone.
+    # Clients may show or log serverInfo.name, so it keeps the protocol-facing name.
     server = create_fastmcp_server(
         [],
         project_name="Demo Project",

@@ -15,14 +15,19 @@ from kiln_mcp_server.skill_checks.docs_index import (
     online_url_for,
 )
 from kiln_mcp_server.skill_checks.front_matter import read_front_matter
+from kiln_mcp_server.skill_checks.knowledge_load import has_scheme, inline_links
 from kiln_mcp_server.skill_checks.knowledge_schema import (
-    API_CATALOGUE_SUFFIX,
-    API_DOCS_PREFIX,
     COMPONENT_ROOTS,
     INDEX_BLOCKS,
     Problem,
 )
-from kiln_mcp_server.skill_files import API_RULES_PATH, ROOT_FILE, list_tree
+from kiln_mcp_server.skill_files import (
+    API_CATALOGUE_SUFFIX,
+    API_DOCS_FOLDER,
+    API_RULES_PATH,
+    ROOT_FILE,
+    list_tree,
+)
 
 TREE_RULES: tuple[str, ...] = (
     "tree-path",
@@ -38,12 +43,10 @@ TREE_RULES: tuple[str, ...] = (
     "tree-unreachable",
 )
 
-API_DOCS_FOLDER = API_DOCS_PREFIX
 KNOWLEDGE_FOLDER = "references/knowledge/"
 CLIENT_GUIDANCE_FOLDER = "references/client_guidance/"
 KNOWLEDGE_TREES = ("references/levers/", "references/improving_agents/")
 SPLIT_RULE_FILE = "references/knowledge/train_val_test.md"
-CATALOGUE_SUFFIX = API_CATALOGUE_SUFFIX
 
 # The documents of the knowledge trees; the knowledge check owns their front
 # matter. Files deeper inside these folders are sub-files, with none.
@@ -183,12 +186,12 @@ _TERM_EXTRA_LOOKBEHIND = {"model_info": "/", "create_spec": "/"}
 # and each page makes one of those requests. `train_val_test.md` lists each
 # one with the call to use for train or val.
 TEST_SPLIT_READERS: tuple[str, ...] = (
-    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_score_summary.md",
-    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_eval_results_summary.md",
-    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_run_configs_eval_scores.md",
-    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md",
-    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_run_comparison.md",
-    f"{API_DOCS_FOLDER}get_api_projects_project_id_tasks_task_id_evals_eval_id_progress.md",
+    f"{API_DOCS_FOLDER}/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_score_summary.md",
+    f"{API_DOCS_FOLDER}/get_api_projects_project_id_tasks_task_id_eval_results_summary.md",
+    f"{API_DOCS_FOLDER}/get_api_projects_project_id_tasks_task_id_run_configs_eval_scores.md",
+    f"{API_DOCS_FOLDER}/get_api_projects_project_id_tasks_task_id_run_configs_run_config_id_eval_scores.md",
+    f"{API_DOCS_FOLDER}/get_api_projects_project_id_tasks_task_id_evals_eval_id_eval_config_eval_config_id_run_comparison.md",
+    f"{API_DOCS_FOLDER}/get_api_projects_project_id_tasks_task_id_evals_eval_id_progress.md",
     # The Compare page: the run config eval scores, and the run comparison.
     "http://localhost:8757/specs/{project_id}/{task_id}/compare",
     # A spec page and its eval pages: the score summary and the eval progress.
@@ -210,7 +213,6 @@ UNREACHABLE_GROUP_OVER = 20
 UNREACHABLE_GROUP_EXAMPLES = 5
 
 _NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
-_LINK_TARGET = re.compile(r"\]\(([^)\s]+)\)")
 _CODE_SPAN = re.compile(r"`([^`\n]+)`")
 _BARE_PATH = re.compile(r"(?<![\w./-])references/[A-Za-z0-9_\-./]+")
 _ROOT_ANCHORED_PATH = re.compile(
@@ -222,7 +224,6 @@ _DOT_RELATIVE_PATH = re.compile(
     r"(?<![\w.-])\.\.?/(?:references/[A-Za-z0-9_\-./]*|SKILL\.md\b)"
 )
 _PROSE_FILE_NAME = re.compile(r"(?<![\w./-])[A-Za-z0-9_.-]+\.md(?![\w/-])")
-_SCHEME = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*:|//)")
 _PLACEHOLDER_CHARS = frozenset("*<>{}")
 _APP_PATH = re.compile(
     r"^/(specs|settings|optimize|run|generate|dataset|skills|docs|prompts|models"
@@ -279,7 +280,7 @@ def _is_api_reference(key: str) -> bool:
     """A generated file of the API reference: an endpoint doc, a catalogue or
     the catalogue index. They follow no wording rule of the hand-written
     files."""
-    return key.startswith(API_DOCS_FOLDER) and key != API_RULES_PATH
+    return key.startswith(f"{API_DOCS_FOLDER}/") and key != API_RULES_PATH
 
 
 def _is_skill_path(text: str) -> bool:
@@ -292,13 +293,6 @@ def _is_root_anchored(path: str) -> bool:
 
 def _is_placeholder(path: str) -> bool:
     return bool(_PLACEHOLDER_CHARS & set(path)) or path.endswith("X.md")
-
-
-def _unwrap_angle_brackets(target: str) -> str:
-    """A CommonMark link destination written as `<...>`, without the brackets."""
-    if len(target) > 1 and target.startswith("<") and target.endswith(">"):
-        return target[1:-1]
-    return target
 
 
 def _normalise(raw: str) -> tuple[str, bool]:
@@ -337,8 +331,7 @@ def _scan(text: str, file: str, folders: frozenset[str]) -> _Scan:
     lines = text.split("\n")
     for number, line in enumerate(lines, start=1):
         rest = line
-        for match in _LINK_TARGET.finditer(line):
-            target = _unwrap_angle_brackets(match.group(1))
+        for match, target in inline_links(line):
             link_targets.append((number, target))
             rest = _blank(rest, match.start(), match.end())
             if _is_skill_path(target):
@@ -356,10 +349,10 @@ def _scan(text: str, file: str, folders: frozenset[str]) -> _Scan:
             add(number, match.group(0), "bare", rest[match.end() : match.end() + 1])
         prose.append((number, rest))
 
-    if file.startswith(API_DOCS_FOLDER) and file.endswith(CATALOGUE_SUFFIX):
+    if file.startswith(f"{API_DOCS_FOLDER}/") and file.endswith(API_CATALOGUE_SUFFIX):
         for number, name in _catalogue_names(lines):
             refs.append(
-                PathRef(number, name, API_DOCS_FOLDER + name, False, "catalogue")
+                PathRef(number, name, f"{API_DOCS_FOLDER}/{name}", False, "catalogue")
             )
     return _Scan(refs, link_targets, code_spans, prose)
 
@@ -462,7 +455,7 @@ class _TreeChecker:
     def check_relative(self, key: str, scan: _Scan) -> None:
         found: list[tuple[int, str]] = []
         for number, target in scan.link_targets:
-            if _SCHEME.match(target) or target.startswith("#"):
+            if has_scheme(target) or target.startswith("#"):
                 continue
             path = target.split("#", 1)[0]
             if _is_placeholder(path):
@@ -628,7 +621,7 @@ def _expected_front_matter(
         return "skill"
     if not key.endswith(".md"):
         return "unchecked"
-    if key in NO_FRONT_MATTER_FILES or key.startswith(API_DOCS_FOLDER):
+    if key in NO_FRONT_MATTER_FILES or key.startswith(f"{API_DOCS_FOLDER}/"):
         return "none"
     if key.startswith(DOCS_FOLDER):
         return "help_article"

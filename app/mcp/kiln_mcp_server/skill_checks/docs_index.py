@@ -48,7 +48,8 @@ def _articles(tree_root: Path) -> list[str]:
     )
 
 
-def _cell(text: str) -> str:
+def table_cell(text: str) -> str:
+    """`text` as one cell of a Markdown table row: on one line, with `|` escaped."""
     return " ".join(text.split()).replace("|", "\\|")
 
 
@@ -68,9 +69,9 @@ def render_docs_index(tree_root: Path) -> str:
         front = read_front_matter(text)
         description = front.data.get("description")
         cells = (
-            f"[{_cell(_title(front.body, path))}]({path})",
+            f"[{table_cell(_title(front.body, path))}]({path})",
             online_url_for(path),
-            _cell(description) if isinstance(description, str) else "",
+            table_cell(description) if isinstance(description, str) else "",
         )
         rows.append("| " + " | ".join(cells) + " |\n")
     return _HEADER + "".join(rows)

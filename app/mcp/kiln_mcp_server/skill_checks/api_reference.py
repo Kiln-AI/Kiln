@@ -15,14 +15,17 @@ from pathlib import Path, PurePosixPath
 
 from kiln_server.utils.agent_checks import is_mcp_denied
 
-from kiln_mcp_server.skill_files import API_CATALOGUE_INDEX_PATH, API_RULES_PATH
+from kiln_mcp_server.skill_checks.docs_index import table_cell
+from kiln_mcp_server.skill_files import (
+    API_CATALOGUE_INDEX_NAME,
+    API_CATALOGUE_SUFFIX,
+    API_DOCS_FOLDER,
+    API_RULES_PATH,
+)
 
 ALLOWED_METHODS = ("get", "post", "patch", "delete")
-TARGET = "references/knowledge/api_docs"
 GENERATOR_COMMAND: tuple[str, ...] = (sys.executable, "-m", "openapi2skill")
 
-CATALOGUE_SUFFIX = "_api_list.md"
-INDEX_NAME = PurePosixPath(API_CATALOGUE_INDEX_PATH).name
 # Files of the folder that a person writes, not the generator: a write keeps
 # them, and a diff does not report them.
 HAND_WRITTEN_NAMES = frozenset({PurePosixPath(API_RULES_PATH).name})
@@ -161,7 +164,7 @@ def run_generator(
         if path.is_file()
     }
 
-    endpoint_docs = [name for name in files if not name.endswith(CATALOGUE_SUFFIX)]
+    endpoint_docs = [name for name in files if not name.endswith(API_CATALOGUE_SUFFIX)]
     operations = _operations(spec)
     if len(endpoint_docs) != len(operations):
         raise ApiReferenceError(
@@ -182,10 +185,6 @@ def _tag_order(spec: Mapping) -> list[str]:
     return order
 
 
-def _one_line_cell(text: str) -> str:
-    return " ".join(text.split()).replace("|", "\\|")
-
-
 def catalogue_index(spec: dict, files: Mapping[str, bytes]) -> bytes:
     """The catalogue index: one row per catalogue in `files`, with its area,
     its count of endpoints and the description of its tag."""
@@ -196,15 +195,15 @@ def catalogue_index(spec: dict, files: Mapping[str, bytes]) -> bytes:
     }
     rows: dict[str, str] = {}
     for name in sorted(files):
-        if not name.endswith(CATALOGUE_SUFFIX):
+        if not name.endswith(API_CATALOGUE_SUFFIX):
             continue
         lines = files[name].decode("utf-8").split("\n")
         tag = lines[0].removeprefix("# ").removesuffix(" API")
         table = [line for line in lines if line.startswith("|")]
         endpoints = max(len(table) - 2, 0)
         rows[tag] = (
-            f"| `{TARGET}/{name}` | {_one_line_cell(tag)} | {endpoints} "
-            f"| {_one_line_cell(descriptions.get(tag, ''))} |"
+            f"| `{API_DOCS_FOLDER}/{name}` | {table_cell(tag)} | {endpoints} "
+            f"| {table_cell(descriptions.get(tag, ''))} |"
         )
 
     order = _tag_order(spec)
@@ -220,7 +219,7 @@ def catalogue_index(spec: dict, files: Mapping[str, bytes]) -> bytes:
             "",
             "One catalogue per area of the Kiln API. A catalogue lists the "
             "endpoints of its area, each with the file name of its endpoint doc. "
-            f"Read an endpoint doc at `{TARGET}/<file name>`.",
+            f"Read an endpoint doc at `{API_DOCS_FOLDER}/<file name>`.",
             "",
             "| Catalogue | Area | Endpoints | What it covers |",
             "|---|---|---|---|",
@@ -240,7 +239,7 @@ def render(
     prepared = normalise(drop_blocked(spec))
     with tempfile.TemporaryDirectory(prefix="kiln_api_reference_") as workdir:
         files = run_generator(prepared, Path(workdir), command=command)
-    files[INDEX_NAME] = catalogue_index(prepared, files)
+    files[API_CATALOGUE_INDEX_NAME] = catalogue_index(prepared, files)
     return dict(sorted(files.items()))
 
 

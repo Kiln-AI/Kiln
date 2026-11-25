@@ -9,6 +9,7 @@ import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+import httpx
 from kiln_ai.tools.built_in_tools import (
     KilnApiCallTool,
     KilnApiResponse,
@@ -142,6 +143,15 @@ async def run_api_call(
         )
     except (TimeoutError, ConnectionError) as e:
         return _error(messages.request_failed(str(e), method))
+    # The core tool converts only timeouts and refused connections. Any other
+    # transport failure, such as a stream cut part-way, can also follow a request
+    # the server already acted on.
+    except httpx.TransportError as e:
+        return _error(
+            messages.request_failed(
+                f"Request to {url_path} failed: {type(e).__name__}", method
+            )
+        )
     except KilnApiResponseError as e:
         return _error(messages.response_unusable(str(e), method, e.status_code))
     except Exception as e:
