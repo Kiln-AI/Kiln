@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import json
@@ -1265,6 +1266,54 @@ async def test_get_runs_summaries_task_not_found(client):
 
     assert response.status_code == 404
     assert response.json()["message"] == "Task not found"
+
+
+@pytest.mark.parametrize("endpoint", ["runs_summaries", "tags"])
+def test_run_scans_read_off_the_event_loop(client, task_run_setup, endpoint):
+    """The task is loaded and scanned in a worker thread, where no event loop is
+    running, so a slow first read doesn't stall other requests."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    on_loop: list[bool] = []
+
+    def fake_task_from_id(_project_id, _task_id):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return task
+
+    with patch("kiln_server.run_api.task_from_id", side_effect=fake_task_from_id):
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/{endpoint}")
+
+    assert response.status_code == 200, response.text
+    assert on_loop == [False]
+
+
+def test_get_runs_summaries_reads_again_after_a_torn_read(
+    client, task_run_setup, monkeypatch
+):
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    task_run = task_run_setup["task_run"]
+    torn_reads_left = [1]
+
+    def task_from_id_torn_once(_project_id, _task_id):
+        if torn_reads_left[0] > 0:
+            torn_reads_left[0] -= 1
+            raise json.JSONDecodeError("Expecting value", "", 0)
+        return task
+
+    with patch("kiln_server.run_api.task_from_id", side_effect=task_from_id_torn_once):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs_summaries"
+        )
+
+    assert response.status_code == 200, response.text
+    assert [summary["id"] for summary in response.json()] == [task_run.id]
+    assert torn_reads_left == [0]
 
 
 def _make_child_run(task, parent_run: TaskRun, **overrides) -> TaskRun:

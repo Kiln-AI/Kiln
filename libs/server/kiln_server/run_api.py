@@ -665,11 +665,11 @@ def connect_run_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> list[RunSummary]:
-        task = task_from_id(project_id, task_id)
-        # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
-        # Summaries only need leaves.
-        runs = task.runs(readonly=True)
-        return [RunSummary.from_run(run) for run in runs]
+        # A first, uncached read of a large task's runs takes seconds. Off the event
+        # loop, it doesn't hold up every other request the page makes meanwhile.
+        return await to_thread_retrying_torn_read(
+            lambda: summarize_runs(task_from_id(project_id, task_id))
+        )
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs/delete",
@@ -1022,6 +1022,11 @@ def connect_run_api(app: FastAPI):
         return await to_thread_retrying_torn_read(
             lambda: count_run_tags(task_from_id(project_id, task_id))
         )
+
+
+def summarize_runs(task: Task) -> list[RunSummary]:
+    """A summary of each of the task's dataset runs. Leaf runs only, as task.runs() returns them."""
+    return [RunSummary.from_run(run) for run in task.runs(readonly=True)]
 
 
 def count_run_tags(task: Task) -> dict[str, int]:
