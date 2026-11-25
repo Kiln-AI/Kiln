@@ -36,6 +36,16 @@ make dev_desktop
 - Python changes need a restart; there is no hot reload.
 - It skips the remote model list fetch by default. Set `KILN_SKIP_REMOTE_MODEL_LIST=false` to fetch it.
 
+## Turn Off the Model Cache
+
+The API server keeps parsed project files in memory so repeat reads are fast. Set `KILN_DISABLE_MODEL_CACHE=true` before starting the app (`make dev`, `make dev_desktop`, or the packaged app) to turn this off for the whole process. Every read then parses its file again: memory stays lower and steadier, and large projects load more slowly. Useful for chasing a memory problem or ruling the cache out while debugging.
+
+To start the packaged macOS app with it set, run it from a terminal:
+
+```bash
+KILN_DISABLE_MODEL_CACHE=true /Applications/Kiln.app/Contents/MacOS/Kiln
+```
+
 ## Building the Desktop App
 
 Typically building desktop apps are done in a CI/CD pipeline, but if you need to build the desktop app locally, you can do so with:

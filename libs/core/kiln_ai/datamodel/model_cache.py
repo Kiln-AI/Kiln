@@ -110,6 +110,20 @@ class ModelCache:
     def clear(self):
         self.model_cache.clear()
 
+    @property
+    def enabled(self) -> bool:
+        """Whether loaded readonly models are being cached."""
+        return self._enabled
+
+    def disable(self) -> None:
+        """Stop caching models for the life of this cache, and drop the cached ones.
+
+        Every later readonly load parses its file again. Use it to trade load speed for a
+        smaller, steadier memory footprint, or to rule the cache out while debugging.
+        """
+        self._enabled = False
+        self.clear()
+
     def _check_timestamp_granularity(self) -> bool:
         """Check if filesystem supports fine-grained timestamps (microseconds or better)."""
 
