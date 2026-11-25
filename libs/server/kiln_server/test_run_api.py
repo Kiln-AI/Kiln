@@ -1320,6 +1320,20 @@ def test_run_data_availability_does_not_cache_runs(client, task_run_setup):
     assert TaskRun not in cached_types
 
 
+def test_run_data_availability_reuses_cached_runs(client, task_run_setup, monkeypatch):
+    monkeypatch.setattr(ModelCache.shared(), "_enabled", True)
+    _rate(task_run_setup["task_run"])
+    task = task_run_setup["task"]
+    task.runs(readonly=True)
+
+    with patch.object(
+        TaskRun, "load_from_file", side_effect=AssertionError("run was parsed again")
+    ):
+        result = _get_run_data_availability(client, task_run_setup["project"], task)
+
+    assert result["has_rated_runs"] is True
+
+
 def _make_child_run(task, parent_run: TaskRun, **overrides) -> TaskRun:
     run = TaskRun(
         parent=task,

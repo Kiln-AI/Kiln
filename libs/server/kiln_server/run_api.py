@@ -17,6 +17,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
+from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.datamodel.task import RunConfigProperties, filter_dataset_runs
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.utils.dataset_import import (
@@ -1072,12 +1073,16 @@ class _RunDataFlags:
 def run_data_availability(task: Task) -> RunDataAvailability:
     """Check the task's leaf dataset runs, as task.runs() returns them, for ratings and repairs.
 
-    Parses one run file at a time and keeps a few fields of each. Runs are not added to the
-    model cache, so a task with tens of thousands of runs never has them all in memory.
+    Parses one run file at a time and keeps a few fields of each. Runs already in the model
+    cache are reused; the rest are parsed without being cached, so a task with tens of
+    thousands of runs never has them all in memory and doesn't evict the rest of the cache.
     """
+    cache = ModelCache.shared()
     flags: list[_RunDataFlags] = []
     for run_path in TaskRun.iterate_children_paths_of_parent_path(task.path):
-        run = TaskRun.load_from_file(run_path, parent=task)
+        run = cache.get_model(
+            run_path, TaskRun, readonly=True
+        ) or TaskRun.load_from_file(run_path, parent=task)
         rating = run.output.rating
         flags.append(
             _RunDataFlags(

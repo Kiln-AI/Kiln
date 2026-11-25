@@ -49,14 +49,14 @@ class RunLineage(Protocol):
     def eval_source(self) -> object | None: ...
 
 
-RunLineageT = TypeVar("RunLineageT", bound=RunLineage)
+_RunLineageT = TypeVar("_RunLineageT", bound=RunLineage)
 
 
 def filter_dataset_runs(
-    runs: list[RunLineageT],
+    runs: list[_RunLineageT],
     include_intermediate_runs: bool = False,
     include_eval_generated: bool = False,
-) -> list[RunLineageT]:
+) -> list[_RunLineageT]:
     """Apply the filters of ``Task.runs`` to a task's complete list of runs.
 
     Works on anything carrying a run's lineage fields, so callers can filter small
