@@ -42,7 +42,7 @@ Train on `(input → final output)` pairs. The most common archetype. Use `data_
 
 Distill a reasoning model's behavior into a smaller model. Workflow follows the standard path with three modifications (per `references/docs/fine-tuning/guide-train-a-reasoning-model.md`):
 
-- Training data must include reasoning data — generate with a reasoning model during synthetic data gen.
+- Training data must include reasoning data — the user generates it with a reasoning model in the app's synthetic data flow (`references/knowledge/synthetic_data.md`).
 - When creating the dataset, **filter to reasoning samples only** ("Filter to Reasoning Samples" toggle in the UI).
 - Choose `data_strategy: final_and_intermediate` (UI: "Thinking — Learn both thinking and final response"). `final_only` will produce a viable model but won't learn reasoning.
 
@@ -185,7 +185,7 @@ To use the model in Kiln:
 
 Per the docs:
 - **Bug → repair → re-train.** Use Kiln's [repair UI](references/docs/repairing-responses.md) for one-off bugs; the corrections feed the next training run.
-- **Recurring failure mode → synthetic data with human guidance → re-train.** Use synthetic data gen to create samples covering the failure class.
+- **Recurring failure mode → synthetic data with human guidance → re-train.** The user generates samples covering the failure class in the app's synthetic data flow (`references/knowledge/synthetic_data.md`).
 - **Rate the dataset; train only on highly-rated content** — reduces noise.
 - **Try shorter training prompts** to reduce inference cost — train with the prompt you intend to deploy with.
 

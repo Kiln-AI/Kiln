@@ -1,7 +1,7 @@
 ---
 title: Dealing with a saturated eval
 description: The baseline passes almost every item of an eval, so a candidate has no room to show a gain on it. Keep the eval as a guard, put the effort elsewhere, and ask the user for harder items.
-reviewed: 2026-11-13
+reviewed: 2026-11-25
 kind: eval
 applies_to: all
 ---
@@ -47,7 +47,8 @@ already does well.
    more items, to steer the tuning. An experiment does not change an
    existing eval. Only when `eval_building` is `true`, an `eval_only` item
    can commission a new eval with harder items for an open issue, under
-   the rules of Kiln Harness Tuner for that item. It is the rare
+   the rules of Kiln Harness Tuner for that item
+   (`references/client_guidance/harness_tuner/eval_building.md`). It is the rare
    exception, not a routine step. Commission none for a closed issue.
    When the new eval cannot reproduce the issue, close the issue as won't
    fix, and never reopen an issue that is fixed.

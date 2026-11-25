@@ -1,6 +1,6 @@
 ---
 name: using_kiln_from_chat
-description: How a chat client works with Kiln and its user - the routing of a request to its mode, working with the user, keeping the user in the loop, links into the app, what this connection cannot do, how to read the words of Kiln Harness Tuner in the shared documents, and the files of this folder.
+description: How a chat client works with Kiln and its user - the routing of a request to its mode, working with the user, the API by default and the UI-first cases, keeping the user in the loop, links into the app, what this connection cannot do, how to read the words of Kiln Harness Tuner in the shared documents, and the files of this folder.
 ---
 
 For chat clients working with a user. A non-interactive agent with its own instructions does not need this file.
@@ -34,7 +34,22 @@ Two operations let code run on the machine where Kiln runs, with no sandbox. Alw
 
 A knowledge file can name other operations to ask about first; follow it.
 
-Everything else that has an endpoint, do it and report the result; do not hand the user a plan to click through.
+**The API is the default.** When an endpoint does the work, do it and report the result; do not hand the user a plan to click through. The exceptions are the UI-first cases below.
+
+### UI-first cases
+
+In a few cases the app's own page is better than the API driven from this chat. Each one is named here and in its knowledge file. Everywhere else, assume the API is best.
+
+| Case | Why the app is better | What to do |
+|---|---|---|
+| Creating an LLM-judge eval: the Eval Builder | It asks clarifying questions, generates data, and aligns the judge with the user's ratings | `references/knowledge/create_eval.md` |
+| Adding data to an eval | Eval data needs the user's review at each step. Never create it here | Link the add-data page: `references/knowledge/create_eval.md`, "Adding the eval's data" |
+| Synthetic data generation | It runs in steps, with the user reviewing and correcting each one | `references/knowledge/synthetic_data.md` |
+| Making a Data Guide | The user picks real samples, uploads a dataset and rates previews in a feedback loop | `references/knowledge/data_guides.md` |
+| Comparing run configs on evals: the Compare page | A table and charts the user can sort and explore | Read the scores through the API, and add the Compare link (`references/knowledge/eval_scores.md`) |
+| The history of the task's run configs: the Experiment Lineage page | A tree of every run config, each linked to its parent and marked with what changed | Link it when the user asks how their configs evolved: `http://localhost:8757/optimize/{project_id}/{task_id}/experiment_lineage` |
+
+In the first four cases, say in one or two sentences why the app is better, then link the page. When the user has heard why and still asks you to do it here, the knowledge file says what you may do. Eval data is never one of those things.
 
 How to reply:
 
@@ -76,6 +91,8 @@ More pages, for one run config, one run or one task:
 | Run page with a run config selected | `http://localhost:8757/run?run_config_id={run_config_id}` |
 | Run page with a tool selected | `http://localhost:8757/run?tool_id={tool_id}` |
 | One run and its output | `http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run` |
+| Experiment lineage: every run config and the one it came from | `http://localhost:8757/optimize/{project_id}/{task_id}/experiment_lineage` |
+| Add data for an eval | `http://localhost:8757/dataset/{project_id}/{task_id}/add_data?reason=eval&eval_id={eval_id}` |
 | Task settings | `http://localhost:8757/settings/edit_task/{project_id}/{task_id}` |
 
 The knowledge files list the pages of their own areas.

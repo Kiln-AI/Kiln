@@ -1,7 +1,7 @@
 ---
 name: data_guides
 description: |
-  Task Data Guides for synthetic data generation — what they are, the manual vs Kiln Pro authoring flows, the preview/refine loop, and how a guide shapes topic and input generation. Load when: the user mentions a data guide, wants synthetic inputs to match their real data, or is starting SDG on a task with no guide saved.
+  Task Data Guides for synthetic data generation — what they are, why the user makes one in the app, the manual and Kiln Pro ways to make one, the preview/refine loop, and how a guide shapes topic and input generation. Load when: the user mentions a data guide, wants synthetic inputs to match their real data, or is starting SDG on a task with no guide saved.
 ---
 # Knowledge: Data Guides (Synthetic Data)
 
@@ -9,7 +9,7 @@ A **Data Guide** is a single markdown document attached to a task that describes
 
 ## Knowledge Required
 
-- `references/knowledge/specs_and_evals.md` — when the generated data feeds an eval set. Flag the golden-subset caveat: an SDG-filled test set needs a hand-rated golden subset before its scores are trusted.
+- `references/knowledge/synthetic_data.md` — the generation that a guide shapes, and why it is done in the app
 
 ## API Docs
 
@@ -23,7 +23,7 @@ Load the relevant endpoint doc **before** making each API call.
 | POST preview inputs from a draft guide (not persisted) | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_data_gen_guide_preview.md` |
 | POST refine the guide via metaprompter (returns markdown — does **not** save) | `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_data_gen_guide_refine.md` |
 
-These five are the guide endpoints. The Kiln Pro draft job has its own endpoints in the same catalog; prefer the app for it (see below).
+These five are the guide endpoints: read a guide, and change one when the user asks (below). The Kiln Pro draft job has its own endpoints in the same catalog; it runs in the app.
 
 ## Rigid facts
 
@@ -32,22 +32,25 @@ These five are the guide endpoints. The Kiln Pro draft job has its own endpoints
 - **Where the guide applies:** topic generation (only its `# Semantics` section) and input generation (the whole guide). **Never output generation.** Precedence at generation time: per-call guidance > the Data Guide > model defaults; an eval template's stage guidance also overrides the guide.
 - **Guide shapes:** manual guides start as `# Reference Inputs` (`## Example N` blocks — user-owned ground truth, preserved verbatim on refine); refined/Kiln Pro guides use `# Semantics`, `# Style`, `# Presentation Defaults` (Kiln Pro: these three only).
 
-## Two authoring flows
+## Making a guide is done in the app
 
-| | Manual | Kiln Pro |
+Making a Data Guide is a UI-first case: the app's flow is better than the API driven from a chat. Send the user to the [Data Guide chooser](http://localhost:8757/generate/{project_id}/{task_id}/data_guide_chooser), and say why: the app lets them pick real samples to learn from, upload a dataset, and rate preview inputs in a feedback loop that refines the guide. A guide written in a chat misses the user's real examples and their ratings, and every input generated later inherits its mistakes.
+
+The chooser offers two ways:
+
+| | Kiln Pro | Manual |
 |---|--------|----------|
-| Input | A handful of hand-picked example inputs | Up to 200 real examples (past runs, documents, CSV, manual) |
-| Rules discovery | Metaprompter derives rules from rated previews + feedback | Cloud job drafts the full guide from the examples |
-| Effort / account | ~15 min, no account needed | ~5 min, requires a Kiln Pro account |
+| How | The user uploads or picks real examples. Kiln's server reads them and builds the guide | The user adds a handful of example inputs. Kiln derives rules from their ratings of preview inputs and their feedback |
+| Examples | Up to 200 real examples (past runs, documents, CSV, typed in) | A handful, picked by hand |
+| Effort / account | ~5 min, requires a Kiln Pro account | ~15 min, no account needed |
 
-Both converge on the same review loop: generate ~5 preview inputs → the user rates each Realistic / Needs Work → feedback → refine → repeat → save.
+**Kiln Pro is the most powerful way**: the server builds the guide from many real examples, so recommend it first. When the user has no Kiln Pro account, recommend signing in at [Kiln Pro](http://localhost:8757/settings/providers/kiln_pro), or the manual way.
 
-**Prefer the app for the Kiln Pro flow.** The draft job runs on Kiln's cloud in the background (up to 200 real examples, each ≤200k chars, schema-validated for structured tasks; the user can leave the page and an in-app progress widget tracks it). Route the user to the Kiln Pro setup page (deep links below); the draft lands in the same review-and-refine loop, and only saving persists it.
+Both ways end in the same review loop: ~5 preview inputs → the user rates each Realistic / Needs Work → feedback → refine → repeat → save. The Kiln Pro draft runs on Kiln's cloud in the background; the user can leave the page, and an in-app progress widget tracks it. Only saving persists the guide.
 
 ## API semantics traps
 
 - **Refine never persists.** `data_gen_guide_refine` returns refined markdown; you must `POST` it to save. Preview samples rate as `{input, looks_good}`; for a `kiln_pro` guide only the free-text `feedback` drives changes (ratings are ignored), so feedback should name the specific section or rule to change.
-- **`data_guide: null` and `""` differ on the generation endpoints.** On `generate_categories` / `generate_inputs`, `null`/omitted falls back to the task's saved guide; `""` means "explicitly no guide".
 - Topic generation always uses the saved guide; the UI's "Use Data Guide" toggle governs input generation only.
 
 ## Writing good guide content
@@ -60,17 +63,17 @@ Both converge on the same review loop: generate ~5 preview inputs → the user r
 
 ## Agent's role
 
-1. **Recommend a guide before SDG on a task without one** — check with a `GET`; without a guide, generation guesses at input realism.
-2. **Default to the UI flows via deep links** — the chooser and review loop are built for rating and iteration. When the user asks you to *just do it*, use the API: draft (or job-draft) → `data_gen_guide_preview` → show samples → refine with their feedback → `POST`. Preview, refine and the Kiln Pro job start run model calls (the job on Kiln's cloud): tell the user before you start them.
-3. When generating synthetic data (`generate_categories` / `generate_inputs`), leave `data_guide` unset to inherit the saved guide; pass `""` only when the user explicitly wants generation without it.
-4. **Bulk generation is best done in the app.** For "make me N examples" asks, set up the surface and deep-link the [Synthetic Data page](http://localhost:8757/generate/{project_id}/{task_id}/synth) rather than driving dozens of generate/save calls in chat. If you do save samples via API, load `save_sample`'s api_doc first — its body carries strict source/model metadata that 422s when hand-rolled.
+1. **Recommend a guide before synthetic data generation on a task without one.** Check with a `GET`; without a guide, generation guesses at what realistic inputs look like.
+2. **Send the user to the chooser to make one** (above).
+3. **Read, explain and edit a saved guide.** Read it with a `GET`. When the user asks for a specific change, draft it, preview it with `data_gen_guide_preview`, show the samples, and `POST` it after they agree. Preview and refine call models: say so before you start them.
+4. When the user asks you to write a whole guide in the chat after hearing why the app is better, use the same draft → preview → feedback → refine → `POST` loop, with the user rating each preview.
 
 ## UI Deep Links
 
 | Action | Link |
 |--------|------|
 | Synthetic data page (guide intro card appears here) | `http://localhost:8757/generate/{project_id}/{task_id}/synth` |
-| Choose authoring flow (Manual vs Kiln Pro) | `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_chooser` |
+| Choose how to make a guide (Kiln Pro or manual) | `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_chooser` |
 | View the saved guide (+ edit / delete) | `http://localhost:8757/generate/{project_id}/{task_id}/data_guide` |
 | Manual setup (examples + review loop) | `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup` |
 | Kiln Pro setup (pick example sources) | `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup_copilot` |

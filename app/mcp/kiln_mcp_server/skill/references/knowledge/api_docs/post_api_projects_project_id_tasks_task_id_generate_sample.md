@@ -5,7 +5,8 @@
 **Tags:** Synthetic Data
 
 Run the task on one synthetic input and return the run, tagged synthetic,
-without saving it. Save it with Save Sample.
+without saving it. Save it with Save Sample. Built for the app's Synthetic
+Data flow.
 
 ## Request
 

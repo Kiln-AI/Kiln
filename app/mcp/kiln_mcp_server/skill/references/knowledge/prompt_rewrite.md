@@ -64,7 +64,7 @@ What to change, and how to change a prompt as an experiment, is the lever's: `re
    ```
 
 - **Build prompt with examples**: `POST /api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples` (read `references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_build_prompt_with_examples.md` first), with `body={"examples": [{"input": "...", "output": "..."}]}`. For a prompt that an experiment measures, the examples use invented values, never the values of a train item: the leak rules of `references/knowledge/train_val_test.md`.
-- **No eval yet** to measure the change: `references/knowledge/create_spec.md` first.
+- **No eval yet** to measure the change: `references/knowledge/create_eval.md` first.
 
 ## Project Operations: Edit a Prompt in Place
 

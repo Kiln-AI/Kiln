@@ -55,7 +55,7 @@ At the start, ask what is not yet known: the goal (quality, cost, speed, a model
 2. The playbook that fits, through `references/improving_agents/index.md`. Inside the knowledge the path is a smell or a playbook, then a technique, then the lever it uses. Prefer a playbook.
 3. `references/client_guidance/chat/running_an_experiment_from_chat.md`: build, measure, confirm and keep.
 
-Do not build an eval in the middle of another request. When no eval measures the user's problem, list the gap, and build the eval only when the user agrees (`references/knowledge/create_spec.md`).
+Do not build an eval in the middle of another request. When no eval measures the user's problem, list the gap, and build the eval only when the user agrees (`references/knowledge/create_eval.md`).
 
 ## Routing by what the user asks
 
@@ -65,15 +65,16 @@ Do not build an eval in the middle of another request. When no eval measures the
 | Many rounds of experiments; take it as far as it goes | The Kiln Harness Tuner path of `references/client_guidance/chat/running_an_experiment_from_chat.md` |
 | Cheaper or faster | [cheaper or faster](references/improving_agents/playbooks/cheaper-or-faster.md), with `references/knowledge/model_work.md` |
 | Which model is best; compare these run configs | `references/client_guidance/chat/running_an_experiment_from_chat.md` ("Variants"), with `references/knowledge/model_work.md` and [model swap inside a class](references/improving_agents/techniques/model-swap-inside-a-class.md) |
-| The scores jump, all pass, none pass, the judge looks wrong | The eval playbook that fits (`references/improving_agents/index.md`, "Eval problems"), then `references/knowledge/judge_types.md` or `references/knowledge/create_spec.md` for the change |
+| The scores jump, all pass, none pass, the judge looks wrong | The eval playbook that fits (`references/improving_agents/index.md`, "Eval problems"), then `references/knowledge/judge_types.md` or `references/knowledge/create_eval.md` for the change |
 | A provider, origin or privacy limit; a local model | [working inside restrictions](references/improving_agents/playbooks/working-inside-restrictions.md), `references/knowledge/local_private_on_prem.md` |
 | Add a tool, a skill, retrieval, a sub-agent | The knowledge file for the setup (`references/knowledge/tools.md`, `references/knowledge/code_tools.md`, `references/knowledge/adding_skills.md`, `references/knowledge/rag.md`, `references/knowledge/subagents.md`), the lever (`references/levers/index.md`), and the technique or smell that says when it helps |
 | Fine-tune | `references/knowledge/fine_tuning.md`, after [ordering work](references/improving_agents/playbooks/ordering-work.md) |
 | How did my evals go | `references/knowledge/eval_scores.md` |
 | Run my evals | `references/knowledge/specs_and_evals.md` ("Running an eval"), then `references/knowledge/eval_scores.md` |
-| Add an eval; choose a judge | `references/knowledge/create_spec.md`, `references/knowledge/specs_and_evals.md`, `references/knowledge/judge_types.md` |
-| Synthetic data; a data guide | `references/knowledge/data_guides.md` |
-| There is no eval yet | An eval first: `references/knowledge/create_spec.md` |
+| Add an eval; choose a judge | `references/knowledge/create_eval.md`, `references/knowledge/specs_and_evals.md`, `references/knowledge/judge_types.md` |
+| Synthetic data; data for an eval or a fine-tune | `references/knowledge/synthetic_data.md` |
+| A data guide | `references/knowledge/data_guides.md` |
+| There is no eval yet | An eval first: `references/knowledge/create_eval.md` |
 
 When the request changes to creating project resources that are not about an improvement, route to `references/client_guidance/chat/project_operations.md`; to learning about a feature or an error, `references/client_guidance/chat/learn_about_kiln.md`; when the new goal is unclear, `references/client_guidance/chat/establish_intent.md`.
 
@@ -117,10 +118,11 @@ When the request changes to creating project resources that are not about an imp
 |---|---|
 | `references/knowledge/eval_scores.md` | The score calls and the split each reads, the paired statistics recipe, scorecards, judge prompts: to read or compare scores |
 | `references/knowledge/specs_and_evals.md` | What evals are, the splits, running an eval as a job: to run an eval or explain the pipeline |
-| `references/knowledge/create_spec.md` | Eval types, the Eval Builder links, the map from a problem to a type of eval: to add an eval |
+| `references/knowledge/create_eval.md` | Eval types, the Eval Builder links, the map from a problem to a type of eval: to add an eval |
 | `references/knowledge/judge_types.md` | The judge menu and the code-eval contract: to choose or write a judge |
 | `references/knowledge/benchmark_eval_inputs.md` | Benchmark and multi-turn evals, reference data, synthetic-user drives: an eval built on eval inputs |
-| `references/knowledge/data_guides.md` | Task data guides for synthetic data: to generate data |
+| `references/knowledge/synthetic_data.md` | Synthetic data, made in the app; never eval data from the chat: before any request to generate or add data |
+| `references/knowledge/data_guides.md` | Task data guides, made in the app: what shapes generated inputs |
 
 **Capabilities**
 

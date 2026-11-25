@@ -90,13 +90,13 @@ Through the API, after the test above:
 - **An LLM judge with the server's default prompt** — `POST /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_llm_judge_config` (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_evals_eval_id_create_llm_judge_config.md`).
 - A new judge is not the eval's default judge. Make it the default with `POST .../set_current_eval_config/{eval_config_id}` when the user wants it to be; scores of different judges are not comparable.
 
-For a new eval, the Eval Builder comes first where it fits (`references/knowledge/specs_and_evals.md`). You may also create the eval, with its programmatic check, through the API (`references/knowledge/create_spec.md`, "Creating an eval through the API"). The user can also build a judge in the app:
+For a new eval, follow `references/knowledge/create_eval.md`: you create a deterministic check or a code eval through the API, and an LLM-judge eval goes to the Eval Builder. Either way the user adds the eval's data in the app. The user can also build a judge in the app:
 
 | Action | Link |
 |--------|------|
 | New programmatic-check eval: the form for a check (skips the spec step) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?judge={type}&workflow=manual` — `{type}` is any type above except `llm_judge` |
-| New LLM-judge eval (guided): the Eval Builder | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` per `references/knowledge/create_spec.md` |
-| New LLM-judge eval: the form for a template | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}` per `references/knowledge/create_spec.md` |
+| New LLM-judge eval (guided): the Eval Builder | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` per `references/knowledge/create_eval.md` |
+| New LLM-judge eval: the form for a template | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}` per `references/knowledge/create_eval.md` |
 | Add a judge to an existing eval (picker) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config` |
 | Add a specific judge type to an existing eval | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config/{type}` |
 

@@ -67,7 +67,7 @@ one-off path: the key lessons, by hand. Nothing here enforces them but you.
   what to look for.
 - **An eval measures the problem**, with a default judge (the eval's
   `current_config_id`). When there is none, an eval comes first:
-  `references/knowledge/create_spec.md`, and the user agrees to it.
+  `references/knowledge/create_eval.md`, and the user agrees to it.
 - **The eval has a train and a val split.** With only a test split, the
   splits come first (`references/knowledge/train_val_test.md`, "An eval
   with only a test split"); do not go on with the test split.
@@ -377,6 +377,6 @@ shows test scores. No number of the test split.
   measured as one, and confirmed on val like any other. Combine them by
   hand; never combine two candidates that were built as alternatives for
   one head-to-head comparison.
-- **No eval yet**: an eval comes first (`references/knowledge/create_spec.md`).
+- **No eval yet**: an eval comes first (`references/knowledge/create_eval.md`).
 - **More than this** (many waves, many ideas, a search over models): the
   Kiln Harness Tuner path of "Two paths" above.

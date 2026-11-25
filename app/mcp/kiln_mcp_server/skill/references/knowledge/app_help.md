@@ -15,6 +15,7 @@ Reference knowledge for handling problems with Kiln itself — error messages, u
 - `references/knowledge/rag.md` — when the user asks about RAG or document search
 - `references/knowledge/tools.md` — when the user asks about tools or integrations
 - `references/knowledge/model_work.md` — when the user asks about models
+- `references/knowledge/synthetic_data.md` — when the user asks to generate data, or about adding data to an eval or a fine-tune
 - `references/knowledge/data_guides.md` — when the user asks about data guides or making synthetic inputs realistic
 - `references/knowledge/judge_types.md` — when the user asks about eval/judge types, code evals, deterministic checks, or "what kinds of evals are there"
 
@@ -80,6 +81,7 @@ For conceptual or documentation questions:
 3. **Share the article's `online_url`** from its YAML frontmatter so the user can read more.
 4. **Fall back to knowledge files** if no doc article covers the topic:
    - Evals / Eval Builder → `references/knowledge/specs_and_evals.md`
+   - Synthetic data / adding data → `references/knowledge/synthetic_data.md`
    - Data guides / synthetic data realism → `references/knowledge/data_guides.md`
    - Eval/judge types, code evals, deterministic checks → `references/knowledge/judge_types.md`
    - RAG → `references/knowledge/rag.md`

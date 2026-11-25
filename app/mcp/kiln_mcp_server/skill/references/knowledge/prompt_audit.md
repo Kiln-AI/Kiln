@@ -94,7 +94,7 @@ Go through each item. Collect findings. Each group names the knowledge document 
 - [ ] Are there large copy-pasted blocks that could be summarized?
 
 **9. Measurement**
-- [ ] Does an eval measure each failure that the review found? A failure with no eval is a gap: name it, and add an eval only when the user agrees (`references/knowledge/create_spec.md`).
+- [ ] Does an eval measure each failure that the review found? A failure with no eval is a gap: name it, and add an eval only when the user agrees (`references/knowledge/create_eval.md`).
 
 ## Common Anti-Patterns
 

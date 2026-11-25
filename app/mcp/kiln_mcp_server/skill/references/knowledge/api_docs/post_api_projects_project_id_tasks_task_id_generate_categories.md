@@ -6,7 +6,7 @@
 
 Generate topics, or subtopics under a node of the topic tree, for synthetic
 data on the task. Calls a model; saves nothing. The task's saved data guide
-is used unless data_guide is set.
+is used unless data_guide is set. Built for the app's Synthetic Data flow.
 
 ## Request
 

@@ -1,7 +1,7 @@
 ---
 title: Dealing with a wrong eval
 description: The judge fails right answers or passes wrong ones, or the eval does not measure the issue. Classify each fire, try changes only on the config failures, report the rest. Do not tune toward the judge.
-reviewed: 2026-11-13
+reviewed: 2026-11-25
 kind: eval
 applies_to: all
 ---
@@ -49,7 +49,7 @@ tunes the agent toward the judge, not toward the task.
    not measure the failure that an issue names, report that too. Only
    when `eval_building` is `true`, an `eval_only` item can commission a
    new eval for the issue, under the rules of Kiln Harness Tuner for
-   that item. It is the rare exception, not a routine step. Commission
+   that item (`references/client_guidance/harness_tuner/eval_building.md`). It is the rare exception, not a routine step. Commission
    none for a closed issue. When the new eval cannot reproduce the issue,
    close the issue as won't fix, and never reopen an issue that is fixed.
 5. Take the config failures that remain to their playbook:

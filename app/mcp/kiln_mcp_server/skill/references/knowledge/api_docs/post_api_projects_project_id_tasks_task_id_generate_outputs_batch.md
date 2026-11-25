@@ -5,7 +5,8 @@
 **Tags:** Synthetic Data
 
 Start an in-process job that runs the task on each input in parallel.
-Poll the status endpoint for progress and the resulting (unsaved) runs.
+Poll the status endpoint for progress and the resulting (unsaved) runs. Built
+for the app's Synthetic Data flow.
 
 ## Request
 

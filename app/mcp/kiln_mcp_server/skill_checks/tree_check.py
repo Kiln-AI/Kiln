@@ -173,9 +173,9 @@ BANNED_TERM_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
 )
 
 # `/api/model_info/...` and `get_api_model_info_...` are the model info
-# endpoints, not the Assistant's tool. `references/knowledge/create_spec.md`
+# endpoints, not the Assistant's tool. `references/knowledge/create_eval.md`
 # is a knowledge file of the skill, not the gateway operation.
-_TERM_EXTRA_LOOKBEHIND = {"model_info": "/", "create_spec": "/"}
+_TERM_EXTRA_LOOKBEHIND = {"model_info": "/", "create_eval": "/"}
 
 # The calls and app pages that read an eval's test split when the caller asks
 # for no split: endpoint doc paths or app links. Each endpoint resolves the

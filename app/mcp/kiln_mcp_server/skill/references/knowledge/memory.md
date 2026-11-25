@@ -254,13 +254,14 @@ measures — so the two never drift into independently-edited twins.
 - **An issue must *end up* bound** — tag it when an eval already measures
   it. When none does, the eval is missing. Kiln Harness Tuner: eval
   building is experimental and off by default: only when a run turns it on does the loop's
-  `eval_only` item build the eval and bind the issue via `link_eval`. While
+  `eval_only` item build the eval and bind the issue via `link_eval`
+  (`references/client_guidance/harness_tuner/eval_building.md`). While
   it is off, the issue stays unbound, and the run's report tells the owner
   to create its eval in the Kiln app. Setup repairs the mechanical cases
   (exactly one eval id in the content, and that eval exists) and reports
   the rest. It never guesses a binding. Other agents: tell the user that
   the eval is missing, and build it only when the user agrees
-  (`references/knowledge/create_spec.md`).
+  (`references/knowledge/create_eval.md`).
 - **Kiln Harness Tuner's smell and audit issues are bound to no eval on
   purpose** (the tags `smell`, `baseline_audit`, `baseline_judge_copy`).
   Do not bind them, and do not report a missing eval for them.

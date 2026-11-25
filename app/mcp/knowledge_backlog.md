@@ -684,15 +684,16 @@ with no source. Name the step in the file itself, or label it "in a chat with a 
 A knowledge file on what a prompt is in Kiln: saved prompts, prompt generators, frozen prompts
 in run configs. `SKILL.md` "Kiln features" now links only `prompt_rewrite.md`, a how-to file.
 
-### A concept file for synthetic data generation
+### Agent paths for the UI-first cases that create data
 
-- Kind: guide
-- Where: knowledge
+- Kind: code
+- Where: kiln, knowledge
 - Depends on: None
 - Source: owner
 
-A knowledge file on synthetic data generation in Kiln: inputs, outputs, topics and where Data
-Guides fit. `SKILL.md` "Kiln features" now links only `data_guides.md`.
+Give each UI-first case that creates data an agent path as good as the app's, then drop the case.
+The cases now: the Eval Builder, the Data Guide builder, synthetic data generation (and eval data).
+Not a goal for the analysis views (Compare, Experiment Lineage): their UI stays the best answer.
 
 ### using_harness_tuner
 

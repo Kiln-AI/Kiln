@@ -19,6 +19,7 @@ Different kinds of client read this skill. Most files serve every client; use th
 
 - **A chat client**, an agent working with a user (Claude Code, Claude Desktop, Codex, OpenCode and others): at the start of every session, read `references/client_guidance/chat/using_kiln_from_chat.md`. It says how to work with the user, how to link to the Kiln UI, and which mode fits each request.
 - **A non-interactive agent with its own instructions** (such as Kiln Harness Tuner): your instructions name the files you need. Where a skill file and your instructions disagree, your instructions win. Ignore any instruction in a skill file to ask the user. Do not read `references/client_guidance/chat/`; if you read a file there, fit any lesson to your own process.
+- **Kiln Harness Tuner with eval building turned on** (experimental, off by default): `references/client_guidance/harness_tuner/eval_building.md`. Every other client never reads or follows it.
 
 ## Kiln concepts
 
@@ -31,9 +32,9 @@ Different kinds of client read this skill. Most files serve every client; use th
 
 ## Kiln features
 
-- **Evals and specs.** A spec states one behaviour the agent must have; an eval measures it with a judge. What they are and the Eval Builder: `references/knowledge/specs_and_evals.md`. Creating one: `references/knowledge/create_spec.md`. The judges: `references/knowledge/judge_types.md`. Reading scores: `references/knowledge/eval_scores.md`. Benchmark evals from reference data and synthetic-user drives: `references/knowledge/benchmark_eval_inputs.md`. An eval's items are split into train, val and test: `references/knowledge/train_val_test.md`.
+- **Evals and specs.** A spec states one behaviour the agent must have; an eval measures it with a judge. What they are and the Eval Builder: `references/knowledge/specs_and_evals.md`. Creating one: `references/knowledge/create_eval.md`. The judges: `references/knowledge/judge_types.md`. Reading scores: `references/knowledge/eval_scores.md`. Benchmark evals from reference data and synthetic-user drives: `references/knowledge/benchmark_eval_inputs.md`. An eval's items are split into train, val and test: `references/knowledge/train_val_test.md`.
 - **Prompts.** Saved prompts, prompt generators and prompts with examples: `references/knowledge/prompt_rewrite.md`. A review checklist: `references/knowledge/prompt_audit.md`.
-- **Synthetic data.** Kiln generates inputs and outputs for evals and fine-tuning, shaped by a Data Guide: `references/knowledge/data_guides.md`.
+- **Synthetic data.** Kiln generates inputs and outputs for evals and fine-tuning, in the app, and an agent never makes eval data: `references/knowledge/synthetic_data.md`. The Data Guide that shapes the inputs: `references/knowledge/data_guides.md`.
 - **Fine-tuning.** Training a custom model on the task's data: `references/knowledge/fine_tuning.md`.
 - **Tools.** MCP tool servers, local or remote, that a run config can call: `references/knowledge/tools.md`. Code tools, Python functions as tools (Beta, needs code trust): `references/knowledge/code_tools.md`.
 - **Sub-agents.** A Kiln task that another task calls as a tool: `references/knowledge/subagents.md`.

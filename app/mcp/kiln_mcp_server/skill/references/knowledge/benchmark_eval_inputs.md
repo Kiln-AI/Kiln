@@ -26,7 +26,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## EvalInputs: the dataset rows
 
-EvalInputs live on disk under the task (`eval_inputs/<id>/eval_input.kiln`). The Eval Inputs endpoints list, create, update and delete them (`references/knowledge/api_docs/eval_inputs_api_list.md`); an update changes the tags and the reference data only, never `data`. Never create EvalInputs yourself (`references/knowledge/create_spec.md`, "Creating an eval through the API"). Change a benchmark's dataset only when the user asks for it. Each row has:
+EvalInputs live on disk under the task (`eval_inputs/<id>/eval_input.kiln`). The Eval Inputs endpoints list, create, update and delete them (`references/knowledge/api_docs/eval_inputs_api_list.md`); an update changes the tags and the reference data only, never `data`. Never create EvalInputs yourself: they are eval data (`references/knowledge/create_eval.md`). Change a benchmark's dataset only when the user asks for it. Each row has:
 
 - `data` — what to run, one of two types:
 
@@ -53,7 +53,7 @@ House conventions: flat dict, snake_case, `expected_*` keys for ground truth (`e
 
 Only the EvalInput lane delivers `reference_data` — evals over stored TaskRuns (test split `source == "task_run"`) get `reference_data: null`.
 
-**Your job here is running benchmarks and reading scores.** For creating an eval, the Eval Builder comes first (`references/knowledge/specs_and_evals.md`); a judge is `references/knowledge/judge_types.md`.
+**Your job here is running benchmarks and reading scores.** For creating an eval, follow `references/knowledge/create_eval.md`; a judge is `references/knowledge/judge_types.md`.
 
 ## The recipe: benchmark a candidate run config
 

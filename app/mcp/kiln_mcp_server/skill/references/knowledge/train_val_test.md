@@ -87,7 +87,7 @@ The user chooses; do not choose for them:
 
 - **Make the eval again with the Eval Builder**, at
   `http://localhost:8757/specs/{project_id}/{task_id}/select_template`
-  (`references/knowledge/create_spec.md`). An eval that the Eval Builder
+  (`references/knowledge/create_eval.md`). An eval that the Eval Builder
   makes has a train, a val and a test split, unless the user picks its
   test-only size.
 - **Add a train split only, and waive the confirmation on val.** Add the
@@ -99,7 +99,7 @@ The user chooses; do not choose for them:
 - The guided Eval Builder (Kiln Pro) saves eval-input splits: the split's
   `source` is `eval_input`.
 - The form for a template, the form for a check and the API
-  (`references/knowledge/create_spec.md`) save task-run splits: the split's
+  (`references/knowledge/create_eval.md`) save task-run splits: the split's
   `source` is `task_run`, and a dataset filter selects the items.
 - The `train_set_filter_id` of
   `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_evals_eval_id.md`

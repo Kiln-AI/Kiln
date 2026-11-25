@@ -5,7 +5,8 @@
 **Tags:** Synthetic Data
 
 Start an in-process job that generates one input per prompt in
-parallel. Poll the status endpoint for progress and results.
+parallel. Poll the status endpoint for progress and results. Built for the
+app's Synthetic Data flow.
 
 ## Request
 

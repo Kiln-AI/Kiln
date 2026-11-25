@@ -43,6 +43,7 @@ Only emit deep links matching one of these prefixes (each starts with the app ad
 - `http://localhost:8757/generate/{project_id}/{task_id}/synth` — Synthetic Data page; also `http://localhost:8757/generate/{project_id}/{task_id}/data_guide`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_chooser`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup_copilot` (Data Guide surfaces — see `references/knowledge/data_guides.md`)
 - `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}` — single spec (its scores are test scores; `references/knowledge/train_val_test.md`)
 - `http://localhost:8757/dataset/{project_id}/{task_id}/{run_id}/run` — single run detail
+- `http://localhost:8757/dataset/{project_id}/{task_id}/add_data?reason=eval&eval_id={eval_id}` — add data for an eval (`references/knowledge/create_eval.md`)
 - `http://localhost:8757/settings/edit_task/{project_id}/{task_id}` — task settings
 - `http://localhost:8757/settings/providers` — provider settings
 
@@ -80,8 +81,9 @@ Before each reply, check that the user's message still fits this mode. If the us
 |-----------|-----------------|------|
 | **Create Task** | Building a new AI agent task from scratch — requirements, prompt drafting, task creation, initial config, initial evals | `references/knowledge/create_task.md` |
 | **Sub-Agents** | Creating a parent task whose role includes calling another task as a sub-agent — end-to-end workflow, asking the user before the wiring | `references/knowledge/subagents.md` |
-| **Create Eval** | Eval creation guidance — eval types, Eval Builder deep-links, manual flow | `references/knowledge/create_spec.md` |
-| **Data Guides** | Task Data Guides for synthetic data — authoring flows (manual / Kiln Pro), refine loop, deep links | `references/knowledge/data_guides.md` |
+| **Create Eval** | Eval creation guidance — eval types, Eval Builder deep-links, manual flow | `references/knowledge/create_eval.md` |
+| **Synthetic Data** | Generating data for an eval, a fine-tune or the dataset: a UI-first case, and never eval data from the chat | `references/knowledge/synthetic_data.md` |
+| **Data Guides** | Task Data Guides for synthetic data — made in the app (Kiln Pro or manual), refine loop, deep links | `references/knowledge/data_guides.md` |
 | **Judge Types** | The eval judge menu — LLM judge, deterministic checks, code evals; selection rule + code-eval `score()` contract | `references/knowledge/judge_types.md` |
 | **Prompt Rewrite** | Editing or improving prompts — reading, proposing changes, saved prompts, building prompts with examples | `references/knowledge/prompt_rewrite.md` |
 | **Project Status** | Assessing current state — run configs, eval scores, evals, providers, gaps. Also covers inspecting a single run ("what's on this run", "show me this run's data") | `references/knowledge/project_status.md` |

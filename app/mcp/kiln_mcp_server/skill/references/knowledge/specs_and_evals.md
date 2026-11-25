@@ -51,12 +51,13 @@ An ML product can be described as a set of evals — the itemized requirements, 
 - A **judge** (an *eval_config*) defines *how* to measure it. A judge is not always an LLM: it can be an LLM grading against a rubric, a **deterministic check** (exact match, contains, pattern, set, tool-call, step-count), or a **code eval** (a Python `score()` function) — full menu and selection guidance in `references/knowledge/judge_types.md`. One eval can carry **several judges** — different types, prompt iterations, different judge models — and their scores are **not interchangeable**: never mix judges within one comparison.
 - **One judge is the default** (`current_config_id`, surfaced as the eval's default judge config): the one the user aligned and the one the UI's numbers come from. **When you read and report scores, say which judge they came from** — the default unless the user picked another. Don't ask the user to pick among judges when a default exists; if no default exists, surface that instead of guessing.
 
-## Two Ways to Build Evals
+## Ways to Build Evals
 
-- **Eval Builder** (recommended) — a guided interactive flow that handles judge prompt creation, edge case discovery, synthetic data generation, and human alignment automatically. Requires a Kiln Pro account. Typical effort: 5-10 minutes.
-- **Manual Evals** — define the eval and judge yourself, with optional synthetic data tooling. Typical effort: 30+ minutes.
+- **Eval Builder** (recommended for an LLM judge) — a guided interactive flow that handles judge prompt creation, edge case discovery, synthetic data generation, and human alignment automatically. Requires a Kiln Pro account. Typical effort: 5-10 minutes.
+- **A deterministic check or a code eval** — an agent creates it well through the API; the user adds its data in the app.
+- **Manual Evals** — the user defines the eval and judge in the app's forms, and adds its data with the synthetic data tools. Typical effort: 30+ minutes.
 
-The Eval Builder is the right default unless the user explicitly wants the manual flow.
+Which to use for a new eval, and the links: `references/knowledge/create_eval.md`.
 
 ## Kinds of judges (pick the cheapest that fits)
 
@@ -82,17 +83,12 @@ The judge doesn't have to be an LLM. When the concern is **mechanical**, a deter
 
 ## The Agent's Role with Evals
 
-**Recommend the Eval Builder for a new eval.** Its guided workflow generates clarifying questions, produces synthetic test data, creates the judge, and tags the data. Building the same by hand through the API gives a weaker eval, so the Eval Builder is the default.
-
 **Your job:**
 1. Recognize that the user needs an eval (from their intent)
 2. Help them think through what to evaluate — propose ideas, discuss what "good" looks like
-3. Identify the right eval type
-4. Deep-link them to the Eval Builder, or to the form for a template with `?type=` preselected when the type is already chosen (see the UI Deep Links table)
-5. Remind them about the default run config — evals run against it. If the task's `default_run_config_id` is set, name and link it ([Run Config](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid})); if null, tell them to set one first ([Run Configs](http://localhost:8757/optimize/{project_id}/{task_id}))
-6. Once the eval exists, run it (below), read the scores and build comparison tables
-
-**You may also create the eval through the API**: `POST /api/projects/{project_id}/tasks/{task_id}/specs` creates the spec and its eval (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_specs.md`), and `create_evaluator` an eval with no spec. Create the eval only, never its data, and tell the user what it lacks next to the Eval Builder: no generated data and no judge aligned with their ratings. How, and where the user adds the data: `references/knowledge/create_spec.md` ("Creating an eval through the API"). Add a judge with `references/knowledge/judge_types.md` before the eval can score.
+3. Create the eval as `references/knowledge/create_eval.md` says: a deterministic check or a code eval you create through the API; an LLM-judge eval goes to the Eval Builder. Never create the eval's data: the user adds it in the app.
+4. Remind them about the default run config — evals run against it. If the task's `default_run_config_id` is set, name and link it ([Run Config](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid})); if null, tell them to set one first ([Run Configs](http://localhost:8757/optimize/{project_id}/{task_id}))
+5. Once the eval has data, run it (below), read the scores and build comparison tables
 
 ## Running an eval
 
@@ -117,7 +113,7 @@ When the scores look wrong, before you change an eval or a judge, read the playb
 - [dealing with a noisy eval](references/improving_agents/playbooks/dealing-with-a-noisy-eval.md): a score moves between repeats with no change;
 - [dealing with train wins rejected at validation](references/improving_agents/playbooks/dealing-with-train-wins-rejected-at-val.md): a train win does not hold on val.
 
-How to change the eval or the judge in Kiln is in `references/knowledge/create_spec.md` and `references/knowledge/judge_types.md`.
+How to change the eval or the judge in Kiln is in `references/knowledge/create_eval.md` and `references/knowledge/judge_types.md`.
 
 ## Underlying Data Hierarchy
 

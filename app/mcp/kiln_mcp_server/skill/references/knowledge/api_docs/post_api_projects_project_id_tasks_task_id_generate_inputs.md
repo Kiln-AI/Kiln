@@ -5,7 +5,8 @@
 **Tags:** Synthetic Data
 
 Generate synthetic inputs for the task, under one topic. Calls a model; saves
-nothing. The task's saved data guide is used unless data_guide is set.
+nothing. The task's saved data guide is used unless data_guide is set. Built
+for the app's Synthetic Data flow.
 
 ## Request
 

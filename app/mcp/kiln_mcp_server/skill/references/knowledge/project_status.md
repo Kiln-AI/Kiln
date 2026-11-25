@@ -89,7 +89,7 @@ Present the result as a small table (Output, Input, Source/model, Rating, Usage,
 
 Based on the assessment, identify what's missing and suggest next steps. Common gaps and their remedies:
 
-- **No specs** → "You need specs to measure quality. Let's create some." Load `references/knowledge/create_spec.md`
+- **No specs** → "You need specs to measure quality. Let's create some." Load `references/knowledge/create_eval.md`
 - **No eval data** → "Specs exist but no evals have run. Let's run them." Run them with the eval job of `references/knowledge/specs_and_evals.md` ("Running an eval")
 - **Only one run config** → "You only have one config. Let's experiment with alternatives." In a chat with a user, read `references/client_guidance/chat/improve_task.md`
 - **Low scores** → "Some scores are below target. Let's investigate." In a chat with a user, read `references/client_guidance/chat/improve_task.md`, which starts from `references/knowledge/diagnose_an_agent.md`

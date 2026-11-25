@@ -12,7 +12,7 @@ Reference knowledge for building a new AI agent task from scratch. Covers requir
 - `references/knowledge/prompt_audit.md` — when checking the drafted prompt against the audit checklist
 - `references/knowledge/model_work.md` — when choosing an initial model
 - `references/knowledge/model_create_configs.md` — when creating the first run config
-- `references/knowledge/create_spec.md` — when setting up initial quality specs
+- `references/knowledge/create_eval.md` — when setting up initial quality specs
 
 ## API Docs
 
@@ -129,14 +129,14 @@ Execute a run with `POST /api/projects/{project_id}/tasks/{task_id}/run`: `{run_
 
 - **Drive conversations (multiturn).** Turn 1 = `POST /run` without `parent_task_run_id`; turn N = pass the previous run's id (parent must have a `trace`).
 - Response carries `output.output`, `trace` (OpenAI-format incl. tool_calls), `usage`, `cumulative_usage`.
-- Tag runs at creation (no spaces in tags) — tags drive eval dataset filters later.
+- Tag runs at creation (no spaces in tags) to organise the user's real runs. Never run the task on inputs you make up to fill an eval or a dataset: that is synthetic data, made in the app (`references/knowledge/synthetic_data.md`).
 - `GET /runs` lists leaves only for multiturn tasks.
 - **Inspect chain**: `GET /api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain` — multiturn only.
 - **Edit a run**: `PATCH /api/projects/{project_id}/tasks/{task_id}/runs/{run_id}` — raw dict, deep-merged; `{"trace": [...]}` replaces the trace wholesale (fixture seeding).
 
 ### Create Initial Evals
 
-Deep-link to the Eval Builder to define 2-3 quality dimensions. Load `references/knowledge/create_spec.md` for the guided conversation.
+Help the user define 2-3 quality dimensions, and create each eval with `references/knowledge/create_eval.md`.
 
 > "Now let's define what 'good' looks like for your agent. I'd suggest starting with 2-3 evals:
 > [Create Eval]({Eval Builder deep-link})"

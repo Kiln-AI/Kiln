@@ -556,7 +556,7 @@ MEMORY_RULES = (
     # A missing eval: the loop's path, then the case of other agents.
     "the loop's `eval_only` item build the eval and bind the issue via `link_eval`",
     "It never guesses a binding.",
-    "build it only when the user agrees (`references/knowledge/create_spec.md`)",
+    "build it only when the user agrees (`references/knowledge/create_eval.md`)",
     # Priorities.
     "`p2` — real but minor; picked up when nothing above it remains.",
     "no intent to work it in this project",
@@ -921,7 +921,7 @@ OVERLAP_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         (
             f"{_K}specs_and_evals.md",
-            f"{_K}create_spec.md",
+            f"{_K}create_eval.md",
             f"{_K}judge_types.md",
             f"{_K}eval_scores.md",
         ),

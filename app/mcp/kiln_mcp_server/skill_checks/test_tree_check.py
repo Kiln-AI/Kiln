@@ -672,13 +672,13 @@ def test_banned_terms_skip_the_api_docs(tmp_path):
 @pytest.mark.parametrize(
     "text, banned",
     [
-        ("Build it with `references/knowledge/create_spec.md`.", False),
-        ("Build it with `create_spec`.", True),
+        ("Build it with `references/knowledge/create_eval.md`.", False),
+        ("Build it with `create_eval`.", True),
     ],
 )
 def test_a_file_named_like_an_operation_is_not_banned(tmp_path, text, banned):
     changes = {
-        "references/knowledge/create_spec.md": "---\nname: create_spec\ndescription: x.\n---\n",
+        "references/knowledge/create_eval.md": "---\nname: create_eval\ndescription: x.\n---\n",
         "references/levers/index.md": f"# Levers\n\n{text}\n",
         "SKILL.md": with_line(SKILL_MD, "`references/levers/index.md`"),
     }

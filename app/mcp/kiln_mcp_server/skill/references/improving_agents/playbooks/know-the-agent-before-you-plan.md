@@ -40,9 +40,10 @@ traces. Record these facts:
 - **Restrictions.** What the user asked and the model policy do not allow.
 
 When the task has no eval for an issue, Kiln Harness Tuner does not
-write one unless its run turned eval building on; its report then sends
+write one unless its run turned eval building on
+(`references/client_guidance/harness_tuner/eval_building.md`); its report then sends
 the user to the eval builder in the Kiln app. Other agents: when the user
-asks for an eval, build it with `references/knowledge/create_spec.md`.
+asks for an eval, build it with `references/knowledge/create_eval.md`.
 
 ## What to try, in order
 
