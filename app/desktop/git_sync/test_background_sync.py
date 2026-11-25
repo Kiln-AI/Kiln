@@ -177,7 +177,11 @@ async def test_fetch_failure_logs_and_retries(manager, git_repos, second_clone, 
     bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=60.0)
     await bg.start()
     try:
-        await asyncio.sleep(0.4)
+        # A slow CI runner can need several poll cycles for the retry to land.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 10
+        while not (local_path / "retry_file.txt").exists() and loop.time() < deadline:
+            await asyncio.sleep(0.05)
     finally:
         await bg.stop()
 
