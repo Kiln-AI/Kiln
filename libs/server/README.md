@@ -61,6 +61,8 @@ app = FastAPI()
 connect_project_api(app)
 ```
 
+The `kiln_server` app turns on the `kiln_ai` datamodel cache while it runs (`default_lifespan` in server.py). An app that connects the endpoints itself starts with the cache off, so every request reads and validates its records from disk again. To keep loaded records in memory between requests, call `set_model_cache_enabled(True)` from `kiln_ai.datamodel` when your app starts, for example in its `lifespan`.
+
 ## Kiln MCP Server
 
 Also included in this package is a MCP server for serving Kiln tools.
