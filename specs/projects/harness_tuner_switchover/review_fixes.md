@@ -77,9 +77,9 @@ Each item has a type:
 **B1. No second copy of the measurement code**
 - Type: Duplicate.
 - Description: the spec gives Kiln the significance floor, the detectability read and the paired comparison, and HT keeps its own code for all three.
-- Decision: HT calls Kiln's routes and removes its copies. Two consequences are still open: B5 and B6.
+- Decision: HT calls Kiln's routes and removes its copies. B5 and B6 hold the two consequences.
 - What follows:
-  - HT calls the detectability read for the baseline, at set-up and in each wave. Removed from HT's `detectability.py`: the floors, the interval functions, `score_room`, `train_row`, `comparable_specs`, `build_rows`, and the read of the stored rows. Kept in HT: the refusal and the warnings (`assess`), the options `--min-effect` and `--allow-underpowered`, and the report.
+  - HT calls the detectability read for the baseline, at set-up and in each wave. Removed from HT's `detectability.py`: the interval functions, `train_row`, `build_rows`, and the read of the stored rows. The three functions that the noise check imports stay (B5). Kept in HT: the refusal and the warnings (`assess`), the options `--min-effect` and `--allow-underpowered`, and the report.
   - The route is what HT needs, because HT is now its caller. "Train" is the eval's train split, as the results route resolves it; the helper that leaves out held-out items goes, with `left_out_held_out` (A3.1). The val side is always in the answer, and it gains `interval_best_case`; the flag `include_val_size` goes. The replicate fold stays.
   - HT's `Analyzer.compare_rows` and `_stats_row` take their numbers from the comparison route. HT still reads the rows itself for cost, latency and missing items. The fixtures of `contract.py` for the two statistics operations go.
   - Scores by split: HT has no copy. The route change stays for other clients.
@@ -102,10 +102,10 @@ Each item has a type:
 
 ### Open: from the removal of the duplicates
 
-**B5. The noise check needs one edit**
+**B5. The noise check and the detectability code**
 - Type: Duplicate.
-- Description: `noise.py` imports `comparable_specs`, `fewest_wins` and `score_room` from `detectability.py`. That code cannot go while the noise check imports it. The owner asked earlier for no change to the noise check.
-- Proposal: the noise check takes the same three facts from the detectability answer. It stays behind its option, and is still not ported.
+- Description: `noise.py` imports `comparable_specs`, `fewest_wins` and `score_room` from HT's `detectability.py`: about 80 lines of its 659, with the floor functions that `fewest_wins` needs.
+- Decision (owner, 2026-11-25): keep the 80 lines in HT. `noise.py` is not changed. The rest of `detectability.py`'s arithmetic and its read of the stored rows go, as B1 says. A small copy of the floor arithmetic stays in HT for the noise check only.
 
 **B6. The paired comparison changes one number**
 - Type: Duplicate.
@@ -117,13 +117,16 @@ Each item has a type:
 **B7. The skill bundle create carries HT's installer into Kiln**
 - Type: Small ask that grew.
 - Description: the ask was "create a skill with its reference files in one step". The design ports the installer's machinery: staging folders, a sweep with an age test, a lock, 100 tries to mint an id, and `SKILL.md` written as raw bytes. HT needed these because it wrote into Kiln's folder from outside. Kiln owns the folder.
-- The owner's requirement (2026-11-25): the API stays one that takes the path of a skill folder and copies a valid skill into the project. A chat agent may have no access to the project's files, and it is told not to write `.kiln` files, so it writes the skill in a folder of its own and names the path. The machinery (the age test, the retries) is too complex.
-- Proposal: the route and its folder rules stay. Only the write inside Kiln changes. Build the skill with Kiln's datamodel, as the existing create route does. Write the files into the skill's own folder, with `skill.kiln` last: Kiln lists a skill by its `skill.kiln`, so the skill is seen only when it is whole. On a failure, remove the folder. `SKILL.md` is written by `save_skill_md`, the one writer Kiln has. No staging, no sweep, no rename. The folder path stays, as decided.
+- The owner's requirement: the API takes the path of a skill folder and copies a valid skill into the project. A chat agent may have no access to the project's files, and it is told not to write `.kiln` files, so it writes the skill in a folder of its own and names the path.
+- Decision (owner, 2026-11-25): the route and its folder rules stay. Only the write inside Kiln changes. Build the skill with Kiln's datamodel, as the existing create route does. Write the files into the skill's own folder, with `skill.kiln` last: Kiln lists a skill by its `skill.kiln`, so the skill is seen only when it is whole. On a failure, remove the folder. `SKILL.md` is written by `save_skill_md`, the one writer Kiln has. No staging, no sweep, no rename, no lock, no retries.
 
-**B8. The name rule holds on one route only**
+**B8. The name rule**
 - Type: Poor shape.
-- Description: "the name must be new in the project" holds on the new create route. The existing create route allows a repeat. One object, two rules. The lock in the design exists only for this rule.
-- Proposal: the rule stays in HT's gateway, beside its scratch-folder check: the gateway lists the skills and refuses a taken name. Kiln's two routes then agree, and the lock goes. The other choice is to put the rule on both Kiln routes, which changes the existing one.
+- Description: HT's installer refuses a bundle whose name is taken in the project ("install-once; a new version is a new name"). The spec copied the rule into the new Kiln route only. Kiln's existing create route allows two skills with one name.
+- Decision (owner, 2026-11-25): remove the rule, in Kiln and in HT. A new copy of a skill often keeps its name: a new run config attaches the new version in place of the old one, and no prompt that names the skill needs a change. Kiln already refuses a run config that attaches two skills with one name (`base_adapter.py:833`).
+- What follows:
+  - Rule F17 of the folder rules goes, with the lock that it needed.
+  - Text that states the rule changes. In Kiln's skill, `references/levers/skill.md`: "install it under a new name" and "Each name can be installed once". In HT: `kiln-harness-tuner-experiment-build/SKILL.md:49` and `references/skill-authoring.md:109`, `:153`, `:190`. The new text says that a new version may keep the name, and that the new run config attaches the new version and drops the old one.
 
 **B9. A binary asset can be created but not read**
 - Type: Poor shape.
@@ -133,7 +136,7 @@ Each item has a type:
 **B10. The overflow of the exact test is worked around three times**
 - Type: Poor shape.
 - Description: `mcnemar_exact_p` fails above about 1,030 changed pairs (`math.comb(n, k) * 0.5**n` overflows). The spec keeps the fault and adds a 422, a "skipped" score and a ruling for it.
-- Proposal: fix the arithmetic (`math.comb(n, k) / 2**n`, with whole numbers), with a test, and remove the three workarounds. This changes existing statistics code, in one line.
+- Decision (owner, 2026-11-25): fix the bug. `math.comb(n, k) / 2**n`, with whole numbers, and a test. The three workarounds go. This is a third allowed change to existing Kiln code.
 
 **B11. One unreadable skill stops the check for every skill**
 - Type: Poor shape.
@@ -143,7 +146,7 @@ Each item has a type:
 **B12. Branches that cannot run in Kiln**
 - Type: Poor shape.
 - Description: the comparison and detectability code carry `lower_is_better` and the "skipped" score types. Kiln's datamodel allows neither today, so the code runs only in its own tests.
-- Proposal: remove them. If Kiln gains such a score, the code is added then.
+- Decision (owner, 2026-11-25): leave them out. If Kiln gains such a score, the code is added then.
 
 **B13. The endpoint map needs a route table for every gateway tool**
 - Type: Small ask that grew.
@@ -172,8 +175,8 @@ Each item has a type:
 
 **B18. Kiln's contract test repeats checks that exist**
 - Type: Small ask that grew.
-- Description: the test has four kinds of entry and its own reader of the Smells table. Spec one's checks already enforce the headings, the front matter keys and the table (A1.9).
-- Proposal: the list holds only `paths` and `ids`.
+- Description: the test has four kinds of entry and its own reader of the Smells table. Spec one's checks already enforce the headings that every document of a kind must have, the front matter keys and the table (A1.9). They do not cover a heading of one named file that HT's role skills cite, such as a section of `memory.md`.
+- Proposal: the list holds `paths`, `ids`, and the headings of named files. The per-kind headings, the front matter keys and the reader of the Smells table go.
 
 **B19. The documents**
 - Type: Poor shape.
