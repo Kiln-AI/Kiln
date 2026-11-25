@@ -13405,6 +13405,16 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            # Featherless lists no tool_use or image_input for this model, so tools
+            # and vision stay off.
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
+                supports_data_gen=True,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # MiMo-V2.6-Flash
