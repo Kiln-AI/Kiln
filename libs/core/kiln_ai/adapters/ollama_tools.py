@@ -2,7 +2,6 @@ import logging
 from typing import Any, List
 
 import httpx
-import requests
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.ml_embedding_model_list import built_in_embedding_models
@@ -34,7 +33,8 @@ async def ollama_online() -> bool:
         True if Ollama is available and responding, False otherwise
     """
     try:
-        httpx.get(ollama_base_url() + "/api/tags")
+        async with httpx.AsyncClient() as client:
+            await client.get(ollama_base_url() + "/api/tags")
     except httpx.RequestError:
         return False
     return True
@@ -154,8 +154,9 @@ async def get_ollama_connection() -> OllamaConnection | None:
     Gets the connection status for Ollama.
     """
     try:
-        tags = requests.get(ollama_base_url() + "/api/tags", timeout=5).json()
-
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(ollama_base_url() + "/api/tags")
+        tags = response.json()
     except Exception:
         return None
 
@@ -175,7 +176,9 @@ def ollama_embedding_model_installed(conn: OllamaConnection, model_name: str) ->
     )
 
 
-def resolve_ollama_model_variant(model_id: str, model_aliases: list[str] | None) -> str:
+async def resolve_ollama_model_variant(
+    model_id: str, model_aliases: list[str] | None
+) -> str:
     """
     Determines which variant of an Ollama model is actually installed - different slugs
     may point to the same underlying model via aliases.
@@ -187,7 +190,8 @@ def resolve_ollama_model_variant(model_id: str, model_aliases: list[str] | None)
         The model variant that is installed, or the original model_id if none found
     """
     try:
-        tags_response = requests.get(ollama_base_url() + "/api/tags", timeout=5)
+        async with httpx.AsyncClient(timeout=5) as client:
+            tags_response = await client.get(ollama_base_url() + "/api/tags")
         if tags_response.status_code != 200:
             return model_id
 

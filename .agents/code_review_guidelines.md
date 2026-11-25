@@ -15,6 +15,11 @@ Apply `.agents/skills/kiln-conventions/references/rules.md` and the area referen
 ### Python specific guide
 - Code should be "Pythonic"
 - We use `asyncio` where ever possible. Avoid threads unless there's a good reason we can't use async.
+- Blocking IO on the event loop: flag any blocking network or IO call inside `async def`, or in sync code reachable from it. One blocked call freezes the whole server: every request, SSE stream and MCP call. Flag:
+  - any use of `requests`. It is banned, even in tests (mock with `respx` instead).
+  - `urllib.request`, `http.client`, sync `httpx` (`httpx.get`, `httpx.Client`), sync SDK clients (e.g. `openai.OpenAI`), `time.sleep`, and large synchronous disk walks (e.g. loading every project, task and fine-tune).
+  - sync helpers that do any of the above, called from `async def`. A function being `async` doesn't make its body non-blocking.
+  - Fix: use `httpx.AsyncClient` or the SDK's async client (e.g. `openai.AsyncOpenAI`) with `await`. Use `asyncio.to_thread` only when no async API exists (e.g. a sync-only third-party SDK), with a comment saying why. For walks over project files use `kiln_ai.utils.torn_read.to_thread_retrying_torn_read`.
 - Python json.dumps should always set `ensure_ascii=False`
 
 ### SDK

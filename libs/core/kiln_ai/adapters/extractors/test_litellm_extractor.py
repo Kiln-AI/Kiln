@@ -151,7 +151,7 @@ async def test_extract_success(
     assert result.content_format == OutputFormat.MARKDOWN
 
 
-def test_build_completion_kwargs_with_all_options(mock_file_factory):
+async def test_build_completion_kwargs_with_all_options(mock_file_factory):
     """Test that _build_completion_kwargs properly includes all litellm_core_config options."""
     litellm_core_config = LiteLlmCoreConfig(
         base_url="https://custom-api.example.com",
@@ -181,7 +181,7 @@ def test_build_completion_kwargs_with_all_options(mock_file_factory):
         mime_type="application/pdf",
     )
 
-    completion_kwargs = extractor._build_completion_kwargs(
+    completion_kwargs = await extractor._build_completion_kwargs(
         "test prompt", extraction_input
     )
 
@@ -198,7 +198,7 @@ def test_build_completion_kwargs_with_all_options(mock_file_factory):
     assert "messages" in completion_kwargs
 
 
-def test_build_completion_kwargs_with_partial_options(mock_file_factory):
+async def test_build_completion_kwargs_with_partial_options(mock_file_factory):
     """Test that _build_completion_kwargs works when only some options are set."""
     litellm_core_config = LiteLlmCoreConfig(
         base_url=None,
@@ -228,7 +228,7 @@ def test_build_completion_kwargs_with_partial_options(mock_file_factory):
         mime_type="application/pdf",
     )
 
-    completion_kwargs = extractor._build_completion_kwargs(
+    completion_kwargs = await extractor._build_completion_kwargs(
         "test prompt", extraction_input
     )
 
@@ -242,7 +242,7 @@ def test_build_completion_kwargs_with_partial_options(mock_file_factory):
     assert "messages" in completion_kwargs
 
 
-def test_build_completion_kwargs_with_empty_options(mock_file_factory):
+async def test_build_completion_kwargs_with_empty_options(mock_file_factory):
     """Test that _build_completion_kwargs works when all options are None/empty."""
     litellm_core_config = LiteLlmCoreConfig(
         base_url=None,
@@ -272,7 +272,7 @@ def test_build_completion_kwargs_with_empty_options(mock_file_factory):
         mime_type="application/pdf",
     )
 
-    completion_kwargs = extractor._build_completion_kwargs(
+    completion_kwargs = await extractor._build_completion_kwargs(
         "test prompt", extraction_input
     )
 
@@ -285,7 +285,7 @@ def test_build_completion_kwargs_with_empty_options(mock_file_factory):
     assert "messages" in completion_kwargs
 
 
-def test_build_completion_kwargs_messages_structure(mock_file_factory):
+async def test_build_completion_kwargs_messages_structure(mock_file_factory):
     """Test that the messages structure in completion_kwargs is correct."""
     litellm_core_config = LiteLlmCoreConfig()
 
@@ -311,7 +311,7 @@ def test_build_completion_kwargs_messages_structure(mock_file_factory):
         mime_type="application/pdf",
     )
 
-    completion_kwargs = extractor._build_completion_kwargs(
+    completion_kwargs = await extractor._build_completion_kwargs(
         "test prompt", extraction_input
     )
 
@@ -401,7 +401,7 @@ async def test_extract_failure_unsupported_mime_type(mock_litellm_extractor):
             )
 
 
-def test_litellm_model_slug_success(mock_litellm_extractor):
+async def test_litellm_model_slug_success(mock_litellm_extractor):
     """Test that litellm_model_slug returns the correct model slug."""
     # Mock the built_in_models_from_provider function to return a valid model provider
     mock_model_provider = AsyncMock()
@@ -421,7 +421,7 @@ def test_litellm_model_slug_success(mock_litellm_extractor):
             return_value=mock_provider_info,
         ) as mock_get_provider_info,
     ):
-        result = mock_litellm_extractor.litellm_model_slug
+        result = await mock_litellm_extractor.litellm_model_slug()
 
         assert result == "test-provider/test-model"
 
@@ -462,7 +462,7 @@ def test_litellm_model_max_parallel_requests(
         mock_built_in_models.assert_called_once()
 
 
-def test_litellm_model_slug_model_provider_not_found(mock_litellm_extractor):
+async def test_litellm_model_slug_model_provider_not_found(mock_litellm_extractor):
     """Test that litellm_model_slug raises ValueError when model provider is not found."""
     with patch(
         "kiln_ai.adapters.extractors.litellm_extractor.built_in_models_from_provider",
@@ -472,10 +472,12 @@ def test_litellm_model_slug_model_provider_not_found(mock_litellm_extractor):
             ValueError,
             match="Model provider openai not found in the list of built-in models",
         ):
-            mock_litellm_extractor.litellm_model_slug
+            await mock_litellm_extractor.litellm_model_slug()
 
 
-def test_litellm_model_slug_with_different_provider_names(mock_litellm_core_config):
+async def test_litellm_model_slug_with_different_provider_names(
+    mock_litellm_core_config,
+):
     """Test litellm_model_slug with different provider and model combinations."""
     test_cases = [
         ("anthropic", "claude-3-sonnet", "anthropic/claude-3-sonnet"),
@@ -517,7 +519,7 @@ def test_litellm_model_slug_with_different_provider_names(mock_litellm_core_conf
                 return_value=mock_provider_info,
             ),
         ):
-            result = extractor.litellm_model_slug
+            result = await extractor.litellm_model_slug()
             assert result == expected_slug
 
 

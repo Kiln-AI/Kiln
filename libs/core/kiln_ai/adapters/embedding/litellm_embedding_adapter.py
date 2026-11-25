@@ -95,6 +95,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         super().__init__(embedding_config)
 
         self.litellm_core_config = litellm_core_config
+        self._litellm_model_id: str | None = None
 
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
         # batch the requests
@@ -154,7 +155,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             )
 
         aembedding_kwargs: Dict[str, Any] = {
-            "model": self.litellm_model_id,
+            "model": await self.litellm_model_id(),
             "input": input_texts,
             **self.build_options().model_dump(exclude_none=True),
             **completion_kwargs,
@@ -197,14 +198,17 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             )
         return provider
 
-    @cached_property
-    def litellm_model_id(self) -> str:
-        provider_info = get_litellm_provider_info(self.model_provider)
+    async def litellm_model_id(self) -> str:
+        if self._litellm_model_id is not None:
+            return self._litellm_model_id
+
+        provider_info = await get_litellm_provider_info(self.model_provider)
         if provider_info.is_custom and self.litellm_core_config.base_url is None:
             raise ValueError(
                 f"Provider {self.model_provider.name.value} must have an explicit base URL"
             )
 
-        return transform_slug_for_litellm(
+        self._litellm_model_id = transform_slug_for_litellm(
             self.model_provider.name, provider_info.litellm_model_id
         )
+        return self._litellm_model_id

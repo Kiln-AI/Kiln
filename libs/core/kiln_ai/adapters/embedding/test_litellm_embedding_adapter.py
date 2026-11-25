@@ -854,7 +854,7 @@ def test_model_provider_gemini(mock_litellm_core_config):
         ),
     ],
 )
-def test_litellm_model_id(
+async def test_litellm_model_id(
     provider, model_name, expected_model_id, mock_litellm_core_config
 ):
     config = EmbeddingConfig(
@@ -866,7 +866,7 @@ def test_litellm_model_id(
     adapter = LitellmEmbeddingAdapter(
         config, litellm_core_config=mock_litellm_core_config
     )
-    assert adapter.litellm_model_id == expected_model_id
+    assert await adapter.litellm_model_id() == expected_model_id
 
 
 def test_litellm_model_id_custom_provider_without_base_url(mock_litellm_core_config):
@@ -910,7 +910,7 @@ def test_litellm_model_id_custom_provider_with_base_url(mock_litellm_core_config
         adapter.model_provider
 
 
-def test_litellm_model_id_custom_provider_ollama_with_base_url():
+async def test_litellm_model_id_custom_provider_ollama_with_base_url():
     """Test that ollama provider with base_url works correctly."""
 
     # Create a mock provider that would be found in the built-in models
@@ -940,11 +940,11 @@ def test_litellm_model_id_custom_provider_ollama_with_base_url():
         )
 
         # Should not raise an error
-        model_id = adapter.litellm_model_id
+        model_id = await adapter.litellm_model_id()
         assert model_id == "openai/test-model"
 
 
-def test_litellm_model_id_custom_provider_ollama_without_base_url():
+async def test_litellm_model_id_custom_provider_ollama_without_base_url():
     """Test that ollama provider without base_url raises an error."""
     from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider
 
@@ -975,10 +975,10 @@ def test_litellm_model_id_custom_provider_ollama_without_base_url():
             ValueError,
             match="Provider ollama must have an explicit base URL",
         ):
-            adapter.litellm_model_id
+            await adapter.litellm_model_id()
 
 
-def test_litellm_model_id_custom_provider_openai_compatible_with_base_url():
+async def test_litellm_model_id_custom_provider_openai_compatible_with_base_url():
     """Test that openai_compatible provider with base_url works correctly."""
     from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider
 
@@ -1008,11 +1008,11 @@ def test_litellm_model_id_custom_provider_openai_compatible_with_base_url():
         )
 
         # Should not raise an error
-        model_id = adapter.litellm_model_id
+        model_id = await adapter.litellm_model_id()
         assert model_id == "openai/test-model"
 
 
-def test_litellm_model_id_custom_provider_openai_compatible_without_base_url():
+async def test_litellm_model_id_custom_provider_openai_compatible_without_base_url():
     """Test that openai_compatible provider without base_url raises an error."""
 
     # Create a mock provider that would be found in the built-in models
@@ -1042,7 +1042,7 @@ def test_litellm_model_id_custom_provider_openai_compatible_without_base_url():
             ValueError,
             match="Provider openai_compatible must have an explicit base URL",
         ):
-            adapter.litellm_model_id
+            await adapter.litellm_model_id()
 
 
 @pytest.mark.paid
@@ -1198,7 +1198,7 @@ def test_generate_embeddings_response_not_embedding_response():
 @pytest.mark.parametrize(
     "model_name,provider_name", all_embedding_model_provider_pairs()
 )
-def test_openrouter_transformed_into_openai_compatible(provider_name, model_name):
+async def test_openrouter_transformed_into_openai_compatible(provider_name, model_name):
     if provider_name != ModelProviderName.openrouter:
         pytest.skip("Provider is not openrouter")
 
@@ -1223,11 +1223,12 @@ def test_openrouter_transformed_into_openai_compatible(provider_name, model_name
             )
         )
     assert isinstance(adapter, LitellmEmbeddingAdapter)
-    assert adapter.litellm_model_id.startswith("openai/"), (
-        f"Final slug {adapter.litellm_model_id} does not start with openai/ - unless LiteLLM has added support for openrouter embeddings, it should start with openai/ to be run as a OpenAI compatible provider"
+    model_id = await adapter.litellm_model_id()
+    assert model_id.startswith("openai/"), (
+        f"Final slug {model_id} does not start with openai/ - unless LiteLLM has added support for openrouter embeddings, it should start with openai/ to be run as a OpenAI compatible provider"
     )
-    assert "openrouter" not in adapter.litellm_model_id, (
-        f"Final slug {adapter.litellm_model_id} contains openrouter, which should not be present - unless LiteLLM has added support for openrouter embeddings, it should not contain openrouter/ prefix because LiteLLM rejects it"
+    assert "openrouter" not in model_id, (
+        f"Final slug {model_id} contains openrouter, which should not be present - unless LiteLLM has added support for openrouter embeddings, it should not contain openrouter/ prefix because LiteLLM rejects it"
     )
 
 

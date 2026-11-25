@@ -2,8 +2,9 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
-import requests
+import respx
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.strict_mode import strict_mode
@@ -48,56 +49,66 @@ def test_strict_mode(client):
     assert strict_mode()
 
 
-def test_connect_ollama_success(client):
-    with patch("requests.get") as mock_get:
-        # Set up mock to return different values on consecutive calls
-        mock_get.return_value.json.side_effect = [
-            {"models": [{"model": "phi3.5:latest"}]},
-            {"version": "0.5.0"},
-        ]
-        response = client.post("/api/provider/ollama/connect")
-        assert response.status_code == 200
-        assert response.json() == {
-            "message": "Ollama connected",
-            "supported_models": ["phi3.5:latest"],
-            "supported_embedding_models": [],
-            "untested_models": [],
-            "version": "0.5.0",
-        }
+@pytest.fixture
+def ollama_server():
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.ollama_base_url",
+            return_value="http://ollama.test:11434",
+        ),
+        respx.mock(base_url="http://ollama.test:11434") as router,
+    ):
+        yield router
 
 
-def test_connect_ollama_connection_error(client):
-    with patch("requests.get") as mock_get:
-        mock_get.side_effect = requests.exceptions.ConnectionError
-        response = client.post("/api/provider/ollama/connect")
-        assert response.status_code == 417
-        assert response.json() == {
-            "message": "Failed to connect. Ensure Ollama app is running."
-        }
+def test_connect_ollama_success(client, ollama_server):
+    ollama_server.get("/api/tags").mock(
+        return_value=httpx.Response(200, json={"models": [{"model": "phi3.5:latest"}]})
+    )
+    ollama_server.get("/api/version").mock(
+        return_value=httpx.Response(200, json={"version": "0.5.0"})
+    )
+    response = client.post("/api/provider/ollama/connect")
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "Ollama connected",
+        "supported_models": ["phi3.5:latest"],
+        "supported_embedding_models": [],
+        "untested_models": [],
+        "version": "0.5.0",
+    }
 
 
-def test_connect_ollama_general_exception(client):
-    with patch("requests.get") as mock_get:
-        mock_get.side_effect = Exception("Test exception")
-        response = client.post("/api/provider/ollama/connect")
-        assert response.status_code == 500
-        assert response.json() == {
-            "message": "Failed to connect to Ollama: Test exception"
-        }
+def test_connect_ollama_connection_error(client, ollama_server):
+    ollama_server.get("/api/tags").mock(side_effect=httpx.ConnectError("refused"))
+    response = client.post("/api/provider/ollama/connect")
+    assert response.status_code == 417
+    assert response.json() == {
+        "message": "Failed to connect. Ensure Ollama app is running."
+    }
 
 
-def test_connect_ollama_no_models(client):
-    with patch("requests.get") as mock_get:
-        mock_get.return_value.json.return_value = {"models": []}
-        response = client.post("/api/provider/ollama/connect")
-        assert response.status_code == 200
-        r = response.json()
-        assert (
-            r["message"]
-            == "Ollama is running, but no supported models are installed. Install one or more supported model, like 'ollama pull phi3.5'."
-        )
-        assert r["supported_models"] == []
-        assert r["untested_models"] == []
+def test_connect_ollama_general_exception(client, ollama_server):
+    ollama_server.get("/api/tags").mock(side_effect=Exception("Test exception"))
+    response = client.post("/api/provider/ollama/connect")
+    assert response.status_code == 500
+    assert response.json() == {"message": "Failed to connect to Ollama: Test exception"}
+
+
+def test_connect_ollama_no_models(client, ollama_server):
+    ollama_server.get("/api/tags").mock(
+        return_value=httpx.Response(200, json={"models": []})
+    )
+    ollama_server.get("/api/version").mock(return_value=httpx.Response(404))
+    response = client.post("/api/provider/ollama/connect")
+    assert response.status_code == 200
+    r = response.json()
+    assert (
+        r["message"]
+        == "Ollama is running, but no supported models are installed. Install one or more supported model, like 'ollama pull phi3.5'."
+    )
+    assert r["supported_models"] == []
+    assert r["untested_models"] == []
 
 
 @pytest.mark.parametrize(

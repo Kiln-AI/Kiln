@@ -829,13 +829,13 @@ class LiteLlmAdapter(BaseAdapter):
 
         return extra_body
 
-    def litellm_model_id(self) -> str:
+    async def litellm_model_id(self) -> str:
         # The model ID is an interesting combination of format and url endpoint.
         # It specifics the provider URL/host, but this is overridden if you manually set an api url
         if self._litellm_model_id:
             return self._litellm_model_id
 
-        litellm_provider_info = get_litellm_provider_info(self.model_provider())
+        litellm_provider_info = await get_litellm_provider_info(self.model_provider())
         if litellm_provider_info.is_custom and self._api_base is None:
             raise ValueError(
                 "Explicit Base URL is required for OpenAI compatible APIs (custom models, ollama, fine tunes, and custom registry models)"
@@ -891,7 +891,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         # Merge all parameters into a single kwargs dict for litellm
         completion_kwargs = {
-            "model": self.litellm_model_id(),
+            "model": await self.litellm_model_id(),
             "messages": messages,
             "api_base": self._api_base,
             "headers": self._headers,

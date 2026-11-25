@@ -25,6 +25,7 @@ class LitellmRerankerAdapter(BaseReranker):
     ):
         super().__init__(reranker_config)
         self.litellm_provider_config = litellm_provider_config
+        self._litellm_model_slug: str | None = None
 
     async def rerank(
         self, query: str, documents: list[RerankDocument]
@@ -33,7 +34,7 @@ class LitellmRerankerAdapter(BaseReranker):
             return RerankResponse(results=[])
 
         rerank_kwargs = {
-            "model": self.litellm_model_slug,
+            "model": await self.litellm_model_slug(),
             "query": query,
             "documents": [document.text for document in documents],
             "top_n": self.reranker_config.top_n,
@@ -94,9 +95,8 @@ class LitellmRerankerAdapter(BaseReranker):
             )
         return kiln_reranker_model_provider
 
-    @cached_property
-    def litellm_model_slug(self) -> str:
-        litellm_provider_name = get_litellm_provider_info(
-            self.model_provider,
-        )
-        return litellm_provider_name.litellm_model_id
+    async def litellm_model_slug(self) -> str:
+        if self._litellm_model_slug is None:
+            provider_info = await get_litellm_provider_info(self.model_provider)
+            self._litellm_model_slug = provider_info.litellm_model_id
+        return self._litellm_model_slug

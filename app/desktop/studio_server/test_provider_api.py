@@ -1,4 +1,6 @@
+import asyncio
 import json
+import threading
 from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
 from http import HTTPStatus
@@ -8,6 +10,7 @@ import httpx
 import litellm
 import openai
 import pytest
+import respx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
@@ -43,7 +46,9 @@ from app.desktop.studio_server.provider_api import (
     ModelDetails,
     OllamaConnection,
     OpenAICompatibleProviderCache,
+    _http_request,
     all_fine_tuned_models,
+    available_models,
     available_ollama_embedding_models,
     available_ollama_models,
     connect_anthropic,
@@ -83,6 +88,19 @@ def app():
 @pytest.fixture
 def client(app):
     return TestClient(app)
+
+
+def openai_models_list(*model_ids: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "object": "list",
+            "data": [
+                {"id": model_id, "object": "model", "created": 0, "owned_by": "test"}
+                for model_id in model_ids
+            ],
+        },
+    )
 
 
 @contextmanager
@@ -357,12 +375,12 @@ def test_create_kiln_copilot_api_key_network_error(mock_create_api_key, client):
     assert "Failed to connect to Kiln server" in response.json()["message"]
 
 
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-def test_connect_openai_success(mock_config_shared, mock_requests_get, client):
+def test_connect_openai_success(mock_config_shared, mock_http_request, client):
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -379,11 +397,11 @@ def test_connect_openai_success(mock_config_shared, mock_requests_get, client):
     )
 
 
-@patch("app.desktop.studio_server.provider_api.requests.get")
-def test_connect_openai_invalid_key(mock_requests_get, client):
+@patch("app.desktop.studio_server.provider_api._http_request")
+def test_connect_openai_invalid_key(mock_http_request, client):
     mock_response = MagicMock()
     mock_response.status_code = 401
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     response = client.post(
         "/api/provider/connect_api_key",
@@ -396,9 +414,9 @@ def test_connect_openai_invalid_key(mock_requests_get, client):
     }
 
 
-@patch("app.desktop.studio_server.provider_api.requests.get")
-def test_connect_openai_request_exception(mock_requests_get, client):
-    mock_requests_get.side_effect = Exception("Test error")
+@patch("app.desktop.studio_server.provider_api._http_request")
+def test_connect_openai_request_exception(mock_http_request, client):
+    mock_http_request.side_effect = Exception("Test error")
 
     response = client.post(
         "/api/provider/connect_api_key",
@@ -424,11 +442,11 @@ def openai_models_response(status_code: int) -> MagicMock:
         ({}, False),
     ],
 )
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 def test_connect_openai_saves_reasoning_summaries_option(
-    mock_requests_get, client, extra_payload, expected
+    mock_http_request, client, extra_payload, expected
 ):
-    mock_requests_get.return_value = openai_models_response(200)
+    mock_http_request.return_value = openai_models_response(200)
 
     response = client.post(
         "/api/provider/connect_api_key",
@@ -444,12 +462,12 @@ def test_connect_openai_saves_reasoning_summaries_option(
     assert Config.shared().open_ai_reasoning_summaries is expected
 
 
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 def test_connect_openai_without_option_turns_reasoning_summaries_off(
-    mock_requests_get, client
+    mock_http_request, client
 ):
     Config.shared().open_ai_reasoning_summaries = True
-    mock_requests_get.return_value = openai_models_response(200)
+    mock_http_request.return_value = openai_models_response(200)
 
     response = client.post(
         "/api/provider/connect_api_key",
@@ -471,7 +489,7 @@ def test_connect_openai_failed_key_check_saves_nothing(
     client, monkeypatch, models_call, expected_status
 ):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with patch("app.desktop.studio_server.provider_api.requests.get", **models_call):
+    with patch("app.desktop.studio_server.provider_api._http_request", **models_call):
         response = client.post(
             "/api/provider/connect_api_key",
             json={
@@ -487,9 +505,9 @@ def test_connect_openai_failed_key_check_saves_nothing(
 
 
 @pytest.fixture
-def mock_requests_get():
-    with patch("app.desktop.studio_server.provider_api.requests.get") as mock_get:
-        yield mock_get
+def mock_http_request():
+    with patch("app.desktop.studio_server.provider_api._http_request") as mock_request:
+        yield mock_request
 
 
 @pytest.fixture
@@ -499,13 +517,13 @@ def mock_config():
         yield mock_config
 
 
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_groq_success(mock_config_shared, mock_requests_get):
+async def test_connect_groq_success(mock_config_shared, mock_http_request):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = '{"models": []}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -516,7 +534,8 @@ async def test_connect_groq_success(mock_config_shared, mock_requests_get):
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to Groq"}'
     mock_config.shared.return_value.groq_api_key = "test_api_key"
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://api.groq.com/openai/v1/models",
         headers={
             "Authorization": "Bearer test_api_key",
@@ -526,11 +545,11 @@ async def test_connect_groq_success(mock_config_shared, mock_requests_get):
     assert mock_config.shared.return_value.groq_api_key == "test_api_key"
 
 
-async def test_connect_groq_invalid_api_key(mock_requests_get):
+async def test_connect_groq_invalid_api_key(mock_http_request):
     mock_response = MagicMock()
     mock_response.status_code = 401
     mock_response.text = "{a:'invalid_api_key'}"
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     result = await connect_groq("invalid_key")
 
@@ -539,8 +558,8 @@ async def test_connect_groq_invalid_api_key(mock_requests_get):
     assert "Invalid API key" in response_data["message"]
 
 
-async def test_connect_groq_request_error(mock_requests_get):
-    mock_requests_get.side_effect = Exception("Connection error")
+async def test_connect_groq_request_error(mock_http_request):
+    mock_http_request.side_effect = Exception("Connection error")
 
     result = await connect_groq("test_api_key")
 
@@ -549,11 +568,11 @@ async def test_connect_groq_request_error(mock_requests_get):
     assert "Failed to connect to Groq" in response_data["message"]
 
 
-async def test_connect_groq_non_200_response(mock_requests_get):
+async def test_connect_groq_non_200_response(mock_http_request):
     mock_response = MagicMock()
     mock_response.status_code = 500
     mock_response.raise_for_status.side_effect = Exception("Server error")
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     result = await connect_groq("test_api_key")
 
@@ -565,7 +584,7 @@ async def test_connect_groq_non_200_response(mock_requests_get):
 @pytest.mark.asyncio
 async def test_connect_openrouter():
     # Test case 1: Valid API key
-    with patch("requests.post") as mock_post:
+    with patch("app.desktop.studio_server.provider_api._http_request") as mock_post:
         mock_response = MagicMock()
         mock_response.status_code = (
             400  # Simulating an expected error due to empty body
@@ -578,7 +597,7 @@ async def test_connect_openrouter():
         assert Config.shared().open_router_api_key == "valid_api_key"
 
     # Test case 2: Invalid API key
-    with patch("requests.post") as mock_post:
+    with patch("app.desktop.studio_server.provider_api._http_request") as mock_post:
         mock_response = MagicMock()
         mock_response.status_code = 401
         mock_post.return_value = mock_response
@@ -592,7 +611,7 @@ async def test_connect_openrouter():
         assert Config.shared().open_router_api_key != "invalid_api_key"
 
     # Test case 3: Unexpected error
-    with patch("requests.post") as mock_post:
+    with patch("app.desktop.studio_server.provider_api._http_request") as mock_post:
         mock_post.side_effect = Exception("Unexpected error")
 
         result = await connect_openrouter("api_key")
@@ -1425,9 +1444,6 @@ async def test_get_available_models_with_blank_api_key_custom_provider(app, clie
         {"name": "custom_provider", "base_url": "https://api.test.com", "api_key": ""}
     ]
 
-    mock_model = MagicMock()
-    mock_model.id = "gpt-4"
-
     with (
         patch(
             "app.desktop.studio_server.provider_api.Config.shared",
@@ -1437,7 +1453,7 @@ async def test_get_available_models_with_blank_api_key_custom_provider(app, clie
             "app.desktop.studio_server.provider_api._openai_compatible_providers_cache",
             None,
         ),
-        patch("openai.resources.models.Models.list", return_value=[mock_model]),
+        respx.mock(assert_all_called=True) as openai_compatible_server,
         patch("app.desktop.studio_server.provider_api.built_in_models", []),
         patched_non_builtin_available_model_sources(patch_openai_compatible=False),
         patch(
@@ -1445,6 +1461,9 @@ async def test_get_available_models_with_blank_api_key_custom_provider(app, clie
             side_effect=HTTPException(status_code=500),
         ),
     ):
+        openai_compatible_server.get("https://api.test.com/models").mock(
+            return_value=openai_models_list("gpt-4")
+        )
         response = client.get("/api/available_models")
 
     assert response.status_code == 200
@@ -1676,7 +1695,7 @@ async def test_available_ollama_models():
 
 
 @patch("app.desktop.studio_server.provider_api.all_projects")
-def test_all_fine_tuned_models(mock_all_projects):
+async def test_all_fine_tuned_models(mock_all_projects):
     # Create mock projects, tasks, and fine-tunes
     mock_fine_tune1 = Mock()
     mock_fine_tune1.id = "ft1"
@@ -1723,7 +1742,7 @@ def test_all_fine_tuned_models(mock_all_projects):
     # Test case 1: Projects with fine-tuned models
     mock_all_projects.return_value = [mock_project1, mock_project2]
 
-    result = all_fine_tuned_models()
+    result = await all_fine_tuned_models()
 
     assert result is not None
     assert result.provider_name == "Fine Tuned Models"
@@ -1747,7 +1766,7 @@ def test_all_fine_tuned_models(mock_all_projects):
     # Test case 2: No projects
     mock_all_projects.return_value = []
 
-    result = all_fine_tuned_models()
+    result = await all_fine_tuned_models()
     assert result is None
 
     # Test case 3: Projects with no fine-tuned models
@@ -1757,8 +1776,20 @@ def test_all_fine_tuned_models(mock_all_projects):
     mock_project_empty.tasks.return_value = [mock_task_empty]
     mock_all_projects.return_value = [mock_project_empty]
 
-    result = all_fine_tuned_models()
+    result = await all_fine_tuned_models()
     assert result is None
+
+
+@patch("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+@patch("app.desktop.studio_server.provider_api.all_projects")
+async def test_all_fine_tuned_models_retries_half_written_file(mock_all_projects):
+    mock_all_projects.side_effect = [
+        json.JSONDecodeError("Expecting value", "", 0),
+        [],
+    ]
+
+    assert await all_fine_tuned_models() is None
+    assert mock_all_projects.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -1769,67 +1800,55 @@ async def test_connect_ollama_rejects_invalid_url_format():
     assert "Invalid Ollama URL" in exc_info.value.detail
 
 
-@pytest.mark.asyncio
+@contextmanager
+def mock_ollama_server(base_url: str, tags: dict | None = None):
+    with respx.mock(base_url=base_url, assert_all_called=False) as router:
+        router.get("/api/tags").mock(
+            return_value=httpx.Response(200, json=tags or {"models": []})
+        )
+        router.get("/api/version").mock(
+            return_value=httpx.Response(200, json={"version": "0.5.0"})
+        )
+        yield router
+
+
 async def test_connect_ollama_uses_custom_url_when_provided():
-    mock_tags_response = {"models": []}
     with (
-        patch("requests.get") as mock_get,
-        patch("app.desktop.studio_server.provider_api.parse_ollama_tags") as mock_parse,
+        mock_ollama_server("http://custom-url:11434") as ollama,
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
     ):
-        mock_get.return_value.json.return_value = mock_tags_response
-        mock_parse.return_value = OllamaConnection(
-            message="Connected", supported_models=[]
-        )
         mock_config.return_value.ollama_base_url = "http://default-url:11434"
 
-        await connect_ollama("http://custom-url:11434")
+        connection = await connect_ollama("http://custom-url:11434")
 
-        assert mock_get.call_count == 2
-        assert mock_get.call_args_list[0][0][0] == "http://custom-url:11434/api/tags"
-        assert mock_get.call_args_list[0][1] == {"timeout": 5}
-        assert mock_get.call_args_list[1][0][0] == "http://custom-url:11434/api/version"
+        assert [str(call.request.url) for call in ollama.calls] == [
+            "http://custom-url:11434/api/tags",
+            "http://custom-url:11434/api/version",
+        ]
+        assert connection.version == "0.5.0"
 
 
-@pytest.mark.asyncio
 async def test_connect_ollama_uses_default_url_when_no_custom_url():
-    mock_tags_response = {"models": []}
     with (
-        patch("requests.get") as mock_get,
-        patch("app.desktop.studio_server.provider_api.parse_ollama_tags") as mock_parse,
+        mock_ollama_server("http://default-url:11434") as ollama,
         patch(
-            "app.desktop.studio_server.provider_api.ollama_base_url"
-        ) as mock_base_url,
+            "app.desktop.studio_server.provider_api.ollama_base_url",
+            return_value="http://default-url:11434",
+        ),
     ):
-        mock_get.return_value.json.return_value = mock_tags_response
-        mock_parse.return_value = OllamaConnection(
-            message="Connected", supported_models=[]
-        )
-        mock_base_url.return_value = "http://default-url:11434"
-
         await connect_ollama(None)
 
-        assert mock_get.call_count == 2
-        assert mock_get.call_args_list[0][0][0] == "http://default-url:11434/api/tags"
-        assert mock_get.call_args_list[0][1] == {"timeout": 5}
-        assert (
-            mock_get.call_args_list[1][0][0] == "http://default-url:11434/api/version"
-        )
+        assert [str(call.request.url) for call in ollama.calls] == [
+            "http://default-url:11434/api/tags",
+            "http://default-url:11434/api/version",
+        ]
 
 
-@pytest.mark.asyncio
 async def test_connect_ollama_saves_custom_url_on_success():
-    mock_tags_response = {"models": []}
     with (
-        patch("requests.get") as mock_get,
-        patch("app.desktop.studio_server.provider_api.parse_ollama_tags") as mock_parse,
+        mock_ollama_server("http://new-url:11434"),
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
     ):
-        mock_get.return_value.json.return_value = mock_tags_response
-        mock_parse.return_value = OllamaConnection(
-            message="Connected", supported_models=[]
-        )
-
         mock_config_instance = MagicMock()
         mock_config_instance.ollama_base_url = "http://old-url:11434"
         mock_config.return_value = mock_config_instance
@@ -1841,19 +1860,11 @@ async def test_connect_ollama_saves_custom_url_on_success():
         )
 
 
-@pytest.mark.asyncio
 async def test_connect_ollama_does_not_save_unchanged_url():
-    mock_tags_response = {"models": []}
     with (
-        patch("requests.get") as mock_get,
-        patch("app.desktop.studio_server.provider_api.parse_ollama_tags") as mock_parse,
+        mock_ollama_server("http://same-url:11434"),
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
     ):
-        mock_get.return_value.json.return_value = mock_tags_response
-        mock_parse.return_value = OllamaConnection(
-            message="Connected", supported_models=[]
-        )
-
         mock_config_instance = MagicMock()
         mock_config_instance.ollama_base_url = "http://same-url:11434"
         mock_config.return_value = mock_config_instance
@@ -1861,6 +1872,43 @@ async def test_connect_ollama_does_not_save_unchanged_url():
         await connect_ollama("http://same-url:11434")
 
         mock_config_instance.save_setting.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "tags_side_effect,expected_status",
+    [
+        (httpx.ConnectError("Connection refused"), 417),
+        (httpx.ConnectTimeout("Timed out connecting"), 417),
+        (httpx.ReadError("Connection reset by peer"), 417),
+        (httpx.RemoteProtocolError("Server disconnected"), 417),
+        (httpx.ProxyError("Proxy refused"), 417),
+        (httpx.ReadTimeout("Timed out reading"), 500),
+        (httpx.Response(200, text="not json"), 500),
+    ],
+)
+async def test_connect_ollama_tags_failure_status(tags_side_effect, expected_status):
+    with mock_ollama_server("http://ollama.test:11434") as ollama:
+        ollama.get("/api/tags").mock(side_effect=[tags_side_effect])
+
+        with pytest.raises(HTTPException) as exc_info:
+            await connect_ollama("http://ollama.test:11434")
+
+    assert exc_info.value.status_code == expected_status
+
+
+async def test_connect_ollama_ignores_version_failure():
+    with (
+        mock_ollama_server(
+            "http://ollama.test:11434", tags={"models": [{"model": "phi3.5:latest"}]}
+        ) as ollama,
+        patch("app.desktop.studio_server.provider_api.Config.shared"),
+    ):
+        ollama.get("/api/version").mock(side_effect=httpx.ConnectError("refused"))
+
+        connection = await connect_ollama("http://ollama.test:11434")
+
+    assert connection.supported_models == ["phi3.5:latest"]
+    assert connection.version is None
 
 
 def test_legacy_custom_models_as_available():
@@ -2150,7 +2198,7 @@ def test_openai_compatible_provider_cache_is_stale():
         assert cache.is_stale() is True
 
 
-def test_openai_compatible_providers():
+async def test_openai_compatible_providers():
     mock_provider_config = [
         {
             "name": "test_provider",
@@ -2200,14 +2248,14 @@ def test_openai_compatible_providers():
         )
 
         # First call should create cache
-        result1 = openai_compatible_providers()
+        result1 = await openai_compatible_providers()
         assert len(result1) == 1
         assert result1[0].provider_name == "test_provider"
         mock_uncached.assert_called_once()
 
         # Second call should use cache
         mock_uncached.reset_mock()
-        result2 = openai_compatible_providers()
+        result2 = await openai_compatible_providers()
         assert len(result2) == 1
         assert result2[0].provider_name == "test_provider"
         mock_uncached.assert_not_called()
@@ -2220,11 +2268,11 @@ def test_openai_compatible_providers():
                 "api_key": "new_key",
             }
         ]
-        openai_compatible_providers()
+        await openai_compatible_providers()
         mock_uncached.assert_called_once()
 
 
-def test_openai_compatible_providers_uncached():
+async def test_openai_compatible_providers_uncached():
     mock_providers = [
         {
             "name": "test_provider",
@@ -2233,40 +2281,38 @@ def test_openai_compatible_providers_uncached():
         }
     ]
 
-    # Mock OpenAI client and its models.list() method
-    mock_model = MagicMock()
-    mock_model.id = "gpt-4"
-    mock_models_list = MagicMock()
-    mock_models_list.return_value = [mock_model]
-    mock_client = MagicMock()
-    mock_client.models.list = mock_models_list
-
     with (
-        patch("openai.OpenAI", return_value=mock_client),
+        respx.mock() as server,
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
     ):
+        route = server.get("https://api.test.com/models").mock(
+            return_value=openai_models_list("gpt-4")
+        )
         mock_config.return_value.openai_compatible_providers = mock_providers
-        result = openai_compatible_providers_load_cache().providers
+        cache = await openai_compatible_providers_load_cache()
 
-        assert len(result) == 1
-        assert result[0].provider_name == "test_provider"
-        assert result[0].provider_id == ModelProviderName.openai_compatible
-        assert len(result[0].models) == 1
-        assert result[0].models[0].id == "test_provider::gpt-4"
-        assert result[0].models[0].name == "gpt-4"
-        assert result[0].models[0].untested_model is True
+    assert cache is not None
+    result = cache.providers
+    assert route.calls.last.request.headers["Authorization"] == "Bearer test_key"
+    assert len(result) == 1
+    assert result[0].provider_name == "test_provider"
+    assert result[0].provider_id == ModelProviderName.openai_compatible
+    assert len(result[0].models) == 1
+    assert result[0].models[0].id == "test_provider::gpt-4"
+    assert result[0].models[0].name == "gpt-4"
+    assert result[0].models[0].untested_model is True
 
 
-def test_openai_compatible_providers_uncached_empty_providers():
+async def test_openai_compatible_providers_uncached_empty_providers():
     with (
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
     ):
         mock_config.return_value.openai_compatible_providers = []
-        cached = openai_compatible_providers_load_cache()
+        cached = await openai_compatible_providers_load_cache()
         assert cached is None
 
 
-def test_openai_compatible_providers_uncached_invalid_provider():
+async def test_openai_compatible_providers_uncached_invalid_provider():
     invalid_providers = [
         {"name": "test", "base_url": "", "api_key": "key"},  # Missing base_url
         {
@@ -2279,11 +2325,12 @@ def test_openai_compatible_providers_uncached_invalid_provider():
     ]
 
     with (
-        patch("openai.OpenAI") as mock_openai,
+        patch("openai.AsyncOpenAI") as mock_openai,
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
     ):
         mock_config.return_value.openai_compatible_providers = invalid_providers
-        result = openai_compatible_providers_load_cache()
+        result = await openai_compatible_providers_load_cache()
+        assert result is not None
         assert result.providers == []
         mock_openai.assert_not_called()
 
@@ -2297,25 +2344,26 @@ def test_openai_compatible_providers_uncached_invalid_provider():
     ],
     ids=["empty_string_key", "none_key", "missing_key"],
 )
-def test_openai_compatible_providers_uncached_blank_api_key(provider_config):
+async def test_openai_compatible_providers_uncached_blank_api_key(provider_config):
     # Real OpenAI client construction: it raises without a key, so a blank key must
     # fall back to a placeholder rather than breaking the whole model list.
-    mock_model = MagicMock()
-    mock_model.id = "gpt-4"
-
     with (
-        patch("openai.resources.models.Models.list", return_value=[mock_model]),
+        respx.mock() as server,
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
     ):
+        server.get("https://api.test.com/models").mock(
+            return_value=openai_models_list("gpt-4")
+        )
         mock_config.return_value.openai_compatible_providers = [provider_config]
-        result = openai_compatible_providers_load_cache()
+        result = await openai_compatible_providers_load_cache()
 
-        assert not result.had_error
-        assert len(result.providers) == 1
-        assert result.providers[0].models[0].id == "test_provider::gpt-4"
+    assert result is not None
+    assert not result.had_error
+    assert len(result.providers) == 1
+    assert result.providers[0].models[0].id == "test_provider::gpt-4"
 
 
-def test_openai_compatible_providers_uncached_client_error_isolated():
+async def test_openai_compatible_providers_uncached_client_error_isolated():
     mock_providers = [
         {
             "name": "broken_provider",
@@ -2329,28 +2377,27 @@ def test_openai_compatible_providers_uncached_client_error_isolated():
         },
     ]
 
-    mock_model = MagicMock()
-    mock_model.id = "gpt-4"
-    working_client = MagicMock()
-    working_client.models.list.return_value = [mock_model]
-
     with (
-        patch(
-            "openai.OpenAI",
-            side_effect=[openai.OpenAIError("Missing credentials"), working_client],
-        ),
+        respx.mock() as server,
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
     ):
+        server.get("https://api.broken.com/models").mock(
+            return_value=httpx.Response(500, json={"error": "boom"})
+        )
+        server.get("https://api.test.com/models").mock(
+            return_value=openai_models_list("gpt-4")
+        )
         mock_config.return_value.openai_compatible_providers = mock_providers
-        result = openai_compatible_providers_load_cache()
+        result = await openai_compatible_providers_load_cache()
 
-        # One bad provider shouldn't take out the others
-        assert result.had_error
-        assert len(result.providers) == 1
-        assert result.providers[0].provider_name == "working_provider"
+    # One bad provider shouldn't take out the others
+    assert result is not None
+    assert result.had_error
+    assert len(result.providers) == 1
+    assert result.providers[0].provider_name == "working_provider"
 
 
-def test_openai_compatible_providers_uncached_api_error():
+async def test_openai_compatible_providers_uncached_api_error():
     mock_providers = [
         {
             "name": "test_provider",
@@ -2360,17 +2407,21 @@ def test_openai_compatible_providers_uncached_api_error():
     ]
 
     with (
-        patch("openai.OpenAI") as mock_openai,
+        respx.mock() as server,
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
     ):
+        server.get("https://api.test.com/models").mock(
+            side_effect=httpx.ConnectError("Connection refused")
+        )
         mock_config.return_value.openai_compatible_providers = mock_providers
-        mock_openai.return_value.models.list.side_effect = Exception("API Error")
-        result = openai_compatible_providers_load_cache()
-        assert result.providers == []
+        result = await openai_compatible_providers_load_cache()
 
-        # Confirm the cache knows about the error and reports stale
-        assert result.had_error
-        assert result.is_stale()
+    assert result is not None
+    assert result.providers == []
+
+    # Confirm the cache knows about the error and reports stale
+    assert result.had_error
+    assert result.is_stale()
 
 
 @pytest.fixture
@@ -2591,14 +2642,14 @@ def test_parse_url():
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_gemini_success(mock_config_shared, mock_requests_get):
+async def test_connect_gemini_success(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = '{"models": []}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -2609,21 +2660,22 @@ async def test_connect_gemini_success(mock_config_shared, mock_requests_get):
     # Verify
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to Gemini"}'
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://generativelanguage.googleapis.com/v1beta/models?key=test_api_key",
     )
     assert mock_config.gemini_api_key == "test_api_key"
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_gemini_invalid_api_key(mock_config_shared, mock_requests_get):
+async def test_connect_gemini_invalid_api_key(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 400
     mock_response.text = "API_KEY_INVALID"
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config.gemini_api_key = None
@@ -2639,14 +2691,14 @@ async def test_connect_gemini_invalid_api_key(mock_config_shared, mock_requests_
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_gemini_non_200_response(mock_config_shared, mock_requests_get):
+async def test_connect_gemini_non_200_response(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 500
     mock_response.text = "Internal Server Error"
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config.gemini_api_key = None
@@ -2662,11 +2714,11 @@ async def test_connect_gemini_non_200_response(mock_config_shared, mock_requests
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_gemini_request_exception(mock_config_shared, mock_requests_get):
+async def test_connect_gemini_request_exception(mock_config_shared, mock_http_request):
     # Setup
-    mock_requests_get.side_effect = Exception("Connection error")
+    mock_http_request.side_effect = Exception("Connection error")
 
     mock_config = MagicMock()
     mock_config.gemini_api_key = None
@@ -2682,14 +2734,14 @@ async def test_connect_gemini_request_exception(mock_config_shared, mock_request
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_anthropic_success(mock_config_shared, mock_requests_get):
+async def test_connect_anthropic_success(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = '{"models": []}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -2700,7 +2752,8 @@ async def test_connect_anthropic_success(mock_config_shared, mock_requests_get):
     # Verify
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to Anthropic"}'
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://api.anthropic.com/v1/models",
         headers={
             "x-api-key": "test_api_key",
@@ -2712,14 +2765,14 @@ async def test_connect_anthropic_success(mock_config_shared, mock_requests_get):
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_anthropic_invalid_api_key(mock_config_shared, mock_requests_get):
+async def test_connect_anthropic_invalid_api_key(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 401
     mock_response.text = "Invalid API key"
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config.anthropic_api_key = None
@@ -2737,13 +2790,13 @@ async def test_connect_anthropic_invalid_api_key(mock_config_shared, mock_reques
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_anthropic_request_exception(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     # Setup
-    mock_requests_get.side_effect = Exception("Connection error")
+    mock_http_request.side_effect = Exception("Connection error")
 
     mock_config = MagicMock()
     mock_config.anthropic_api_key = None
@@ -2759,14 +2812,14 @@ async def test_connect_anthropic_request_exception(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_azure_openai_success(mock_config_shared, mock_requests_get):
+async def test_connect_azure_openai_success(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = '{"files": []}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -2777,7 +2830,8 @@ async def test_connect_azure_openai_success(mock_config_shared, mock_requests_ge
     # Verify
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to Azure OpenAI"}'
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://example.azure.com/openai/files?api-version=2024-08-01-preview",
         headers={
             "api-key": "test_api_key",
@@ -2789,16 +2843,16 @@ async def test_connect_azure_openai_success(mock_config_shared, mock_requests_ge
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_azure_openai_invalid_api_key(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 401
     mock_response.text = "Invalid API key"
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config.azure_openai_api_key = None
@@ -2819,16 +2873,16 @@ async def test_connect_azure_openai_invalid_api_key(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_azure_openai_non_200_response(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 500
     mock_response.text = "Internal Server Error"
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config.azure_openai_api_key = None
@@ -2848,13 +2902,13 @@ async def test_connect_azure_openai_non_200_response(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_azure_openai_request_exception(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     # Setup
-    mock_requests_get.side_effect = Exception("Connection error")
+    mock_http_request.side_effect = Exception("Connection error")
 
     mock_config = MagicMock()
     mock_config.azure_openai_api_key = None
@@ -2872,14 +2926,14 @@ async def test_connect_azure_openai_request_exception(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_huggingface_success(mock_config_shared, mock_requests_get):
+async def test_connect_huggingface_success(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = '{"data": "success"}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -2888,7 +2942,8 @@ async def test_connect_huggingface_success(mock_config_shared, mock_requests_get
     result = await connect_huggingface("test_api_key")
 
     # Assert
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
         headers={
             "Authorization": "Bearer test_api_key",
@@ -2901,22 +2956,23 @@ async def test_connect_huggingface_success(mock_config_shared, mock_requests_get
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_huggingface_invalid_api_key(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 401
     mock_response.text = '{"error": "Unauthorized"}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     # Execute
     result = await connect_huggingface("invalid_api_key")
 
     # Assert
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
         headers={
             "Authorization": "Bearer invalid_api_key",
@@ -2932,19 +2988,20 @@ async def test_connect_huggingface_invalid_api_key(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_huggingface_request_exception(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     # Setup
-    mock_requests_get.side_effect = Exception("Connection error")
+    mock_http_request.side_effect = Exception("Connection error")
 
     # Execute
     result = await connect_huggingface("test_api_key")
 
     # Assert
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
         headers={
             "Authorization": "Bearer test_api_key",
@@ -2960,16 +3017,16 @@ async def test_connect_huggingface_request_exception(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_huggingface_non_401_response(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 404  # Any non-401 status code
     mock_response.text = '{"error": "Not found"}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -2978,7 +3035,8 @@ async def test_connect_huggingface_non_401_response(
     result = await connect_huggingface("test_api_key")
 
     # Assert
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
         headers={
             "Authorization": "Bearer test_api_key",
@@ -3106,14 +3164,14 @@ async def test_connect_vertex_live(mock_config_shared):
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_together_success(mock_config_shared, mock_requests_get):
+async def test_connect_together_success(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = '{"models": []}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -3122,7 +3180,8 @@ async def test_connect_together_success(mock_config_shared, mock_requests_get):
     result = await connect_together("test_api_key")
 
     # Assert
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://api.together.xyz/v1/models",
         headers={
             "Authorization": "Bearer test_api_key",
@@ -3135,20 +3194,21 @@ async def test_connect_together_success(mock_config_shared, mock_requests_get):
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_together_invalid_api_key(mock_config_shared, mock_requests_get):
+async def test_connect_together_invalid_api_key(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 401
     mock_response.text = '{"error": "Invalid API key"}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     # Execute
     result = await connect_together("invalid_api_key")
 
     # Assert
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://api.together.xyz/v1/models",
         headers={
             "Authorization": "Bearer invalid_api_key",
@@ -3164,19 +3224,19 @@ async def test_connect_together_invalid_api_key(mock_config_shared, mock_request
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_together_request_exception(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     # Setup
-    mock_requests_get.side_effect = Exception("Connection error")
+    mock_http_request.side_effect = Exception("Connection error")
 
     # Execute
     result = await connect_together("test_api_key")
 
     # Assert
-    mock_requests_get.assert_called_once()
+    mock_http_request.assert_called_once()
     mock_config_shared.assert_not_called()  # Config should not be updated on error
     assert result.status_code == 400
     assert (
@@ -3186,14 +3246,14 @@ async def test_connect_together_request_exception(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_together_non_401_response(mock_config_shared, mock_requests_get):
+async def test_connect_together_non_401_response(mock_config_shared, mock_http_request):
     # Setup
     mock_response = MagicMock()
     mock_response.status_code = 500  # Any non-401 status code
     mock_response.text = '{"error": "Server error"}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -3202,7 +3262,7 @@ async def test_connect_together_non_401_response(mock_config_shared, mock_reques
     result = await connect_together("test_api_key")
 
     # Assert
-    mock_requests_get.assert_called_once()
+    mock_http_request.assert_called_once()
     # Even with a 500 error, if it's not 401, we consider the key valid
     assert mock_config.together_api_key == "test_api_key"
     assert result.status_code == 200
@@ -3210,20 +3270,21 @@ async def test_connect_together_non_401_response(mock_config_shared, mock_reques
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_siliconflow_success(mock_config_shared, mock_requests_get):
+async def test_connect_siliconflow_success(mock_config_shared, mock_http_request):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.text = '{"models": []}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
 
     result = await connect_siliconflow("test_api_key")
 
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://api.siliconflow.cn/v1/models",
         headers={
             "Authorization": "Bearer test_api_key",
@@ -3236,19 +3297,20 @@ async def test_connect_siliconflow_success(mock_config_shared, mock_requests_get
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_siliconflow_invalid_api_key(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     mock_response = MagicMock()
     mock_response.status_code = 401
     mock_response.text = '{"error": "Unauthorized"}'
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     result = await connect_siliconflow("invalid_api_key")
 
-    mock_requests_get.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "GET",
         "https://api.siliconflow.cn/v1/models",
         headers={
             "Authorization": "Bearer invalid_api_key",
@@ -3264,16 +3326,16 @@ async def test_connect_siliconflow_invalid_api_key(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_siliconflow_request_exception(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
-    mock_requests_get.side_effect = Exception("Connection error")
+    mock_http_request.side_effect = Exception("Connection error")
 
     result = await connect_siliconflow("test_api_key")
 
-    mock_requests_get.assert_called_once()
+    mock_http_request.assert_called_once()
     mock_config_shared.assert_not_called()
     assert result.status_code == 400
     assert (
@@ -3283,19 +3345,19 @@ async def test_connect_siliconflow_request_exception(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_siliconflow_non_200_response(
-    mock_config_shared, mock_requests_get
+    mock_config_shared, mock_http_request
 ):
     mock_response = MagicMock()
     mock_response.status_code = 500
     mock_response.text = "Internal Server Error"
-    mock_requests_get.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     result = await connect_siliconflow("test_api_key")
 
-    mock_requests_get.assert_called_once()
+    mock_http_request.assert_called_once()
     # Should NOT save key on non-200
     mock_config_shared.assert_not_called()
     assert result.status_code == 400
@@ -4449,15 +4511,15 @@ def _featherless_expected_request(key: str):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status_code", [400, 404, 422, 200])
-@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_featherless_success(
-    mock_config_shared, mock_requests_post, status_code
+    mock_config_shared, mock_http_request, status_code
 ):
     """Any non-auth, non-server-error response means the key was accepted."""
     mock_response = MagicMock()
     mock_response.status_code = status_code
-    mock_requests_post.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
@@ -4465,7 +4527,8 @@ async def test_connect_featherless_success(
     result = await connect_featherless("test_api_key")
 
     expected = _featherless_expected_request("test_api_key")
-    mock_requests_post.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "POST",
         expected["url"],
         headers=expected["headers"],
         json=expected["json"],
@@ -4476,19 +4539,20 @@ async def test_connect_featherless_success(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_featherless_invalid_api_key(
-    mock_config_shared, mock_requests_post
+    mock_config_shared, mock_http_request
 ):
     mock_response = MagicMock()
     mock_response.status_code = 401
-    mock_requests_post.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     result = await connect_featherless("invalid_api_key")
 
     expected = _featherless_expected_request("invalid_api_key")
-    mock_requests_post.assert_called_once_with(
+    mock_http_request.assert_called_once_with(
+        "POST",
         expected["url"],
         headers=expected["headers"],
         json=expected["json"],
@@ -4503,19 +4567,19 @@ async def test_connect_featherless_invalid_api_key(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status_code", [500, 502, 503])
-@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_featherless_server_error(
-    mock_config_shared, mock_requests_post, status_code
+    mock_config_shared, mock_http_request, status_code
 ):
     """Server errors are inconclusive — don't save the key."""
     mock_response = MagicMock()
     mock_response.status_code = status_code
-    mock_requests_post.return_value = mock_response
+    mock_http_request.return_value = mock_response
 
     result = await connect_featherless("test_api_key")
 
-    mock_requests_post.assert_called_once()
+    mock_http_request.assert_called_once()
     mock_config_shared.assert_not_called()
     assert result.status_code == 400
     assert (
@@ -4525,16 +4589,16 @@ async def test_connect_featherless_server_error(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api._http_request")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_featherless_request_exception(
-    mock_config_shared, mock_requests_post
+    mock_config_shared, mock_http_request
 ):
-    mock_requests_post.side_effect = Exception("Connection error")
+    mock_http_request.side_effect = Exception("Connection error")
 
     result = await connect_featherless("test_api_key")
 
-    mock_requests_post.assert_called_once()
+    mock_http_request.assert_called_once()
     mock_config_shared.assert_not_called()
     assert result.status_code == 400
     assert (
@@ -4988,3 +5052,132 @@ def test_connect_api_key_typesafe_success(mock_connect_typesafe, client):
 
     assert response.status_code == 200
     mock_connect_typesafe.assert_called_once_with("test_key")
+
+
+async def test_http_request_follows_redirects():
+    with respx.mock() as server:
+        server.get("https://api.example.com/v1/models").mock(
+            return_value=httpx.Response(
+                307, headers={"Location": "https://api.example.com/v2/models"}
+            )
+        )
+        server.get("https://api.example.com/v2/models").mock(
+            return_value=httpx.Response(200, json={"data": []})
+        )
+
+        response = await _http_request("GET", "https://api.example.com/v1/models")
+
+    assert response.status_code == 200
+
+
+class InFlightGate:
+    """A fake backend call that can only finish if the event loop keeps running other work while the call is in flight."""
+
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.released = threading.Event()
+
+    def block_thread(self) -> None:
+        self.started.set()
+        if not self.released.wait(timeout=5):
+            raise AssertionError("Event loop was blocked during a disk walk")
+
+    async def wait(self) -> None:
+        self.started.set()
+        while not self.released.is_set():
+            await asyncio.sleep(0.001)
+
+
+async def release_gates_in_order(gates: list[InFlightGate]) -> None:
+    for gate in gates:
+        while not gate.started.is_set():
+            await asyncio.sleep(0.001)
+        gate.released.set()
+
+
+async def test_available_models_does_not_block_event_loop():
+    docker_gate, ollama_gate, disk_gate, openai_compatible_gate = (
+        InFlightGate() for _ in range(4)
+    )
+
+    def gated_response(gate: InFlightGate, response: httpx.Response):
+        async def side_effect(request):
+            await gate.wait()
+            return response
+
+        return side_effect
+
+    def gated_disk_walk():
+        disk_gate.block_thread()
+        return []
+
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = None
+    mock_config.openai_compatible_providers = [
+        {"name": "lan_server", "base_url": "http://lan.test/v1", "api_key": "k"}
+    ]
+
+    with (
+        respx.mock() as server,
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api._openai_compatible_providers_cache",
+            None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.ollama_base_url",
+            return_value="http://ollama.test:11434",
+        ),
+        patch(
+            "kiln_ai.adapters.docker_model_runner_tools.docker_model_runner_base_url",
+            return_value="http://docker.test:12434",
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.all_projects",
+            side_effect=gated_disk_walk,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
+            return_value={},
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.user_models_as_available",
+            return_value={},
+        ),
+    ):
+        server.get("http://docker.test:12434/v1/models").mock(
+            side_effect=gated_response(docker_gate, openai_models_list("ai/my-model"))
+        )
+        server.get("http://ollama.test:11434/api/tags").mock(
+            side_effect=gated_response(
+                ollama_gate,
+                httpx.Response(200, json={"models": [{"model": "my-ollama-model"}]}),
+            )
+        )
+        server.get("http://ollama.test:11434/api/version").mock(
+            return_value=httpx.Response(200, json={"version": "0.5.0"})
+        )
+        server.get("http://lan.test/v1/models").mock(
+            side_effect=gated_response(
+                openai_compatible_gate, openai_models_list("lan-model")
+            )
+        )
+
+        models, _ = await asyncio.wait_for(
+            asyncio.gather(
+                available_models(),
+                release_gates_in_order(
+                    [docker_gate, ollama_gate, disk_gate, openai_compatible_gate]
+                ),
+            ),
+            timeout=10,
+        )
+
+    assert [provider.provider_name for provider in models] == [
+        "Ollama",
+        "Docker Model Runner",
+        "lan_server",
+    ]
