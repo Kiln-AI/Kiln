@@ -401,6 +401,13 @@ def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
     assert errors == []
 
 
+def _bounded_cache(max_bytes: int) -> ModelCache:
+    cache = ModelCache(max_bytes=max_bytes)
+    # Size accounting doesn't depend on timestamp granularity, which some CI filesystems lack.
+    cache._enabled = True
+    return cache
+
+
 def _readonly_model(name: str = "test") -> KilnModelTest:
     model = KilnModelTest(name=name, value=1)
     model.mark_as_readonly()
@@ -418,9 +425,7 @@ def cached_files(tmp_path):
 
 
 def test_evicts_least_recently_used_when_over_max_bytes(cached_files):
-    cache = ModelCache(max_bytes=300)
-    if not cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
+    cache = _bounded_cache(300)
     a, b, c, d = cached_files
     for path in (a, b, c):
         cache.set_model(
@@ -437,9 +442,7 @@ def test_evicts_least_recently_used_when_over_max_bytes(cached_files):
 
 
 def test_evicts_several_entries_for_one_large_entry(cached_files):
-    cache = ModelCache(max_bytes=300)
-    if not cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
+    cache = _bounded_cache(300)
     a, b, c, d = cached_files
     for path in (a, b, c):
         cache.set_model(
@@ -453,9 +456,7 @@ def test_evicts_several_entries_for_one_large_entry(cached_files):
 
 
 def test_file_larger_than_max_bytes_is_not_cached(cached_files):
-    cache = ModelCache(max_bytes=100)
-    if not cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
+    cache = _bounded_cache(100)
     a, b, _, _ = cached_files
     cache.set_model(a, _readonly_model(), a.stat().st_mtime_ns, size_bytes=50)
 
@@ -466,9 +467,7 @@ def test_file_larger_than_max_bytes_is_not_cached(cached_files):
 
 
 def test_replacing_an_entry_counts_its_size_once(cached_files):
-    cache = ModelCache(max_bytes=1000)
-    if not cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
+    cache = _bounded_cache(1000)
     a = cached_files[0]
     mtime_ns = a.stat().st_mtime_ns
     cache.set_model(a, _readonly_model(), mtime_ns, size_bytes=100)
@@ -481,9 +480,7 @@ def test_replacing_an_entry_counts_its_size_once(cached_files):
 
 
 def test_invalidate_and_clear_release_bytes(cached_files):
-    cache = ModelCache(max_bytes=1000)
-    if not cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
+    cache = _bounded_cache(1000)
     a, b, _, _ = cached_files
     cache.set_model(a, _readonly_model(), a.stat().st_mtime_ns, size_bytes=100)
     cache.set_model(b, _readonly_model(), b.stat().st_mtime_ns, size_bytes=200)
@@ -499,9 +496,7 @@ def test_invalidate_and_clear_release_bytes(cached_files):
 
 
 def test_stale_entry_releases_bytes_on_read(cached_files):
-    cache = ModelCache(max_bytes=1000)
-    if not cache._enabled:
-        pytest.skip("Cache is disabled on this fs")
+    cache = _bounded_cache(1000)
     a = cached_files[0]
     cache.set_model(a, _readonly_model(), a.stat().st_mtime_ns - 1, size_bytes=100)
 
