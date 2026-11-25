@@ -158,7 +158,12 @@ The skill is still changing on the build branch. Each item below says what must 
 
 - **A statistics file.** One file that explains detectability and the significance floor, and names the call for each (3.2, 3.3 and 3.8). It adds no call for noise: measuring noise stays with Kiln Harness Tuner. The run-experiments doc links to it. It adds the calls to HT's method; it does not change the method.
 - **The five smell documents** that code can detect name the smell check call, in place of telling the reader to measure by hand.
-- **The skill lever and the skill techniques** say today that a skill with reference files "is built when running Kiln Harness Tuner". They name the skill bundle routes as the way for every agent.
+- **The files that say only Kiln Harness Tuner can install a skill with reference files.** They were written before the skill bundle routes (3.9) existed. After the routes are built, each one still says this, so each is updated to name the routes as the way for every agent. Found on the build branch at `1b14901c`:
+  - `references/levers/skill.md`, "A new skill" and "A new version of an inherited skill": "install with the `install_skill_bundle` tool of Kiln Harness Tuner's skill installer. The skill installer is not a Kiln endpoint", and the export with `export_skill_bundle`.
+  - `references/knowledge/adding_skills.md`, "Create via API": "`references/*` files have NO API."
+  - `references/client_guidance/chat/using_kiln_from_chat.md`, "How to read the shared documents": the skill installer is named as a tool that Kiln does not have, with "tell the user it needs Kiln Harness Tuner". The skill installer leaves that line. The screening stays in it.
+  - Any other file that says the same. Search the whole skill again when the work is done: the text is still changing.
+  - The new text must also read right for Kiln Harness Tuner's own agents. They reach the routes through their gateway tools (5.6), by the map of 5.4.
 - **`using_harness_tuner`.** Tells a coding agent with `kiln_skill` how to run the HT command line, in place of running a large experiment itself. It covers: when to use it; the checks to make first; install; the non-interactive command and the options that matter; cost and time, and asking the user before starting a paid run; starting it in the background, watching it and stopping it; reading the result; what to do when the start refuses; limits.
 - **A contract test.** HT names certain paths, ids, front matter keys and headings of Kiln's skill (5.2). Kiln gets a test that pins that list. When a change to the skill breaks the list, the test fails in Kiln, and the fix is either to keep the name or to raise `min_supported_harness_tuner_version`.
 
