@@ -27,7 +27,6 @@ from kiln_ai.datamodel.json_schema import (
     schema_from_json_str,
 )
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
-from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.spec import Spec
@@ -134,7 +133,6 @@ class Task(
         "_runs": ParentOfRelationship(model=TaskRun, filesystem_name="runs"),
         "dataset_splits": DatasetSplit,
         "finetunes": Finetune,
-        "prompt_optimization_jobs": PromptOptimizationJob,
         "prompts": Prompt,
         "evals": Eval,
         "eval_inputs": EvalInput,
@@ -291,11 +289,6 @@ class Task(
         # the first; cleanup is up to the caller.
         guides = self.data_guides(readonly=readonly)
         return guides[0] if guides else None
-
-    def prompt_optimization_jobs(
-        self, readonly: bool = False
-    ) -> list[PromptOptimizationJob]:
-        return super().prompt_optimization_jobs(readonly=readonly)  # type: ignore
 
     # Workaround to return typed parent without importing Task
     def parent_project(self) -> Union["Project", None]:

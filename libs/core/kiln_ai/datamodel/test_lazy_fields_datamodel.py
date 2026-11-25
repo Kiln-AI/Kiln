@@ -26,14 +26,14 @@ from kiln_ai.datamodel.lazy_fields import (
     LazyFieldsMixin,
     SummaryValue,
 )
+from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvReset
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
-from kiln_ai.datamodel.world import WorldEpisode, WorldReset
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 LAZY_CLASSES: list[type[LazyFieldsMixin]] = [
     TaskRun,
     TaskOutput,
-    WorldEpisode,
+    OpenEnvEpisode,
     EvalRun,
     ChunkEmbeddings,
 ]
@@ -57,11 +57,13 @@ def human_source() -> DataSource:
     return DataSource(type=DataSourceType.human, properties={"created_by": "tester"})
 
 
-def world_episode(final_state: dict[str, Any] | None) -> WorldEpisode:
-    return WorldEpisode(
-        reset=WorldReset(world_id="world_1", reset_kwargs={"scenario": "easy"}),
+def openenv_episode(final_state: dict[str, Any] | None) -> OpenEnvEpisode:
+    return OpenEnvEpisode(
+        reset=OpenEnvReset(
+            openenv_server_id="openenv_server_1", reset_kwargs={"scenario": "easy"}
+        ),
         episode_id="episode_1",
-        world_version="env@1.0.0",
+        openenv_version="env@1.0.0",
         final_state=final_state,
     )
 
@@ -80,7 +82,7 @@ def save_task_run(task: Task, **overrides: Any) -> Path:
         "repaired_output": TaskOutput(output="Shorter.", source=human_source()),
         "intermediate_outputs": {"reasoning": "Step by step."},
         "trace": copy.deepcopy(TRACE),
-        "world_episode": world_episode({"notes": ["visited"]}),
+        "openenv_episode": openenv_episode({"notes": ["visited"]}),
         "tags": ["golden"],
     }
     fields.update(overrides)
@@ -149,10 +151,10 @@ def test_plans_for_marked_classes():
             ("intermediate_outputs",),
             ("output", "output"),
             ("repaired_output", "output"),
-            ("world_episode", "final_state"),
+            ("openenv_episode", "final_state"),
         },
         TaskOutput: {("output",)},
-        WorldEpisode: {("final_state",)},
+        OpenEnvEpisode: {("final_state",)},
         EvalRun: {
             ("input",),
             ("output",),
@@ -263,8 +265,8 @@ SUMMARY_CASES: list[dict[str, Any]] = [
     {"intermediate_outputs": {"chain_of_thought": "c"}},
     {"intermediate_outputs": {"reasoning": "", "chain_of_thought": "c"}},
     {"intermediate_outputs": {"other_step": "o"}},
-    {"world_episode": None},
-    {"world_episode": world_episode(None)},
+    {"openenv_episode": None},
+    {"openenv_episode": openenv_episode(None)},
 ]
 
 
@@ -282,9 +284,10 @@ def test_task_run_summary_values_match_live_values(
     assert run.trace_length == uncached.trace_length
     assert run.has_thinking == uncached.has_thinking
     assert run.has_thinking_training_data() == uncached.has_thinking_training_data()
-    if uncached.world_episode is not None:
+    if uncached.openenv_episode is not None:
         assert (
-            run.world_episode.has_final_state == uncached.world_episode.has_final_state
+            run.openenv_episode.has_final_state
+            == uncached.openenv_episode.has_final_state
         )
     large_field_restores.assert_not_called()
 
@@ -322,7 +325,7 @@ def test_summary_values_not_serialized(task, tmp_path, model_cache_enabled):
     run = load_cached(TaskRun, save_task_run(task))
     eval_run = load_cached(EvalRun, save_eval_run(tmp_path))
     names = (
-        summary_names(TaskRun) | summary_names(EvalRun) | summary_names(WorldEpisode)
+        summary_names(TaskRun) | summary_names(EvalRun) | summary_names(OpenEnvEpisode)
     )
     assert names == {
         "input_preview",
@@ -335,7 +338,7 @@ def test_summary_values_not_serialized(task, tmp_path, model_cache_enabled):
 
     run_dump = run.model_dump()
     assert names.isdisjoint(run_dump)
-    assert names.isdisjoint(run_dump["world_episode"])
+    assert names.isdisjoint(run_dump["openenv_episode"])
     assert names.isdisjoint(eval_run.model_dump())
     for cls in LAZY_CLASSES:
         for mode in ("validation", "serialization"):

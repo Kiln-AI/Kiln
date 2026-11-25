@@ -3329,7 +3329,7 @@ _EVAL_INPUT_FIELD_EXPRESSIONS = {
     "trace": "trace[-1].content",
     "task_input": "task_input | upper",
     "reference_data": "reference_data",
-    "world_episode": "world_episode.final_state",
+    "openenv_episode": "openenv_episode.final_state",
 }
 
 
@@ -3503,7 +3503,10 @@ class TestV2TemplateValidation:
                     value_expression=expression,
                 ),
             )
-        assert "final_message, reference_data, task_input, trace" in str(exc.value)
+        assert (
+            "final_message, openenv_episode, reference_data, task_input, trace"
+            in str(exc.value)
+        )
 
     def test_value_expression_unknown_variable_still_loads_from_file(self):
         """Already-saved configs keep loading; the check gates writes, not reads."""

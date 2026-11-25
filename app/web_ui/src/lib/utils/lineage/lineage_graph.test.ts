@@ -251,7 +251,7 @@ describe("node_matches_filters", () => {
 })
 
 describe("summarize_lineage", () => {
-  it("counts run configs, models and overlapping change kinds", () => {
+  it("counts run configs and overlapping change kinds", () => {
     const graph = build_lineage_graph([
       make_dated_config("root", 0),
       make_dated_config("prompt_and_model", 1, ["root"], {
@@ -263,16 +263,11 @@ describe("summarize_lineage", () => {
         tools_config: { tools: ["kiln_tool::add_numbers"] },
       }),
       make_dated_config("copy", 3, ["root"]),
-      make_dated_config("other_provider", 4, ["gone"], {
-        model_provider_name: "openrouter",
-      }),
+      make_dated_config("orphan", 4, ["gone"]),
       make_mcp_config({ id: "mcp", created_at: created_at_for(5) }),
     ])
     expect(summarize_lineage(graph)).toEqual({
       run_config_count: 6,
-      model_count: 3,
-      tool_count: 1,
-      skill_count: 0,
       filter_counts: {
         prompt: 2,
         tools: 1,
@@ -284,35 +279,9 @@ describe("summarize_lineage", () => {
     })
   })
 
-  it("counts each distinct tool and skill once across run configs", () => {
-    const graph = build_lineage_graph([
-      make_dated_config("a", 0, [], {
-        tools_config: {
-          tools: ["kiln_tool::add_numbers", "kiln_tool::skill::tone"],
-        },
-      }),
-      make_dated_config("b", 1, ["a"], {
-        tools_config: {
-          tools: [
-            "kiln_tool::add_numbers",
-            "kiln_tool::web_search",
-            "kiln_tool::skill::tone",
-            "kiln_tool::skill::escalation",
-          ],
-        },
-      }),
-      make_mcp_config({ id: "mcp", created_at: created_at_for(2) }),
-    ])
-    const summary = summarize_lineage(graph)
-    expect([summary.tool_count, summary.skill_count]).toEqual([2, 2])
-  })
-
   it("is all zeros for an empty graph", () => {
     expect(summarize_lineage(build_lineage_graph([]))).toEqual({
       run_config_count: 0,
-      model_count: 0,
-      tool_count: 0,
-      skill_count: 0,
       filter_counts: {
         prompt: 0,
         tools: 0,

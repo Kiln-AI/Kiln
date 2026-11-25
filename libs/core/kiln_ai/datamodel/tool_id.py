@@ -19,8 +19,8 @@ Tool IDs can be one of:
 - A Kiln task tool: kiln_task::<server_id>
 - An assistant-memory tool: kiln_tool::memory::<operation> (project-bound)
 - An SDK / adapter-injected unmanaged tool: kiln_unmanaged::<id> (single slug, not from the registry)
-- A world tool: kiln_tool::world::<world_id>::<tool_name>, a tool the world's OpenEnv
-  environment serves, usable only while an episode of that world is active
+- An OpenEnv tool: kiln_tool::openenv::<openenv_server_id>::<tool_name>, a tool the OpenEnv
+  server serves, usable only while an episode of that OpenEnv server is active
 - More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
 
@@ -45,7 +45,7 @@ SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
 MEMORY_TOOL_ID_PREFIX = "kiln_tool::memory::"
 KILN_UNMANAGED_TOOL_ID_PREFIX = "kiln_unmanaged::"
 CODE_TOOL_ID_PREFIX = "kiln_tool::code::"
-WORLD_TOOL_ID_PREFIX = "kiln_tool::world::"
+OPENENV_TOOL_ID_PREFIX = "kiln_tool::openenv::"
 
 # The six assistant-memory operations, project-bound (see kiln_ai.tools.memory_tools).
 MEMORY_TOOL_OPERATIONS = ("save", "list", "get", "update", "delete", "summary")
@@ -151,9 +151,9 @@ def _check_tool_id(id: str) -> str:
         kiln_unmanaged_tool_slug_from_id(id)
         return id
 
-    # World tools must have format: kiln_tool::world::<world_id>::<tool_name>
-    if id.startswith(WORLD_TOOL_ID_PREFIX):
-        world_and_tool_name_from_id(id)
+    # OpenEnv tools must have format: kiln_tool::openenv::<openenv_server_id>::<tool_name>
+    if id.startswith(OPENENV_TOOL_ID_PREFIX):
+        openenv_and_tool_name_from_id(id)
         return id
 
     raise ValueError(f"Invalid tool ID: {id}")
@@ -260,27 +260,27 @@ def code_tool_id_from_tool_id(tool_id: str) -> str:
     return parts[2]
 
 
-def build_world_tool_id(world_id: ID_TYPE, tool_name: str) -> str:
-    """Construct the tool ID for a tool a world's environment serves."""
-    return f"{WORLD_TOOL_ID_PREFIX}{world_id}::{tool_name}"
+def build_openenv_tool_id(openenv_server_id: ID_TYPE, tool_name: str) -> str:
+    """Construct the tool ID for a tool an OpenEnv server's environment serves."""
+    return f"{OPENENV_TOOL_ID_PREFIX}{openenv_server_id}::{tool_name}"
 
 
-def world_and_tool_name_from_id(tool_id: str) -> tuple[str, str]:
-    """Extract ``(world_id, tool_name)`` from a world tool ID.
+def openenv_and_tool_name_from_id(tool_id: str) -> tuple[str, str]:
+    """Extract ``(openenv_server_id, tool_name)`` from an OpenEnv tool ID.
 
-    Four segments, unlike every other ``kiln_tool::`` form, because a world tool
-    is only meaningful inside the world that serves it.
+    Four segments, unlike every other ``kiln_tool::`` form, because an OpenEnv tool
+    is only meaningful inside the OpenEnv server that serves it.
     """
     parts = tool_id.split("::")
     if (
-        not tool_id.startswith(WORLD_TOOL_ID_PREFIX)
+        not tool_id.startswith(OPENENV_TOOL_ID_PREFIX)
         or len(parts) != 4
         or not parts[2]
         or not parts[3]
     ):
         raise ValueError(
-            f"Invalid world tool ID: {tool_id}. Expected format: "
-            "'kiln_tool::world::<world_id>::<tool_name>'."
+            f"Invalid OpenEnv tool ID: {tool_id}. Expected format: "
+            "'kiln_tool::openenv::<openenv_server_id>::<tool_name>'."
         )
     return parts[2], parts[3]
 

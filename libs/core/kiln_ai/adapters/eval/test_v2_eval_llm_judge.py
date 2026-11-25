@@ -1006,6 +1006,7 @@ class TestLlmJudgeE2EMessageConstruction:
 
         mock_config_obj = Mock()
         mock_config_obj.open_ai_api_key = "fake-key"
+        mock_config_obj.open_ai_reasoning_summaries = False
         mock_config_obj.user_id = "test_user"
 
         cfg = self._build_config()

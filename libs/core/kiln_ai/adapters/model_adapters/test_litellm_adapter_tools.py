@@ -33,6 +33,11 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutpu
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.openenv.session_manager import (
+    OpenEnvError,
+    OpenEnvRejectedError,
+    OpenEnvTransientError,
+)
 from kiln_ai.tools.base_tool import (
     ToolCallContext,
     ToolCallError,
@@ -47,11 +52,6 @@ from kiln_ai.tools.built_in_tools.math_tools import (
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
-from kiln_ai.worlds.session_manager import (
-    OpenEnvError,
-    OpenEnvRejectedError,
-    OpenEnvTransientError,
-)
 
 
 def build_test_task(tmp_path: Path):
@@ -228,6 +228,18 @@ async def test_tools_gpt_4_1_mini_simplified(tmp_path):
     )
 
 
+@pytest.mark.paid
+async def test_tools_store_false_gpt_5_4_pro(tmp_path):
+    # LiteLLM routes gpt-5.4-pro to /v1/responses, so each tool round replays the
+    # previous round's encrypted reasoning, which OpenAI must accept under store: false.
+    task = build_test_task(tmp_path)
+    with patch("litellm.acompletion", wraps=litellm.acompletion) as acompletion_spy:
+        await run_simple_task_with_tools(task, "gpt_5_4_pro", ModelProviderName.openai)
+
+    store_values = [call.kwargs.get("store") for call in acompletion_spy.call_args_list]
+    assert store_values == [False, False, False]
+
+
 def check_supports_structured_output(model_name: str, provider_name: str):
     for model in built_in_models:
         if model.name != model_name:
@@ -310,6 +322,7 @@ async def test_tools_simplied_mocked(tmp_path):
     # Mock the Config.shared() method to return a mock config with required attributes
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.open_ai_reasoning_summaries = False
     mock_config.user_id = "test_user"
 
     responses = [mock_response_1, mock_response_2]
@@ -415,6 +428,7 @@ async def test_tools_mocked(tmp_path):
     # Mock the Config.shared() method to return a mock config with required attributes
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.open_ai_reasoning_summaries = False
     mock_config.user_id = "test_user"
 
     with (
@@ -1311,7 +1325,7 @@ UNEXPECTED_ADD_FAILURE = (
             ],
             [("call_1", "add", '{"a": 2, "b": 2}')],
             [_tool_error("call_1", UNEXPECTED_ADD_FAILURE)],
-            id="world_rejected_call_keeps_session",
+            id="openenv_rejected_call_keeps_session",
         ),
         pytest.param(
             [
@@ -1495,11 +1509,12 @@ async def test_process_tool_calls_broken_tool_schema_fails_run(
     "error",
     [
         pytest.param(
-            OpenEnvTransientError("connection dropped"), id="world_session_dropped"
+            OpenEnvTransientError("connection dropped"),
+            id="openenv_session_dropped",
         ),
         pytest.param(
             OpenEnvError("The environment sent invalid JSON: <html>"),
-            id="world_session_broken",
+            id="openenv_session_broken",
         ),
         pytest.param(
             litellm.RateLimitError(
@@ -1520,7 +1535,7 @@ async def test_process_tool_calls_broken_tool_schema_fails_run(
     ],
 )
 async def test_run_ending_tool_error_fails_run(tools_adapter, error):
-    """A transient error the retry layers retry, or a world error that ended the
+    """A transient error the retry layers retry, or an environment error that ended the
     session, fails the run on the first call with that same error instead of
     going back to the model."""
     tool_call_response = _tool_call_response(("call_1", "add", '{"a": 2, "b": 2}'))

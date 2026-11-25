@@ -37,7 +37,7 @@ fi
 
 # Bake Sentry env/release into the packaged app from CI-provided env vars.
 # Pyinstaller doesn't carry build-time env vars to the user's runtime, so we
-# write a generated python module that desktop.py imports.
+# write a generated python module that desktop_main.py imports.
 python3 - <<'PY'
 import os
 import pathlib
@@ -111,6 +111,9 @@ fi
 # We should use a spec instead of a long-winded command line
 # eval_helpers is imported only by user scorer code at runtime (the code-eval
 # examples embed the import as a string), so PyInstaller can't discover it.
+# desktop/pyinstaller_hooks replaces the contrib nltk runtime hook, which imports
+# nltk at the start of every process (see the hook file). The build log warning
+# "Runtime hooks for nltk have already been defined" is expected.
 pyinstaller $(printf %s "$PLATFORM_OPTS")  \
   --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
   --noconfirm --distpath=./desktop/build/dist --workpath=./desktop/build/work \
@@ -118,4 +121,5 @@ pyinstaller $(printf %s "$PLATFORM_OPTS")  \
   --hidden-import=kiln_ai.adapters.eval.eval_helpers \
   --hidden-import=litellm \
   --collect-all=litellm \
+  --additional-hooks-dir=./desktop/pyinstaller_hooks \
   --paths=. ./desktop/desktop.py

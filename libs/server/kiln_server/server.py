@@ -96,10 +96,6 @@ tags_metadata = [
         "description": "Create and manage fine-tuning jobs.",
     },
     {
-        "name": "Prompt Optimization",
-        "description": "Run and monitor prompt optimization jobs.",
-    },
-    {
         "name": "Skills",
         "description": "Create and manage agent skills within projects.",
     },
@@ -112,8 +108,8 @@ tags_metadata = [
         "description": "Create, test, and manage user-authored Python code tools.",
     },
     {
-        "name": "Worlds",
-        "description": "Manage worlds: pointers to running OpenEnv environments that play an agent's tool set, and the tools they serve.",
+        "name": "OpenEnv Servers",
+        "description": "Manage OpenEnv servers: Kiln's saved pointers to running OpenEnv environments that play an agent's tool set, and the tools they serve.",
     },
     {
         "name": "Tools & MCP",

@@ -52,7 +52,7 @@ export const BATCH_PROFILES: BatchProfile[] = [
     key: "smoke_test",
     label: "Smoke Test",
     description:
-      "20 items, all in the test set. Can't be used for auto-optimize.",
+      "20 items, all in the test set. Can't be used for optimization.",
     dealt: 20,
     shares: [{ split: "test", weight: 1 }],
   },
