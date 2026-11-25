@@ -472,7 +472,9 @@ class KilnBaseModel(BaseModel):
         if readonly:
             m.mark_as_readonly()
             # Cache, but only if readonly. Mutable models should not be cached.
-            ModelCache.shared().set_model(path, m, mtime_ns, file_stat.st_size)
+            ModelCache.shared().set_model(
+                path, m, mtime_ns, size_bytes=file_stat.st_size
+            )
 
         return m
 
@@ -782,14 +784,26 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         cls: Type[PT], id: str, parent_path: Path | None
     ) -> PT | None:
         """
-        Fast search by ID using the cache. Avoids the model_copy overhead on all but the exact match.
+        Find a child by its ID.
 
-        Uses cache so still slow on first load.
+        Children saved without a name live in a folder named exactly after their ID, so that
+        file is checked first. Otherwise every child file is checked, using the cache where
+        possible. The ID inside the file is the source of truth in both cases.
         """
         if parent_path is None:
             return None
 
-        # Note: we're using the in-file ID. We could make this faster using the path-ID if this becomes perf bottleneck, but it's better to have 1 source of truth.
+        # IDs can come from request paths: only a plain folder name may form a path.
+        if id not in ("", ".", "..") and Path(id).name == id:
+            parent_folder = parent_path.parent if parent_path.is_file() else parent_path
+            direct_path = (
+                parent_folder / cls.relationship_name() / id / cls.base_filename()
+            )
+            if direct_path.is_file():
+                child = cls.load_from_file(direct_path)
+                if child.id == id:
+                    return child
+
         for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
             child_id = ModelCache.shared().get_model_id(child_path, cls)
             if child_id == id:

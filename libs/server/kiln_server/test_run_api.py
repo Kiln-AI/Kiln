@@ -1227,32 +1227,82 @@ def _get_run_data_availability(client, project, task) -> dict:
     return response.json()
 
 
-def _rate(run: TaskRun) -> None:
-    run.output.rating = TaskOutputRating(value=5.0, type=TaskOutputRatingType.five_star)
-    run.save_to_file()
-
-
-def _make_rated_repaired_run(task: Task) -> TaskRun:
+def _make_run(
+    task: Task, rating_value: float | None = None, repaired: bool = False
+) -> TaskRun:
+    """Save a run; ``rating_value`` of None leaves it unrated."""
     human = DataSource(
         type=DataSourceType.human, properties={"created_by": "Test User"}
+    )
+    rating = (
+        TaskOutputRating(value=rating_value, type=TaskOutputRatingType.five_star)
+        if rating_value is not None
+        else None
     )
     run = TaskRun(
         parent=task,
         input="Test input",
         input_source=human,
-        output=TaskOutput(
-            output="Test output",
-            source=human,
-            rating=TaskOutputRating(value=2.0, type=TaskOutputRatingType.five_star),
+        output=TaskOutput(output="Test output", source=human, rating=rating),
+        repair_instructions="Fix this output" if repaired else None,
+        repaired_output=(
+            TaskOutput(output="Fixed output", source=human) if repaired else None
         ),
-        repair_instructions="Fix this output",
-        repaired_output=TaskOutput(output="Fixed output", source=human),
     )
     run.save_to_file()
     return run
 
 
-def test_run_data_availability_without_rated_or_repaired_runs(client, task_run_setup):
+@pytest.fixture
+def enabled_model_cache(monkeypatch):
+    """The shared model cache, empty and switched on even where timestamps are coarse."""
+    cache = ModelCache.shared()
+    monkeypatch.setattr(cache, "_enabled", True)
+    cache.clear()
+    yield cache
+    cache.clear()
+
+
+@pytest.mark.parametrize(
+    "rating_value, repaired, expected",
+    [
+        (None, False, {"has_rated_runs": False, "has_repaired_runs": False}),
+        (5.0, False, {"has_rated_runs": True, "has_repaired_runs": False}),
+        (None, True, {"has_rated_runs": False, "has_repaired_runs": True}),
+        (2.0, True, {"has_rated_runs": True, "has_repaired_runs": True}),
+    ],
+)
+def test_run_data_availability_flags(
+    client, task_run_setup, rating_value, repaired, expected
+):
+    task = task_run_setup["task"]
+    shutil.rmtree(task_run_setup["task_run"].path.parent)
+    _make_run(task, rating_value=rating_value, repaired=repaired)
+
+    result = _get_run_data_availability(client, task_run_setup["project"], task)
+
+    assert result == expected
+
+
+def test_run_data_availability_ignores_rating_without_value(client, task_run_setup):
+    run = task_run_setup["task_run"]
+    run.output.rating = TaskOutputRating(
+        value=None,
+        type=TaskOutputRatingType.five_star,
+        requirement_ratings={},
+    )
+    run.save_to_file()
+
+    result = _get_run_data_availability(
+        client, task_run_setup["project"], task_run_setup["task"]
+    )
+
+    assert result["has_rated_runs"] is False
+
+
+def test_run_data_availability_task_without_runs(client, task_run_setup):
+    shutil.rmtree(task_run_setup["task_run"].path.parent)
+
     result = _get_run_data_availability(
         client, task_run_setup["project"], task_run_setup["task"]
     )
@@ -1260,19 +1310,21 @@ def test_run_data_availability_without_rated_or_repaired_runs(client, task_run_s
     assert result == {"has_rated_runs": False, "has_repaired_runs": False}
 
 
-def test_run_data_availability_with_rated_and_repaired_run(client, task_run_setup):
-    _make_rated_repaired_run(task_run_setup["task"])
+def test_run_data_availability_task_not_found(client):
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.side_effect = HTTPException(
+            status_code=404, detail="Task not found"
+        )
+        response = client.get(
+            "/api/projects/project1-id/tasks/missing-task/run_data_availability"
+        )
 
-    result = _get_run_data_availability(
-        client, task_run_setup["project"], task_run_setup["task"]
-    )
-
-    assert result == {"has_rated_runs": True, "has_repaired_runs": True}
+    assert response.status_code == 404
 
 
 def test_run_data_availability_counts_only_leaf_runs(client, task_run_setup_multiturn):
     task = task_run_setup_multiturn["task"]
-    root = _make_rated_repaired_run(task)
+    root = _make_run(task, rating_value=2.0, repaired=True)
     _make_child_run(task, root)
 
     result = _get_run_data_availability(
@@ -1282,8 +1334,7 @@ def test_run_data_availability_counts_only_leaf_runs(client, task_run_setup_mult
     assert result == {"has_rated_runs": False, "has_repaired_runs": False}
 
 
-def test_run_data_availability_ignores_eval_generated_runs(client, task_run_setup):
-    task = task_run_setup["task"]
+def _save_eval_run(task: Task) -> TaskRun:
     eval_run = TaskRun(
         parent=task,
         input="eval input",
@@ -1293,60 +1344,81 @@ def test_run_data_availability_ignores_eval_generated_runs(client, task_run_setu
             source=DataSource(
                 type=DataSourceType.human, properties={"created_by": "Test User"}
             ),
+            rating=TaskOutputRating(value=5.0, type=TaskOutputRatingType.five_star),
         ),
+        tags=["eval_tag"],
     )
     eval_run.save_to_file()
-    _rate(eval_run)
+    return eval_run
+
+
+def test_run_data_availability_ignores_eval_generated_runs(client, task_run_setup):
+    task = task_run_setup["task"]
+    _save_eval_run(task)
 
     result = _get_run_data_availability(client, task_run_setup["project"], task)
 
     assert result == {"has_rated_runs": False, "has_repaired_runs": False}
 
 
-def test_run_data_availability_does_not_cache_runs(client, task_run_setup):
-    _rate(task_run_setup["task_run"])
-    ModelCache.shared().clear()
-
-    result = _get_run_data_availability(
-        client, task_run_setup["project"], task_run_setup["task"]
-    )
-
-    assert result["has_rated_runs"] is True
-    cached_types = {
-        type(entry[0]) for entry in ModelCache.shared().model_cache.values()
-    }
-    assert TaskRun not in cached_types
+def _get_task_endpoint(client, project, task, endpoint: str):
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/{endpoint}")
+    assert response.status_code == 200
+    return response.json()
 
 
-def test_run_data_availability_reuses_cached_runs(client, task_run_setup, monkeypatch):
-    monkeypatch.setattr(ModelCache.shared(), "_enabled", True)
-    _rate(task_run_setup["task_run"])
+def test_runs_summaries_and_tags_ignore_eval_generated_runs(client, task_run_setup):
+    task = task_run_setup["task"]
+    project = task_run_setup["project"]
+    eval_run = _save_eval_run(task)
+
+    summaries = _get_task_endpoint(client, project, task, "runs_summaries")
+    tags = _get_task_endpoint(client, project, task, "tags")
+
+    assert eval_run.id not in {s["id"] for s in summaries}
+    assert "eval_tag" not in tags
+
+
+_SCAN_ENDPOINTS = ["runs_summaries", "tags", "run_data_availability"]
+
+
+@pytest.mark.parametrize("endpoint", _SCAN_ENDPOINTS)
+def test_task_run_scans_cache_only_dataset_runs(
+    client, task_run_setup_multiturn, enabled_model_cache, endpoint
+):
+    task = task_run_setup_multiturn["task"]
+    root = _make_run(task)
+    leaf = _make_child_run(task, root)
+    enabled_model_cache.clear()
+
+    _get_task_endpoint(client, task_run_setup_multiturn["project"], task, endpoint)
+
+    cached_paths = set(enabled_model_cache.model_cache)
+    assert leaf.path in cached_paths
+    assert root.path not in cached_paths
+
+
+@pytest.mark.parametrize("endpoint", _SCAN_ENDPOINTS)
+def test_task_run_scans_reuse_cached_runs(
+    client, task_run_setup, enabled_model_cache, endpoint
+):
     task = task_run_setup["task"]
     task.runs(readonly=True)
 
-    with patch.object(
-        TaskRun, "load_from_file", side_effect=AssertionError("run was parsed again")
+    with (
+        patch(
+            "kiln_ai.datamodel.task._read_json_object",
+            side_effect=AssertionError("run file was read again"),
+        ),
+        patch(
+            "kiln_ai.datamodel.basemodel.open",
+            side_effect=AssertionError("run file was read again"),
+            create=True,
+        ),
     ):
-        result = _get_run_data_availability(client, task_run_setup["project"], task)
-
-    assert result["has_rated_runs"] is True
-
-
-@pytest.mark.parametrize("endpoint", ["runs_summaries", "tags"])
-def test_task_run_scans_do_not_cache_runs(client, task_run_setup, endpoint):
-    ModelCache.shared().clear()
-
-    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task_run_setup["task"]
-        response = client.get(
-            f"/api/projects/{task_run_setup['project'].id}/tasks/{task_run_setup['task'].id}/{endpoint}"
-        )
-
-    assert response.status_code == 200
-    cached_types = {
-        type(entry[0]) for entry in ModelCache.shared().model_cache.values()
-    }
-    assert TaskRun not in cached_types
+        _get_task_endpoint(client, task_run_setup["project"], task, endpoint)
 
 
 def _make_child_run(task, parent_run: TaskRun, **overrides) -> TaskRun:

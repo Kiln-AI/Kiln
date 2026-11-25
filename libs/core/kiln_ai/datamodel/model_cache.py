@@ -10,9 +10,8 @@ Keeping this really simple. Our goal is to really be "disk-backed" data model, s
  - Use path as the cache key
  - Cache always populated from a disk read, so we know it reflects what's on disk. Even if we had a memory-constructed version, we don't cache that.
  - Cache the parsed model, not the raw file contents. Parsing and validating is what's expensive. >99% speedup when measured.
- - Bounded by the total size of the cached files, evicting the least recently used entries. A parsed model
-   takes about 3x its file size in memory, and a large task can hold gigabytes of runs, so an unbounded
-   cache grows until the process runs out of memory.
+ - Bounded by the total on-disk size of the cached files (`max_bytes`), evicting the least recently used
+   entries first. A parsed model takes about 3x its file size in memory.
 """
 
 import os
@@ -31,16 +30,22 @@ else:
     T = TypeVar("T")
 
 DEFAULT_MAX_CACHED_FILE_BYTES = 256 * 1024 * 1024
+"""Default limit on the summed on-disk size of the files whose models are cached."""
 
 
 class ModelCache:
+    """Process-wide cache of readonly models loaded from disk, keyed by file path.
+
+    An entry is dropped when its file's modified time changes. Use ``ModelCache.shared()``.
+    """
+
     _shared_instance = None
 
     def __init__(self, max_bytes: int = DEFAULT_MAX_CACHED_FILE_BYTES):
         """
         Args:
-            max_bytes: Limit on the summed on-disk size of the cached files. Memory use is a
-                few times this, since parsed models are larger than their JSON.
+            max_bytes: Limit on the summed on-disk size of the cached files. Memory use is
+                about 3x this.
         """
         # Each entry holds the model, the file's mtime when read, and the file's size in bytes.
         # Ordered from least to most recently used.
@@ -112,12 +117,16 @@ class ModelCache:
         return None
 
     def set_model(
-        self, path: Path, model: "KilnBaseModel", mtime_ns: int, size_bytes: int
+        self, path: Path, model: "KilnBaseModel", mtime_ns: int, *, size_bytes: int
     ):
-        """Cache a readonly model read from `path`.
+        """Cache a readonly model read from `path`, evicting older entries to stay under `max_bytes`.
 
-        `size_bytes` is the size of the file it was parsed from, and counts toward `max_bytes`.
-        A file larger than `max_bytes` is not cached.
+        Args:
+            path: The file the model was parsed from. The cache key.
+            model: The parsed model. Must be readonly.
+            mtime_ns: The file's modified time when it was read. A later change drops the entry.
+            size_bytes: The file's size on disk. Counts toward `max_bytes`; a file larger
+                than `max_bytes` is not cached.
         """
         # disable caching if the filesystem doesn't support fine-grained timestamps
         if not self._enabled:

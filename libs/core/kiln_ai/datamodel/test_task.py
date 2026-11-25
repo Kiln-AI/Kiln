@@ -1,6 +1,7 @@
 import json
 import logging
 import warnings
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -23,7 +24,12 @@ from kiln_ai.datamodel.spec_properties import (
     SpecType,
     ToxicityProperties,
 )
-from kiln_ai.datamodel.task import Task, TaskRunConfig
+from kiln_ai.datamodel.task import (
+    Task,
+    TaskRunConfig,
+    filter_dataset_runs,
+    task_run_lineage,
+)
 from kiln_ai.datamodel.task_output import (
     TaskOutput,
     normalize_rating,
@@ -1180,3 +1186,115 @@ def test_content_part_trace_bulk_load_after_readonly_scan(tmp_path):
     readonly_run = readonly_loaded[run.id]
     assert readonly_run.trace is not None
     assert readonly_run.trace[0]["content"] == [{"type": "text", "text": "hello"}]
+
+
+def _save_lineage_test_runs(task: Task) -> None:
+    output = TaskOutput(output="out")
+    eval_source = EvalItemSource(source_type="task_run", source_id="item1")
+    root = TaskRun(input="root", output=output, parent=task)
+    root.save_to_file()
+    TaskRun(
+        input="leaf", output=output, parent=task, parent_task_run_id=root.id
+    ).save_to_file()
+    eval_root = TaskRun(
+        input="eval turn 1", output=output, parent=task, eval_source=eval_source
+    )
+    eval_root.save_to_file()
+    TaskRun(
+        input="eval turn 2",
+        output=output,
+        parent=task,
+        eval_source=eval_source,
+        parent_task_run_id=eval_root.id,
+    ).save_to_file()
+
+
+@pytest.mark.parametrize("include_intermediate_runs", [False, True])
+@pytest.mark.parametrize("include_eval_generated", [False, True])
+def test_task_run_lineage_filters_like_task_runs(
+    tmp_path, include_intermediate_runs, include_eval_generated
+):
+    task = _make_task_for_runs_tests(tmp_path)
+    _save_lineage_test_runs(task)
+    flags = dict(
+        include_intermediate_runs=include_intermediate_runs,
+        include_eval_generated=include_eval_generated,
+    )
+
+    from_lineage = filter_dataset_runs(task_run_lineage(task), **flags)
+
+    assert [r.id for r in from_lineage] == [r.id for r in task.runs(**flags)]
+    assert [r.path for r in from_lineage] == [r.path for r in task.runs(**flags)]
+
+
+def test_task_run_lineage_does_not_build_runs(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path)
+    _save_lineage_test_runs(task)
+
+    with patch.object(
+        TaskRun, "load_from_file", side_effect=AssertionError("run was built")
+    ):
+        lineage = task_run_lineage(task)
+
+    assert len(lineage) == 4
+
+
+def test_task_run_lineage_uses_cached_runs(tmp_path, monkeypatch):
+    task = _make_task_for_runs_tests(tmp_path)
+    _save_lineage_test_runs(task)
+    cache = ModelCache.shared()
+    monkeypatch.setattr(cache, "_enabled", True)
+    task.runs(
+        include_intermediate_runs=True, include_eval_generated=True, readonly=True
+    )
+
+    try:
+        with patch(
+            "kiln_ai.datamodel.task._read_json_object",
+            side_effect=AssertionError("run file was read again"),
+        ):
+            lineage = task_run_lineage(task)
+    finally:
+        cache.clear()
+
+    assert len(lineage) == 4
+
+
+def test_task_run_from_id_reads_only_its_own_folder(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path, TurnMode.single_turn)
+    for i in range(5):
+        TaskRun(
+            input=f"in{i}", output=TaskOutput(output="o"), parent=task
+        ).save_to_file()
+    # The run a full scan reaches last, so a scan would read every file first.
+    last_path = list(TaskRun.iterate_children_paths_of_parent_path(task.path))[-1]
+    target = TaskRun.load_from_file(last_path)
+    assert target.id is not None
+
+    with patch.object(
+        TaskRun, "load_from_file", wraps=TaskRun.load_from_file
+    ) as load_from_file:
+        found = TaskRun.from_id_and_parent_path(target.id, task.path)
+
+    assert found is not None and found.id == target.id
+    assert load_from_file.call_count == 1
+
+
+def test_task_run_from_id_finds_run_in_renamed_folder(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path, TurnMode.single_turn)
+    run = TaskRun(input="in", output=TaskOutput(output="o"), parent=task)
+    run.save_to_file()
+    assert run.id is not None and run.path is not None
+    run.path.parent.rename(run.path.parent.parent / "renamed")
+
+    found = TaskRun.from_id_and_parent_path(run.id, task.path)
+
+    assert found is not None and found.id == run.id
+
+
+@pytest.mark.parametrize("unsafe_id", ["..", ".", "", "../runs"])
+def test_task_run_from_id_ignores_ids_that_are_not_folder_names(tmp_path, unsafe_id):
+    task = _make_task_for_runs_tests(tmp_path, TurnMode.single_turn)
+    TaskRun(input="in", output=TaskOutput(output="o"), parent=task).save_to_file()
+
+    assert TaskRun.from_id_and_parent_path(unsafe_id, task.path) is None

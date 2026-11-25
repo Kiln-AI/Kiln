@@ -1,4 +1,7 @@
-from typing import TYPE_CHECKING, Dict, List, Protocol, TypeVar, Union
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Protocol, TypeVar, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
@@ -26,11 +29,13 @@ from kiln_ai.datamodel.json_schema import (
     JsonSchema,
     schema_from_json_str,
 )
+from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.utils.torn_read import retry_on_torn_read
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -57,10 +62,20 @@ def filter_dataset_runs(
     include_intermediate_runs: bool = False,
     include_eval_generated: bool = False,
 ) -> list[_RunLineageT]:
-    """Apply the filters of ``Task.runs`` to a task's complete list of runs.
+    """Apply the filters of ``Task.runs`` to a task's runs.
 
     Works on anything carrying a run's lineage fields, so callers can filter small
-    per-run records instead of holding every parsed ``TaskRun`` at once.
+    per-run records, such as those from ``task_run_lineage``, instead of holding every
+    parsed ``TaskRun`` at once.
+
+    Args:
+        runs: Every run of the task. A run counts as intermediate only if one of its
+            children is in this list, so a partial list gives wrong results.
+        include_intermediate_runs: Keep runs that are the parent of another run.
+        include_eval_generated: Keep runs that an eval generated.
+
+    Returns:
+        The runs that pass the filters, in their original order.
     """
     # Eval filter first: an excluded eval-generated run must not count as a parent
     # either, or an eval child chained onto a dataset run would hide that dataset
@@ -71,6 +86,61 @@ def filter_dataset_runs(
         parent_ids = {r.parent_task_run_id for r in runs if r.parent_task_run_id}
         runs = [r for r in runs if r.id not in parent_ids]
     return runs
+
+
+@dataclass(frozen=True)
+class TaskRunLineage:
+    """Where a task run's file is, and the fields that place it in the task's dataset."""
+
+    path: Path
+    id: ID_TYPE
+    parent_task_run_id: str | None
+    eval_source: object | None
+
+
+def task_run_lineage(task: "Task") -> list[TaskRunLineage]:
+    """Read the lineage of every run of ``task``, in the order ``Task.runs`` loads them.
+
+    A run already in the model cache is read from there. Other run files are decoded as
+    JSON without building a ``TaskRun``, which is many times cheaper and keeps nothing in
+    memory. Pass the result to ``filter_dataset_runs`` to find the task's dataset runs,
+    then load only those.
+
+    Fields are read as stored. A file that is valid JSON but not a valid run is not
+    detected here; it fails when it is loaded.
+    """
+    cache = ModelCache.shared()
+    lineage: list[TaskRunLineage] = []
+    for run_path in TaskRun.iterate_children_paths_of_parent_path(task.path):
+        cached = cache.get_model(run_path, TaskRun, readonly=True)
+        if cached is not None:
+            lineage.append(
+                TaskRunLineage(
+                    path=run_path,
+                    id=cached.id,
+                    parent_task_run_id=cached.parent_task_run_id,
+                    eval_source=cached.eval_source,
+                )
+            )
+            continue
+        data = retry_on_torn_read(lambda: _read_json_object(run_path))
+        lineage.append(
+            TaskRunLineage(
+                path=run_path,
+                id=data.get("id"),
+                parent_task_run_id=data.get("parent_task_run_id"),
+                eval_source=data.get("eval_source"),
+            )
+        )
+    return lineage
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected a JSON object in {path}")
+    return data
 
 
 class TaskRequirement(BaseModel):

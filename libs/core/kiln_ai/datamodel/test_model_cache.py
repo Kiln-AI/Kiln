@@ -502,3 +502,13 @@ def test_stale_entry_releases_bytes_on_read(cached_files):
 
     assert cache.get_model(a, KilnModelTest) is None
     assert cache.total_bytes == 0
+
+
+def test_file_exactly_max_bytes_is_cached(cached_files):
+    cache = _bounded_cache(100)
+    a = cached_files[0]
+
+    cache.set_model(a, _readonly_model(), a.stat().st_mtime_ns, size_bytes=100)
+
+    assert list(cache.model_cache) == [a]
+    assert cache.total_bytes == 100

@@ -4,10 +4,9 @@ import logging
 import os
 import tempfile
 from asyncio import Lock
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path as PathLibPath
-from typing import Annotated, Any, Callable, Dict, Generic, TypeVar
+from typing import Annotated, Any, Callable, Dict, TypeVar
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Path, Query, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
@@ -17,8 +16,11 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
-from kiln_ai.datamodel.model_cache import ModelCache
-from kiln_ai.datamodel.task import RunConfigProperties, filter_dataset_runs
+from kiln_ai.datamodel.task import (
+    RunConfigProperties,
+    filter_dataset_runs,
+    task_run_lineage,
+)
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.utils.dataset_import import (
     DatasetFileImporter,
@@ -442,6 +444,47 @@ def task_and_run_from_id(
     )
 
 
+def run_chain_response(project_id: str, task_id: str, run_id: str) -> RunChainResponse:
+    task = task_from_id(project_id, task_id)
+    leaf = TaskRun.from_id_and_parent_path(run_id, task.path)
+    if leaf is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run not found. ID: {run_id}",
+        )
+    if task.turn_mode != TurnMode.multiturn:
+        raise HTTPException(
+            status_code=400,
+            detail="Run chain is only available for multi-turn tasks.",
+        )
+    has_children = any(r.parent_task_run_id == run_id for r in task_run_lineage(task))
+    chain_runs, chain_broken = _walk_run_chain(leaf, task.path)
+    # Degenerate leaf trace (no user messages at all): not a conversation,
+    # so we can't position any run on a turn. Surface as broken-chain with
+    # an empty list.
+    if _count_user_messages(leaf.trace) == 0:
+        return RunChainResponse(chain=[], chain_broken=True, has_children=has_children)
+    # Each run in the chain is one turn; anchor each turn to where it
+    # begins in the leaf's trace, dropping any prefix that can't be
+    # positioned (see _position_chain_turns).
+    chain_runs, turn_starts, chain_broken = _position_chain_turns(
+        chain_runs, chain_broken
+    )
+    chain = [
+        RunChainEntry(
+            run_id=r.id,
+            turn_index=i + 1,
+            trace_start_index=turn_starts[i],
+        )
+        for i, r in enumerate(chain_runs)
+    ]
+    return RunChainResponse(
+        chain=chain,
+        chain_broken=chain_broken,
+        has_children=has_children,
+    )
+
+
 def connect_run_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
@@ -461,7 +504,9 @@ def connect_run_api(app: FastAPI):
             str, Path(description="The unique identifier of the task run.")
         ],
     ) -> TaskRun:
-        return run_from_id(project_id, task_id, run_id)
+        return await to_thread_retrying_torn_read(
+            lambda: run_from_id(project_id, task_id, run_id)
+        )
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain",
@@ -484,52 +529,8 @@ def connect_run_api(app: FastAPI):
             ),
         ],
     ) -> RunChainResponse:
-        task = task_from_id(project_id, task_id)
-        leaf = TaskRun.from_id_and_parent_path(run_id, task.path)
-        if leaf is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Run not found. ID: {run_id}",
-            )
-        if task.turn_mode != TurnMode.multiturn:
-            raise HTTPException(
-                status_code=400,
-                detail="Run chain is only available for multi-turn tasks.",
-            )
-        has_children = any(
-            r.parent_task_run_id == run_id
-            for r in task.runs(
-                include_intermediate_runs=True,
-                include_eval_generated=True,
-                readonly=True,
-            )
-        )
-        chain_runs, chain_broken = _walk_run_chain(leaf, task.path)
-        # Degenerate leaf trace (no user messages at all): not a conversation,
-        # so we can't position any run on a turn. Surface as broken-chain with
-        # an empty list.
-        if _count_user_messages(leaf.trace) == 0:
-            return RunChainResponse(
-                chain=[], chain_broken=True, has_children=has_children
-            )
-        # Each run in the chain is one turn; anchor each turn to where it
-        # begins in the leaf's trace, dropping any prefix that can't be
-        # positioned (see _position_chain_turns).
-        chain_runs, turn_starts, chain_broken = _position_chain_turns(
-            chain_runs, chain_broken
-        )
-        chain = [
-            RunChainEntry(
-                run_id=r.id,
-                turn_index=i + 1,
-                trace_start_index=turn_starts[i],
-            )
-            for i, r in enumerate(chain_runs)
-        ]
-        return RunChainResponse(
-            chain=chain,
-            chain_broken=chain_broken,
-            has_children=has_children,
+        return await to_thread_retrying_torn_read(
+            lambda: run_chain_response(project_id, task_id, run_id)
         )
 
     @app.delete(
@@ -661,7 +662,7 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> list[RunSummary]:
         return await to_thread_retrying_torn_read(
-            lambda: dataset_run_records(
+            lambda: map_dataset_runs(
                 task_from_id(project_id, task_id), RunSummary.from_run
             )
         )
@@ -1044,7 +1045,7 @@ def connect_run_api(app: FastAPI):
 def count_run_tags(task: Task) -> dict[str, int]:
     """How many of the task's dataset runs carry each tag. Leaf runs only, as task.runs() returns them."""
     tags_count: dict[str, int] = {}
-    for tags in dataset_run_records(task, lambda run: run.tags):
+    for tags in map_dataset_runs(task, lambda run: run.tags):
         for tag in tags:
             tags_count[tag] = tags_count.get(tag, 0) + 1
     return tags_count
@@ -1064,38 +1065,24 @@ class RunDataAvailability(BaseModel):
 _RecordT = TypeVar("_RecordT")
 
 
-@dataclass(frozen=True)
-class _DatasetRunRecord(Generic[_RecordT]):
-    id: ID_TYPE
-    parent_task_run_id: str | None
-    eval_source: object | None
-    record: _RecordT
-
-
-def dataset_run_records(
+def map_dataset_runs(
     task: Task, make_record: Callable[[TaskRun], _RecordT]
 ) -> list[_RecordT]:
-    """Map each of the task's leaf dataset runs, as task.runs() returns them, to a small record.
+    """Map each of the task's dataset runs, as task.runs() returns them, to a small record.
 
-    Parses one run file at a time and keeps only its record and lineage. Runs already in the
-    model cache are reused; the rest are parsed without being cached, so a task with tens of
-    thousands of runs never has them all in memory and doesn't evict the rest of the cache.
+    Finds the dataset runs from the lineage of every run, then loads only those, one at a
+    time, keeping just their records. Loaded runs go into the model cache, so a later scan
+    of the same task reuses them.
     """
-    cache = ModelCache.shared()
-    records: list[_DatasetRunRecord[_RecordT]] = []
-    for run_path in TaskRun.iterate_children_paths_of_parent_path(task.path):
-        run = cache.get_model(
-            run_path, TaskRun, readonly=True
-        ) or TaskRun.load_from_file(run_path, parent=task)
-        records.append(
-            _DatasetRunRecord(
-                id=run.id,
-                parent_task_run_id=run.parent_task_run_id,
-                eval_source=run.eval_source,
-                record=make_record(run),
-            )
-        )
-    return [r.record for r in filter_dataset_runs(records)]
+    dataset_runs = filter_dataset_runs(task_run_lineage(task))
+    if not dataset_runs or task.path is None:
+        return []
+    # Cached runs are shared by every reader, so they take the cached readonly task.
+    parent = Task.load_from_file(task.path, readonly=True)
+    return [
+        make_record(TaskRun.load_from_file(run.path, readonly=True, parent=parent))
+        for run in dataset_runs
+    ]
 
 
 def _rated_and_repaired(run: TaskRun) -> tuple[bool, bool]:
@@ -1106,7 +1093,7 @@ def _rated_and_repaired(run: TaskRun) -> tuple[bool, bool]:
 
 def run_data_availability(task: Task) -> RunDataAvailability:
     """Check the task's leaf dataset runs for ratings and repairs."""
-    flags = dataset_run_records(task, _rated_and_repaired)
+    flags = map_dataset_runs(task, _rated_and_repaired)
     return RunDataAvailability(
         has_rated_runs=any(rated for rated, _ in flags),
         has_repaired_runs=any(repaired for _, repaired in flags),
