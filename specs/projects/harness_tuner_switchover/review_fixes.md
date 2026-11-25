@@ -110,14 +110,15 @@ Each item has a type:
 **B6. The paired comparison changes one number**
 - Type: Duplicate.
 - Description: the comparison is on the path of every promotion. Kiln's `significant` reads the unrounded p. HT compares the p rounded to 4 places with 0.05. A p between 0.04995 and 0.05 changes side.
-- Proposal: accept the unrounded p. It is the correct test, and one rule then holds for every client.
+- Decision (owner, 2026-11-25): accept the unrounded p. It is the correct test, and one rule then holds for every client.
 
 ### Open: small asks that grew, and poor shapes
 
 **B7. The skill bundle create carries HT's installer into Kiln**
 - Type: Small ask that grew.
 - Description: the ask was "create a skill with its reference files in one step". The design ports the installer's machinery: staging folders, a sweep with an age test, a lock, 100 tries to mint an id, and `SKILL.md` written as raw bytes. HT needed these because it wrote into Kiln's folder from outside. Kiln owns the folder.
-- Proposal: build the skill with Kiln's datamodel, as the existing create route does. Write the files into the skill's own folder, with `skill.kiln` last: Kiln lists a skill by its `skill.kiln`, so the skill is seen only when it is whole. On a failure, remove the folder. `SKILL.md` is written by `save_skill_md`, the one writer Kiln has. No staging, no sweep, no rename. The folder path stays, as decided.
+- The owner's requirement (2026-11-25): the API stays one that takes the path of a skill folder and copies a valid skill into the project. A chat agent may have no access to the project's files, and it is told not to write `.kiln` files, so it writes the skill in a folder of its own and names the path. The machinery (the age test, the retries) is too complex.
+- Proposal: the route and its folder rules stay. Only the write inside Kiln changes. Build the skill with Kiln's datamodel, as the existing create route does. Write the files into the skill's own folder, with `skill.kiln` last: Kiln lists a skill by its `skill.kiln`, so the skill is seen only when it is whole. On a failure, remove the folder. `SKILL.md` is written by `save_skill_md`, the one writer Kiln has. No staging, no sweep, no rename. The folder path stays, as decided.
 
 **B8. The name rule holds on one route only**
 - Type: Poor shape.
@@ -127,7 +128,7 @@ Each item has a type:
 **B9. A binary asset can be created but not read**
 - Type: Poor shape.
 - Description: the create accepts a binary file under `assets/`. The read route cannot return one, and HT's export skips it and names it. Kiln's skill runtime reads assets as text only.
-- Proposal: text only. The create refuses a file that is not UTF-8. The fields `is_text`, `note` and `skipped` go.
+- Decision (owner, 2026-11-25): text only. The create refuses a file that is not UTF-8. The fields `is_text`, `note` and `skipped` go. Support for binary assets is a P2, outside this spec.
 
 **B10. The overflow of the exact test is worked around three times**
 - Type: Poor shape.
@@ -137,7 +138,7 @@ Each item has a type:
 **B11. One unreadable skill stops the check for every skill**
 - Type: Poor shape.
 - Description: the smell check ports HT's behaviour: when one attached skill cannot be read, no skill description is checked at all.
-- Proposal: check the skills that can be read, and name the others in `unread_skills`, as `unread_tools` does.
+- Decision (owner, 2026-11-25): check the skills that can be read, and name the others in `unread_skills`, as `unread_tools` does.
 
 **B12. Branches that cannot run in Kiln**
 - Type: Poor shape.
