@@ -174,14 +174,20 @@ async def test_fetch_failure_logs_and_retries(manager, git_repos, second_clone, 
 
     manager._fetch_sync = flaky_fetch  # type: ignore[assignment]
 
+    fast_forwarded = asyncio.Event()
+    original_fast_forward = manager.fast_forward
+
+    async def tracked_fast_forward():
+        await original_fast_forward()
+        fast_forwarded.set()
+
+    manager.fast_forward = tracked_fast_forward  # type: ignore[assignment]
+
     bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=60.0)
     await bg.start()
     try:
         # A slow CI runner can need several poll cycles for the retry to land.
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + 10
-        while not (local_path / "retry_file.txt").exists() and loop.time() < deadline:
-            await asyncio.sleep(0.05)
+        await asyncio.wait_for(fast_forwarded.wait(), timeout=10)
     finally:
         await bg.stop()
 
