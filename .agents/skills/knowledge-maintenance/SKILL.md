@@ -1,6 +1,6 @@
 ---
 name: knowledge-maintenance
-description: Add to, change and audit the knowledge of the Kiln skill (its levers, techniques, playbooks and smells under app/mcp/kiln_mcp_server/skill/references/levers/ and references/improving_agents/), and add entries to the knowledge backlog in app/mcp/knowledge_backlog.md. Use it for every change to those files - a new approach from a post, a lesson to record, a new document, an idea for later, a technique that went out of fashion, a fix ported from Kiln Harness Tuner - and for an audit. It gives the templates, the placement rules, the content rules and the commands that end each change.
+description: Add to, change, organise and audit the Kiln skill (app/mcp/kiln_mcp_server/skill/) - its SKILL.md, knowledge files, client guidance and API rules, and its knowledge of levers, techniques, playbooks and smells under references/levers/ and references/improving_agents/ - and add entries to the knowledge backlog in app/mcp/knowledge_backlog.md. Use it for every change to those files - a new approach from a post, a lesson to record, a new document, an idea for later, a technique that went out of fashion, a fix ported from Kiln Harness Tuner - and for an audit. It gives the templates, the placement rules, the content rules and the commands that end each change.
 ---
 
 # knowledge-maintenance
