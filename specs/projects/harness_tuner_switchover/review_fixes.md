@@ -6,7 +6,7 @@ status: draft
 
 Fixes to make to this spec, from the review pass of 2026-11-24 and 2026-11-25. The spec was checked against the finished build of spec one (branch `claude/kiln-mcp-server-impl` at `1b14901c`) and against harness-tuner's main (`6780366`, version 0.6.0).
 
-Nothing here is applied yet. Part A is corrections of fact. Part B is design changes, and each waits for the owner. When a fix is applied to the spec documents, its line is removed from this file. The file is deleted when it is empty.
+Nothing here is applied yet. Part A is corrections of fact. Part B is design changes. Each one says whether the owner has decided it. When a fix is applied to the spec documents, its line is removed from this file. The file is deleted when it is empty.
 
 **HT** is Kiln Harness Tuner. Skill paths are from `app/mcp/kiln_mcp_server/skill/`.
 
@@ -60,78 +60,121 @@ The aim of part B, in the owner's words: no duplicate code after the port, no li
 ### A3. Wrong in the spec itself
 
 1. **The train rule.** Functional spec 3.1 and architecture decision 7 say that HT leaves out a train item that is val or test in another eval. It does not: such an item counts as train (`quarantine.py:26-28`, `:105`). See B1.
-2. **Functional spec 5.8 and architecture 5.5 disagree** on the OpenAPI probes. See B5.
+2. **Functional spec 5.8 and architecture 5.5 disagree** on the OpenAPI probes. See B4.
 3. **`MIN_SUPPORTED_HARNESS_TUNER_VERSION` starts at `0.6.0`.** Still right: it is HT's version today. The first switched HT needs a higher number, so that Kiln can tell the two apart later.
 4. The facts file `port_ht_adoption_facts.md` that `kiln_smells_skills_version.md` 7.5 cites is not in the repository. Remove the citation.
 
-## B. Design changes (each waits for the owner)
+## B. Design changes
 
-### B1. No second copy of the measurement code
+Each item has a type:
 
-The spec gives Kiln the significance floor, the detectability read and the paired comparison, and HT keeps its own code for all three. That is two copies. The fix: HT calls Kiln's routes and removes its copies.
+- **Duplicate**: the same code or data in two places after the port.
+- **Small ask that grew**: a small request that became a large or risky change.
+- **Poor shape**: a design that works but should not be kept.
 
-- **Detectability and the floor.** HT calls the detectability read for the baseline, at set-up and in each wave. Removed from HT's `detectability.py`: the floors, the interval functions, `score_room`, `train_row`, `comparable_specs`, `build_rows`, and the read of the stored rows. Kept in HT: the refusal and the warnings (`assess`), the options `--min-effect` and `--allow-underpowered`, and the report.
-- **The route is what HT needs, because HT is now its caller:**
-  - "Train" is the eval's train split, as the results route resolves it. The helper that leaves out held-out items goes, with `left_out_held_out` (A3.1).
-  - The val side is always in the answer, and it gains `interval_best_case`. The flag `include_val_size` goes.
-  - The replicate fold stays, as specified.
-- **The noise check** imports `comparable_specs`, `fewest_wins` and `score_room` from `detectability.py`. It takes the same three facts from the detectability answer. This is the one change to `noise.py`. The check stays behind its option, and is still not ported.
-- **The paired comparison.** HT's `Analyzer.compare_rows` and `_stats_row` pair the rows and call `POST /api/statistics`. HT calls the comparison route for the numbers. It still reads the rows itself for cost, latency and missing items. This is on the path of every promotion.
-  - One number changes: Kiln's `significant` reads the unrounded p. HT compares the p rounded to 4 places with 0.05. A p between 0.04995 and 0.05 changes side.
-  - The fixtures of `contract.py` for the two statistics operations go.
-- **Scores by split.** HT has no copy. The route change stays for other clients.
-- **Not in this fix:** the sign tests of HT's stop rules, latency and noise code. They are HT-only tools, and this spec does not move them.
+### Decided by the owner (2026-11-25)
 
-### B2. Model info: no second copy of Kiln's schema
+**B1. No second copy of the measurement code**
+- Type: Duplicate.
+- Description: the spec gives Kiln the significance floor, the detectability read and the paired comparison, and HT keeps its own code for all three.
+- Decision: HT calls Kiln's routes and removes its copies. Two consequences are still open: B5 and B6.
+- What follows:
+  - HT calls the detectability read for the baseline, at set-up and in each wave. Removed from HT's `detectability.py`: the floors, the interval functions, `score_room`, `train_row`, `comparable_specs`, `build_rows`, and the read of the stored rows. Kept in HT: the refusal and the warnings (`assess`), the options `--min-effect` and `--allow-underpowered`, and the report.
+  - The route is what HT needs, because HT is now its caller. "Train" is the eval's train split, as the results route resolves it; the helper that leaves out held-out items goes, with `left_out_held_out` (A3.1). The val side is always in the answer, and it gains `interval_best_case`; the flag `include_val_size` goes. The replicate fold stays.
+  - HT's `Analyzer.compare_rows` and `_stats_row` take their numbers from the comparison route. HT still reads the rows itself for cost, latency and missing items. The fixtures of `contract.py` for the two statistics operations go.
+  - Scores by split: HT has no copy. The route change stays for other clients.
+  - Not in this fix: the sign tests of HT's stop rules, latency and noise code. They are HT-only tools, and this spec does not move them.
 
-The gateway's five answer models (`ModelRow`, `ProviderEntryRow`, `ModelDetailsView`, `ProviderEntryDetails`, `ProviderRow`) repeat Kiln's fields. The fix: the gateway returns Kiln's rows as they are, and rewrites only `status`. The five models go. The all-pages read with a policy stays.
+**B2. Model info: no second copy of Kiln's schema**
+- Type: Duplicate.
+- Description: the gateway's five answer models (`ModelRow`, `ProviderEntryRow`, `ModelDetailsView`, `ProviderEntryDetails`, `ProviderRow`) repeat Kiln's fields.
+- Decision: the gateway returns Kiln's rows as they are, and rewrites only `status`. The five models go. The all-pages read with a policy stays.
 
-### B3. Memory formats: one check binds the two sides
+**B3. Memory formats**
+- Type: Duplicate.
+- Description: the strings of HT's records are in HT's `memory_schema.py` and in Kiln's `references/knowledge/memory_formats/`. The text must stay in both places.
+- Decision: no new check. The version check covers it. A change to a record format is a breaking change: the side that makes it raises its minimum version of the other side. Kiln's existing test of its own files stays.
 
-The strings of HT's records are in HT's `memory_schema.py` and in Kiln's `references/knowledge/memory_formats/`. Kiln has a test of its side. HT has none, because its tests are offline. The fix: HT's start-up check, which reads the five format files, also checks that each string its code writes is in its file. A text must stay in both places; the check stops them from drifting apart.
+**B4. Start-up checks**
+- Type: Small ask that grew.
+- Description: the ask was a version check both ways. The design added a hand-kept list in HT of every route and about 30 field names, checked against Kiln's OpenAPI document, and 93 skill reads at every start.
+- Decision: keep the two version checks, and the environment variable for a Kiln that runs from source. Remove the route and field lists, today's three probes, and the list of skill paths with its 93 reads. No new start-up check is added. Kiln's contract test guards the paths. `OP_ROUTES` is then not needed for the checks (B13).
 
-### B4. The skill bundle create carries HT's installer into Kiln
+### Open: from the removal of the duplicates
 
-The ask was "create a skill with its reference files in one step". The design ports the installer's machinery: staging folders, a sweep with an age test, a lock, 100 tries to mint an id, and `SKILL.md` written as raw bytes. HT needed these because it wrote into Kiln's folder from outside. Kiln owns the folder. The fix:
+**B5. The noise check needs one edit**
+- Type: Duplicate.
+- Description: `noise.py` imports `comparable_specs`, `fewest_wins` and `score_room` from `detectability.py`. That code cannot go while the noise check imports it. The owner asked earlier for no change to the noise check.
+- Proposal: the noise check takes the same three facts from the detectability answer. It stays behind its option, and is still not ported.
 
-- Build the skill with Kiln's datamodel, as the existing create route does. Write the files into the skill's own folder, with `skill.kiln` last. Kiln lists a skill by its `skill.kiln`, so the skill is seen only when it is whole. On a failure, remove the folder. No staging, no sweep, no rename.
-- `SKILL.md` is written by `save_skill_md`, the one writer Kiln has. A later rename through the existing route rewrites the file anyway.
-- **The name rule.** "The name must be new in the project" holds on this route only, and the existing create route allows a repeat. One object, two rules. Either Kiln has the rule on both routes, or the rule stays in HT's gateway, beside its scratch-folder check. The lock exists only for this rule.
-- **Text only.** The create accepts a binary asset, the read cannot return one, and HT's export skips it. Kiln's skill runtime reads assets as text. Refuse a file that is not UTF-8 at create. `is_text`, `note` and `skipped` go.
+**B6. The paired comparison changes one number**
+- Type: Duplicate.
+- Description: the comparison is on the path of every promotion. Kiln's `significant` reads the unrounded p. HT compares the p rounded to 4 places with 0.05. A p between 0.04995 and 0.05 changes side.
+- Proposal: accept the unrounded p. It is the correct test, and one rule then holds for every client.
 
-The folder path stays, as decided.
+### Open: small asks that grew, and poor shapes
 
-### B5. Version alignment grew three layers of start-up checks
+**B7. The skill bundle create carries HT's installer into Kiln**
+- Type: Small ask that grew.
+- Description: the ask was "create a skill with its reference files in one step". The design ports the installer's machinery: staging folders, a sweep with an age test, a lock, 100 tries to mint an id, and `SKILL.md` written as raw bytes. HT needed these because it wrote into Kiln's folder from outside. Kiln owns the folder.
+- Proposal: build the skill with Kiln's datamodel, as the existing create route does. Write the files into the skill's own folder, with `skill.kiln` last: Kiln lists a skill by its `skill.kiln`, so the skill is seen only when it is whole. On a failure, remove the folder. `SKILL.md` is written by `save_skill_md`, the one writer Kiln has. No staging, no sweep, no rename. The folder path stays, as decided.
 
-The ask was a version check both ways. The design adds a hand-kept list in HT of every route and about 30 field names, checked against Kiln's OpenAPI document, and 93 skill reads at every start. The fix:
+**B8. The name rule holds on one route only**
+- Type: Poor shape.
+- Description: "the name must be new in the project" holds on the new create route. The existing create route allows a repeat. One object, two rules. The lock in the design exists only for this rule.
+- Proposal: the rule stays in HT's gateway, beside its scratch-folder check: the gateway lists the skills and refuses a taken name. Kiln's two routes then agree, and the lock goes. The other choice is to put the rule on both Kiln routes, which changes the existing one.
 
-- Keep the two version checks, and the environment variable for a Kiln that runs from source.
-- Remove the route and field lists. A released Kiln at or above the minimum has them. Today's three probes go too.
-- Replace the 93 reads by one read of `references/improving_agents/index.md`, which proves the reader works. Kiln's contract test guards the paths.
-- `OP_ROUTES` (a route for each of the gateway's tools) is then not needed for the checks. See B6.
+**B9. A binary asset can be created but not read**
+- Type: Poor shape.
+- Description: the create accepts a binary file under `assets/`. The read route cannot return one, and HT's export skips it and names it. Kiln's skill runtime reads assets as text only.
+- Proposal: text only. The create refuses a file that is not UTF-8. The fields `is_text`, `note` and `skipped` go.
 
-### B6. The endpoint map
+**B10. The overflow of the exact test is worked around three times**
+- Type: Poor shape.
+- Description: `mcnemar_exact_p` fails above about 1,030 changed pairs (`math.comb(n, k) * 0.5**n` overflows). The spec keeps the fault and adds a 422, a "skipped" score and a ruling for it.
+- Proposal: fix the arithmetic (`math.comb(n, k) / 2**n`, with whole numbers), with a test, and remove the three workarounds. This changes existing statistics code, in one line.
 
-The design adds `OP_ROUTES` for every gateway tool, a script, a generated block and three tests, to make a table of about 27 rows. The fix: a hand-kept table in the gateway skill, and one test that every tool it names is a gateway tool.
+**B11. One unreadable skill stops the check for every skill**
+- Type: Poor shape.
+- Description: the smell check ports HT's behaviour: when one attached skill cannot be read, no skill description is checked at all.
+- Proposal: check the skills that can be read, and name the others in `unread_skills`, as `unread_tools` does.
 
-Two tables of the entry files then repeat other things, and go:
-- "which smells code detects": the smell check's answer lists them (`checked`).
-- "which gateway tools each lever uses": the endpoint map gives the same answer.
+**B12. Branches that cannot run in Kiln**
+- Type: Poor shape.
+- Description: the comparison and detectability code carry `lower_is_better` and the "skipped" score types. Kiln's datamodel allows neither today, so the code runs only in its own tests.
+- Proposal: remove them. If Kiln gains such a score, the code is added then.
 
-The planner's entry file repeats the procedure that Kiln's index now holds ("How to work through a playbook"). It keeps only what Kiln's index does not have.
+**B13. The endpoint map needs a route table for every gateway tool**
+- Type: Small ask that grew.
+- Description: loop agents need a table from each endpoint doc that Kiln's knowledge names to a gateway tool, about 27 rows. The design adds `OP_ROUTES` for all 54 tools, a script, a generated block and three tests.
+- Proposal: a hand-kept table in the gateway skill, and one test that every tool it names is a gateway tool.
 
-### B7. Smaller shapes in the Kiln routes
+**B14. Entry-file tables that repeat other things**
+- Type: Duplicate.
+- Description: two hand-kept tables stay in HT's entry files: "which smells code detects" and "which gateway tools each lever uses". The smell check's answer already lists the first (`checked`), and the endpoint map gives the second. The planner's entry file also repeats the procedure that Kiln's index now holds ("How to work through a playbook").
+- Proposal: remove both tables. The planner's entry file keeps only what Kiln's index does not have.
 
-1. **The exact test overflows above about 1,030 changed pairs** (`mcnemar_exact_p`: `math.comb(n, k) * 0.5**n`). The spec works around it in three places. Fix the arithmetic (`math.comb(n, k) / 2**n` with whole numbers), with a test, and remove the three workarounds. This changes existing statistics code.
-2. **Dead branches.** The comparison and detectability code carry `lower_is_better` and the "skipped" score types, which cannot occur in Kiln today. Remove them.
-3. **One unreadable skill** stops the skill-description check for every skill (HT's behaviour, kept by ruling 9). Check the skills that can be read, and name the others in `unread_skills`, as `unread_tools` does.
-4. **`as_of` on the smell check** exists so that the old-model answer cannot change in a run. Remove the parameter. The check uses today's date.
-5. **Confidence.** The detectability read takes `confidence`, and the comparison fixes it at 0.95. Fix it at 0.95 on both. The statistics operation keeps its parameter, as its sibling operations have it.
-6. **Names.** `…/run_config/{id}/compare` sits beside the existing `…/run_comparison`, which runs the test split and spends money. Name the new route `paired_comparison`. Put the detectability code under `services/`, not in a package named `eval_power`.
-7. **The contract test** holds only `paths` and `ids` (A1.9).
+**B15. `as_of` on the smell check**
+- Type: Poor shape.
+- Description: the parameter exists so that the old-model answer cannot change during one run, when a model passes 8 months of age on that day.
+- Proposal: remove it. The check uses today's date.
 
-### B8. The documents
+**B16. The confidence differs between two routes**
+- Type: Poor shape.
+- Description: the detectability read takes `confidence`. The comparison fixes it at 0.95. HT uses 0.95 everywhere.
+- Proposal: fix it at 0.95 on both. The statistics operation keeps its parameter, as its sibling operations have it.
 
-1. Sections and rulings marked "not used" go. Architecture section 10 (the rulings) is folded into the component docs, so that no document needs an override.
-2. The four routes for other clients become routes that HT calls (B1). The summary table, functional spec 5.6 and the two "is not changed" sections of `ht_api_switch_and_removals.md` (2.4, 2.5) follow.
-3. `kiln_measurement_apis.md` section 12 and architecture 2.1 follow the wiring rule of A1.10.
+**B17. Names**
+- Type: Poor shape.
+- Description: the new `…/run_config/{id}/compare` sits beside the existing `…/run_comparison`, which runs the test split and spends money. The detectability code is in a new package named `eval_power`, outside the layout that spec one set.
+- Proposal: name the route `paired_comparison`. Put the code under `studio_server/services/` and the models under `api_models/`.
+
+**B18. Kiln's contract test repeats checks that exist**
+- Type: Small ask that grew.
+- Description: the test has four kinds of entry and its own reader of the Smells table. Spec one's checks already enforce the headings, the front matter keys and the table (A1.9).
+- Proposal: the list holds only `paths` and `ids`.
+
+**B19. The documents**
+- Type: Poor shape.
+- Description: sections and rulings are marked "not used", and architecture section 10 overrides the component docs.
+- Proposal: remove the unused numbers, and fold each ruling into its component doc, so that no document needs an override. The summary table, functional spec 5.6 and `ht_api_switch_and_removals.md` 2.4 and 2.5 follow B1. `kiln_measurement_apis.md` section 12 and architecture 2.1 follow the wiring rule of A1.10.
