@@ -552,6 +552,12 @@ def _restore(
         raise LargeFieldUnavailableError(
             root.path, field, "the file no longer holds a valid record"
         ) from e
+    # An AttributeError left unwrapped would reach `__getattr__`'s caller, where
+    # `getattr(record, name, default)` and `hasattr` treat it as a missing field.
+    except Exception as e:
+        raise LargeFieldUnavailableError(
+            root.path, field, f"reading the record raised {type(e).__name__}: {e}"
+        ) from e
 
     values: dict[FieldPath, Any] = {}
     for value_path in root.detached_paths:

@@ -9,7 +9,7 @@ from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
-from typing import Any, Callable, Dict, List, Optional, Set, Type, TypeVar
+from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Type, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -782,11 +782,16 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         if parent is None:
             raise ValueError("Parent must be set to load children")
 
+        yield from cls.iterate_children_paths_in_folder(parent_folder)
+
+    @classmethod
+    def iterate_children_paths_in_folder(cls, parent_folder: Path) -> Iterator[Path]:
+        """The record files of this class in a parent's folder. Doesn't load the parent."""
         # Ignore type error: this is abstract base class, but children must implement relationship_name
         relationship_folder = parent_folder / Path(cls.relationship_name())  # type: ignore
 
         if not relationship_folder.exists() or not relationship_folder.is_dir():
-            return []
+            return
 
         # Collect all /relationship/{id}/{base_filename.kiln} files in the relationship folder
         # manual code instead of glob for performance (5x speedup over glob)

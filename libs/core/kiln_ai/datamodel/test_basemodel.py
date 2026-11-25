@@ -1379,6 +1379,22 @@ def test_valid_parent_type_single_parent(tmp_path):
     assert children[0] == child.path
 
 
+def test_iterate_children_paths_in_folder_does_not_load_parent(tmp_path):
+    parent = BaseParentExample(path=tmp_path / BaseParentExample.base_filename())
+    parent.save_to_file()
+    child = DefaultParentedModel(parent=parent, name="Test Child")
+    child.save_to_file()
+    parent.path.unlink()
+
+    assert list(DefaultParentedModel.iterate_children_paths_in_folder(tmp_path)) == [
+        child.path
+    ]
+    assert (
+        list(DefaultParentedModel.iterate_children_paths_in_folder(tmp_path / "none"))
+        == []
+    )
+
+
 def test_task_run_children_only_under_task_path_with_parent_task_run_id(tmp_path):
     """TaskRun files live under the task; lineage uses parent_task_run_id, not nested folders."""
     output = TaskOutput(output="test output")

@@ -1,7 +1,6 @@
 import json
 import math
 from enum import Enum
-from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
 
 from pydantic import (
@@ -61,11 +60,6 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.task_run import TaskRun
 
 EvalScores = Dict[str, float]
-
-# Module-level set to track evals currently being migrated (to prevent recursion)
-# Protected by _migration_lock to ensure thread-safe access
-_migration_lock = Lock()
-_currently_migrating_eval_ids: set[ID_TYPE] = set()
 
 # Fixed name of the sibling file that holds a code judge's Python source, stored
 # beside its eval_config.kiln. Fixed so authored tests can `from scorer import score`.
@@ -1697,7 +1691,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         For reference_answer evals that don't have a current_config_id set, this migration
         will set the first config (by created_at) as the default.
         """
-        if self.id is None:
+        if self.path is None:
             return self
 
         # Only run during file loading
@@ -1712,24 +1706,19 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         if self.evaluation_data_type != EvalDataType.reference_answer:
             return self
 
-        # Prevent recursion: self.configs() loads child files, which re-loads this parent
-        # (see basemodel.py where we iterate_children_paths_of_parent_path calls load_from_file)
-        # This causes the validator to run again, creating an infinite loop without this guard.
-        with _migration_lock:
-            if self.id in _currently_migrating_eval_ids:
-                return self
-            _currently_migrating_eval_ids.add(self.id)
-
-        try:
-            # Get the configs - these are loaded from child files
-            configs_list = self.configs(readonly=True)
-            if configs_list and len(configs_list) > 0:
-                # Sort by created_at to get the oldest (first created) config
-                sorted_configs = sorted(configs_list, key=lambda c: c.created_at)
-                self.current_config_id = sorted_configs[0].id
-        finally:
-            with _migration_lock:
-                _currently_migrating_eval_ids.discard(self.id)
+        # Not self.configs(): it loads this eval's file again as a readonly copy, which
+        # would re-enter this migration and could be cached. With this eval as their
+        # parent, the configs never load it.
+        configs_list = [
+            EvalConfig.load_from_file(config_path, parent=self)
+            for config_path in EvalConfig.iterate_children_paths_in_folder(
+                self.path.parent
+            )
+        ]
+        if configs_list:
+            # Sort by created_at to get the oldest (first created) config
+            sorted_configs = sorted(configs_list, key=lambda c: c.created_at)
+            self.current_config_id = sorted_configs[0].id
 
         return self
 

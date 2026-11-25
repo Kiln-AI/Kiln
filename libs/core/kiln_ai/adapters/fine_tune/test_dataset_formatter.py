@@ -29,6 +29,7 @@ from kiln_ai.adapters.fine_tune.vertex_formatter import (
 )
 from kiln_ai.datamodel import (
     DatasetSplit,
+    DatasetSplitDefinition,
     DataSource,
     DataSourceType,
     Task,
@@ -458,6 +459,47 @@ async def test_dataset_formatter_dump_with_intermediate_data_custom_instructions
             assert "custom system message 你好" in line
             assert "custom thinking instructions" in line
             assert "thinking output" in line
+
+
+async def test_dataset_formatter_reads_large_fields_of_split_runs_only(
+    tmp_path, model_cache_enabled, evict_large_values, large_field_restores
+):
+    task = Task(name="Test Task", instruction="Test", path=tmp_path / "task.kiln")
+    task.save_to_file()
+    source = DataSource(type=DataSourceType.human, properties={"created_by": "test"})
+    runs = [
+        TaskRun(
+            parent=task,
+            input=f"input {i}",
+            input_source=source,
+            output=TaskOutput(output=f"output {i}", source=source),
+        )
+        for i in range(4)
+    ]
+    for run in runs:
+        run.save_to_file()
+    dataset = DatasetSplit(
+        parent=task,
+        name="test_dataset",
+        splits=[DatasetSplitDefinition(name="train", percentage=1.0)],
+        split_contents={"train": [str(runs[3].id), str(runs[1].id)]},
+    )
+    task.runs(readonly=True)
+    evict_large_values()
+
+    output_path = await DatasetFormatter(dataset, "system message").dump_to_file(
+        "train",
+        DatasetFormat.OPENAI_CHAT_JSONL,
+        data_strategy=ChatStrategy.single_turn,
+        path=tmp_path / "output.jsonl",
+    )
+
+    lines = output_path.read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["messages"][1]["content"] for line in lines] == [
+        "input 3",
+        "input 1",
+    ]
+    assert large_field_restores.call_count == 2
 
 
 def test_generate_huggingface_chat_template(mock_training_chat_two_step_plaintext):

@@ -2320,6 +2320,45 @@ def test_eval_upgrade_old_reference_answer_eval_config(mock_task, tmp_path):
     assert loaded_eval.current_config_id is None  # No configs to set
 
 
+@pytest.mark.parametrize("first_load_readonly", [False, True])
+def test_eval_migration_caches_only_migrated_copies(
+    mock_task, tmp_path, model_cache_enabled, first_load_readonly
+):
+    """Neither the cached eval nor its cached configs' parent skip the migration."""
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        evaluation_data_type=EvalDataType.reference_answer,
+        eval_set_filter_id="all",
+        eval_configs_filter_id="high_rating",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        parent=eval,
+        name="Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+    )
+    config.save_to_file()
+    assert eval.path is not None
+
+    Eval.load_from_file(eval.path, readonly=first_load_readonly)
+
+    cached_eval = Eval.load_from_file(eval.path, readonly=True)
+    assert cached_eval.current_config_id == config.id
+    assert [
+        cached_config.parent_eval().current_config_id
+        for cached_config in cached_eval.configs(readonly=True)
+    ] == [config.id]
+
+
 # ── V1 Characterization Tests ──────────────────────────────────────────
 
 

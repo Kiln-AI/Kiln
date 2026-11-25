@@ -551,6 +551,24 @@ def test_restore_invalid_file_raises(evicted, contents, cause):
     assert isinstance(error.value.__cause__, cause)
 
 
+@pytest.mark.parametrize("error_type", [AttributeError, TypeError])
+def test_restore_unexpected_error_raises(evicted, error_type):
+    """An AttributeError reaching `getattr` with a default or `hasattr` would read as
+    a missing field."""
+    with patch.object(
+        LazyRecord, "_validate_file_data", side_effect=error_type("boom")
+    ):
+        with pytest.raises(
+            LargeFieldUnavailableError, match=f"{error_type.__name__}: boom"
+        ) as error:
+            getattr(evicted, "body", None)
+        with pytest.raises(LargeFieldUnavailableError):
+            hasattr(evicted, "body")
+    assert error.value.path == evicted.path
+    assert error.value.field == "body"
+    assert isinstance(error.value.__cause__, error_type)
+
+
 def test_unavailable_record_raises_from_dumps_copies_and_saves(evicted):
     evicted.path.unlink()
 
