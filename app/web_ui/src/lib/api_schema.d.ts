@@ -364,6 +364,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/run_data_availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Data Availability
+         * @description Whether the task's dataset has any rated run and any repaired run. Counts leaf dataset runs only, the same runs List Run Summaries returns. Much cheaper than listing run summaries on a task with many runs.
+         */
+        get: operations["get_run_data_availability_api_projects__project_id__tasks__task_id__run_data_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/delete": {
         parameters: {
             query?: never;
@@ -11854,6 +11874,22 @@ export interface components {
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
         /**
+         * RunDataAvailability
+         * @description Whether a task's dataset has the data that data-driven prompt generators need.
+         */
+        RunDataAvailability: {
+            /**
+             * Has Rated Runs
+             * @description True if at least one dataset run has a rated output.
+             */
+            has_rated_runs: boolean;
+            /**
+             * Has Repaired Runs
+             * @description True if at least one dataset run has been repaired.
+             */
+            has_repaired_runs: boolean;
+        };
+        /**
          * RunSummary
          * @description A summary of a task run for list views.
          */
@@ -15583,6 +15619,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_data_availability_api_projects__project_id__tasks__task_id__run_data_availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDataAvailability"];
                 };
             };
             /** @description Validation Error */

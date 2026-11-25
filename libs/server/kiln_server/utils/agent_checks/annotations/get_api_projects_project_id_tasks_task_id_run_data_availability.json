@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/run_data_availability",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

@@ -10,13 +10,18 @@ Keeping this really simple. Our goal is to really be "disk-backed" data model, s
  - Use path as the cache key
  - Cache always populated from a disk read, so we know it reflects what's on disk. Even if we had a memory-constructed version, we don't cache that.
  - Cache the parsed model, not the raw file contents. Parsing and validating is what's expensive. >99% speedup when measured.
+ - Bounded by the total size of the cached files, evicting the least recently used entries. A parsed model
+   takes about 3x its file size in memory, and a large task can hold gigabytes of runs, so an unbounded
+   cache grows until the process runs out of memory.
 """
 
 import os
 import sys
+import threading
 import warnings
+from collections import OrderedDict
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Tuple, Type, TypeVar
+from typing import TYPE_CHECKING, Optional, Tuple, Type, TypeVar
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.basemodel import KilnBaseModel
@@ -25,13 +30,28 @@ if TYPE_CHECKING:
 else:
     T = TypeVar("T")
 
+DEFAULT_MAX_CACHED_FILE_BYTES = 256 * 1024 * 1024
+
 
 class ModelCache:
     _shared_instance = None
 
-    def __init__(self):
-        # Store both the model and the modified time of the cached file contents
-        self.model_cache: Dict[Path, Tuple[KilnBaseModel, int]] = {}
+    def __init__(self, max_bytes: int = DEFAULT_MAX_CACHED_FILE_BYTES):
+        """
+        Args:
+            max_bytes: Limit on the summed on-disk size of the cached files. Memory use is a
+                few times this, since parsed models are larger than their JSON.
+        """
+        # Each entry holds the model, the file's mtime when read, and the file's size in bytes.
+        # Ordered from least to most recently used.
+        self.model_cache: OrderedDict[Path, Tuple[KilnBaseModel, int, int]] = (
+            OrderedDict()
+        )
+        self.max_bytes = max_bytes
+        self._total_bytes = 0
+        # Used from the event loop and from worker threads at once. A threading lock, not an
+        # asyncio one: it is never held across an await.
+        self._lock = threading.Lock()
         self._enabled = self._check_timestamp_granularity()
         if not self._enabled:
             warnings.warn(
@@ -53,12 +73,12 @@ class ModelCache:
         return cached_mtime_ns == current_mtime_ns
 
     def _get_model(self, path: Path, model_type: Type[T]) -> Optional[T]:
-        # One dict call, not a membership test and then an index: another thread
-        # can remove the entry between the two, and the index raises KeyError.
-        entry = self.model_cache.get(path)
-        if entry is None:
-            return None
-        model, cached_mtime_ns = entry
+        with self._lock:
+            entry = self.model_cache.get(path)
+            if entry is None:
+                return None
+            self.model_cache.move_to_end(path)
+        model, cached_mtime_ns, _ = entry
         if not self._is_cache_valid(path, cached_mtime_ns):
             self.invalidate(path)
             return None
@@ -91,7 +111,14 @@ class ModelCache:
                 return id
         return None
 
-    def set_model(self, path: Path, model: "KilnBaseModel", mtime_ns: int):
+    def set_model(
+        self, path: Path, model: "KilnBaseModel", mtime_ns: int, size_bytes: int
+    ):
+        """Cache a readonly model read from `path`.
+
+        `size_bytes` is the size of the file it was parsed from, and counts toward `max_bytes`.
+        A file larger than `max_bytes` is not cached.
+        """
         # disable caching if the filesystem doesn't support fine-grained timestamps
         if not self._enabled:
             return
@@ -100,15 +127,35 @@ class ModelCache:
             raise RuntimeError(
                 "Mutable models are not allowed to be cached. Model should be readonly."
             )
-        self.model_cache[path] = (model, mtime_ns)
+        with self._lock:
+            self._remove(path)
+            if size_bytes > self.max_bytes:
+                return
+            self.model_cache[path] = (model, mtime_ns, size_bytes)
+            self._total_bytes += size_bytes
+            while self._total_bytes > self.max_bytes:
+                _, (_, _, evicted_size) = self.model_cache.popitem(last=False)
+                self._total_bytes -= evicted_size
 
     def invalidate(self, path: Path):
-        # pop() with a default is one dict call, so two threads that invalidate the
-        # same path at once cannot both pass a membership test and then both delete.
-        self.model_cache.pop(path, None)
+        with self._lock:
+            self._remove(path)
 
     def clear(self):
-        self.model_cache.clear()
+        with self._lock:
+            self.model_cache.clear()
+            self._total_bytes = 0
+
+    @property
+    def total_bytes(self) -> int:
+        """The summed on-disk size of the files currently cached."""
+        return self._total_bytes
+
+    def _remove(self, path: Path):
+        # Callers hold self._lock.
+        entry = self.model_cache.pop(path, None)
+        if entry is not None:
+            self._total_bytes -= entry[2]
 
     def _check_timestamp_granularity(self) -> bool:
         """Check if filesystem supports fine-grained timestamps (microseconds or better)."""

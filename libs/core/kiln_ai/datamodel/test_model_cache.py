@@ -48,7 +48,7 @@ def test_set_and_get_model(model_cache, test_path):
     model.mark_as_readonly()  # Mark as readonly before caching
     mtime_ns = test_path.stat().st_mtime_ns
 
-    model_cache.set_model(test_path, model, mtime_ns)
+    model_cache.set_model(test_path, model, mtime_ns, size_bytes=1)
     cached_model = model_cache.get_model(test_path, KilnModelTest)
 
     assert cached_model is not None
@@ -61,7 +61,7 @@ def test_invalidate_model(model_cache, test_path):
     model.mark_as_readonly()  # Mark as readonly before caching
     mtime = test_path.stat().st_mtime
 
-    model_cache.set_model(test_path, model, mtime)
+    model_cache.set_model(test_path, model, mtime, size_bytes=1)
     model_cache.invalidate(test_path)
     cached_model = model_cache.get_model(test_path, KilnModelTest)
 
@@ -73,7 +73,7 @@ def test_clear_cache(model_cache, test_path):
     model.mark_as_readonly()  # Mark as readonly before caching
     mtime = test_path.stat().st_mtime
 
-    model_cache.set_model(test_path, model, mtime)
+    model_cache.set_model(test_path, model, mtime, size_bytes=1)
     model_cache.clear()
     cached_model = model_cache.get_model(test_path, KilnModelTest)
 
@@ -85,7 +85,7 @@ def test_cache_invalid_due_to_mtime_change(model_cache, test_path):
     model.mark_as_readonly()  # Mark as readonly before caching
     mtime = test_path.stat().st_mtime
 
-    model_cache.set_model(test_path, model, mtime)
+    model_cache.set_model(test_path, model, mtime, size_bytes=1)
 
     # Simulate a file modification by updating the mtime
     test_path.touch()
@@ -105,7 +105,7 @@ def test_get_model_wrong_type(model_cache, test_path):
     model.mark_as_readonly()  # Mark as readonly before caching
     mtime_ns = test_path.stat().st_mtime_ns
 
-    model_cache.set_model(test_path, model, mtime_ns)
+    model_cache.set_model(test_path, model, mtime_ns, size_bytes=1)
 
     with pytest.raises(ValueError):
         model_cache.get_model(test_path, AnotherModel)
@@ -141,7 +141,7 @@ def test_benchmark_get_model(benchmark, model_cache, test_path):
     mtime = test_path.stat().st_mtime
 
     # Set the model in the cache
-    model_cache.set_model(test_path, model, mtime)
+    model_cache.set_model(test_path, model, mtime, size_bytes=1)
 
     # Benchmark the get_model method
     def get_model():
@@ -167,7 +167,7 @@ def test_get_model_returns_copy(model_cache, test_path):
     mtime_ns = test_path.stat().st_mtime_ns
 
     # Set the model in the cache
-    model_cache.set_model(test_path, model, mtime_ns)
+    model_cache.set_model(test_path, model, mtime_ns, size_bytes=1)
 
     # Get a copy of the model from the cache (readonly should be the same instance)
     readonly_cached_model = model_cache.get_model(
@@ -195,7 +195,7 @@ def test_get_model_returns_copy(model_cache, test_path):
 
     # Save the mutated model back to the cache (not a normal flow)
     cached_model.mark_as_readonly()  # Mark as readonly before caching
-    model_cache.set_model(test_path, cached_model, mtime_ns)
+    model_cache.set_model(test_path, cached_model, mtime_ns, size_bytes=1)
 
     # Get the model again from the cache
     updated_cached_model = model_cache.get_model(test_path, KilnModelTest)
@@ -210,7 +210,7 @@ def test_no_cache_when_no_fine_granularity(model_cache, test_path):
     mtime_ns = test_path.stat().st_mtime_ns
 
     model_cache._enabled = False
-    model_cache.set_model(test_path, model, mtime_ns)
+    model_cache.set_model(test_path, model, mtime_ns, size_bytes=1)
     cached_model = model_cache.get_model(test_path, ModelTest)
 
     # Assert that the model is not cached
@@ -278,7 +278,7 @@ def test_get_model_readonly(model_cache, test_path):
     mtime_ns = test_path.stat().st_mtime_ns
 
     # Set the model in the cache
-    model_cache.set_model(test_path, model, mtime_ns)
+    model_cache.set_model(test_path, model, mtime_ns, size_bytes=1)
 
     # Get the model in readonly mode
     readonly_model = model_cache.get_model(test_path, KilnModelTest, readonly=True)
@@ -312,7 +312,7 @@ def test_cached_models_marked_readonly(model_cache, test_path):
     model.mark_as_readonly()
 
     # Set the model in the cache
-    model_cache.set_model(test_path, model, mtime_ns)
+    model_cache.set_model(test_path, model, mtime_ns, size_bytes=1)
 
     # The original model should now be marked as readonly
     assert model._readonly is True
@@ -346,7 +346,7 @@ def test_cache_mutable_model_raises_error(model_cache, test_path):
     with pytest.raises(
         RuntimeError, match="Mutable models are not allowed to be cached"
     ):
-        model_cache.set_model(test_path, model, mtime_ns)
+        model_cache.set_model(test_path, model, mtime_ns, size_bytes=1)
 
 
 def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
@@ -380,11 +380,11 @@ def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
         model_cache.get_model_id(test_path, KilnModelTest)
 
     def store_then_invalidate():
-        model_cache.set_model(test_path, model, fresh_mtime_ns)
+        model_cache.set_model(test_path, model, fresh_mtime_ns, size_bytes=1)
         model_cache.invalidate(test_path)
 
     def store_stale():
-        model_cache.set_model(test_path, model, stale_mtime_ns)
+        model_cache.set_model(test_path, model, stale_mtime_ns, size_bytes=1)
 
     steps = [read] * 4 + [store_then_invalidate] * 2 + [store_stale] * 2
     threads = [threading.Thread(target=run, args=(step,)) for step in steps]
@@ -399,3 +399,111 @@ def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
         sys.setswitchinterval(switch_interval)
 
     assert errors == []
+
+
+def _readonly_model(name: str = "test") -> KilnModelTest:
+    model = KilnModelTest(name=name, value=1)
+    model.mark_as_readonly()
+    return model
+
+
+@pytest.fixture
+def cached_files(tmp_path):
+    paths = []
+    for i in range(4):
+        path = tmp_path / f"model_{i}.kiln"
+        path.touch()
+        paths.append(path)
+    return paths
+
+
+def test_evicts_least_recently_used_when_over_max_bytes(cached_files):
+    cache = ModelCache(max_bytes=300)
+    if not cache._enabled:
+        pytest.skip("Cache is disabled on this fs")
+    a, b, c, d = cached_files
+    for path in (a, b, c):
+        cache.set_model(
+            path, _readonly_model(), path.stat().st_mtime_ns, size_bytes=100
+        )
+
+    # Reading `a` makes `b` the least recently used entry.
+    assert cache.get_model(a, KilnModelTest, readonly=True) is not None
+    cache.set_model(d, _readonly_model(), d.stat().st_mtime_ns, size_bytes=100)
+
+    assert list(cache.model_cache) == [c, a, d]
+    assert cache.total_bytes == 300
+    assert cache.get_model(b, KilnModelTest) is None
+
+
+def test_evicts_several_entries_for_one_large_entry(cached_files):
+    cache = ModelCache(max_bytes=300)
+    if not cache._enabled:
+        pytest.skip("Cache is disabled on this fs")
+    a, b, c, d = cached_files
+    for path in (a, b, c):
+        cache.set_model(
+            path, _readonly_model(), path.stat().st_mtime_ns, size_bytes=100
+        )
+
+    cache.set_model(d, _readonly_model(), d.stat().st_mtime_ns, size_bytes=250)
+
+    assert list(cache.model_cache) == [d]
+    assert cache.total_bytes == 250
+
+
+def test_file_larger_than_max_bytes_is_not_cached(cached_files):
+    cache = ModelCache(max_bytes=100)
+    if not cache._enabled:
+        pytest.skip("Cache is disabled on this fs")
+    a, b, _, _ = cached_files
+    cache.set_model(a, _readonly_model(), a.stat().st_mtime_ns, size_bytes=50)
+
+    cache.set_model(b, _readonly_model(), b.stat().st_mtime_ns, size_bytes=101)
+
+    assert list(cache.model_cache) == [a]
+    assert cache.total_bytes == 50
+
+
+def test_replacing_an_entry_counts_its_size_once(cached_files):
+    cache = ModelCache(max_bytes=1000)
+    if not cache._enabled:
+        pytest.skip("Cache is disabled on this fs")
+    a = cached_files[0]
+    mtime_ns = a.stat().st_mtime_ns
+    cache.set_model(a, _readonly_model(), mtime_ns, size_bytes=100)
+    cache.set_model(a, _readonly_model("newer"), mtime_ns, size_bytes=40)
+
+    assert cache.total_bytes == 40
+    cached = cache.get_model(a, KilnModelTest, readonly=True)
+    assert cached is not None
+    assert cached.name == "newer"
+
+
+def test_invalidate_and_clear_release_bytes(cached_files):
+    cache = ModelCache(max_bytes=1000)
+    if not cache._enabled:
+        pytest.skip("Cache is disabled on this fs")
+    a, b, _, _ = cached_files
+    cache.set_model(a, _readonly_model(), a.stat().st_mtime_ns, size_bytes=100)
+    cache.set_model(b, _readonly_model(), b.stat().st_mtime_ns, size_bytes=200)
+
+    cache.invalidate(a)
+    assert cache.total_bytes == 200
+    cache.invalidate(a)
+    assert cache.total_bytes == 200
+
+    cache.clear()
+    assert cache.total_bytes == 0
+    assert len(cache.model_cache) == 0
+
+
+def test_stale_entry_releases_bytes_on_read(cached_files):
+    cache = ModelCache(max_bytes=1000)
+    if not cache._enabled:
+        pytest.skip("Cache is disabled on this fs")
+    a = cached_files[0]
+    cache.set_model(a, _readonly_model(), a.stat().st_mtime_ns - 1, size_bytes=100)
+
+    assert cache.get_model(a, KilnModelTest) is None
+    assert cache.total_bytes == 0

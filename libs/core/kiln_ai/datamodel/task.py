@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Dict, List, Union
+from typing import TYPE_CHECKING, Dict, List, Protocol, TypeVar, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
@@ -34,6 +34,43 @@ from kiln_ai.datamodel.task_run import TaskRun
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
+
+
+class RunLineage(Protocol):
+    """The fields of a task run that decide whether it is part of the task's dataset."""
+
+    @property
+    def id(self) -> ID_TYPE: ...
+
+    @property
+    def parent_task_run_id(self) -> str | None: ...
+
+    @property
+    def eval_source(self) -> object | None: ...
+
+
+RunLineageT = TypeVar("RunLineageT", bound=RunLineage)
+
+
+def filter_dataset_runs(
+    runs: list[RunLineageT],
+    include_intermediate_runs: bool = False,
+    include_eval_generated: bool = False,
+) -> list[RunLineageT]:
+    """Apply the filters of ``Task.runs`` to a task's complete list of runs.
+
+    Works on anything carrying a run's lineage fields, so callers can filter small
+    per-run records instead of holding every parsed ``TaskRun`` at once.
+    """
+    # Eval filter first: an excluded eval-generated run must not count as a parent
+    # either, or an eval child chained onto a dataset run would hide that dataset
+    # run from the default view while itself being filtered out.
+    if not include_eval_generated:
+        runs = [r for r in runs if r.eval_source is None]
+    if not include_intermediate_runs:
+        parent_ids = {r.parent_task_run_id for r in runs if r.parent_task_run_id}
+        runs = [r for r in runs if r.id not in parent_ids]
+    return runs
 
 
 class TaskRequirement(BaseModel):
@@ -247,15 +284,11 @@ class Task(
         copy every run regardless.
         """
         runs = self._runs(readonly=readonly)  # type: ignore[attr-defined]
-        # Eval filter first: an excluded eval-generated run must not count as a parent
-        # either, or an eval child chained onto a dataset run would hide that dataset
-        # run from the default view while itself being filtered out.
-        if not include_eval_generated:
-            runs = [r for r in runs if r.eval_source is None]
-        if not include_intermediate_runs:
-            parent_ids = {r.parent_task_run_id for r in runs if r.parent_task_run_id}
-            runs = [r for r in runs if r.id not in parent_ids]
-        return runs
+        return filter_dataset_runs(
+            runs,
+            include_intermediate_runs=include_intermediate_runs,
+            include_eval_generated=include_eval_generated,
+        )
 
     # These wrappers help for typechecking. We should fix this in KilnParentModel
     def dataset_splits(self, readonly: bool = False) -> list[DatasetSplit]:

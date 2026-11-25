@@ -110,7 +110,7 @@
     has_repair_data = false
     try {
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
+        "/api/projects/{project_id}/tasks/{task_id}/run_data_availability",
         {
           params: {
             path: { project_id, task_id },
@@ -122,15 +122,8 @@
       if (requirements_loaded_key !== key) return
       if (error) return
       if (data) {
-        has_rated_data = data.some(
-          (run) =>
-            run.rating &&
-            run.rating.value !== null &&
-            run.rating.value !== undefined,
-        )
-        has_repair_data = data.some(
-          (run) => run.repair_state?.toLowerCase() === "repaired",
-        )
+        has_rated_data = data.has_rated_runs
+        has_repair_data = data.has_repaired_runs
       }
     } finally {
       if (requirements_loaded_key === key) {

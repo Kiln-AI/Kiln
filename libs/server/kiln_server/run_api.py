@@ -4,6 +4,7 @@ import logging
 import os
 import tempfile
 from asyncio import Lock
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path as PathLibPath
 from typing import Annotated, Any, Dict
@@ -16,7 +17,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.task import RunConfigProperties, filter_dataset_runs
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.utils.dataset_import import (
     DatasetFileImporter,
@@ -664,6 +665,30 @@ def connect_run_api(app: FastAPI):
         runs = task.runs(readonly=True)
         return [RunSummary.from_run(run) for run in runs]
 
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/run_data_availability",
+        summary="Get Run Data Availability",
+        description=(
+            "Whether the task's dataset has any rated run and any repaired run. "
+            "Counts leaf dataset runs only, the same runs List Run Summaries returns. "
+            "Much cheaper than listing run summaries on a task with many runs."
+        ),
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_run_data_availability(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> RunDataAvailability:
+        return await to_thread_retrying_torn_read(
+            lambda: run_data_availability(task_from_id(project_id, task_id))
+        )
+
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs/delete",
         summary="Delete Runs",
@@ -1022,6 +1047,52 @@ def count_run_tags(task: Task) -> dict[str, int]:
         for tag in run.tags:
             tags_count[tag] = tags_count.get(tag, 0) + 1
     return tags_count
+
+
+class RunDataAvailability(BaseModel):
+    """Whether a task's dataset has the data that data-driven prompt generators need."""
+
+    has_rated_runs: bool = Field(
+        description="True if at least one dataset run has a rated output."
+    )
+    has_repaired_runs: bool = Field(
+        description="True if at least one dataset run has been repaired."
+    )
+
+
+@dataclass(frozen=True)
+class _RunDataFlags:
+    id: ID_TYPE
+    parent_task_run_id: str | None
+    eval_source: object | None
+    rated: bool
+    repaired: bool
+
+
+def run_data_availability(task: Task) -> RunDataAvailability:
+    """Check the task's leaf dataset runs, as task.runs() returns them, for ratings and repairs.
+
+    Parses one run file at a time and keeps a few fields of each. Runs are not added to the
+    model cache, so a task with tens of thousands of runs never has them all in memory.
+    """
+    flags: list[_RunDataFlags] = []
+    for run_path in TaskRun.iterate_children_paths_of_parent_path(task.path):
+        run = TaskRun.load_from_file(run_path, parent=task)
+        rating = run.output.rating
+        flags.append(
+            _RunDataFlags(
+                id=run.id,
+                parent_task_run_id=run.parent_task_run_id,
+                eval_source=run.eval_source,
+                rated=rating is not None and rating.value is not None,
+                repaired=bool(run.repair_instructions),
+            )
+        )
+    dataset_runs = filter_dataset_runs(flags)
+    return RunDataAvailability(
+        has_rated_runs=any(r.rated for r in dataset_runs),
+        has_repaired_runs=any(r.repaired for r in dataset_runs),
+    )
 
 
 async def update_run_util(

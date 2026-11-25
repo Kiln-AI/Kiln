@@ -512,6 +512,12 @@ def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
     assert model._readonly is True
 
 
+def test_load_from_file_counts_file_size_in_cache(test_base_file, tmp_model_cache):
+    KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    assert tmp_model_cache.total_bytes == test_base_file.stat().st_size
+
+
 def test_save_to_file_invalidates_cache(test_base_file, tmp_model_cache):
     # Create and save the model
     model = KilnBaseModel(path=test_base_file)

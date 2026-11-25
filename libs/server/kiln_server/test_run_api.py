@@ -1219,6 +1219,107 @@ async def test_get_runs_summaries_task_not_found(client):
     assert response.json()["message"] == "Task not found"
 
 
+def _get_run_data_availability(client, project, task) -> dict:
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/run_data_availability"
+        )
+    assert response.status_code == 200
+    return response.json()
+
+
+def _rate(run: TaskRun) -> None:
+    run.output.rating = TaskOutputRating(value=5.0, type=TaskOutputRatingType.five_star)
+    run.save_to_file()
+
+
+def _make_rated_repaired_run(task: Task) -> TaskRun:
+    human = DataSource(
+        type=DataSourceType.human, properties={"created_by": "Test User"}
+    )
+    run = TaskRun(
+        parent=task,
+        input="Test input",
+        input_source=human,
+        output=TaskOutput(
+            output="Test output",
+            source=human,
+            rating=TaskOutputRating(value=2.0, type=TaskOutputRatingType.five_star),
+        ),
+        repair_instructions="Fix this output",
+        repaired_output=TaskOutput(output="Fixed output", source=human),
+    )
+    run.save_to_file()
+    return run
+
+
+def test_run_data_availability_without_rated_or_repaired_runs(client, task_run_setup):
+    result = _get_run_data_availability(
+        client, task_run_setup["project"], task_run_setup["task"]
+    )
+
+    assert result == {"has_rated_runs": False, "has_repaired_runs": False}
+
+
+def test_run_data_availability_with_rated_and_repaired_run(client, task_run_setup):
+    _make_rated_repaired_run(task_run_setup["task"])
+
+    result = _get_run_data_availability(
+        client, task_run_setup["project"], task_run_setup["task"]
+    )
+
+    assert result == {"has_rated_runs": True, "has_repaired_runs": True}
+
+
+def test_run_data_availability_counts_only_leaf_runs(client, task_run_setup_multiturn):
+    task = task_run_setup_multiturn["task"]
+    root = _make_rated_repaired_run(task)
+    _make_child_run(task, root)
+
+    result = _get_run_data_availability(
+        client, task_run_setup_multiturn["project"], task
+    )
+
+    assert result == {"has_rated_runs": False, "has_repaired_runs": False}
+
+
+def test_run_data_availability_ignores_eval_generated_runs(client, task_run_setup):
+    task = task_run_setup["task"]
+    eval_run = TaskRun(
+        parent=task,
+        input="eval input",
+        eval_source=EvalItemSource(source_type="eval_input", source_id="ei1"),
+        output=TaskOutput(
+            output="eval output",
+            source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "Test User"}
+            ),
+        ),
+    )
+    eval_run.save_to_file()
+    _rate(eval_run)
+
+    result = _get_run_data_availability(client, task_run_setup["project"], task)
+
+    assert result == {"has_rated_runs": False, "has_repaired_runs": False}
+
+
+def test_run_data_availability_does_not_cache_runs(client, task_run_setup):
+    _rate(task_run_setup["task_run"])
+    ModelCache.shared().clear()
+
+    result = _get_run_data_availability(
+        client, task_run_setup["project"], task_run_setup["task"]
+    )
+
+    assert result["has_rated_runs"] is True
+    cached_types = {
+        type(entry[0]) for entry in ModelCache.shared().model_cache.values()
+    }
+    assert TaskRun not in cached_types
+
+
 def _make_child_run(task, parent_run: TaskRun, **overrides) -> TaskRun:
     run = TaskRun(
         parent=task,
