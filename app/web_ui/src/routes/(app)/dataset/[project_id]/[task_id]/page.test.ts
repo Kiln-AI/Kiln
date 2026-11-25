@@ -8,14 +8,21 @@ import { tag_store_by_task_id } from "$lib/stores/tag_store"
 
 const { mockPage, mockClientGET } = vi.hoisted(() => {
   type PageValue = { params: Record<string, string>; url: URL }
-  const pageValue: PageValue = {
-    params: { project_id: "proj1", task_id: "task1" },
-    url: new URL("http://localhost/dataset/proj1/task1"),
-  }
+  const page_for_task = (task_id: string): PageValue => ({
+    params: { project_id: "proj1", task_id },
+    url: new URL(`http://localhost/dataset/proj1/${task_id}`),
+  })
+  let pageValue = page_for_task("task1")
+  const subscribers = new Set<(v: PageValue) => void>()
   const mockPage = {
     subscribe(fn: (v: PageValue) => void) {
+      subscribers.add(fn)
       fn(pageValue)
-      return () => {}
+      return () => subscribers.delete(fn)
+    },
+    show_task(task_id: string) {
+      pageValue = page_for_task(task_id)
+      subscribers.forEach((fn) => fn(pageValue))
     },
   }
   return { mockPage, mockClientGET: vi.fn() }
@@ -37,7 +44,9 @@ const SUMMARIES_PATH =
   "/api/projects/{project_id}/tasks/{task_id}/runs_summaries"
 const TAGS_PATH = "/api/projects/{project_id}/tasks/{task_id}/tags"
 
-type SummariesResponse = { data: RunSummary[]; error: null }
+type SummariesResponse =
+  | { data: RunSummary[]; error: null }
+  | { data: null; error: { message: string } }
 
 const run_summary: RunSummary = {
   id: "run1",
@@ -67,6 +76,7 @@ describe("dataset +page.svelte", () => {
     vi.spyOn(svelte, "onMount").mockImplementation((fn) => {
       queueMicrotask(() => void fn())
     })
+    mockPage.show_task("task1")
     mockClientGET.mockReset()
     mockClientGET.mockImplementation((path: string) => {
       if (path === SUMMARIES_PATH) {
@@ -101,5 +111,44 @@ describe("dataset +page.svelte", () => {
       params: { path: { project_id: "proj1", task_id: "task1" } },
     })
     expect(get(tag_store_by_task_id)["task1"]).toEqual({ golden: 1 })
+  })
+
+  it("requests the new task's tag counts only after its run summaries arrive", async () => {
+    render(Page)
+    await settle()
+    resolve_summaries({ data: [run_summary], error: null })
+    await settle()
+
+    mockPage.show_task("task2")
+    await settle()
+
+    expect(requested_paths()).toEqual([
+      SUMMARIES_PATH,
+      TAGS_PATH,
+      SUMMARIES_PATH,
+    ])
+
+    resolve_summaries({ data: [run_summary], error: null })
+    await settle()
+
+    expect(requested_paths()).toEqual([
+      SUMMARIES_PATH,
+      TAGS_PATH,
+      SUMMARIES_PATH,
+      TAGS_PATH,
+    ])
+    expect(mockClientGET.mock.calls[3][1]).toEqual({
+      params: { path: { project_id: "proj1", task_id: "task2" } },
+    })
+  })
+
+  it("never requests the tag counts when the run summaries fail", async () => {
+    render(Page)
+    await settle()
+
+    resolve_summaries({ data: null, error: { message: "Task not found" } })
+    await settle()
+
+    expect(requested_paths()).toEqual([SUMMARIES_PATH])
   })
 })
