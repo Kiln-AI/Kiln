@@ -18,6 +18,8 @@ from app.desktop.studio_server.webhost import HTMLStaticFiles
 def client(monkeypatch):
     # Ensure CORS origins use the default port (5173) regardless of environment
     monkeypatch.delenv("KILN_FRONTEND_PORT", raising=False)
+    # The lifespan can't turn the shared model cache back on once a shell setting disables it.
+    monkeypatch.delenv("KILN_DISABLE_MODEL_CACHE", raising=False)
     # a client based on a mock studio path (skipping remote model list loading)
     with (
         tempfile.TemporaryDirectory() as temp_dir,

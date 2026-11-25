@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI):
 
     if Config.shared().disable_model_cache:
         ModelCache.shared().disable()
-        logger.info("Model cache disabled by KILN_DISABLE_MODEL_CACHE")
+        logger.info("Model cache disabled by the disable_model_cache setting")
 
     try:
         await _start_background_syncs()
