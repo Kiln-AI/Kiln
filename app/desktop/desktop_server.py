@@ -19,6 +19,7 @@ from kiln_ai.adapters.remote_config import (
 from kiln_ai.openenv.session_manager import shutdown_shared_session_manager
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.logging import setup_litellm_logging
+from kiln_mcp_server.addresses import app_origin
 
 from app.desktop.git_sync.background_sync import BackgroundSync
 from app.desktop.git_sync.config import get_git_sync_config
@@ -174,7 +175,7 @@ def make_app(
     connect_settings(app)
     connect_data_gen_api(app)
     connect_fine_tune_api(app)
-    connect_evals_api(app)
+    connect_evals_api(app, app_origin=app_origin(bound_host, bound_port))
     connect_run_config_api(app)
     connect_import_api(app, tk_root=tk_root)
     connect_tool_servers_api(app)

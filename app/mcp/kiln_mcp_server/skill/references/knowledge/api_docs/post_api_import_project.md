@@ -14,7 +14,7 @@ Add an existing project to Kiln from the path of its project.kiln file.
 |-|-|-|-|-|
 |project_path|string|Yes||File path to the project.kiln file to import.|
 |remove_conflicting_id|boolean|No|False|When true and a duplicate project ID conflict is detected, remove the existing project registration before importing.|
-|trusted|boolean|No|False|Must be true to confirm trust before importing. Kiln projects can contain code that runs on your machine.|
+|trusted|boolean|No|False|Must be true to import. Set it only after the user confirms they trust the project: Kiln projects can contain code that runs on your machine. It is the importer's confirmation; it grants no code trust.|
 
 ## Responses
 

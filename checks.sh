@@ -167,6 +167,9 @@ fi
 # Python tests
 if [ "$staged_only" = false ] || echo "$changed_files" | grep -q "\.py$"; then
     start_check "python tests" python3 -m pytest --benchmark-quiet -q -n auto .
+elif echo "$changed_files" | grep -q "^app/mcp/"; then
+    # The Kiln skill is Markdown, and its tests check it.
+    start_check "kiln skill tests" python3 -m pytest --benchmark-quiet -q -n auto app/mcp
 fi
 
 # ── Wait and summarize ────────────────────────────────────────────────

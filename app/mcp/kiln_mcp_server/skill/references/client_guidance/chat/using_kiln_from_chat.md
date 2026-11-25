@@ -123,8 +123,11 @@ Their rules apply to you as written. Read them this way:
 - A record line that Kiln Harness Tuner writes, such as
   `— REJECTED AT VAL`: read it, and never write it
   (`references/knowledge/memory.md`).
-- A Kiln Harness Tuner tool that Kiln does not have (the skill installer,
-  the screening): tell the user it needs Kiln Harness Tuner.
+- A Kiln Harness Tuner tool that Kiln does not have (the screening): tell
+  the user it needs Kiln Harness Tuner. For the skill installer or the
+  skill-authoring guide, create the skill with
+  `references/knowledge/adding_skills.md`, which writes the `SKILL.md`
+  body only, with no `references/` files.
 - "The stop rules and the confirmation on val", in "A clear measurement
   outranks a document" of `references/improving_agents/index.md`: judge a
   result with

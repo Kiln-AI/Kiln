@@ -552,8 +552,8 @@ MEMORY_RULES = (
     "disclose it in your return",
     "A disclosure rides **once**",
     "exempt from any length budget on that field",
-    "In a chat with a user: tell the user the finding once.",
-    # A missing eval: the loop's path, then the chat case.
+    "Other agents: tell the user the finding once.",
+    # A missing eval: the loop's path, then the case of other agents.
     "the loop's `eval_only` item build the eval and bind the issue via `link_eval`",
     "It never guesses a binding.",
     "build it only when the user agrees (`references/knowledge/create_spec.md`)",
@@ -565,7 +565,7 @@ MEMORY_RULES = (
     # Experiments and dead ends.
     "small n gives direction, never validation",
     "merge-eligible wins = verdicts since the last promotion without `— PROMOTED`",
-    "citing the experiment id; in a chat with a user, where no experiment record is written, the run config ids",
+    "citing the experiment id in Kiln Harness Tuner; other agents, where no experiment record is written, the run config ids",
     # The train-side read rules.
     "Kiln Harness Tuner train-side loop agents skip this read",
     "⛔ **Never on a train-side lane**",

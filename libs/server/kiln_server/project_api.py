@@ -150,8 +150,10 @@ def connect_project_api(app: FastAPI):
         trusted: Annotated[
             bool,
             Query(
-                description="Must be true to confirm trust before importing. "
-                "Kiln projects can contain code that runs on your machine."
+                description="Must be true to import. Set it only after the user "
+                "confirms they trust the project: Kiln projects can contain code "
+                "that runs on your machine. It is the importer's confirmation; it "
+                "grants no code trust."
             ),
         ] = False,
     ) -> Project:

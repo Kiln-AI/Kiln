@@ -35,7 +35,7 @@ from pydantic import (
 
 from app.desktop.studio_server.services.code_trust import (
     CODE_TRUST_CHECK,
-    CODE_TRUST_PAGE,
+    CODE_TRUST_PAGE_DOC,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ class CodeToolResponse(BaseModel):
 
 NOT_TRUSTED_DESCRIPTION = (
     "True when the project's code is not trusted, so nothing ran and nothing was "
-    f"saved. Only the user can grant code trust, in the Kiln app at {CODE_TRUST_PAGE}. "
+    f"saved. Only the user can grant code trust, in the Kiln app at {CODE_TRUST_PAGE_DOC}. "
     "Explain what the code will run and that it runs with no sandbox, give the "
     "user that link, and ask them to tell you when they have approved. Then "
     f"confirm with {CODE_TRUST_CHECK} and call again."

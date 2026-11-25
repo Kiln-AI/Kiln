@@ -7,7 +7,7 @@ LINK_PATTERN = re.compile(r"https?://\S+")
 
 
 def test_not_trusted_message_uses_the_real_project_id():
-    message = not_trusted_message("Code refused.", "123456")
+    message = not_trusted_message("Code refused.", "123456", "http://localhost:8757")
 
     assert message == (
         "Code refused. Only the user can grant code trust, at "
@@ -18,7 +18,7 @@ def test_not_trusted_message_uses_the_real_project_id():
 
 
 def test_not_trusted_message_link_is_the_bare_trust_page_url():
-    message = not_trusted_message("Code refused.", "123456")
+    message = not_trusted_message("Code refused.", "123456", "http://localhost:8757")
 
     assert LINK_PATTERN.findall(message) == [
         "http://localhost:8757/settings/trust_code/123456"
@@ -26,8 +26,16 @@ def test_not_trusted_message_link_is_the_bare_trust_page_url():
 
 
 def test_not_trusted_message_encodes_the_project_id():
-    message = not_trusted_message("Code refused.", 'a"<b> c')
+    message = not_trusted_message("Code refused.", 'a"<b> c', "http://localhost:8757")
 
     assert "trust_code/a%22%3Cb%3E%20c in the Kiln app" in message
     assert "/api/projects/a%22%3Cb%3E%20c/add_code_trust" in message
     assert "<" not in message and '"' not in message
+
+
+def test_not_trusted_message_links_the_page_at_the_given_address():
+    message = not_trusted_message("Code refused.", "123456", "http://[fd00::5]:9000")
+
+    assert LINK_PATTERN.findall(message) == [
+        "http://[fd00::5]:9000/settings/trust_code/123456"
+    ]

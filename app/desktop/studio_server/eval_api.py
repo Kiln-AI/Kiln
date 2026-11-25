@@ -502,11 +502,13 @@ async def run_v2_eval_test(
     eval_obj: Eval,
     properties: V2EvalConfigProperties,
     eval_input: EvalTaskInput,
+    app_origin: str,
 ) -> TestV2EvalResponse:
     """Run a transient (unsaved) V2 eval config against one input.
 
     Shared by the eval-scoped test endpoint and the creation-flow draft
-    endpoint; *eval_obj* may be an unsaved in-memory eval.
+    endpoint; *eval_obj* may be an unsaved in-memory eval. *app_origin* is the
+    app's address as users see it, for the code trust link.
     """
     transient_config = EvalConfig(
         name="test_run",
@@ -526,7 +528,9 @@ async def run_v2_eval_test(
             return TestV2EvalResponse(
                 skipped_reason=SkippedReason.code_eval_not_trusted.value,
                 skipped_detail=not_trusted_message(
-                    "Project not trusted for code eval execution.", project_id
+                    "Project not trusted for code eval execution.",
+                    project_id,
+                    app_origin,
                 ),
             )
         # The author is iterating on this code right now, so show them what
@@ -2019,7 +2023,10 @@ async def validate_run_config_tools(
         raise HTTPException(status_code=422, detail=str(e))
 
 
-def connect_evals_api(app: FastAPI):
+def connect_evals_api(app: FastAPI, *, app_origin: str):
+    """Add the eval routes. `app_origin` is the app's address as users see it,
+    for the links in what the routes answer."""
+
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
         summary="Create Evaluator",
@@ -2703,7 +2710,9 @@ def connect_evals_api(app: FastAPI):
                 raise HTTPException(
                     status_code=403,
                     detail=not_trusted_message(
-                        "Project not trusted to add code evals.", project_id
+                        "Project not trusted to add code evals.",
+                        project_id,
+                        app_origin,
                     ),
                 )
 
@@ -2841,7 +2850,7 @@ def connect_evals_api(app: FastAPI):
                 )
 
             return await run_v2_eval_test(
-                project_id, eval_obj, properties, request.eval_input
+                project_id, eval_obj, properties, request.eval_input, app_origin
             )
         except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -2877,7 +2886,11 @@ def connect_evals_api(app: FastAPI):
                 parent=task,
             )
             return await run_v2_eval_test(
-                project_id, eval_obj, request.properties, request.eval_input
+                project_id,
+                eval_obj,
+                request.properties,
+                request.eval_input,
+                app_origin,
             )
         except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))

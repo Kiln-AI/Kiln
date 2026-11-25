@@ -77,8 +77,7 @@ one-off path: the key lessons, by hand. Nothing here enforces them but you.
   the user what you assume. Record a restriction that the user states as a
   `constraint` (`references/knowledge/memory.md`).
 - **No fine-tuning and no prompt optimizer as a change**, unless what the
-  user asked names one. Kiln has a prompt optimization API; it is not a
-  lever of this procedure.
+  user asked names one.
 
 The order is fixed: an eval with a judge, then a run on each split you
 need, then a comparison.

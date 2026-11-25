@@ -26,7 +26,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## EvalInputs: the dataset rows
 
-EvalInputs live on disk under the task (`eval_inputs/<id>/eval_input.kiln`). The Eval Inputs endpoints list, create, update and delete them (`references/knowledge/api_docs/eval_inputs_api_list.md`); an update changes the tags and the reference data only, never `data`. Change a benchmark's dataset only when the user asks for it. Each row has:
+EvalInputs live on disk under the task (`eval_inputs/<id>/eval_input.kiln`). The Eval Inputs endpoints list, create, update and delete them (`references/knowledge/api_docs/eval_inputs_api_list.md`); an update changes the tags and the reference data only, never `data`. Never create EvalInputs yourself (`references/knowledge/create_spec.md`, "Creating an eval through the API"). Change a benchmark's dataset only when the user asks for it. Each row has:
 
 - `data` — what to run, one of two types:
 

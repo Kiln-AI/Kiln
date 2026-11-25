@@ -40,7 +40,10 @@ the MCP never read it: it is outside the package.
 ### Where each kind of content lives
 
 One skill serves every kind of client. A shared file serves them all, and
-states a branch by its real condition, never by the name of a client.
+states a branch by its real condition. Text that applies only to Kiln
+Harness Tuner carries its label ("Kiln Harness Tuner: …"), and its words
+stay as Kiln Harness Tuner wrote them. Unlabelled text is the default, for
+every other client ("Other agents: …" when it follows a labelled sentence).
 
 | Content | Where |
 |---|---|
@@ -49,7 +52,7 @@ states a branch by its real condition, never by the name of a client.
 | The ports of Kiln Harness Tuner's shared skills: memory, its formats, experiment costing, code tool authoring, the split rule | `references/knowledge/`. Shared, ported word for word |
 | The rules for every call of `call_kiln_api` | `references/knowledge/api_docs/calling_the_kiln_api.md`, the one hand-written file of the generated folder. It opens with its condition: "if you have the `call_kiln_api` tool" |
 | Guidance only for chat clients: working with the user, the modes, the one-off experiment guide, how to read Kiln Harness Tuner's words | `references/client_guidance/chat/`. Each file opens with the line "For chat clients working with a user. …", and `references/client_guidance/chat/using_kiln_from_chat.md` lists them |
-| A rule that differs in a chat | An "In a chat with a user: …" clause beside the shared sentence, which stays the main text |
+| A rule only for a chat: asking the user, or a link into `references/client_guidance/chat/` | An "In a chat with a user: …" clause beside the shared sentence, which stays the main text |
 
 A shared file never needs a chat file to make sense. It names a chat file
 only in a sentence for a chat with a user, and a test checks the words "in a

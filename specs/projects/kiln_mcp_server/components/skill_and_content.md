@@ -351,7 +351,9 @@ Owner decision, 2026-11-24 ([decisions](../harness_tuner_alignment_decisions.md)
 - **Chat clients**: interactive agents working with a user, such as Claude Code, Claude Desktop, Codex and OpenCode.
 - **Non-interactive agents with their own instructions**, such as Kiln Harness Tuner, which deep-link into the skill from their role prompts.
 
-Shared files serve every client. A branch states its real condition ("In a chat with a user: …", "if you have the `call_kiln_api` tool"), never a client's name: no "if you are Kiln Harness Tuner" where a real condition works. Guidance only for chat clients lives in `references/client_guidance/chat/`. "MCP client", "MCP agent" and "over MCP" never mean the interactive client, since Kiln Harness Tuner is an MCP client too; the words are "chat clients", or "a non-interactive agent with its own instructions (such as Kiln Harness Tuner)".
+Shared files serve every client. A branch states its real condition ("In a chat with a user: …", "if you have the `call_kiln_api` tool"); text that applies only to Kiln Harness Tuner carries its label (below). Guidance only for chat clients lives in `references/client_guidance/chat/`. "MCP client", "MCP agent" and "over MCP" never mean the interactive client, since Kiln Harness Tuner is an MCP client too; the words are "chat clients", or "a non-interactive agent with its own instructions (such as Kiln Harness Tuner)".
+
+Since Phase 22 ([decisions](../harness_tuner_alignment_decisions.md) section 17): text that applies only to Kiln Harness Tuner is labelled with its name ("Kiln Harness Tuner: …"), and its words stay as HT wrote them. Unlabelled text is the default and serves every other client ("Other agents: …" after a labelled sentence). A branch that is truly chat-only (asking the user, a link into `references/client_guidance/chat/`) keeps "In a chat with a user: …".
 
 **`SKILL.md`** is the short router of 4.3, for every client.
 

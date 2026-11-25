@@ -88,11 +88,11 @@ The judge doesn't have to be an LLM. When the concern is **mechanical**, a deter
 1. Recognize that the user needs an eval (from their intent)
 2. Help them think through what to evaluate — propose ideas, discuss what "good" looks like
 3. Identify the right eval type
-4. Deep-link them to the Eval Builder with context, `?type=` preselected (see the UI Deep Links table)
+4. Deep-link them to the Eval Builder, or to the form for a template with `?type=` preselected when the type is already chosen (see the UI Deep Links table)
 5. Remind them about the default run config — evals run against it. If the task's `default_run_config_id` is set, name and link it ([Run Config](http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid})); if null, tell them to set one first ([Run Configs](http://localhost:8757/optimize/{project_id}/{task_id}))
 6. Once the eval exists, run it (below), read the scores and build comparison tables
 
-**When the user asks you to create the eval through the API**, you can: `POST /api/projects/{project_id}/tasks/{task_id}/specs` creates the spec and its eval (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_specs.md`). Tell the user what it lacks next to the Eval Builder: no generated data and no judge aligned with their ratings. Add a judge with `references/knowledge/judge_types.md` before the eval can score.
+**You may also create the eval through the API**: `POST /api/projects/{project_id}/tasks/{task_id}/specs` creates the spec and its eval (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_specs.md`), and `create_evaluator` an eval with no spec. Create the eval only, never its data, and tell the user what it lacks next to the Eval Builder: no generated data and no judge aligned with their ratings. How, and where the user adds the data: `references/knowledge/create_spec.md` ("Creating an eval through the API"). Add a judge with `references/knowledge/judge_types.md` before the eval can score.
 
 ## Running an eval
 
@@ -135,7 +135,7 @@ Spec  ──references──>  Eval  ──contains──>  EvalConfig(s)  ─�
 - **EvalConfig**: The judge — how to score. An LLM judge (model + prompt), a deterministic check, or a code eval (see `references/knowledge/judge_types.md`)
 - **EvalRun**: A single evaluation result — one dataset item scored by one judge for one run config
 
-The Eval Builder creates all of these automatically. `POST .../specs` creates the Spec and its Eval; a judge is added separately.
+The Eval Builder creates all of these automatically. `POST .../specs` creates the Spec and its Eval, with splits of task runs; a judge is added separately.
 
 ## Eval Design Principles
 
@@ -183,10 +183,9 @@ Tags and splits are managed automatically by the Eval Builder; don't rename or r
 | Action | Link |
 |--------|------|
 | View all evals | `http://localhost:8757/specs/{project_id}/{task_id}` |
-| Eval Builder (guided) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder` |
-| Eval Builder — new "should do X" eval | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type=desired_behaviour` |
-| Eval Builder — new bug/regression eval | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type=issue` |
-| Select eval template | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` |
+| Eval Builder (guided; also lists the templates and the checks) | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` |
+| Form for a template — new "should do X" eval | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type=desired_behaviour` |
+| Form for a template — new bug/regression eval | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type=issue` |
 | View an eval definition (spec) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}` |
 | View a spec-based eval (detail / results) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}/{eval_id}` |
 | View a legacy eval — no spec (e.g. from `create_evaluator`) | `http://localhost:8757/specs/{project_id}/{task_id}/legacy/{eval_id}` |
@@ -194,7 +193,7 @@ Tags and splits are managed automatically by the Eval Builder; don't rename or r
 | Compare (prepopulated) | `http://localhost:8757/specs/{project_id}/{task_id}/compare?columns=N&models=rcid1%2Crcid2` |
 | Eval configs (judge setup) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/eval_configs` |
 
-**Spec-based vs legacy eval links.** Evals live under the `http://localhost:8757/specs/` tree (the old `/evals/...` routes were retired). An eval is **legacy** when no Spec references it — which includes *every* eval created via the `create_evaluator` REST shortcut (it makes a spec-less `Eval`). Legacy evals put the literal token **`legacy`** in the `{spec_id}` slot of *all* their routes (`http://localhost:8757/specs/{project_id}/{task_id}/legacy/{eval_id}`, `.../legacy/{eval_id}/eval_configs`, …). Only evals built through the Eval Builder have a real `{spec_id}`. So: if you created the eval yourself via the API, link it with `legacy`; if it came from a Spec, use the `{spec_id}`.
+**Spec-based vs legacy eval links.** Evals live under the `http://localhost:8757/specs/` tree (the old `/evals/...` routes were retired). An eval is **legacy** when no Spec references it — which includes *every* eval created via the `create_evaluator` REST shortcut (it makes a spec-less `Eval`). Legacy evals put the literal token **`legacy`** in the `{spec_id}` slot of *all* their routes (`http://localhost:8757/specs/{project_id}/{task_id}/legacy/{eval_id}`, `.../legacy/{eval_id}/eval_configs`, …). Only evals that came from a Spec have a real `{spec_id}`. So: an eval with no Spec (one made with `create_evaluator`, or with the form for a check) is linked with `legacy`; an eval that came from a Spec uses the `{spec_id}`.
 
 ## See also
 

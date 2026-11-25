@@ -75,7 +75,7 @@ There are **no import restrictions** — but only what ships in the Kiln app's b
 
 ### Trust and testing
 
-- There is no sandbox (network and filesystem are open; Kiln adds only crash isolation and the timeout) — hence the **trust gate**: a new code eval is saved or tested only in a project with code trust, granted per project, per app session, and only by the user. Read the state with `GET /api/projects/{project_id}/add_code_trust`. When the project is not trusted, tell the user what the code will run, and that it runs on the machine where Kiln runs with no sandbox. Give them the link `http://localhost:8757/settings/trust_code/{project_id}`, and ask them to tell you when they have approved. Then read the state again, and go on only when it is trusted. **Never present code from anywhere but the user's own session as trustworthy.**
+- There is no sandbox (network and filesystem are open; Kiln adds only crash isolation and the timeout) — hence the **trust gate**: a new code eval is saved or tested only in a project with code trust, granted per project, per app session, and only by the user. Read the state with `GET /api/projects/{project_id}/add_code_trust` (`references/knowledge/api_docs/get_api_projects_project_id_add_code_trust.md`). In a chat with a user: when the project is not trusted, ask as the code-trust rule of `references/client_guidance/chat/using_kiln_from_chat.md` ("Working with the user") says. **Never present code from anywhere but the user's own session as trustworthy.**
 - Test a judge before you save it: `POST /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval` for an existing eval, `POST /api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft` for an eval that is not created yet. Test on real samples, fix, and test again. A code eval's test runs the code, so it needs trust too.
 
 ## The v2 LLM judge
@@ -90,12 +90,13 @@ Through the API, after the test above:
 - **An LLM judge with the server's default prompt** — `POST /api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_llm_judge_config` (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_evals_eval_id_create_llm_judge_config.md`).
 - A new judge is not the eval's default judge. Make it the default with `POST .../set_current_eval_config/{eval_config_id}` when the user wants it to be; scores of different judges are not comparable.
 
-For a new eval, the Eval Builder comes first (`references/knowledge/specs_and_evals.md`). The user can also build a judge in the app:
+For a new eval, the Eval Builder comes first where it fits (`references/knowledge/specs_and_evals.md`). You may also create the eval, with its programmatic check, through the API (`references/knowledge/create_spec.md`, "Creating an eval through the API"). The user can also build a judge in the app:
 
 | Action | Link |
 |--------|------|
-| New programmatic-check eval (skips the spec step) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?judge={type}&workflow=manual` — `{type}` is any type above except `llm_judge` |
-| New LLM-judge eval (guided, templated) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}` per `references/knowledge/create_spec.md` |
+| New programmatic-check eval: the form for a check (skips the spec step) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?judge={type}&workflow=manual` — `{type}` is any type above except `llm_judge` |
+| New LLM-judge eval (guided): the Eval Builder | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` per `references/knowledge/create_spec.md` |
+| New LLM-judge eval: the form for a template | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}` per `references/knowledge/create_spec.md` |
 | Add a judge to an existing eval (picker) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config` |
 | Add a specific judge type to an existing eval | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config/{type}` |
 

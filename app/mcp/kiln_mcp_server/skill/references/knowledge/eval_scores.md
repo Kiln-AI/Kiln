@@ -101,7 +101,7 @@ One call returns scores across **all evals and all run configs** for the task. R
 >
 > **To get scores, complete each step in order:**
 >
-> 1. [Open the spec](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}) or [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder) if no spec exists yet
+> 1. [Open the spec](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}) or [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/select_template) if no spec exists yet
 > 2. [Add a judge (eval config)](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}/{eval_id}/eval_configs)
 > 3. Run the eval — I can start it, or click **Run Eval** on the [spec page](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id})
 > 4. Re-check scores here — I'll pull a fresh scorecard
@@ -120,7 +120,7 @@ This applies to "rank my configs", "which should I ship?", and "what's the cheap
 
 If the user asks for a model ranking on a task but the task has no specs or no eval configs, you can't rank yet. Don't stop at "I can't help" — produce this numbered path:
 
-1. [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder) — define 1–3 quality dimensions (what "good" looks like)
+1. [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/select_template) — define 1–3 quality dimensions (what "good" looks like)
 2. [Add a judge (eval config)](http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}/{eval_id}/eval_configs) — pick the judge model and prompt
 3. [Run configs page](http://localhost:8757/optimize/{project_id}/{task_id}) — ensure at least 2 configs exist to rank against each other; create candidates with `references/knowledge/model_create_configs.md` if needed
 4. Run the eval — the eval job of `references/knowledge/specs_and_evals.md` ("Running an eval")

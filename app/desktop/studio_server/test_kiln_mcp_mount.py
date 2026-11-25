@@ -142,6 +142,16 @@ def test_explicit_host_and_port_win_over_the_config():
     connect.assert_called_once_with(app, host="192.168.1.5", port=9200)
 
 
+@pytest.mark.parametrize(
+    "host, origin",
+    [("0.0.0.0", "http://localhost:9200"), ("192.168.1.5", "http://192.168.1.5:9200")],
+)
+def test_the_eval_routes_get_the_app_address_of_the_bind(host, origin):
+    with patch.object(desktop_server, "connect_evals_api") as connect:
+        app = make_app(host=host, port=9200)
+    connect.assert_called_once_with(app, app_origin=origin)
+
+
 def test_connect_reads_no_config():
     app = FastAPI()
     with patch(

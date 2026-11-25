@@ -7,12 +7,12 @@ description: How to write a code tool for the subject task as an experiment leve
 
 You are building a code tool as an **experiment lever**: it ships wired into
 ONE new run config, additive to the baseline, per your role's build
-discipline (in a chat with a user: `references/client_guidance/chat/running_an_experiment_from_chat.md`,
+discipline in Kiln Harness Tuner (in a chat with a user: `references/client_guidance/chat/running_an_experiment_from_chat.md`,
 "Build the candidate"). The
 tool surface is the subject model's decision point — a wrapper can reshape
 what the model sees (smaller responses, previews, batch semantics,
-validated inputs) without touching the prompt or the model. In a chat with
-a user, read `references/knowledge/code_tools.md` first, for what code tools are, trust,
+validated inputs) without touching the prompt or the model. Read
+`references/knowledge/code_tools.md` first, for what code tools are, trust,
 and the plain create, test and attach steps.
 
 ## When the tool lever is the right lever
@@ -91,15 +91,16 @@ never guess; "The calls" below), and set the subject's routes and field
 names. The plumbing shape of each template is fixed; the subject-specific
 edits are yours to dry-run (reads only, or a nonexistent id). Then the
 build discipline below applies unchanged (fresh function name, dry-run
-with reads, wire into the new rc, say in `build_notes` — in a chat with a
-user, in your report — whether it replaces or sits beside the wrapped tool).
+with reads, wire into the new rc, say in `build_notes` (Kiln Harness Tuner;
+other agents, in your report) whether it replaces or sits beside the wrapped
+tool).
 
 **Rules that apply to all of them:**
 
 - **Allowlist only subject-task tools.** Never `kiln_tool::call_kiln_api`.
 - **The wrapper replaces, or sits beside, the wrapped tool on the NEW rc
   only.** Both ids on one rc means the model chooses, which is a different
-  experiment; say which in `build_notes` (in a chat with a user, in your report).
+  experiment; say which in `build_notes` (Kiln Harness Tuner; other agents, in your report).
 - **The description carries half of the effect.** Say WHEN to prefer the
   wrapper over the tool it wraps, in the model's terms: "Prefer this
   whenever the user gave a shipment number instead of an id".
@@ -136,7 +137,7 @@ code-tool calls are supported, depth cap 10.
 
 Code trust — in-memory per server process, so it is granted once per
 session before authoring: grant it with your trust operation when you
-have one. In a chat with a user, only the user grants it: read the state
+have one. Otherwise, only the user grants it: read the state
 (`references/knowledge/api_docs/get_api_projects_project_id_add_code_trust.md`) and follow
 `references/knowledge/code_tools.md`. ⚠️ Untrusted create and dry-run
 calls answer with **`not_trusted: true`** and persist or run nothing —
@@ -216,7 +217,7 @@ Read each endpoint doc before the first call.
 5. **A tool nobody is told about goes unused.** If the hypothesis needs the
    model to *prefer* the new tool, the usage directive (description text,
    in preference to a prompt line) is part of the same lever — build it in
-   the same rc and say so in `build_notes` (in a chat with a user, in your report); do
+   the same rc and say so in `build_notes` (Kiln Harness Tuner; other agents, in your report); do
    not silently widen the hypothesis.
 
 ## Worked example — a composite wrapper, complete
@@ -289,13 +290,13 @@ def run(query):
 Dry-run with `params: {"query": "no-such-record-zzz"}` — full plumbing,
 both branches reachable, zero side effects — then create, wire
 `kiln_tool::code::<new_ctid>` into the new rc, and smoke per your role's build
-discipline (in a chat with a user: run the new rc once on one or two train items and check that the agent calls the
+discipline (Kiln Harness Tuner; other agents: run the new rc once on one or two train items and check that the agent calls the
 tool: the technique's "Check that it took effect").
 
 ## Related
 
 The build discipline this slots into — provenance, smoke, one-crack: your
-role's build skill; in a chat with a user,
+role's build skill (Kiln Harness Tuner); in a chat with a user,
 `references/client_guidance/chat/running_an_experiment_from_chat.md` · every operation above: the
 endpoint docs of "The calls" · rc composition + known bugs:
 `references/knowledge/model_create_configs.md` and

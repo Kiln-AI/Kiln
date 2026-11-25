@@ -237,6 +237,21 @@ The owner reviewed `SKILL.md` on the pull request and approved its exact text. I
 - The dataset is every run of a task; the train, val and test splits belong to an eval's items.
 - The chat client guidance ends the file, as an instruction.
 
+## 17. Deep review fixes, part 2 (2026-11-25)
+
+The owner approved each fix of the deep review one by one ([phase_plans/phase_22.md](phase_plans/phase_22.md)). The decisions:
+
+- **The conditions rule.** Text that applies only to Kiln Harness Tuner is labelled with HT ("Kiln Harness Tuner …"). Unlabelled text is the default and serves every other client (chat clients today, others later). A branch that is truly chat-only (a link into `references/client_guidance/chat/`, asking the user) keeps its chat label ("In a chat with a user"). Never write "MCP client", "MCP agent" or "over MCP" for the chat client. HT's sentences stay word for word; adding an HT label is a mechanical change. This refines section 15: a branch still states its real condition, and HT-only text now names HT.
+- **Eval inputs first, and what the code saves (B3).** `references/knowledge/train_val_test.md` names EvalInputs first, then states what each way of making an eval saves: the guided Eval Builder (Kiln Pro) saves eval-input splits; the form for a template (`POST .../specs`), the form for a check (`create_evaluator`) and the API save task-run splits, selected by a dataset filter; PATCH's `train_set_filter_id` adds a task-run split. A reader reads each split by its `source` and `filter_id`. The first draft of this phase called task-run splits "older" and told agents not to create evals in that form; the review found that untrue to the code (only Kiln Pro saves eval-input splits, so it left a user without Kiln Pro no way to make an eval), and the owner replaced it with this.
+- **Creating evals (owner guidance, 2026-11-25).** Its one home is `references/knowledge/create_spec.md`, as unlabelled default text (Kiln Harness Tuner follows its own instructions). Never create eval data through the connection: no eval inputs, dataset items or synthetic data. Creating eval data is hard, needs human input and Kiln's synthetic data tools, and the connection is not set up for it; the agent sends the user to the app, for example the Synthetic Data page. The agent may create the eval or the spec itself through the API, and is particularly good at code, regex and conditional (programmatic check) evals; it creates the eval only, never its dataset. The guided Eval Builder (`select_template`) stays the recommendation where it fits. The pointers of `know-the-agent-before-you-plan.md` and of `memory.md` ("build it only when the user agrees") lead there.
+- **The Eval Builder link.** A link labelled "Eval Builder" points to `/specs/{project_id}/{task_id}/select_template`, the entry page (with a description it opens the guided Kiln Pro builder; it also offers the templates and the checks). `spec_builder?type=` and `spec_builder?judge=` stay, labelled as the form for a template or for a check.
+- **B4, one line.** Only the line in "How to read the shared documents" of `references/client_guidance/chat/using_kiln_from_chat.md` changes: for the skill installer or the skill-authoring guide, create the skill with `references/knowledge/adding_skills.md`, which writes the `SKILL.md` body only. No per-file clauses, no port of the guide.
+- **A1.** The `trusted` parameter of `POST /api/import_project` says that callers set it only after the user confirms they trust the project; it is the importer's confirmation and grants no code trust.
+- **A missing eval.** `know-the-agent-before-you-plan.md` takes the owner's text: Kiln Harness Tuner writes no eval unless its run turned eval building on; other agents build one with `references/knowledge/create_spec.md` when the user asks.
+- The other findings of the review are dropped or left for later, by the owner; the phase plan lists them.
+
+*Where it goes:* Phase 22 ([phase_plans/phase_22.md](phase_plans/phase_22.md)); the skill component doc, section 4.6; the knowledge-maintenance skill.
+
 ## Related
 
 - [phase_8_revisit.md](phase_8_revisit.md): Phase 17, approved on 2026-11-24 (section 12); its plan is [phase_plans/phase_17.md](phase_plans/phase_17.md).

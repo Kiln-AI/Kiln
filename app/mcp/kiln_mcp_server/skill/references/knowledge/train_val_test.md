@@ -5,9 +5,12 @@ description: The split rule for improving an agent - tune on train, confirm on v
 
 # Train, val and test
 
-Each eval of a task can have three splits, `train`, `val` and `test`. Each
-split selects its items with a dataset filter, most often a tag. The splits
-must not share an item, and Kiln does not check that they do not: when you
+Each eval of a task can have three splits, `train`, `val` and `test`. A
+split's items are EvalInputs, selected by an eval-input filter, or task runs,
+selected by a dataset filter; the filter is most often a tag. The eval's
+`splits` gives each split's `source` (`eval_input` or `task_run`) and
+`filter_id`. The
+splits must not share an item, and Kiln does not check that they do not: when you
 see an item in two splits, tell the user. This file is the one statement of
 how an improvement uses them. Other skill files name this path; they do not
 state the rule again.
@@ -73,20 +76,36 @@ user's.
 
 - `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_evals_eval_id.md`
   sets a train split on an eval that has none, once, with
-  `train_set_filter_id` (a dataset filter, for example `tag::<tag>`). Ask
-  the user first, and name the items it selects.
+  `train_set_filter_id` (a dataset filter, for example `tag::<tag>`). The
+  split it adds holds task runs ("Which items each way of making an eval
+  saves" below).
+  Ask the user first, and name the items it selects.
 - No endpoint and no app page adds a val split to an existing eval.
 
 So tell the user that the eval has no val split, and offer the two choices.
 The user chooses; do not choose for them:
 
-- **Make the eval again with the eval builder**, at
-  `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder`
-  (`references/knowledge/create_spec.md`). An eval that the eval builder
-  makes has a train, a val and a test split.
+- **Make the eval again with the Eval Builder**, at
+  `http://localhost:8757/specs/{project_id}/{task_id}/select_template`
+  (`references/knowledge/create_spec.md`). An eval that the Eval Builder
+  makes has a train, a val and a test split, unless the user picks its
+  test-only size.
 - **Add a train split only, and waive the confirmation on val.** Add the
   train split with the call above. Mark every result of the work "train
   only".
+
+## Which items each way of making an eval saves
+
+- The guided Eval Builder (Kiln Pro) saves eval-input splits: the split's
+  `source` is `eval_input`.
+- The form for a template, the form for a check and the API
+  (`references/knowledge/create_spec.md`) save task-run splits: the split's
+  `source` is `task_run`, and a dataset filter selects the items.
+- The `train_set_filter_id` of
+  `references/knowledge/api_docs/patch_api_projects_project_id_tasks_task_id_evals_eval_id.md`
+  adds a task-run split, even when the test split holds EvalInputs.
+
+Read each split by its `source` and `filter_id`.
 
 ## The leak rules
 

@@ -659,9 +659,9 @@ Absent: Kiln Harness Tuner's zero-number val→train signals (rejection reason, 
 - Depends on: None
 - Source: kiln_mcp_server backlog B31; `specs/projects/kiln_mcp_server/phase_plans/phase_13.md`, section 3
 
-Review `SKILL.md`, `train_val_test.md` and `diagnose_an_agent.md` (knowledge/), and
-`running_an_experiment_from_chat.md` (client_guidance/chat/), against the port rules: Kiln Harness
-Tuner's method unchanged (vocabulary only); one owner per question; nothing selects on test.
+Check `SKILL.md`, `train_val_test.md`, `diagnose_an_agent.md`, `running_an_experiment_from_chat.md`
+against the port rules: Kiln Harness Tuner's text as written, with only mechanical changes,
+owner-approved renames, code-evidenced corrections; one owner per question; nothing selects on test.
 
 ### Shared knowledge files that lean on the chat modes by name
 

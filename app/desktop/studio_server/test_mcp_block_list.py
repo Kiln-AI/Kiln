@@ -104,6 +104,23 @@ def test_blocked_routes_match_the_block_list(app):
     assert blocked == EXPECTED_MCP_BLOCKED
 
 
+def test_every_git_sync_route_is_blocked(app):
+    # One rule for git sync: every route under its prefix is blocked, so a
+    # route added later fails here until it is blocked too.
+    git_sync_routes = [
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute) and route.path.startswith("/api/git_sync/")
+    ]
+    assert git_sync_routes
+    open_routes = [
+        route.path
+        for route in git_sync_routes
+        if not is_mcp_denied(route.openapi_extra)
+    ]
+    assert open_routes == []
+
+
 @pytest.mark.parametrize("method, template", sorted(EXPECTED_MCP_BLOCKED))
 def test_each_blocked_route_is_reachable_by_its_template(route_index, method, template):
     match = route_index.match(method, _concrete_path(template))

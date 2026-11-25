@@ -1,7 +1,7 @@
 ---
 title: Know the agent before you plan
 description: Classify the agent before the first plan - its turns, its output, a classifier shape, its tools, skills and model - because each document says which shapes it fits.
-reviewed: 2026-11-13
+reviewed: 2026-11-25
 kind: order
 applies_to: all
 ---
@@ -39,9 +39,10 @@ traces. Record these facts:
   and how many train items it can pair.
 - **Restrictions.** What the user asked and the model policy do not allow.
 
-When the task has no eval for an issue, you do not write one
-unless the run turned eval building on. The report then sends the user
-to the eval builder in the Kiln app.
+When the task has no eval for an issue, Kiln Harness Tuner does not
+write one unless its run turned eval building on; its report then sends
+the user to the eval builder in the Kiln app. Other agents: when the user
+asks for an eval, build it with `references/knowledge/create_spec.md`.
 
 ## What to try, in order
 

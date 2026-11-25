@@ -141,7 +141,7 @@ Deep-link to the Eval Builder to define 2-3 quality dimensions. Load `references
 > "Now let's define what 'good' looks like for your agent. I'd suggest starting with 2-3 evals:
 > [Create Eval]({Eval Builder deep-link})"
 
-Deep-link to the [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/spec_builder).
+Deep-link to the [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/select_template).
 
 ### When an Existing Task Is Discovered
 
