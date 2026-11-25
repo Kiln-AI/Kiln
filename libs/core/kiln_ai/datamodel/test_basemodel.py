@@ -1,9 +1,11 @@
 import datetime
 import json
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
@@ -516,6 +518,31 @@ def test_load_from_file_counts_file_size_in_cache(test_base_file, tmp_model_cach
     KilnBaseModel.load_from_file(test_base_file, readonly=True)
 
     assert tmp_model_cache.total_bytes == test_base_file.stat().st_size
+
+
+def test_load_from_file_does_not_cache_a_file_changed_during_read(
+    test_base_file, tmp_model_cache, monkeypatch
+):
+    monkeypatch.setattr(tmp_model_cache, "_enabled", True)
+    real_fstat = os.fstat
+    calls = 0
+
+    def fstat_that_sees_a_write(fd):
+        nonlocal calls
+        calls += 1
+        result = real_fstat(fd)
+        if calls == 1:
+            return result
+        return SimpleNamespace(
+            st_mtime_ns=result.st_mtime_ns + 1, st_size=result.st_size
+        )
+
+    with patch("kiln_ai.datamodel.basemodel.os.fstat", fstat_that_sees_a_write):
+        model = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    assert model is not None
+    assert tmp_model_cache.total_bytes == 0
+    assert test_base_file not in tmp_model_cache.model_cache
 
 
 def test_save_to_file_invalidates_cache(test_base_file, tmp_model_cache):

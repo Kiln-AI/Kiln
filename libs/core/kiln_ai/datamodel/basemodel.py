@@ -441,6 +441,12 @@ class KilnBaseModel(BaseModel):
             file_stat = os.fstat(file.fileno())
             mtime_ns = file_stat.st_mtime_ns
             file_data = file.read()
+            # A write during the read would leave the cached model and its size out of step.
+            after_stat = os.fstat(file.fileno())
+            unchanged_during_read = (
+                after_stat.st_mtime_ns == mtime_ns
+                and after_stat.st_size == file_stat.st_size
+            )
             parsed_json = json.loads(file_data)
             m = cls.model_validate(
                 parsed_json,
@@ -472,9 +478,10 @@ class KilnBaseModel(BaseModel):
         if readonly:
             m.mark_as_readonly()
             # Cache, but only if readonly. Mutable models should not be cached.
-            ModelCache.shared().set_model(
-                path, m, mtime_ns, size_bytes=file_stat.st_size
-            )
+            if unchanged_during_read:
+                ModelCache.shared().set_model(
+                    path, m, mtime_ns, size_bytes=file_stat.st_size
+                )
 
         return m
 
