@@ -940,9 +940,10 @@ DAISYROSE_27B_OPENROUTER_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
+# OpenRouter also lists `minimal`, but Solar Mini 4.5 Preview returns no
+# reasoning at that effort, so the entry does not offer it.
 SOLAR_MINI_4_5_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
-    "Minimal": "minimal",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
