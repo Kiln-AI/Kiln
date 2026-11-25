@@ -28,6 +28,23 @@ def second_clone(git_repos, tmp_path: Path):
     return second_path
 
 
+def track_fast_forward(manager: GitSyncManager) -> asyncio.Event:
+    """Return an event set each time ``manager.fast_forward`` finishes."""
+    fast_forwarded = asyncio.Event()
+    original_fast_forward = manager.fast_forward
+
+    async def tracked_fast_forward():
+        await original_fast_forward()
+        fast_forwarded.set()
+
+    manager.fast_forward = tracked_fast_forward  # type: ignore[assignment]
+    return fast_forwarded
+
+
+# Generous, so a slow CI runner gets the several poll cycles a sync can need.
+FAST_FORWARD_TIMEOUT_SECONDS = 10
+
+
 @pytest.mark.asyncio
 async def test_poll_loop_fetches_and_fast_forwards(manager, git_repos, second_clone):
     local_path, _ = git_repos
@@ -36,11 +53,14 @@ async def test_poll_loop_fetches_and_fast_forwards(manager, git_repos, second_cl
     push_from(second_clone)
 
     old_head = await manager.get_head()
+    fast_forwarded = track_fast_forward(manager)
 
     bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=60.0)
     await bg.start()
     try:
-        await asyncio.sleep(0.3)
+        await asyncio.wait_for(
+            fast_forwarded.wait(), timeout=FAST_FORWARD_TIMEOUT_SECONDS
+        )
     finally:
         await bg.stop()
 
@@ -79,11 +99,15 @@ async def test_idle_pause_and_resume(manager, git_repos, second_clone):
 
     old_head = await manager.get_head()
     assert not (local_path / "after_idle.txt").exists()
+    fast_forwarded = track_fast_forward(manager)
 
     bg.notify_request()
-    await asyncio.sleep(0.3)
-
-    await bg.stop()
+    try:
+        await asyncio.wait_for(
+            fast_forwarded.wait(), timeout=FAST_FORWARD_TIMEOUT_SECONDS
+        )
+    finally:
+        await bg.stop()
 
     new_head = await manager.get_head()
     assert new_head != old_head
@@ -174,20 +198,14 @@ async def test_fetch_failure_logs_and_retries(manager, git_repos, second_clone, 
 
     manager._fetch_sync = flaky_fetch  # type: ignore[assignment]
 
-    fast_forwarded = asyncio.Event()
-    original_fast_forward = manager.fast_forward
-
-    async def tracked_fast_forward():
-        await original_fast_forward()
-        fast_forwarded.set()
-
-    manager.fast_forward = tracked_fast_forward  # type: ignore[assignment]
+    fast_forwarded = track_fast_forward(manager)
 
     bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=60.0)
     await bg.start()
     try:
-        # A slow CI runner can need several poll cycles for the retry to land.
-        await asyncio.wait_for(fast_forwarded.wait(), timeout=10)
+        await asyncio.wait_for(
+            fast_forwarded.wait(), timeout=FAST_FORWARD_TIMEOUT_SECONDS
+        )
     finally:
         await bg.stop()
 
