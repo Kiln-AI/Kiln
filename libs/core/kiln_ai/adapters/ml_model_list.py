@@ -374,6 +374,7 @@ class ModelName(str, Enum):
     mimo_v2_5_pro = "mimo_v2_5_pro"
     mimo_v2_6_pro = "mimo_v2_6_pro"
     mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
+    mimo_v2_6_flash_mopd = "mimo_v2_6_flash_mopd"
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling_2_small = "inkling_2_small"
     inkling_2_mini = "inkling_2_mini"
@@ -8736,6 +8737,20 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen4-max",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # Qwen 3.8 Max 0902
@@ -12663,6 +12678,19 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/hy4-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # Hunyuan Hy3 — Tencent's 295B MoE (21B active), 256K context, text-only reasoning + tool-calling model.
@@ -13329,6 +13357,38 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="xiaomi/mimo-v2.6-pro-ultraspeed",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # MiMo-V2.6-Flash-MOPD
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_6_flash_mopd,
+        friendly_name="MiMo-V2.6-Flash-MOPD",
+        agent_notes=(
+            "Description: An updated checkpoint of Xiaomi's MiMo-V2.6-Flash, a 309B-total, 15B-active MoE model, with an added multi-teacher on-policy distillation (MOPD) stage in post-training.\n"
+            "Lineup: MiMo's ladder is Flash < Pro. MOPD is a separate checkpoint at the Flash level, with its own weights, so it is not a serving variant of MiMo-V2.6-Flash."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.6-flash-mopd",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 supports_vision=True,
