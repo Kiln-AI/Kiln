@@ -1044,8 +1044,8 @@ def connect_run_api(app: FastAPI):
 def count_run_tags(task: Task) -> dict[str, int]:
     """How many of the task's dataset runs carry each tag. Leaf runs only, as task.runs() returns them."""
     tags_count: dict[str, int] = {}
-    for run in task.runs(readonly=True):
-        for tag in run.tags:
+    for tags in dataset_run_records(task, lambda run: run.tags):
+        for tag in tags:
             tags_count[tag] = tags_count.get(tag, 0) + 1
     return tags_count
 

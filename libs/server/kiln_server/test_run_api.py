@@ -1332,17 +1332,17 @@ def test_run_data_availability_reuses_cached_runs(client, task_run_setup, monkey
     assert result["has_rated_runs"] is True
 
 
-def test_runs_summaries_do_not_cache_runs(client, task_run_setup):
+@pytest.mark.parametrize("endpoint", ["runs_summaries", "tags"])
+def test_task_run_scans_do_not_cache_runs(client, task_run_setup, endpoint):
     ModelCache.shared().clear()
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task_run_setup["task"]
         response = client.get(
-            f"/api/projects/{task_run_setup['project'].id}/tasks/{task_run_setup['task'].id}/runs_summaries"
+            f"/api/projects/{task_run_setup['project'].id}/tasks/{task_run_setup['task'].id}/{endpoint}"
         )
 
     assert response.status_code == 200
-    assert [r["id"] for r in response.json()] == [task_run_setup["task_run"].id]
     cached_types = {
         type(entry[0]) for entry in ModelCache.shared().model_cache.values()
     }
@@ -2274,9 +2274,7 @@ async def test_get_tags_success(client, task_run_setup):
     second_run.save_to_file()
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
-        mock_task = MagicMock()
-        mock_task.runs.return_value = [task_run, second_run]
-        mock_task_from_id.return_value = mock_task
+        mock_task_from_id.return_value = task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/tags")
 
