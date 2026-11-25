@@ -404,41 +404,42 @@ describe("build_synth_generation_splits", () => {
 })
 
 describe("add-eval-data entry points", () => {
-  // Three buttons lead into the same "add data for this eval" flow. They used to build the
-  // `splits` param each on their own, and drifted: two hardcoded 80/20 while the third
-  // allocated across all four datasets. Each one asking this helper is the fix, so the
-  // check is that none of them has grown its own allocation again — a divergence no
-  // single-page test can see, since the bug is that two pages disagree.
+  // Several buttons lead into the same "add data for this eval" flow. When each built its
+  // own `splits` param they drifted apart, so the allocation now has one owner per store:
+  // the synthetic data intro (which can also write eval inputs) and the add-data plan
+  // (which writes runs). The pages that open the add-data page pass only the eval id.
+  // These checks catch a page growing its own allocation again, which no single-page
+  // test can see.
   const src_dir = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../..",
   )
-  //
-  // The synthetic data intro asks for the sibling that also allocates to eval-input splits;
-  // the other two send the user to /dataset/add_data, which writes runs, so they ask for the
-  // task-run-only helper. Both live here, so neither can drift from the weights.
   const entry_points = {
     "synthetic data generation intro": {
       path: "routes/(app)/generate/[project_id]/[task_id]/data_gen_intro.svelte",
       helper: "build_synth_generation_splits(",
     },
+    "add-data plan": {
+      path: "lib/utils/eval_add_data.ts",
+      helper: "build_eval_generation_splits(",
+    },
     "eval detail page": {
       path: "routes/(app)/specs/[project_id]/[task_id]/[spec_id]/[eval_id]/+page.svelte",
-      helper: "build_eval_generation_splits_param(",
+      helper: "eval_add_data_link(",
     },
     "compare page": {
       path: "routes/(app)/specs/[project_id]/[task_id]/compare/+page.svelte",
-      helper: "build_eval_generation_splits_param(",
+      helper: "eval_add_data_link(",
     },
   }
 
   for (const [name, entry_point] of Object.entries(entry_points)) {
-    it(`the ${name} builds its splits param with the shared helper`, () => {
+    it(`the ${name} uses the shared helper`, () => {
       const source = readFileSync(path.join(src_dir, entry_point.path), "utf-8")
 
       expect(source).toContain(entry_point.helper)
       // No literal allocation anywhere: `tag:0.8,tag:0.2` and the rag-only `tag:1.0` are
-      // exactly what these files used to write.
+      // the shapes a hand-built param takes.
       expect(source).not.toMatch(/params\.set\(\s*"splits",\s*`/)
     })
   }
