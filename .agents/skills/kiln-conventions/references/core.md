@@ -23,7 +23,6 @@
 ### Adapters are the hot path
 
 - `BaseAdapter` and `LiteLlmAdapter` are the core run loop; a process may run hundreds of them concurrently. No blocking I/O, no per-call file reads, no per-call client construction. Read files once and pass the result in.
-- Resolving an Ollama model variant is an HTTP call, so `resolve_ollama_model_variant`, `get_litellm_provider_info` (`utils/litellm.py`) and the adapters' `litellm_model_id()` / `litellm_model_slug()` are async methods, not properties. Await them; each adapter caches the result after the first call. Ollama and Docker Model Runner calls in `ollama_tools` and `docker_model_runner_tools` use `httpx.AsyncClient` or `openai.AsyncOpenAI` (rules.md §G).
 
 ### Datamodel
 
