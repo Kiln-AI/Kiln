@@ -7,7 +7,7 @@ from asyncio import Lock
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path as PathLibPath
-from typing import Annotated, Any, Dict
+from typing import Annotated, Any, Callable, Dict, Generic, TypeVar
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Path, Query, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
@@ -660,11 +660,11 @@ def connect_run_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> list[RunSummary]:
-        task = task_from_id(project_id, task_id)
-        # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
-        # Summaries only need leaves.
-        runs = task.runs(readonly=True)
-        return [RunSummary.from_run(run) for run in runs]
+        return await to_thread_retrying_torn_read(
+            lambda: dataset_run_records(
+                task_from_id(project_id, task_id), RunSummary.from_run
+            )
+        )
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/run_data_availability",
@@ -1061,42 +1061,55 @@ class RunDataAvailability(BaseModel):
     )
 
 
+_RecordT = TypeVar("_RecordT")
+
+
 @dataclass(frozen=True)
-class _RunDataFlags:
+class _DatasetRunRecord(Generic[_RecordT]):
     id: ID_TYPE
     parent_task_run_id: str | None
     eval_source: object | None
-    rated: bool
-    repaired: bool
+    record: _RecordT
 
 
-def run_data_availability(task: Task) -> RunDataAvailability:
-    """Check the task's leaf dataset runs, as task.runs() returns them, for ratings and repairs.
+def dataset_run_records(
+    task: Task, make_record: Callable[[TaskRun], _RecordT]
+) -> list[_RecordT]:
+    """Map each of the task's leaf dataset runs, as task.runs() returns them, to a small record.
 
-    Parses one run file at a time and keeps a few fields of each. Runs already in the model
-    cache are reused; the rest are parsed without being cached, so a task with tens of
+    Parses one run file at a time and keeps only its record and lineage. Runs already in the
+    model cache are reused; the rest are parsed without being cached, so a task with tens of
     thousands of runs never has them all in memory and doesn't evict the rest of the cache.
     """
     cache = ModelCache.shared()
-    flags: list[_RunDataFlags] = []
+    records: list[_DatasetRunRecord[_RecordT]] = []
     for run_path in TaskRun.iterate_children_paths_of_parent_path(task.path):
         run = cache.get_model(
             run_path, TaskRun, readonly=True
         ) or TaskRun.load_from_file(run_path, parent=task)
-        rating = run.output.rating
-        flags.append(
-            _RunDataFlags(
+        records.append(
+            _DatasetRunRecord(
                 id=run.id,
                 parent_task_run_id=run.parent_task_run_id,
                 eval_source=run.eval_source,
-                rated=rating is not None and rating.value is not None,
-                repaired=bool(run.repair_instructions),
+                record=make_record(run),
             )
         )
-    dataset_runs = filter_dataset_runs(flags)
+    return [r.record for r in filter_dataset_runs(records)]
+
+
+def _rated_and_repaired(run: TaskRun) -> tuple[bool, bool]:
+    rating = run.output.rating
+    rated = rating is not None and rating.value is not None
+    return rated, bool(run.repair_instructions)
+
+
+def run_data_availability(task: Task) -> RunDataAvailability:
+    """Check the task's leaf dataset runs for ratings and repairs."""
+    flags = dataset_run_records(task, _rated_and_repaired)
     return RunDataAvailability(
-        has_rated_runs=any(r.rated for r in dataset_runs),
-        has_repaired_runs=any(r.repaired for r in dataset_runs),
+        has_rated_runs=any(rated for rated, _ in flags),
+        has_repaired_runs=any(repaired for _, repaired in flags),
     )
 
 

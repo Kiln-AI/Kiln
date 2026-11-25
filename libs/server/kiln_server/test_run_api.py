@@ -1125,9 +1125,7 @@ async def test_get_runs_summaries_success(client, task_run_setup):
     task_run = task_run_setup["task_run"]
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
-        mock_task = MagicMock()
-        mock_task.runs.return_value = [task_run]
-        mock_task_from_id.return_value = mock_task
+        mock_task_from_id.return_value = task
 
         response = client.get(
             f"/api/projects/{project.id}/tasks/{task.id}/runs_summaries"
@@ -1332,6 +1330,23 @@ def test_run_data_availability_reuses_cached_runs(client, task_run_setup, monkey
         result = _get_run_data_availability(client, task_run_setup["project"], task)
 
     assert result["has_rated_runs"] is True
+
+
+def test_runs_summaries_do_not_cache_runs(client, task_run_setup):
+    ModelCache.shared().clear()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task_run_setup["task"]
+        response = client.get(
+            f"/api/projects/{task_run_setup['project'].id}/tasks/{task_run_setup['task'].id}/runs_summaries"
+        )
+
+    assert response.status_code == 200
+    assert [r["id"] for r in response.json()] == [task_run_setup["task_run"].id]
+    cached_types = {
+        type(entry[0]) for entry in ModelCache.shared().model_cache.values()
+    }
+    assert TaskRun not in cached_types
 
 
 def _make_child_run(task, parent_run: TaskRun, **overrides) -> TaskRun:
