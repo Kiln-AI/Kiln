@@ -47,11 +47,11 @@ When the cache is off (the library default), step 3 never runs. Every load retur
 | `libs/core/kiln_ai/datamodel/task_output.py` | `TaskOutput` gains `LazyFieldsMixin`, and `output` is marked. |
 | `libs/core/kiln_ai/datamodel/eval.py` | `EvalRun` gains `LazyFieldsMixin`, markers, and `judge_trace_length`. The `Eval` current-config migration switches from `self._loaded_from_file` to `self.loaded_from_file(info)` (see 5a). |
 | `libs/core/kiln_ai/datamodel/embedding.py` | `ChunkEmbeddings` gains `LazyFieldsMixin`, and `embeddings` is marked. |
-| `libs/core/kiln_ai/datamodel/world.py` | `WorldEpisode` (a plain `BaseModel`) gains `LazyFieldsMixin`, `final_state` is marked, and it gets a `has_final_state` summary value. |
+| `libs/core/kiln_ai/datamodel/openenv.py` | `OpenEnvEpisode` (a plain `BaseModel`) gains `LazyFieldsMixin`, `final_state` is marked, and it gets a `has_final_state` summary value. |
 | `libs/core/kiln_ai/datamodel/__init__.py` | Re-exports `set_model_cache_enabled` and `model_cache_enabled`. |
 | `libs/server/kiln_server/run_api.py` | `RunSummary.from_run` and `repair_status_display_name` use the summary values. `/chain` uses `trace_length`. |
 | `app/desktop/studio_server/eval_api.py` | `_split_judge_trace` uses `judge_trace_length`. Score-summary functions are reviewed (5d). `eval_configs_score_summary` loads runs readonly (5b). |
-| `libs/core/kiln_ai/adapters/eval/trace_index.py` | The "unfinished world episode" check uses `has_final_state`. |
+| `libs/core/kiln_ai/adapters/eval/trace_index.py` | The "unfinished OpenEnv episode" check uses `has_final_state`. |
 | Bulk callers in 5b | `readonly=True` where the caller doesn't edit. |
 | `app/desktop/desktop_server.py` | The lifespan turns the cache on and restores the previous setting on shutdown, the same way it handles strict mode. |
 | `libs/server/kiln_server/server.py` | `make_app` installs a default lifespan that turns the cache on, used when the caller passes no lifespan. |
@@ -92,7 +92,7 @@ class TaskRun(LazyFieldsMixin, KilnParentedModel, KilnParentModel, parent_of={..
 
 ### Why an opt-in base, not all of `KilnBaseModel`
 
-Lazy fields need a wrap `model_serializer` and a JSON-schema override (see the component doc). Putting them on `KilnBaseModel` would run a Python serializer for every model in the datamodel, and would route the OpenAPI schema of every model through the override. With an opt-in base, five classes change: `TaskRun`, `TaskOutput`, `EvalRun`, `ChunkEmbeddings` and `WorldEpisode`. The cost is one extra base class on each.
+Lazy fields need a wrap `model_serializer` and a JSON-schema override (see the component doc). Putting them on `KilnBaseModel` would run a Python serializer for every model in the datamodel, and would route the OpenAPI schema of every model through the override. With an opt-in base, five classes change: `TaskRun`, `TaskOutput`, `EvalRun`, `ChunkEmbeddings` and `OpenEnvEpisode`. The cost is one extra base class on each.
 
 A check stops the base being forgotten: `KilnBaseModel.__pydantic_init_subclass__` raises `TypeError` at import if a class declares a `LargeField` but doesn't inherit `LazyFieldsMixin`. For plain `BaseModel` classes, which `KilnBaseModel` can't hook, a test walks every model class in `kiln_ai.datamodel` and asserts the same rule.
 

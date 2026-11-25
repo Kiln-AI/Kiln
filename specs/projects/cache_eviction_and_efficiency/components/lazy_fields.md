@@ -106,11 +106,11 @@ Plans for the classes in this project:
 
 | Root | Paths |
 |---|---|
-| `TaskRun` | `("input",)`, `("trace",)`, `("intermediate_outputs",)`, `("output","output")`, `("repaired_output","output")`, `("world_episode","final_state")` |
+| `TaskRun` | `("input",)`, `("trace",)`, `("intermediate_outputs",)`, `("output","output")`, `("repaired_output","output")`, `("openenv_episode","final_state")` |
 | `EvalRun` | `("input",)`, `("output",)`, `("task_run_trace",)`, `("judge_trace",)`, `("intermediate_outputs",)`, `("reference_answer",)` |
 | `ChunkEmbeddings` | `("embeddings",)` |
 
-`EvalRun` has no `world_episode` field. `EvalTaskInput.world_episode` is in a model that is never loaded from its own file, so it's never a root.
+`EvalRun` has no `openenv_episode` field. `EvalTaskInput.openenv_episode` is in a model that is never loaded from its own file, so it's never a root.
 
 ### Per-instance state
 
@@ -256,7 +256,7 @@ Summary values are plain descriptors, not pydantic fields or `computed_field`s. 
 | `TaskRun` | `trace_length: int` | as above |
 | `TaskRun` | `has_thinking: bool` | today's `thinking_training_data() is not None`, moved here. `has_thinking_training_data()` returns `self.has_thinking`. |
 | `EvalRun` | `judge_trace_length: int` | `len(self.judge_trace) if self.judge_trace else 0` |
-| `WorldEpisode` | `has_final_state: bool` | `self.final_state is not None` |
+| `OpenEnvEpisode` | `has_final_state: bool` | `self.final_state is not None` |
 
 `TaskRun.thinking_training_data()` itself still reads `intermediate_outputs`; callers that need the text need the field.
 

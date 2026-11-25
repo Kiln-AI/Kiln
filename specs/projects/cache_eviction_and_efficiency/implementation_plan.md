@@ -18,7 +18,7 @@ Each phase ends with every project check passing (`uv run ./checks.sh --agent-mo
 - [x] Phase 3: **Memory budget and eviction of whole records.** Size estimates, least-recently-used order, the min(2 GB, 20% RAM) budget with physical-RAM detection, the cheap over-budget check, and eviction down to 90%. No lazy fields yet.
 - [x] Phase 4: **Lazy fields core.** `lazy_fields.py`: marker, plan, summary values, detach, resolve, restore, serializer, schema override, copies and equality. The cache's large-value store, the load integration, and `mutable_copy` rebuilding from a changed file. Tested on small test models only.
 - [x] Phase 5: **Mark the real fields.**
-  - Markers and the mixin on `TaskRun`, `TaskOutput`, `EvalRun`, `ChunkEmbeddings` and `WorldEpisode`, plus their summary values.
+  - Markers and the mixin on `TaskRun`, `TaskOutput`, `EvalRun`, `ChunkEmbeddings` and `OpenEnvEpisode`, plus their summary values.
   - Consumers switched: `RunSummary`, `/chain`, `_split_judge_trace`, `trace_index`, `has_thinking_training_data`.
   - Eval score functions reviewed (5d).
   - `check_schema.sh` shows no diff.

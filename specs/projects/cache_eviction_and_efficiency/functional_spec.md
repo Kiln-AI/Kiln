@@ -95,7 +95,7 @@ Fields marked in this project:
 
 | Model | Large fields |
 |---|---|
-| `TaskRun` | `trace`, `intermediate_outputs`, `input`, `output.output`, `repaired_output.output`, `world_episode.final_state` |
+| `TaskRun` | `trace`, `intermediate_outputs`, `input`, `output.output`, `repaired_output.output`, `openenv_episode.final_state` |
 | `EvalRun` | `input`, `output`, `task_run_trace`, `judge_trace`, `intermediate_outputs`, `reference_answer` |
 | `ChunkEmbeddings` | `embeddings` |
 
