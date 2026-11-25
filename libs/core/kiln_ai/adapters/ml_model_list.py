@@ -8743,6 +8743,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_vision=True,
+                supports_doc_extraction=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
                     KilnMimeType.JPG,
@@ -12683,6 +12684,7 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/hy4-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_vision=True,
+                supports_doc_extraction=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
                     KilnMimeType.JPG,
@@ -13403,6 +13405,12 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
                 ],
             ),
             # Featherless lists no tool_use or image_input for this model, so tools
