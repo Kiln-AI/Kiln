@@ -69,7 +69,12 @@ def _check_prompt_id(id: str) -> str:
             )
         return id
 
-    raise ValueError(f"Invalid prompt ID: {id}")
+    raise ValueError(
+        f"Invalid prompt ID: {id}. Use a saved prompt (id::[prompt_id]), a run "
+        "config's prompt (task_run_config::[project_id]::[task_id]::[run_config_id]), "
+        "a fine-tune's prompt (fine_tune_prompt::[project_id]::[task_id]::[fine_tune_id]), "
+        f"or a prompt generator: {', '.join(prompt_generator_values)}."
+    )
 
 
 def is_frozen_prompt(id: PromptId) -> bool:

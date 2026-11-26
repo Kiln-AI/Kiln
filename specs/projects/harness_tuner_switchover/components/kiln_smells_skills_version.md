@@ -453,7 +453,7 @@ Facts that the switchover changes, against the facts file:
 - The command `harness-tuner-install-agents` is removed whole: `--dest` was its only form (architecture ruling 15). Do not name it. An agent that works by hand uses this skill and `call_kiln_api`.
 - Do not name `kiln_api_mcp` or the skill installer.
 
-Integration: `references/knowledge/run_an_experiment.md`, "Two paths", and `references/modes/improve_task.md` (its line on experiments at scale) name the file. `app/mcp/knowledge_backlog.md` has an entry `using_harness_tuner`, and `test_the_using_harness_tuner_entry_is_last_in_unranked` pins it: remove both when the file is written.
+Integration: `references/knowledge/run_an_experiment.md`, "Two paths", and `references/modes/improve_task.md` (its line on experiments at scale) name the file. `app/mcp/knowledge_backlog.md` has an entry `using_harness_tuner`, and `test_the_using_harness_tuner_entry_is_in_unranked` pins it: remove both when the file is written.
 
 ### 7.6 Other files that the new calls make stale
 

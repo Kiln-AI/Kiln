@@ -8,6 +8,7 @@ version = "1.2.1"
 description = "The Kiln Desktop App. Download from https://kiln.tech"
 requires-python = ">=3.10"
 dependencies = [
+    "kiln-mcp-server",
     "kiln-server",
     "pillow>=11.0.0",
     "pystray>=0.19.5",
@@ -37,4 +38,5 @@ exclude-newer = "7 days"
 only-include = ["__init__.py"]
 
 [tool.uv.sources]
+kiln-mcp-server = { workspace = true }
 kiln-server = { workspace = true }

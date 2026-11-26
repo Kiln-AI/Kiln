@@ -6,7 +6,7 @@ Review date: 2026-11-20. This is the record that functional spec 5.5 asks for: s
 
 - The Kiln Assistant is denied 66 endpoints today (`DENY_AGENT` in the route's `openapi_extra`), out of 269 operations.
 - The MCP blocks 27 of them and allows 39.
-- The MCP also blocks 2 endpoints that the Assistant may call today. So the block list has 29 operations.
+- The MCP also blocks 2 endpoints that the Assistant may call today. So the block list had 29 operations; a later ruling (below, section 1.2) blocks `POST .../add_code_trust` too, for 30.
 - Everything else is allowed. The MCP policy (`x-mcp-policy`) and the Assistant policy (`x-agent-policy`) are separate tags; no ruling here changes what the Assistant may call.
 
 How the rulings were made:
@@ -46,7 +46,7 @@ The "Row" column is the row number in section 6.3 of the component doc.
 | POST `/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval` | Test a judge config | Allow | Normal work for an agent |
 | POST `/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft` | Test a judge config before the eval exists | Allow | Same |
 | GET `/api/projects/{project_id}/add_code_trust` | Read whether the project is trusted to run new code | Allow | Read only |
-| POST `/api/projects/{project_id}/add_code_trust` | Grant that trust | Allow | Owner's ruling. A coding agent can write and test code tools, and needs this to do it. The skill tells the agent to ask the user before it grants code trust |
+| POST `/api/projects/{project_id}/add_code_trust` | Grant that trust | Block | Owner's later ruling (it was Allow). Only the user grants code trust, on the app page `/settings/trust_code/{project_id}` that the agent links to; the agent confirms with the GET |
 
 ### 1.3 Providers, models and settings
 

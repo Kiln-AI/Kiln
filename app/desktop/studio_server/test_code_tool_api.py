@@ -907,3 +907,28 @@ class TestCodeToolOpenEnvTools:
         assert entry["output_preview"].startswith(
             "Tool 'sql_query' is not available: OpenEnv tool"
         )
+
+
+TRUST_PAGE = "http://localhost:8757/settings/trust_code/{project_id}"
+TRUST_CHECK = "GET /api/projects/{project_id}/add_code_trust"
+
+
+@pytest.mark.parametrize(
+    "path, response_schema",
+    [
+        ("/api/projects/{project_id}/code_tools", "CodeToolCreateResponse"),
+        ("/api/projects/{project_id}/test_code_tool", "TestCodeToolResponse"),
+    ],
+)
+def test_untrusted_answers_send_the_agent_to_the_trust_page(app, path, response_schema):
+    openapi = app.openapi()
+    description = openapi["paths"][path]["post"]["description"]
+    not_trusted = openapi["components"]["schemas"][response_schema]["properties"][
+        "not_trusted"
+    ]["description"]
+    for text in (description, not_trusted):
+        flat = " ".join(text.split())
+        assert TRUST_PAGE in flat
+        assert TRUST_CHECK in flat
+        assert "no sandbox" in flat
+        assert "Add code trust" not in flat

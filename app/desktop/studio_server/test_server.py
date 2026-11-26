@@ -1,6 +1,6 @@
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import requests
@@ -35,6 +35,24 @@ def client(monkeypatch):
             app = make_app()
             with TestClient(app) as client:
                 yield client
+
+
+def test_the_models_dev_cache_is_off_under_the_test_suite(client):
+    assert client.app.state.models_dev_cache.enabled is False
+
+
+def test_lifespan_closes_the_models_dev_cache():
+    with (
+        tempfile.TemporaryDirectory() as temp_dir,
+        patch("app.desktop.studio_server.webhost.studio_path", new=lambda: temp_dir),
+    ):
+        app = make_app()
+        cache = MagicMock()
+        cache.aclose = AsyncMock()
+        app.state.models_dev_cache = cache
+        with TestClient(app):
+            cache.aclose.assert_not_awaited()
+        cache.aclose.assert_awaited_once()
 
 
 def test_ping(client):

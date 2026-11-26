@@ -27,6 +27,7 @@ from kiln_ai.utils.dataset_import import (
 from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from pydantic import BaseModel, ConfigDict, Field
 
+from kiln_server.custom_errors import not_found_error
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -434,9 +435,18 @@ def task_and_run_from_id(
     if run:
         return task, run
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Run not found. ID: {run_id}",
+    raise not_found_error("Run", run_id, "task's runs")
+
+
+def missing_run_input_text(task: Task) -> str:
+    if task.input_schema() is not None:
+        return (
+            "No input provided. This task has an input schema, so its input goes "
+            "in structured_input, as a JSON object that matches the schema."
+        )
+    return (
+        "No input provided. This task takes plain text input, so its input goes "
+        "in plaintext_input."
     )
 
 
@@ -459,6 +469,7 @@ def connect_run_api(app: FastAPI):
             str, Path(description="The unique identifier of the task run.")
         ],
     ) -> TaskRun:
+        """Get one run (dataset item): input, output, ratings, tags and trace."""
         return run_from_id(project_id, task_id, run_id)
 
     @app.get(
@@ -482,13 +493,12 @@ def connect_run_api(app: FastAPI):
             ),
         ],
     ) -> RunChainResponse:
+        """Get the chain of runs of a multi-turn conversation, from the first turn to
+        the given run."""
         task = task_from_id(project_id, task_id)
         leaf = TaskRun.from_id_and_parent_path(run_id, task.path)
         if leaf is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Run not found. ID: {run_id}",
-            )
+            raise not_found_error("Run", run_id, "task's runs")
         if task.turn_mode != TurnMode.multiturn:
             raise HTTPException(
                 status_code=400,
@@ -548,6 +558,7 @@ def connect_run_api(app: FastAPI):
             str, Path(description="The unique identifier of the task run.")
         ],
     ):
+        """Delete one run from the task's dataset."""
         task, run = task_and_run_from_id(project_id, task_id, run_id)
         # 409 not 400: the request is well formed, the resource state forbids it.
         if run.eval_source is not None:
@@ -563,6 +574,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs",
         summary="List Runs",
         description=(
+            "List the task's runs (its dataset items), in full. "
             "For multi-turn tasks, only leaf TaskRuns (those that are not the "
             "parent of another run via parent_task_run_id) are returned. "
             "Intermediate runs in a chain are filtered out. For single-turn "
@@ -642,6 +654,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
         summary="List Run Summaries",
         description=(
+            "List short summaries of the task's runs, lighter than List Runs. "
             "For multi-turn tasks, only leaf TaskRuns (those that are not the "
             "parent of another run via parent_task_run_id) are summarized. "
             "For single-turn tasks this is equivalent to summarizing every run."
@@ -680,6 +693,8 @@ def connect_run_api(app: FastAPI):
         ],
         run_ids: Annotated[list[str], Body(description="List of run IDs to delete.")],
     ):
+        """Delete several runs from the task's dataset. Reports the ones it could not
+        delete."""
         task = task_from_id(project_id, task_id)
         failed_runs: list[str] = []
         failure_reasons: list[str] = []
@@ -767,10 +782,7 @@ def connect_run_api(app: FastAPI):
             input = request.structured_input
 
         if input is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No input provided. Ensure you provided the proper format (plaintext or structured).",
-            )
+            raise HTTPException(status_code=400, detail=missing_run_input_text(task))
 
         run_config_properties = request.run_config_properties
         skills = load_skills_for_task(task, run_config_properties)
@@ -856,6 +868,7 @@ def connect_run_api(app: FastAPI):
             Dict[str, Any], Body(description="Fields to update on the run.")
         ],
     ) -> TaskRun:
+        """Change fields of a run, such as its rating, tags or repaired output."""
         return await update_run_util(project_id, task_id, run_id, run_data)
 
     @app.post(
@@ -882,6 +895,7 @@ def connect_run_api(app: FastAPI):
             list[str] | None, Body(description="Tags to remove from the task runs.")
         ] = None,
     ):
+        """Add tags to, or remove tags from, several runs at once."""
         task = task_from_id(project_id, task_id)
 
         # all the runs we need to tag
@@ -946,6 +960,7 @@ def connect_run_api(app: FastAPI):
             ),
         ] = None,
     ) -> BulkUploadResponse:
+        """Import runs into the task's dataset from a CSV file, as multipart form data."""
         task = task_from_id(project_id, task_id)
 
         # Parse splits from json form data
@@ -993,6 +1008,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/tags",
         summary="List Run Tags",
         description=(
+            "Count the task's runs for each tag. "
             "Counts only include tags from leaf TaskRuns. For multi-turn tasks, "
             "tags attached to intermediate runs in a chain are not included."
         ),
@@ -1043,10 +1059,7 @@ async def update_run_util(
 
         run = TaskRun.from_id_and_parent_path(run_id, task.path)
         if run is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Run not found. ID: {run_id}",
-            )
+            raise not_found_error("Run", run_id, "task's runs")
 
         old_run_dumped = run.model_dump()
         merged = deep_update(old_run_dumped, run_data)

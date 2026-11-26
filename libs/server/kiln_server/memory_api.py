@@ -89,6 +89,9 @@ def connect_memory_api(app: FastAPI):
         project_id: Annotated[str, Path(description=_PROJECT_ID_DESC)],
         body: SaveMemoryRequest,
     ) -> Memory:
+        """Save a memory: a note for agents working on the project.
+
+        It has an overview, a scope, and optional content and tags."""
         return await asyncio.to_thread(
             lambda: _store(project_id).save_memory(
                 overview=body.overview,
@@ -186,6 +189,7 @@ def connect_memory_api(app: FastAPI):
         memory_id: Annotated[str, Path(description=_MEMORY_ID_DESC)],
         body: UpdateMemoryRequest,
     ) -> Memory:
+        """Correct a memory's overview, content, tags or scope."""
         # Only forward fields the caller actually provided, so omitted fields are
         # left untouched while an explicit null clears content.
         updates: dict[str, Any] = {

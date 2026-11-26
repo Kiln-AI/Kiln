@@ -211,7 +211,9 @@ class TestClarifySpec:
 
             response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+            assert (
+                "needs Kiln Pro, which is not connected" in response.json()["message"]
+            )
 
     def test_clarify_spec_success(self, client, clarify_spec_input, mock_api_key):
         mock_output = MagicMock(spec=ClarifySpecOutput)
@@ -311,7 +313,9 @@ class TestRefineSpec:
 
             response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+            assert (
+                "needs Kiln Pro, which is not connected" in response.json()["message"]
+            )
 
     def test_refine_spec_success(self, client, refine_spec_input, mock_api_key):
         mock_output = MagicMock(spec=RefineSpecApiOutput)
@@ -390,7 +394,9 @@ class TestSubmitQuestionAnswers:
                 json=submit_answers_input,
             )
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+            assert (
+                "needs Kiln Pro, which is not connected" in response.json()["message"]
+            )
 
     def test_new_route_success_maps_name(
         self, client, submit_answers_input, mock_api_key
@@ -512,7 +518,9 @@ class TestGenerateBatch:
                 "/api/copilot/generate_batch", json=generate_batch_input
             )
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+            assert (
+                "needs Kiln Pro, which is not connected" in response.json()["message"]
+            )
 
     def test_generate_batch_success(self, client, generate_batch_input, mock_api_key):
         mock_output = MagicMock(spec=GenerateBatchOutput)
@@ -2507,7 +2515,9 @@ class TestDataGuideJob:
             mock_config_shared.return_value.kiln_copilot_api_key = None
             response = client.post(self.START_URL, json=self._start_payload())
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+            assert (
+                "needs Kiln Pro, which is not connected" in response.json()["message"]
+            )
 
     def test_start_success(self, client, mock_api_key):
         sdk_mock = AsyncMock(
@@ -3446,9 +3456,8 @@ class TestPassthroughTaskCapabilities:
             )
 
         assert response.status_code == 404
-        assert (
-            response.json()["message"]
-            == "Task run config not found. ID: no-such-config"
+        assert response.json()["message"].startswith(
+            "Task run config not found. ID: no-such-config."
         )
         sdk_mock.assert_not_awaited()
 
