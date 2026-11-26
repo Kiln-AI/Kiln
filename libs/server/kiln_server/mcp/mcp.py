@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 from kiln_ai.datamodel.external_tool_server import ToolServerType
-from kiln_ai.datamodel.model_cache import ModelCache, set_model_cache_enabled
+from kiln_ai.datamodel.model_cache import apply_model_cache_setting
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.tool_id import build_kiln_task_tool_id, build_rag_tool_id
 from kiln_ai.utils.config import Config
@@ -157,11 +157,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
-    if Config.shared().disable_model_cache:
-        ModelCache.shared().disable()
-        logger.info("Model cache disabled by the disable_model_cache setting")
-    else:
-        set_model_cache_enabled(True)
+    apply_model_cache_setting(disable=Config.shared().disable_model_cache)
 
     asyncio.run(
         _async_main(

@@ -1,5 +1,4 @@
 import argparse
-import logging
 import os
 from contextlib import asynccontextmanager
 from importlib.metadata import version
@@ -9,7 +8,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from kiln_ai.datamodel.model_cache import (
-    ModelCache,
+    apply_model_cache_setting,
     model_cache_enabled,
     set_model_cache_enabled,
 )
@@ -26,8 +25,6 @@ from .spec_api import connect_spec_api
 from .statistics_api import connect_statistics_api
 from .task_api import connect_task_api
 from .utils.agent_checks.policy import ALLOW_AGENT
-
-logger = logging.getLogger(__name__)
 
 
 def _get_version() -> str:
@@ -153,11 +150,7 @@ async def default_lifespan(app: FastAPI) -> AsyncIterator[None]:
     disables the cache for the rest of the process instead.
     """
     original_model_cache_enabled = model_cache_enabled()
-    if Config.shared().disable_model_cache:
-        ModelCache.shared().disable()
-        logger.info("Model cache disabled by the disable_model_cache setting")
-    else:
-        set_model_cache_enabled(True)
+    apply_model_cache_setting(disable=Config.shared().disable_model_cache)
     try:
         yield
     finally:
@@ -168,10 +161,10 @@ def make_app(lifespan=None, extra_middleware: list[type] | None = None):
     """Build the Kiln REST app.
 
     Args:
-        lifespan: Replaces `default_lifespan`. A caller that passes its own should turn
-            the datamodel cache on in it (`set_model_cache_enabled(True)`), or call
-            `ModelCache.shared().disable()` when the `disable_model_cache` setting is
-            true.
+        lifespan: Replaces `default_lifespan`. A caller that passes its own should start
+            the datamodel cache in it with
+            `apply_model_cache_setting(disable=Config.shared().disable_model_cache)`
+            from `kiln_ai.datamodel.model_cache`.
         extra_middleware: Middleware classes installed inside CORS.
     """
     app = FastAPI(

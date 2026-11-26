@@ -563,6 +563,21 @@ def model_cache_enabled() -> bool:
     return ModelCache.shared().enabled
 
 
+def apply_model_cache_setting(*, disable: bool) -> None:
+    """Turn the process-wide datamodel cache on for a host, or off for good if `disable`.
+
+    Hosts call it at startup with their `disable_model_cache` setting
+    (`KILN_DISABLE_MODEL_CACHE`). Disabling is `ModelCache.shared().disable()`, so a later
+    `set_model_cache_enabled(True)`, such as a lifespan restoring the previous setting,
+    leaves the cache off.
+    """
+    if disable:
+        ModelCache.shared().disable()
+        logger.info("Model cache disabled for the rest of the process")
+    else:
+        set_model_cache_enabled(True)
+
+
 def default_cache_budget_bytes() -> int:
     """min(2 GiB, 20% of physical RAM), or 1 GiB if physical RAM can't be read."""
     ram = physical_memory_bytes()

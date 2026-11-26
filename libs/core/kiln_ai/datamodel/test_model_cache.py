@@ -21,6 +21,7 @@ from kiln_ai.datamodel.model_cache import (
     LoadClaim,
     ModelCache,
     _cache_key,
+    apply_model_cache_setting,
     default_cache_budget_bytes,
     model_cache_enabled,
     physical_memory_bytes,
@@ -273,6 +274,22 @@ def test_set_enabled_true_racing_disable_leaves_cache_off():
     racer.join()
 
     assert cache.enabled is False
+
+
+def test_apply_model_cache_setting_turns_shared_cache_on():
+    apply_model_cache_setting(disable=False)
+
+    assert model_cache_enabled() is True
+
+
+def test_apply_model_cache_setting_disable_keeps_shared_cache_off_for_good():
+    set_model_cache_enabled(True)
+
+    apply_model_cache_setting(disable=True)
+
+    assert model_cache_enabled() is False
+    set_model_cache_enabled(True)
+    assert model_cache_enabled() is False
 
 
 def test_hit_returns_same_instance_readonly_and_copy_mutable(model_cache, test_path):
