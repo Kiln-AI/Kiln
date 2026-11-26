@@ -50,6 +50,12 @@ class Config:
                 default=True,
                 in_memory=True,
             ),
+            "disable_model_cache": ConfigProperty(
+                bool,
+                env_var="KILN_DISABLE_MODEL_CACHE",
+                default=False,
+                in_memory=True,
+            ),
             "open_ai_api_key": ConfigProperty(
                 str,
                 env_var="OPENAI_API_KEY",

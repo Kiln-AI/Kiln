@@ -6,6 +6,7 @@ import pytest
 import requests
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_server.server import tags_metadata
 
@@ -17,6 +18,8 @@ from app.desktop.studio_server.webhost import HTMLStaticFiles
 def client(monkeypatch):
     # Ensure CORS origins use the default port (5173) regardless of environment
     monkeypatch.delenv("KILN_FRONTEND_PORT", raising=False)
+    # The lifespan can't turn the shared model cache back on once a shell setting disables it.
+    monkeypatch.delenv("KILN_DISABLE_MODEL_CACHE", raising=False)
     # a client based on a mock studio path (skipping remote model list loading)
     with (
         tempfile.TemporaryDirectory() as temp_dir,
@@ -46,6 +49,25 @@ def test_ping(client):
 # Check that the server is running in strict datamodel mode
 def test_strict_mode(client):
     assert strict_mode()
+
+
+@pytest.mark.parametrize("env_value, expect_enabled", [("true", False), (None, True)])
+def test_lifespan_applies_disable_model_cache(monkeypatch, env_value, expect_enabled):
+    if env_value is None:
+        monkeypatch.delenv("KILN_DISABLE_MODEL_CACHE", raising=False)
+    else:
+        monkeypatch.setenv("KILN_DISABLE_MODEL_CACHE", env_value)
+    cache = ModelCache()
+    cache._enabled = True
+    monkeypatch.setattr(ModelCache, "_shared_instance", cache)
+
+    with (
+        tempfile.TemporaryDirectory() as temp_dir,
+        patch("app.desktop.desktop_server.refresh_model_list_background"),
+        patch("app.desktop.studio_server.webhost.studio_path", new=lambda: temp_dir),
+        TestClient(make_app()),
+    ):
+        assert cache.enabled is expect_enabled
 
 
 def test_connect_ollama_success(client):

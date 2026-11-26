@@ -780,6 +780,7 @@ def test_typesafe_api_key_property():
 
 ENV_BACKED_BOOL_PROPERTIES = [
     ("autosave_runs", "KILN_AUTOSAVE_RUNS"),
+    ("disable_model_cache", "KILN_DISABLE_MODEL_CACHE"),
     ("enable_demo_tools", "ENABLE_DEMO_TOOLS"),
 ]
 
