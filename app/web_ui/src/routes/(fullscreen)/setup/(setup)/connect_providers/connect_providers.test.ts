@@ -184,6 +184,48 @@ describe("ConnectProviders API key dialog", () => {
       .parentElement as HTMLElement
     expect(within(provider_row).getByAltText("Connected")).toBeTruthy()
   })
+
+  it("shows OpenCode as connected when an OpenCode API key is already saved", async () => {
+    mock_fetch.mockImplementationOnce(
+      async () =>
+        ({
+          status: 200,
+          json: async () => ({ opencode_api_key: "saved-key" }),
+        }) as unknown as Response,
+    )
+
+    await render_connect_providers()
+
+    const provider_row = screen.getByAltText("OpenCode")
+      .parentElement as HTMLElement
+    expect(within(provider_row).getByAltText("Connected")).toBeTruthy()
+  })
+
+  it("shows the pay-as-you-go warning and key steps in the OpenCode dialog", async () => {
+    await render_connect_providers()
+
+    await open_provider_dialog("OpenCode")
+
+    expect(screen.getByText("Connect OpenCode")).toBeTruthy()
+    expect(
+      screen.getByText(
+        "Uses OpenCode's pay-as-you-go credits. OpenCode Go subscriptions aren't supported.",
+      ),
+    ).toBeTruthy()
+    const console_link = screen.getByRole("link", {
+      name: "https://opencode.ai/console",
+    })
+    expect(console_link.getAttribute("href")).toBe(
+      "https://opencode.ai/console",
+    )
+    expect(
+      screen.getByText(
+        "Open Account, then Personal API keys, and click Add API key.",
+      ),
+    ).toBeTruthy()
+    expect(screen.getByText("Copy the key and paste it below.")).toBeTruthy()
+    expect(screen.getByPlaceholderText("API Key")).toBeTruthy()
+  })
 })
 
 const cloudflare_description = "Open models on the edge, plus an AI gateway."

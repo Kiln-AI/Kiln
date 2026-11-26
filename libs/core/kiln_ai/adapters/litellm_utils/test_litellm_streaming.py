@@ -228,6 +228,76 @@ class TestStreamingCompletion:
         assert call_kwargs["stream_options"] == {"include_usage": True}
 
 
+class _WrapperWithProviderChunks:
+    """Stands in for LiteLLM's stream wrapper, which keeps the provider's chunks on ``chunks``."""
+
+    def __init__(self, yielded: List[Any], provider_chunks: List[Any]) -> None:
+        self._yielded = yielded
+        self.chunks = provider_chunks
+
+    def __aiter__(self):
+        return _async_iter(self._yielded)
+
+
+def _usage_chunk(cost: float | None) -> Any:
+    usage = litellm.types.utils.Usage(
+        prompt_tokens=10, completion_tokens=5, total_tokens=15
+    )
+    if cost is not None:
+        usage.cost = cost
+    return SimpleNamespace(choices=[], usage=usage)
+
+
+def _built_response(cost: float | None) -> ModelResponse:
+    response = ModelResponse()
+    response.usage = _usage_chunk(cost).usage  # type: ignore[attr-defined]
+    return response
+
+
+class TestProviderUsageCost:
+    @pytest.mark.parametrize(
+        "provider_cost,litellm_estimate,expected",
+        [
+            (None, 0.5, None),
+            (0.25, 0.25, 0.25),
+            (0.25, None, 0.25),
+        ],
+    )
+    async def test_assembled_cost_is_provider_cost(
+        self,
+        mock_acompletion,
+        mock_chunk_builder,
+        provider_cost,
+        litellm_estimate,
+        expected,
+    ):
+        mock_acompletion.return_value = _WrapperWithProviderChunks(
+            yielded=[_make_chunk("hi"), _usage_chunk(litellm_estimate)],
+            provider_chunks=[_make_chunk("hi"), _usage_chunk(provider_cost)],
+        )
+        mock_chunk_builder.return_value = _built_response(litellm_estimate)
+
+        stream = StreamingCompletion(model="test", messages=[])
+        async for _ in stream:
+            pass
+
+        assert isinstance(stream.response, ModelResponse)
+        assert stream.response.usage.cost == expected  # type: ignore[attr-defined]
+
+    async def test_stream_without_provider_chunks_keeps_cost(
+        self, mock_acompletion, mock_chunk_builder
+    ):
+        mock_acompletion.return_value = _async_iter([_usage_chunk(0.5)])
+        mock_chunk_builder.return_value = _built_response(0.5)
+
+        stream = StreamingCompletion(model="test", messages=[])
+        async for _ in stream:
+            pass
+
+        assert isinstance(stream.response, ModelResponse)
+        assert stream.response.usage.cost == 0.5  # type: ignore[attr-defined]
+
+
 def _stream_chunk(
     index: int = 0, finish_reason: str | None = None, **delta: Any
 ) -> ModelResponseStream:

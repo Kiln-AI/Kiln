@@ -135,6 +135,7 @@ class ModelProviderName(str, Enum):
     featherless_ai = "featherless_ai"
     cloudflare = "cloudflare"
     typesafe = "typesafe"
+    opencode = "opencode"
 
 
 class KilnMimeType(str, Enum):

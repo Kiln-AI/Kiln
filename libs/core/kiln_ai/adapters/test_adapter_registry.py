@@ -65,6 +65,7 @@ def mock_config():
         mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
         mock.shared.return_value.featherless_ai_api_key = "test-featherless-key"
         mock.shared.return_value.typesafe_api_key = "test-typesafe-key"
+        mock.shared.return_value.opencode_api_key = "test-opencode-key"
         mock.shared.return_value.cloudflare_api_key = "test-cloudflare-key"
         mock.shared.return_value.cloudflare_account_id = "test-cloudflare-account"
         mock.shared.return_value.cloudflare_ai_gateway_id = None
@@ -236,6 +237,24 @@ def test_cloudflare_adapter_creation(
     )
     assert adapter.config.default_headers == expected_headers
     assert adapter.config.additional_body_options == {"api_key": "test-cloudflare-key"}
+
+
+def test_opencode_adapter_creation(mock_config, basic_task):
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="claude-haiku-5-5",
+            model_provider_name=ModelProviderName.opencode,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.base_url == "https://opencode.ai/inference/openai/v1"
+    assert adapter.config.default_headers is None
+    assert adapter.config.additional_body_options == {"api_key": "test-opencode-key"}
+    assert adapter.config.cost_from_response_usage is True
 
 
 def test_featherless_adapter_creation(mock_config, basic_task):

@@ -931,6 +931,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_cloudflare(key_data)
             case ModelProviderName.typesafe:
                 return await connect_typesafe(parse_api_key(key_data))
+            case ModelProviderName.opencode:
+                return await connect_opencode(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -1014,6 +1016,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().cloudflare_ai_gateway_id = None
                 case ModelProviderName.typesafe:
                     Config.shared().typesafe_api_key = None
+                case ModelProviderName.opencode:
+                    Config.shared().opencode_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1785,6 +1789,59 @@ async def connect_typesafe(key: str):
             status_code=400,
             content={"message": f"Failed to connect to TypeSafe AI. Error: {e!s}"},
         )
+
+
+# The models list is free, and it rejects a bad key with 401.
+OPENCODE_MODELS_URL = "https://opencode.ai/inference/v1/models"
+OPENCODE_CONNECT_TIMEOUT_SECONDS = 10
+
+
+def _opencode_invalid_key_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=401,
+        content={
+            "message": "Invalid OpenCode API key. Use a pay-as-you-go API key from OpenCode Console; OpenCode Go subscriptions aren't supported."
+        },
+    )
+
+
+async def connect_opencode(key: str) -> JSONResponse:
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                OPENCODE_MODELS_URL,
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=OPENCODE_CONNECT_TIMEOUT_SECONDS,
+                follow_redirects=True,
+            )
+    # httpx rejects a key that can't go in a header (surrounding whitespace, CR/LF,
+    # non-ASCII) before sending anything. LocalProtocolError subclasses RequestError,
+    # so it must be caught first or a malformed key reads as a network failure.
+    except (httpx.LocalProtocolError, UnicodeEncodeError):
+        return _opencode_invalid_key_response()
+    except httpx.RequestError:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Couldn't reach OpenCode. Check your network connection and try again."
+            },
+        )
+
+    if response.status_code in (401, 403):
+        return _opencode_invalid_key_response()
+    if response.status_code != 200:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": f"Failed to connect to OpenCode. Error: [{response.status_code}]"
+            },
+        )
+
+    Config.shared().opencode_api_key = key
+    return JSONResponse(
+        status_code=200,
+        content={"message": "Connected to OpenCode"},
+    )
 
 
 async def connect_bedrock(key_data: dict):

@@ -793,7 +793,9 @@ model.
 - LiteLLM provider mapping — `libs/core/kiln_ai/utils/litellm.py`
 - `libs/core/kiln_ai/adapters/provider_tools.py` — two spots:
   `provider_warnings` (missing-credential message, `required_config_keys`),
-  and the adapter config (credential / base URL / headers plumbing)
+  and the adapter config (credential / base URL / headers plumbing; set
+  `cost_from_response_usage=True` when the provider returns its billed cost
+  in `usage.cost`, so LiteLLM's price-list estimate never replaces it)
 - Provider list — a `KilnProviderInfo` item in `built_in_providers`
   (`libs/core/kiln_ai/adapters/ml_provider_list.py`), at the same position as
   the enum member: `id`, `friendly_name` (the one Python source of the

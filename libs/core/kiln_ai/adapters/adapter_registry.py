@@ -230,6 +230,7 @@ def litellm_core_provider_config(
         default_headers=config.default_headers,
         additional_body_options=config.additional_body_options or {},
         openai_reasoning_summaries=config.openai_reasoning_summaries,
+        cost_from_response_usage=config.cost_from_response_usage,
     )
 
 

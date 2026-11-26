@@ -167,6 +167,19 @@ def test_check_provider_warnings_typesafe_missing_key(mock_config):
     assert "Attempted to use TypeSafe AI without an API key set." in str(exc_info.value)
 
 
+def test_check_provider_warnings_opencode_missing_key(mock_config):
+    mock_config.return_value = None
+
+    with pytest.raises(ValueError) as exc_info:
+        check_provider_warnings(ModelProviderName.opencode)
+
+    assert provider_warnings[ModelProviderName.opencode].required_config_keys == [
+        "opencode_api_key"
+    ]
+    assert "Attempted to use OpenCode without an API key set." in str(exc_info.value)
+    assert "OpenCode Go subscriptions aren't supported" in str(exc_info.value)
+
+
 def test_cloudflare_provider_warning_requires_key_and_account_not_gateway():
     assert provider_warnings[ModelProviderName.cloudflare].required_config_keys == [
         "cloudflare_api_key",
@@ -281,6 +294,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.featherless_ai, "Featherless AI"),
         (ModelProviderName.cloudflare, "Cloudflare"),
         (ModelProviderName.typesafe, "TypeSafe AI"),
+        (ModelProviderName.opencode, "OpenCode"),
         (ModelProviderName.vertex, "Gemini Enterprise Agent Platform"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
@@ -1258,6 +1272,21 @@ def test_lite_llm_core_config_for_provider_cloudflare_missing_account(
         ValueError, match="Attempted to use Cloudflare without an API token"
     ):
         lite_llm_core_config_for_provider(ModelProviderName.cloudflare)
+
+
+def test_lite_llm_core_config_for_provider_opencode(
+    mock_config_for_lite_llm_core_config,
+):
+    config_instance = mock_config_for_lite_llm_core_config.shared.return_value
+    config_instance.opencode_api_key = "test-opencode-key"
+
+    config = lite_llm_core_config_for_provider(ModelProviderName.opencode)
+
+    assert config == LiteLlmCoreConfig(
+        base_url="https://opencode.ai/inference/openai/v1",
+        additional_body_options={"api_key": "test-opencode-key"},
+        cost_from_response_usage=True,
+    )
 
 
 def test_lite_llm_core_config_for_provider_typesafe_raises(
