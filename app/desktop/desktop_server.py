@@ -16,6 +16,7 @@ from kiln_ai.adapters.remote_config import (
     refresh_model_list_background,
     should_skip_remote_model_list,
 )
+from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.openenv.session_manager import shutdown_shared_session_manager
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.logging import setup_litellm_logging
@@ -42,9 +43,6 @@ from app.desktop.studio_server.jobs.registry import job_registry
 from app.desktop.studio_server.multiturn_sdg_api import connect_multiturn_sdg_api
 from app.desktop.studio_server.openenv_server_api import connect_openenv_server_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
-from app.desktop.studio_server.prompt_optimization_job_api import (
-    connect_prompt_optimization_job_api,
-)
 from app.desktop.studio_server.provider_api import connect_provider_api
 from app.desktop.studio_server.repair_api import connect_repair_api
 from app.desktop.studio_server.run_config_api import connect_run_config_api
@@ -115,6 +113,10 @@ async def lifespan(app: FastAPI):
     original_strict_mode = datamodel_strict_mode.strict_mode()
     datamodel_strict_mode.set_strict_mode(True)
 
+    if Config.shared().disable_model_cache:
+        ModelCache.shared().disable()
+        logger.info("Model cache disabled by the disable_model_cache setting")
+
     try:
         await _start_background_syncs()
         yield
@@ -158,7 +160,6 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_code_tool_api(app)
     connect_openenv_server_api(app)
     connect_skill_api(app)
-    connect_prompt_optimization_job_api(app)
     connect_copilot_api(app)
     connect_eval_builder_api(app)
     connect_multiturn_sdg_api(app)

@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import List
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
@@ -56,6 +56,9 @@ class ModelFamily(str, Enum):
     ricursive = "ricursive"
     nex = "nex"
     motif = "motif"
+    kt = "kt"
+    radixark = "radixark"
+    upstage = "upstage"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -84,6 +87,10 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_6_2_astra_pro = "gpt_6_2_astra_pro"
+    gpt_6_2_astra = "gpt_6_2_astra"
+    gpt_6_2_sol_pro = "gpt_6_2_sol_pro"
+    gpt_6_2_sol = "gpt_6_2_sol"
     gpt_6_1_sol_pro = "gpt_6_1_sol_pro"
     gpt_6_1_sol = "gpt_6_1_sol"
     gpt_6_1_terra_pro = "gpt_6_1_terra_pro"
@@ -198,7 +205,10 @@ class ModelName(str, Enum):
     gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
+    gemini_4_carbon = "gemini_4_carbon"
     gemini_4_argon = "gemini_4_argon"
+    gemini_4_neon = "gemini_4_neon"
+    gemini_4_hydrogen = "gemini_4_hydrogen"
     gemini_3_8_flash = "gemini_3_8_flash"
     gemini_3_7_flash = "gemini_3_7_flash"
     gemini_3_6_flash = "gemini_3_6_flash"
@@ -249,9 +259,11 @@ class ModelName(str, Enum):
     grok_4 = "grok_4"
     qwen_3p5_flash = "qwen_3p5_flash"
     qwen_3p5_9b = "qwen_3p5_9b"
+    qwen_3p5_4b = "qwen_3p5_4b"
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
+    qwen_4_max = "qwen_4_max"
     qwen_3p8_max_0902 = "qwen_3p8_max_0902"
     qwen_3p8_max = "qwen_3p8_max"
     qwen_3p8_max_prime = "qwen_3p8_max_prime"
@@ -334,8 +346,10 @@ class ModelName(str, Enum):
     glm_4_1v_9b_thinking = "glm_4_1v_9b_thinking"
     glm_z1_32b_0414 = "glm_z1_32b_0414"
     glm_z1_9b_0414 = "glm_z1_9b_0414"
+    ernie_light_dt_1_0 = "ernie_light_dt_1_0"
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
     hunyuan_hy4 = "hunyuan_hy4"
+    hunyuan_hy4_flash = "hunyuan_hy4_flash"
     hunyuan_hy3 = "hunyuan_hy3"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
@@ -361,7 +375,10 @@ class ModelName(str, Enum):
     mimo_v2_5_pro = "mimo_v2_5_pro"
     mimo_v2_6_pro = "mimo_v2_6_pro"
     mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
+    mimo_v2_6_flash_mopd = "mimo_v2_6_flash_mopd"
     mimo_v2_6_flash = "mimo_v2_6_flash"
+    inkling_2_small = "inkling_2_small"
+    inkling_2_mini = "inkling_2_mini"
     inkling = "inkling"
     inkling_small = "inkling_small"
     jev_1_13 = "jev_1_13"
@@ -376,6 +393,9 @@ class ModelName(str, Enum):
     ripple_65b_preview = "ripple_65b_preview"
     nex_n2_6 = "nex_n2_6"
     motif_3 = "motif_3"
+    midm_k_3_0_pro = "midm_k_3_0_pro"
+    daisyrose_27b = "daisyrose_27b"
+    solar_mini_4_5_preview = "solar_mini_4_5_preview"
 
 
 class ModelParserID(str, Enum):
@@ -426,6 +446,7 @@ class KilnModelProvider(BaseModel):
         multimodal_requires_pdf_as_image: Whether the model requires PDFs to be processed as images
         supports_vision: Whether the model supports vision inputs (e.g. images, video)
         adapter: Which Kiln adapter runs this model. Defaults to LiteLLM; set to jev for TypeSafe's System One API.
+        tags: Labels for agents, true of this provider entry only (for example speed). Allowed tags are in PROVIDER_ENTRY_TAGS in kiln_ai.adapters.model_agent_info.
     """
 
     name: ModelProviderName
@@ -479,6 +500,9 @@ class KilnModelProvider(BaseModel):
     # Opus 4.7/4.8 default thinking display to "omitted" (empty thinking text, signature
     # only). Set this for those models to request the readable reasoning summary.
     anthropic_summarized_thinking: bool = False
+    # The summary mode sent to OpenAI as reasoning.summary, passed as-is. Only sent
+    # when the user turned on reasoning summaries for their OpenAI connection.
+    openai_reasoning_summary: str | None = None
     gemini_reasoning_enabled: bool = False
     # Can only specify top_p or temp, not both. Opus 4.1 and Sonnet 4.5 for example.
     temp_top_p_exclusive: bool = False
@@ -502,6 +526,8 @@ class KilnModelProvider(BaseModel):
 
     # The model is deprecated and no longer supported on a specific provider
     deprecated: bool = False
+
+    tags: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_openrouter_reasoning_object(self) -> "KilnModelProvider":
@@ -537,6 +563,9 @@ class KilnModel(BaseModel):
         friendly_name: Human-readable name for the model
         providers: List of providers that offer this model
         supports_structured_output: Whether the model supports structured output formats
+        editorial_notes: Short text for people, shown in the Kiln UI.
+        agent_notes: Notes for an agent that chooses or configures the model, such as the Harness Tuner optimizer or the Kiln assistant: strengths, weaknesses and quirks compared with models at the same price. The rules are in kiln_ai.adapters.model_agent_info.
+        tags: Labels for agents, true of the model on every provider. Allowed tags are in MODEL_TAGS in kiln_ai.adapters.model_agent_info.
     """
 
     family: str
@@ -547,6 +576,8 @@ class KilnModel(BaseModel):
     # Editorial
     featured_rank: int | None = None
     editorial_notes: str | None = None
+    agent_notes: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 GPT_5_OPENROUTER_THINKING_LEVELS = {
@@ -592,7 +623,8 @@ GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
     "Max": "max",
 }
 
-# GPT-6.1 Sol on OpenAI direct. The model page lists `max` as well, but
+# GPT-6.1 Sol, GPT-6.2 Sol and GPT-6.2 Astra on OpenAI direct. The 6.1 Sol
+# model page lists `max` as well, but
 # /v1/chat/completions (which Kiln uses) rejects it with a 400; only
 # /v1/responses accepts it. `none` and `minimal` are rejected on both.
 # https://developers.openai.com/api/docs/models/gpt-6.1-sol
@@ -643,6 +675,21 @@ GEMINI_3_PRO_THINKING_LEVELS = {
 
 GEMINI_3_FLASH_THINKING_LEVELS = {
     "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+GEMINI_4_HYDROGEN_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+# Gemini 4 Hydrogen and Neon on the Gemini API and Vertex. Google lists xhigh too, but
+# LiteLLM rejects `xhigh` as a Gemini reasoning_effort, so it is left out here.
+GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -808,6 +855,16 @@ INKLING_OPENROUTER_THINKING_LEVELS = {
     "Max": "max",
 }
 
+# Inkling 2 Small on OpenRouter and Cloudflare. Cloudflare also lists `none`, but
+# it still returns reasoning there, so neither provider offers an Off level.
+INKLING_2_SMALL_THINKING_LEVELS = {
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Max": "max",
+}
+
 KIMI_K3_OPENROUTER_THINKING_LEVELS = {
     "Low": "low",
     "High": "high",
@@ -832,6 +889,13 @@ QWEN_3P6_GROQ_THINKING_LEVELS = {
 MUSE_SPARK_OPEN_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+QWEN_4_MAX_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
     "High": "high",
     "Extra High": "xhigh",
 }
@@ -870,9 +934,34 @@ MUSE_EMBER_OPENROUTER_THINKING_LEVELS = {
     "Max": "max",
 }
 
+DAISYROSE_27B_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "Extra High": "xhigh",
+}
+
+# OpenRouter also lists `minimal`, but Solar Mini 4.5 Preview returns no
+# reasoning at that effort, so the entry does not offer it.
+SOLAR_MINI_4_5_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
 NEX_N2_6_OPENROUTER_THINKING_LEVELS = {
     "Medium": "medium",
     "High": "high",
+}
+
+ERNIE_LIGHT_DT_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "High": "high",
+    "Max": "max",
 }
 
 # Fireworks: GLM 5.3 Flash is thinking-only ("none" is rejected). With no
@@ -932,11 +1021,215 @@ QWEN_3P8_CLOUDFLARE_THINKING_LEVELS = {
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 6.2 Astra Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_astra_pro,
+        friendly_name="GPT-6.2 Astra Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.2 Astra with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. The first Astra Pro model in Kiln, above GPT-6.2 Astra.\n"
+            "Same weights: GPT-6.2 Astra is the standard version; Astra Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-astra-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.2 Astra
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_astra,
+        friendly_name="GPT-6.2 Astra",
+        agent_notes=(
+            "Description: OpenAI's top-tier model in the GPT-6.2 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Astra is the top tier, above GPT-6.2 Sol. Replaced GPT-6 Astra.\n"
+            "Same weights: GPT-6.2 Astra Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task.\n"
+            "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
+        ),
+        tags=["current", "recommended"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-6.2-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                openai_reasoning_summary="auto",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.2 Sol Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_sol_pro,
+        friendly_name="GPT-6.2 Sol Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.2 Sol with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6.1 Sol Pro.\n"
+            "Same weights: GPT-6.2 Sol is the standard version; Sol Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-sol-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 6.2 Sol
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_2_sol,
+        friendly_name="GPT-6.2 Sol",
+        agent_notes=(
+            "Description: OpenAI's balanced high-tier model in the GPT-6.2 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A step down from GPT-6.2 Astra, above GPT-6.1 Terra. Replaced GPT-6.1 Sol.\n"
+            "Same weights: GPT-6.2 Sol Pro serves the same model in OpenAI's pro reasoning mode, which spends far more reasoning per task.\n"
+            "Behavior: At low and medium effort it often answers short tasks without reasoning, so no reasoning text or summary comes back; high effort and above reason reliably."
+        ),
+        tags=["current", "recommended", "top_value"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-6.2-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                openai_reasoning_summary="auto",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6.2-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 6.1 Sol Pro
     KilnModel(
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_1_sol_pro,
         friendly_name="GPT-6.1 Sol Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.1 Sol with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Replaced GPT-6 Sol Pro.\n"
+            "Superseded by: GPT-6.2 Sol Pro, the Pro variant at the Sol level in the GPT-6.2 generation."
+        ),
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -972,6 +1265,13 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-6.1 Sol",
         featured_rank=4,
         editorial_notes="OpenAI's balanced GPT-6.1 model. Near-Astra quality at a mid-tier price.",
+        agent_notes=(
+            "Description: OpenAI's balanced high-tier model in the GPT-6.1 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A step down from GPT-6 Astra, much stronger than GPT-6.1 Terra. Replaced GPT-6 Sol.\n"
+            "Superseded by: GPT-6.2 Sol, the Sol-level model of the GPT-6.2 generation.\n"
+            "Strengths: Steady quality in multi-turn tool use; near GPT-6 Astra on reasoning."
+        ),
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -981,6 +1281,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_1_SOL_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1030,6 +1331,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_1_terra_pro,
         friendly_name="GPT-6.1 Terra Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6.1 Terra with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. First Terra Pro model."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1060,6 +1366,13 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gpt_6_1_terra,
         friendly_name="GPT-6.1 Terra",
         editorial_notes="OpenAI's mid-tier GPT-6.1 model. Strong reasoning and multimodal at a lower cost.",
+        agent_notes=(
+            "Description: OpenAI's mid-tier model in the GPT-6.1 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A large step up from GPT-6 Luna, a step down from GPT-6.1 Sol. Replaced GPT-5.6 Terra.\n"
+            "Useful for: Mid-price pick with near-Sonnet-level quality at much lower cost per task.\n"
+            "Strengths: Good speed-to-quality ratio; strong at writing and visual reasoning."
+        ),
+        tags=["current", "recommended", "top_value", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1069,6 +1382,7 @@ built_in_models: List[KilnModel] = [
                 # model and rejects max with a 400.
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1114,6 +1428,13 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-6 Astra",
         featured_rank=2,
         editorial_notes="OpenAI's flagship GPT-6 model. Powerful reasoning and multimodal.",
+        agent_notes=(
+            "Description: OpenAI's most capable model, the top of the GPT-6 lineup.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Astra is the top tier, above GPT-6.1 Sol.\n"
+            "Superseded by: GPT-6.2 Astra, the Astra-level model of the GPT-6.2 generation.\n"
+            "Strengths: Leads on hard reasoning and computer use among OpenAI models."
+        ),
+        tags=["top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1123,6 +1444,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1172,6 +1494,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_sol_pro,
         friendly_name="GPT-6 Sol Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6 Sol with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. Below GPT-6 Astra.\n"
+            "Superseded by: GPT-6.1 Sol Pro, the updated Pro variant at the Sol level."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1206,6 +1533,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gpt_6_sol,
         friendly_name="GPT-6 Sol",
         editorial_notes="OpenAI's previous-generation balanced GPT-6 model. Strong reasoning and multimodal at a mid-tier price.",
+        agent_notes=(
+            "Description: OpenAI's Sol-tier model in the GPT-6 generation.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Below GPT-6 Astra, above GPT-6 Luna.\n"
+            "Superseded by: GPT-6.1 Sol, which matches or exceeds it at the Sol level."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1213,6 +1545,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1260,6 +1593,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_luna_pro,
         friendly_name="GPT-6 Luna Pro",
+        agent_notes=(
+            "Description: Pro-compute variant of GPT-6 Luna with extended reasoning.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra, each with an optional Pro variant. First Luna Pro model."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1295,6 +1633,12 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-6 Luna",
         featured_rank=13,
         editorial_notes="OpenAI's fast, cost-efficient GPT-6 model. Optimized for speed and high-volume tasks.",
+        agent_notes=(
+            "Description: OpenAI's smallest and most efficient model in the GPT-6 lineup.\n"
+            "Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. Luna is the entry tier, below GPT-6.1 Terra.\n"
+            "Useful for: High-volume classification, extraction, routing, and subagent tasks."
+        ),
+        tags=["current", "recommended", "top_value", "top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1304,6 +1648,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1354,6 +1699,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gpt_5_6_sol,
         friendly_name="GPT-5.6 Sol",
         editorial_notes="OpenAI's previous-generation flagship GPT model. Powerful reasoning and multimodal.",
+        agent_notes=(
+            "Description: Flagship of the GPT-5.6 generation.\n"
+            "Lineup: GPT-5.6 introduced the Luna < Terra < Sol naming. Sol was the top tier.\n"
+            "Superseded by: GPT-6 Sol, then GPT-6.1 Sol."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1361,6 +1711,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1410,6 +1761,11 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-5.6 Terra",
         featured_rank=9,
         editorial_notes="OpenAI's balanced GPT-5.6 model. Strong reasoning and multimodal at a lower cost.",
+        agent_notes=(
+            "Description: Mid-tier model of the GPT-5.6 generation.\n"
+            "Lineup: GPT-5.6 introduced the Luna < Terra < Sol naming. Terra was the mid tier.\n"
+            "Superseded by: GPT-6.1 Terra, which is stronger at the Terra level."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1420,6 +1776,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1471,6 +1828,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gpt_5_6_luna,
         friendly_name="GPT-5.6 Luna",
         editorial_notes="OpenAI's previous-generation fast, cost-efficient model. Optimized for speed and high-volume tasks.",
+        agent_notes=(
+            "Description: Budget model of the GPT-5.6 generation.\n"
+            "Lineup: GPT-5.6 introduced the Luna < Terra < Sol naming. Luna was the entry tier.\n"
+            "Superseded by: GPT-6 Luna, which is stronger at the Luna level."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1479,6 +1841,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1528,6 +1891,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gpt_5_5,
         friendly_name="GPT-5.5",
         editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
+        agent_notes=(
+            "Description: OpenAI's default model before the GPT-5.6 generation.\n"
+            "Lineup: Sat between the GPT-5.4 and GPT-5.6 lineups, roughly at the Sol tier.\n"
+            "Superseded by: GPT-5.6 Sol, then GPT-6.1 Sol."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1535,6 +1903,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4+. Disable function calling until Kiln routes these
                 # models to /v1/responses.
@@ -1582,6 +1951,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_4_pro,
         friendly_name="GPT-5.4 Pro",
+        agent_notes=(
+            "Description: High-compute variant of GPT-5.4 for demanding reasoning.\n"
+            "Lineup: GPT-5.4's ladder was Nano < Mini < base < Pro. Pro was the top tier.\n"
+            "Superseded by: GPT-6 Astra and GPT-6.1 Sol Pro, which deliver stronger reasoning."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1589,6 +1963,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1629,6 +2004,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gpt_5_4,
         friendly_name="GPT-5.4",
         editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
+        agent_notes=(
+            "Description: OpenAI's mid-generation model, the first GPT with computer use.\n"
+            "Lineup: GPT-5.4's ladder was Nano < Mini < base < Pro. The base model sat roughly at the Sol tier.\n"
+            "Superseded by: GPT-5.5, then GPT-5.6 Sol, then GPT-6.1 Sol."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1636,6 +2016,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
+                openai_reasoning_summary="auto",
                 # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
                 # for gpt-5.4 direct. Disable function calling until Kiln routes
                 # these models to /v1/responses. The OpenRouter route is unaffected.
@@ -1679,6 +2060,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_4_mini,
         friendly_name="GPT-5.4 Mini",
+        agent_notes=(
+            "Description: Compact model in the GPT-5.4 generation.\n"
+            "Lineup: GPT-5.4's ladder was Nano < Mini < base < Pro. Mini sat between Nano and base.\n"
+            "Superseded by: GPT-6 Luna, which is stronger."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1719,6 +2105,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_4_nano,
         friendly_name="GPT-5.4 Nano",
+        agent_notes=(
+            "Description: The smallest model in the GPT-5.4 generation.\n"
+            "Lineup: GPT-5.4's ladder was Nano < Mini < base < Pro. Nano was the entry tier.\n"
+            "Superseded by: GPT-6 Luna, which is stronger."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1803,6 +2194,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_2_pro,
         friendly_name="GPT-5.2 Pro",
+        agent_notes=(
+            "Description: High-compute variant of GPT-5.2.\n"
+            "Lineup: GPT-5.2 had a base and a Pro tier. Pro used more compute per request.\n"
+            "Superseded by: GPT-5.4 Pro, then GPT-6 Astra."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1810,6 +2206,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_2_PRO_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
+                openai_reasoning_summary="auto",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1849,6 +2246,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_2,
         friendly_name="GPT-5.2",
+        agent_notes=(
+            "Description: An earlier model in the GPT-5 generation.\n"
+            "Lineup: Below GPT-5.4 and GPT-5.5 in OpenAI's progression.\n"
+            "Superseded by: GPT-5.4, then GPT-5.6 Sol."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -2773,6 +3175,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.claude_fable_5_2,
         friendly_name="Claude Fable 5.2",
         editorial_notes="Anthropic's most powerful publicly-available model (Mythos-class), with gains over Fable 5.1 in coding, reasoning and vision.",
+        agent_notes=(
+            "Description: Anthropic's most capable model, the top of the Claude lineup.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Replaced Claude Fable 5.1.\n"
+            "Strengths: Built for demanding reasoning and long-horizon agentic work."
+        ),
+        tags=["current", "recommended", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2822,6 +3230,11 @@ built_in_models: List[KilnModel] = [
         friendly_name="Claude Fable 5.1",
         featured_rank=1,
         editorial_notes="Anthropic's most powerful publicly-available model (Mythos-class). State-of-the-art across software engineering, knowledge work, and vision.",
+        agent_notes=(
+            "Description: Anthropic's Fable-tier model before the 5.2 release.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Fable is the top tier, above Opus.\n"
+            "Superseded by: Claude Fable 5.2, which improved on reasoning and agentic tasks."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2874,6 +3287,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.claude_fable_5,
         friendly_name="Claude Fable 5",
         editorial_notes="Anthropic's previous-generation Mythos-class model. Strong across software engineering, knowledge work, and vision.",
+        agent_notes=(
+            "Description: The first model in the Fable tier.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Fable was introduced with this model.\n"
+            "Superseded by: Claude Fable 5.1, then Claude Fable 5.2.\n"
+            "Useful for: Creative writing, analysis, and controlled agent workflows."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2922,6 +3341,12 @@ built_in_models: List[KilnModel] = [
         friendly_name="Claude Opus 5.5",
         featured_rank=3,
         editorial_notes="Anthropic's best Claude model. Built for long-running agentic coding and knowledge work.",
+        agent_notes=(
+            "Description: Anthropic's recommended model for complex coding and agentic work.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Replaced Claude Opus 5.\n"
+            "Strengths: Strong at long-running autonomous coding, large-scale refactoring, and complex systems engineering."
+        ),
+        tags=["current", "recommended", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2973,6 +3398,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.claude_opus_5,
         friendly_name="Claude Opus 5",
         editorial_notes="Anthropic's previous flagship Opus model. Expensive, but still very strong.",
+        agent_notes=(
+            "Description: Anthropic's Opus-tier model before the 5.5 generation.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Below Claude Fable 5.\n"
+            "Superseded by: Claude Opus 5.5, which is stronger."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3019,6 +3449,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_opus_4_8,
         friendly_name="Claude Opus 4.8",
+        agent_notes=(
+            "Description: The peak of the Opus 4.x line.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Opus 4.8 was the last in the 4.x series.\n"
+            "Superseded by: Claude Opus 5, then Claude Opus 5.5."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3065,6 +3500,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_opus_4_7,
         friendly_name="Claude Opus 4.7",
+        agent_notes=(
+            "Description: An Opus model in the 4.x line with a new tokenizer.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Below Opus 4.8 in the 4.x progression.\n"
+            "Superseded by: Claude Opus 4.8, then Claude Opus 5.5."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3111,6 +3551,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_opus_4_6,
         friendly_name="Claude Opus 4.6",
+        agent_notes=(
+            "Description: An Opus model in the 4.x line.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Below Opus 4.7 in the 4.x progression.\n"
+            "Superseded by: Claude Opus 4.7, then Claude Opus 5.5."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3154,6 +3599,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_opus_4_5,
         friendly_name="Claude Opus 4.5",
+        agent_notes=(
+            "Description: The first Opus model with extended thinking.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Opus 4.5 started the 4.x series.\n"
+            "Superseded by: Claude Opus 4.6, then Claude Opus 5.5."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3240,6 +3690,12 @@ built_in_models: List[KilnModel] = [
         friendly_name="Claude 5.5 Sonnet",
         featured_rank=10,
         editorial_notes="Anthropic's fast Claude model for everyday coding, agents, and knowledge work. Strong quality at a mid-tier price.",
+        agent_notes=(
+            "Description: Anthropic's balanced model combining speed and intelligence.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Replaced Claude Sonnet 5.\n"
+            "Strengths: Strong at coding, data analysis, and agentic tool use with fast response times."
+        ),
+        tags=["current", "recommended", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3293,6 +3749,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.claude_sonnet_5,
         friendly_name="Claude 5 Sonnet",
         editorial_notes="Anthropic's previous-generation Sonnet model. Fast and capable.",
+        agent_notes=(
+            "Description: Anthropic's Sonnet-tier model before the 5.5 generation.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Below Claude Opus 5.\n"
+            "Superseded by: Claude Sonnet 5.5, which is faster and stronger."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3338,6 +3799,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_sonnet_4_6,
         friendly_name="Claude 4.6 Sonnet",
+        agent_notes=(
+            "Description: A Sonnet model in the 4.x line.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. Below Opus 4.6 in the 4.x generation.\n"
+            "Superseded by: Claude Sonnet 5, then Claude Sonnet 5.5."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3500,6 +3966,13 @@ built_in_models: List[KilnModel] = [
         name=ModelName.claude_haiku_5_5,
         friendly_name="Claude 5.5 Haiku",
         editorial_notes="Anthropic's fastest and lowest-cost Claude model. Good for chat, classification, and lightweight agents.",
+        agent_notes=(
+            "Description: Anthropic's smallest and fastest model in the 5.5 generation.\n"
+            "Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. A large step down from Claude Sonnet 5.5.\n"
+            "Useful for: Subagents, routing, classification and extraction at high volume.\n"
+            "Behavior: Reliable tool calls for its size; quality drops on long multi-step reasoning."
+        ),
+        tags=["current", "recommended", "top_value", "top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3594,11 +4067,114 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_4_carbon,
+        friendly_name="Gemini 4 Carbon",
+        agent_notes=(
+            "Description: Google's Gemini 4 model for long-horizon agentic work in knowledge work, engineering, cybersecurity and scientific reasoning.\n"
+            "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon and Argon for deep, long-horizon reasoning. Carbon is based on Gemini 4 Argon and uses more thinking tokens than Argon."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-4-carbon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                litellm_allowed_openai_params=["reasoning_effort"],
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-4-carbon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                # the Gemini API returns no reasoning at low or medium, only at high
+                default_thinking_level="high",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-4-carbon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+        ],
+    ),
     # Gemini 4 Argon
     KilnModel(
         family=ModelFamily.gemini,
         name=ModelName.gemini_4_argon,
         friendly_name="Gemini 4 Argon",
+        agent_notes=(
+            "Description: Google's reasoning model at the Pro tier in the Gemini 4 generation.\n"
+            "Lineup: Gemini 4 uses element names. Argon is the Pro-level model. Replaced the Gemini 3.x Pro previews.\n"
+            "Strengths: Strong multimodal reasoning over charts, video and documents; mixed on long autonomous coding runs.\n"
+            "Behavior: Very verbose: uses far more output tokens than GPT-6.1 Sol or Claude Opus 5.5 on the same tasks, so cost per task is high."
+        ),
+        tags=["current", "recommended", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3698,12 +4274,210 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Gemini 4 Neon
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_4_neon,
+        friendly_name="Gemini 4 Neon",
+        agent_notes=(
+            "Description: Google's mid-tier model in the Gemini 4 generation, adapted from Gemini 4 Carbon, for coding, analytical reasoning and enterprise workflows.\n"
+            "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon for the hardest long-horizon projects. Argon is the Pro-level model."
+        ),
+        tags=["current", "recommended"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-4-neon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_THINKING_LEVELS,
+                default_thinking_level="medium",
+                litellm_allowed_openai_params=["reasoning_effort"],
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-4-neon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-4-neon",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_4_hydrogen,
+        friendly_name="Gemini 4 Hydrogen",
+        agent_notes=(
+            "Description: Google's Gemini 4 model for rapid execution in everyday coding and agentic workflows, adapted from Gemini 4 Carbon.\n"
+            "Lineup: Google's Gemini 4 tiers are Hydrogen for fast everyday execution, Neon to balance depth and efficiency, and Carbon and Argon for deep, long-horizon reasoning."
+        ),
+        tags=["current", "recommended", "top_fast"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-4-hydrogen",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_THINKING_LEVELS,
+                default_thinking_level="medium",
+                litellm_allowed_openai_params=["reasoning_effort"],
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-4-hydrogen",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-4-hydrogen",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_4_HYDROGEN_GEMINI_API_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+        ],
+    ),
     # Gemini 3.8 Flash
     KilnModel(
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_8_flash,
         friendly_name="Gemini 3.8 Flash",
         featured_rank=12,
+        agent_notes=(
+            "Description: Google's most capable Flash model in the Gemini 3.8 generation.\n"
+            "Lineup: Google's Flash line runs through Gemini versions: 3 < 3.5 < 3.6 < 3.7 < 3.8. A large step below Gemini 4 Argon.\n"
+            "Strengths: Strong coding and agentic benchmarks; competitive with models from higher tiers.\n"
+            "Behavior: Fast output speed; good at multi-step software engineering tasks."
+        ),
+        tags=["current", "top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3820,6 +4594,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gemini_3_7_flash,
         friendly_name="Gemini 3.7 Flash",
         editorial_notes="Google's latest Flash model. Stronger agentic and multimodal performance at a lower cost than Gemini 3.6 Flash.",
+        agent_notes=(
+            "Description: Google's Flash model in the Gemini 3.7 generation.\n"
+            "Lineup: Below Gemini 3.8 Flash, above Gemini 3.6 Flash in Google's Flash line.\n"
+            "Superseded by: Gemini 3.8 Flash, which is stronger at the same Flash pricing."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3926,6 +4705,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gemini_3_6_flash,
         friendly_name="Gemini 3.6 Flash",
         editorial_notes="Google's latest Flash model. Stronger agentic and multimodal performance at a lower cost than Gemini 3.5 Flash.",
+        agent_notes=(
+            "Description: Google's Flash model in the Gemini 3.6 generation.\n"
+            "Lineup: Below Gemini 3.7 Flash in Google's Flash line.\n"
+            "Superseded by: Gemini 3.7 Flash, then Gemini 3.8 Flash."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4027,6 +4811,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_5_flash,
         friendly_name="Gemini 3.5 Flash",
+        agent_notes=(
+            "Description: Google's Flash model in the Gemini 3.5 generation.\n"
+            "Lineup: Below Gemini 3.6 Flash in Google's Flash line.\n"
+            "Superseded by: Gemini 3.6 Flash, then Gemini 3.8 Flash."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4128,6 +4917,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_5_flash_lite,
         friendly_name="Gemini 3.5 Flash Lite",
+        agent_notes=(
+            "Description: Google's budget Flash Lite model in the Gemini 3.5 generation.\n"
+            "Lineup: Flash Lite sits below Flash in Google's lineup. Gemini 3.5 Flash Lite replaced 3.1 Flash Lite.\n"
+            "Useful for: High-volume lightweight tasks where speed matters more than peak quality."
+        ),
+        tags=["current", "top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4227,6 +5022,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gemini_3_1_pro_preview,
         friendly_name="Gemini 3.1 Pro Preview",
         editorial_notes="Google's state-of-the-art model. Great for tough problems.",
+        agent_notes=(
+            "Description: Google's Pro-level preview in the Gemini 3.1 generation.\n"
+            "Lineup: Pro sits above Flash in Google's lineup. This was a preview of the Pro tier.\n"
+            "Superseded by: Gemini 4 Argon, Google's production Pro-level model."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4299,6 +5099,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_1_flash_lite,
         friendly_name="Gemini 3.1 Flash Lite",
+        agent_notes=(
+            "Description: Google's Flash Lite model in the Gemini 3.1 generation.\n"
+            "Lineup: Flash Lite is the budget tier below Flash. Below Gemini 3.5 Flash Lite.\n"
+            "Superseded by: Gemini 3.5 Flash Lite, which is stronger at the Flash Lite level."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4390,6 +5195,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_1_flash_lite_preview,
         friendly_name="Gemini 3.1 Flash Lite Preview",
+        agent_notes=(
+            "Description: Preview of the Gemini 3.1 Flash Lite model.\n"
+            "Lineup: An early preview, superseded by the GA Flash Lite models.\n"
+            "Superseded by: Gemini 3.1 Flash Lite, then Gemini 3.5 Flash Lite."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4452,6 +5262,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.1-flash-lite-preview",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
@@ -4542,6 +5353,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.gemini_3_flash,
         friendly_name="Gemini 3 Flash",
         editorial_notes="Google's faster and cheaper model. 25% the cost of Gemini 3 Pro.",
+        agent_notes=(
+            "Description: Google's Flash model in the early Gemini 3 generation.\n"
+            "Lineup: The first Gemini 3 Flash, below later 3.x Flash models.\n"
+            "Superseded by: Gemini 3.5 Flash, then Gemini 3.8 Flash."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4887,6 +5703,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-2.0-flash",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 provider_finetune_id="gemini-2.0-flash-001",
             ),
@@ -4948,6 +5765,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-2.0-flash-lite",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 provider_finetune_id="gemini-2.0-flash-lite-001",
             ),
@@ -5033,6 +5851,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.nemotron_3p5_super_vl,
         friendly_name="Nemotron 3.5 Super VL",
         editorial_notes="NVIDIA's open multimodal MoE model (120B total, 12B active) with configurable reasoning. Takes text, images and video, with a 1M-token context.",
+        agent_notes=(
+            "Description: NVIDIA's open-weight multimodal model in the Nemotron 3.5 generation.\n"
+            "Lineup: Nemotron's ladder is Nano < Super < Ultra. Super VL replaced Nemotron 3 Super.\n"
+            "Strengths: Strong coding and agentic benchmarks with vision support."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5070,6 +5894,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.nemotron,
         name=ModelName.nemotron_3p5_lightning,
         friendly_name="Nemotron 3.5 Lightning",
+        agent_notes=(
+            "Description: NVIDIA's speed-optimized open-weight MoE in the 3.5 generation.\n"
+            "Lineup: Lightning is Nemotron's speed tier, parallel to Super and Ultra.\n"
+            "Deployment: MoE with 30B total and 3B active parameters; fast inference."
+        ),
+        tags=["current", "top_fast", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5092,6 +5922,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.nemotron,
         name=ModelName.nemotron_3_ultra,
         friendly_name="Nemotron 3 Ultra",
+        agent_notes=(
+            "Description: NVIDIA's largest open-weight model in the Nemotron 3 generation.\n"
+            "Lineup: Nemotron's ladder is Nano < Super < Ultra. Ultra is the top tier.\n"
+            "Strengths: Strong at coding with high SWE-bench scores.\n"
+            "Deployment: MoE with 550B total and 55B active parameters."
+        ),
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5117,6 +5954,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.nemotron,
         name=ModelName.nemotron_3_super,
         friendly_name="Nemotron 3 Super",
+        agent_notes=(
+            "Description: NVIDIA's mid-tier open-weight MoE in the Nemotron 3 generation.\n"
+            "Lineup: Nemotron's ladder is Nano < Super < Ultra. Super sits between Nano and Ultra.\n"
+            "Superseded by: Nemotron 3.5 Super VL, which adds vision and improves quality.\n"
+            "Deployment: MoE with 120B total and 12B active parameters."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5134,6 +5977,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/nvidia/nemotron-3-120b-a12b",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -5393,6 +6237,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="meta/llama-3.3-70b-instruct-maas",
+                deprecated=True,
                 # Doesn't work yet; needs debugging
                 supports_structured_output=False,
                 supports_data_gen=False,
@@ -5574,6 +6419,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="meta-llama/llama-3.2-1b-instruct",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
@@ -5750,6 +6596,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.muse_wonder_1_0,
         friendly_name="Muse Wonder 1.0",
         editorial_notes="Meta's frontier Muse reasoning model, above Muse Spark. Accepts text, images, video, audio and PDFs, with a 1M-token context.",
+        agent_notes=(
+            "Description: Meta's most capable model in the Muse family.\n"
+            "Lineup: Meta's Muse ladder is Ember < Glimmer < Spark < Wonder. Wonder is the top tier."
+        ),
+        tags=["current", "top_writing"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5784,6 +6635,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.muse_spark_open,
         friendly_name="Muse Spark Open",
         editorial_notes="Meta's open-weights Muse reasoning model (816B MoE, 42B active), tuned for coding and agentic work. Text and image input, 1M-token context.",
+        agent_notes=(
+            "Description: Open-weight version of Muse Spark.\n"
+            "Lineup: Meta's Muse ladder is Ember < Glimmer < Spark < Wonder. Spark Open has open weights.\n"
+            "Deployment: MoE with 816B total and 42B active parameters."
+        ),
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5840,6 +6697,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.muse,
         name=ModelName.muse_spark_1_2,
         friendly_name="Muse Spark 1.2",
+        agent_notes=(
+            "Description: Meta's Spark-tier closed model in the Muse family.\n"
+            "Lineup: Meta's Muse ladder is Ember < Glimmer < Spark < Wonder. Replaced Muse Spark 1.1."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5867,6 +6729,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.muse,
         name=ModelName.muse_spark_1_1,
         friendly_name="Muse Spark 1.1",
+        agent_notes=(
+            "Description: An earlier Spark-tier model in the Muse family.\n"
+            "Lineup: Meta's Muse ladder is Ember < Glimmer < Spark < Wonder.\n"
+            "Superseded by: Muse Spark 1.2, which improved on the Spark tier."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5897,6 +6764,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.muse_ember,
         friendly_name="Muse Ember",
         editorial_notes="Meta's smallest and most efficient Muse reasoning model, built for high-volume agent work such as tool calls and routing. 1M-token context.",
+        agent_notes=(
+            "Description: Meta's smallest and most efficient model in the Muse family.\n"
+            "Lineup: Meta's Muse ladder is Ember < Glimmer < Spark < Wonder. Ember is the entry tier.\n"
+            "Useful for: High-volume lightweight tasks."
+        ),
+        tags=["current", "top_value", "top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5933,6 +6806,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.muse,
         name=ModelName.muse_glimmer_30b,
         friendly_name="Muse Glimmer 30B",
+        agent_notes=(
+            "Description: Meta's 30B open-weight model in the Muse family.\n"
+            "Lineup: Meta's Muse ladder is Ember < Glimmer < Spark < Wonder. Glimmer is the small open tier.\n"
+            "Deployment: Dense 30B, suitable for self-hosted work."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5971,6 +6850,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mistral,
         name=ModelName.mistral_large_4,
         friendly_name="Mistral Large 4",
+        agent_notes=(
+            "Description: Mistral's open-weight flagship of the Large 4 generation.\n"
+            "Lineup: Mistral's ladder is Ministral < Small < Medium < Large. Replaced Mistral Large 3.\n"
+            "Useful for: Teams that need an open-weight European model.\n"
+            "Strengths: Strong at coding and terminal tasks."
+        ),
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5997,6 +6883,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mistral,
         name=ModelName.mistral_3_large_2512,
         friendly_name="Mistral Large 3 2512",
+        agent_notes=(
+            "Description: Mistral's Large model in the version 3 generation.\n"
+            "Lineup: Mistral's ladder is Ministral < Small < Medium < Large. Below Mistral Large 4.\n"
+            "Superseded by: Mistral Large 4, which is stronger across benchmarks."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6045,6 +6936,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mistral,
         name=ModelName.mistral_medium_3_5,
         friendly_name="Mistral Medium 3.5",
+        agent_notes=(
+            "Description: Mistral's mid-tier model in the Medium 3.5 generation.\n"
+            "Lineup: Mistral's ladder is Ministral < Small < Medium < Large. Medium sits between Small and Large."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6062,6 +6958,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="mistralai/mistral-medium-3.1",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -6114,6 +7011,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mistral,
         name=ModelName.mistral_small_4,
         friendly_name="Mistral Small 4",
+        agent_notes=(
+            "Description: Mistral's efficient model in the Small 4 generation.\n"
+            "Lineup: Mistral's ladder is Ministral < Small < Medium < Large. Small sits between Ministral and Medium.\n"
+            "Useful for: High-volume tasks where Ministral models are too small."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6162,6 +7065,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mistral,
         name=ModelName.ministral_3_14b_2512,
         friendly_name="Ministral 3 14B 2512",
+        agent_notes=(
+            "Description: Mistral's 14B parameter model for on-device or budget work.\n"
+            "Lineup: Ministral sizes are 3B < 8B < 14B. The largest Ministral.\n"
+            "Deployment: Dense 14B, runs on consumer GPUs."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6182,6 +7091,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mistral,
         name=ModelName.ministral_3_8b_2512,
         friendly_name="Ministral 3 8B 2512",
+        agent_notes=(
+            "Description: Mistral's 8B parameter model for lightweight tasks.\n"
+            "Lineup: Ministral sizes are 3B < 8B < 14B.\n"
+            "Deployment: Dense 8B, runs on consumer hardware."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6195,6 +7110,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mistral,
         name=ModelName.ministral_3_3b_2512,
         friendly_name="Ministral 3 3B 2512",
+        agent_notes=(
+            "Description: The smallest Ministral at 3B parameters.\n"
+            "Lineup: Ministral sizes are 3B < 8B < 14B. The entry tier.\n"
+            "Useful for: Simple classification, routing, or extraction on constrained hardware.\n"
+            "Deployment: Dense 3B, runs on phones and low-end hardware."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6314,6 +7236,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemma,
         name=ModelName.gemma_4_31b,
         friendly_name="Gemma 4 31B",
+        agent_notes=(
+            "Description: The largest dense model in Google's Gemma 4 open-weight line.\n"
+            "Lineup: Gemma is Google's open-weight line, separate from Gemini. Gemma 4 sizes include 27B MoE and 31B dense.\n"
+            "Strengths: Strong reasoning and coding for its size; competitive with much larger models on Arena and coding benchmarks.\n"
+            "Deployment: Dense 31B, fits on a single consumer GPU with quantization."
+        ),
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -6366,6 +7295,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemma,
         name=ModelName.gemma_4_27b,
         friendly_name="Gemma 4 27B",
+        agent_notes=(
+            "Description: A MoE model in Google's Gemma 4 open-weight line.\n"
+            "Lineup: Gemma is Google's open-weight line. The 27B MoE has fewer active parameters than the 31B dense model.\n"
+            "Useful for: Self-hosted work where throughput matters more than peak quality.\n"
+            "Deployment: MoE architecture gives high throughput at moderate memory cost."
+        ),
+        tags=["current", "top_open", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -6420,6 +7356,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemma,
         name=ModelName.gemma_4_e4b,
         friendly_name="Gemma 4 4B",
+        agent_notes=(
+            "Description: A small open-weight model in Google's Gemma 4 generation.\n"
+            "Lineup: Gemma 4 sizes are 2B < 4B < 27B MoE < 31B dense. Gemma is Google's open-weight line, separate from Gemini.\n"
+            "Useful for: Local agents on laptops where the 2B is too limited.\n"
+            "Deployment: Dense 4B, runs on consumer laptops and tablets."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -6435,6 +7378,14 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemma,
         name=ModelName.gemma_4_e2b,
         friendly_name="Gemma 4 2B",
+        agent_notes=(
+            "Description: The smallest open-weight model in Google's Gemma 4 generation.\n"
+            "Lineup: Gemma 4 sizes are 2B < 4B < 27B MoE < 31B dense. Gemma is Google's open-weight line, separate from Gemini.\n"
+            "Useful for: Local or on-device agents, when data must stay on the machine.\n"
+            "Behavior: Follows simple instructions well; unreliable at multi-step tool use.\n"
+            "Deployment: Runs on consumer laptops and high-end phones."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -6693,6 +7644,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.deepseek_4_1_flash_1017,
         friendly_name="DeepSeek V4.1 Flash 1017",
         editorial_notes="October 17, 2026 snapshot of DeepSeek V4.1 Flash. 1M context, configurable reasoning, and native image input.",
+        agent_notes=(
+            "Description: October 2026 snapshot of DeepSeek V4.1 Flash with updated weights.\n"
+            "Lineup: DeepSeek's ladder is Flash < Pro. The 1017 snapshot is newer than the plain V4.1 Flash.\n"
+            "Strengths: Strong open-weight coding-agent model."
+        ),
+        tags=["current", "recommended", "top_value", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6778,6 +7735,11 @@ built_in_models: List[KilnModel] = [
         friendly_name="DeepSeek V4.1 Flash",
         featured_rank=11,
         editorial_notes="Latest V4.1 Flash variant. 1M context, configurable reasoning, and adds native image input.",
+        agent_notes=(
+            "Description: DeepSeek's V4.1 Flash, a strong open-weight coding-agent model.\n"
+            "Lineup: DeepSeek's ladder is Flash < Pro. V4.1 Flash replaced V4 Flash.\n"
+            "Superseded by: DeepSeek V4.1 Flash 1017, the newer snapshot."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6858,6 +7820,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_4_pro_0813,
         friendly_name="DeepSeek V4 Pro 0813",
+        agent_notes=(
+            "Description: August 2026 snapshot of DeepSeek V4 Pro.\n"
+            "Lineup: DeepSeek's ladder is Flash < Pro. The 0813 snapshot is newer than the plain V4 Pro.\n"
+            "Strengths: Strong open-weight MoE flagship for reasoning and coding."
+        ),
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6885,6 +7853,12 @@ built_in_models: List[KilnModel] = [
         friendly_name="DeepSeek V4 Pro",
         featured_rank=8,
         editorial_notes="Open source flagship with 1.6T params (49B activated). 1M context, configurable reasoning.",
+        agent_notes=(
+            "Description: DeepSeek's open-weight MoE flagship in the V4 generation.\n"
+            "Lineup: DeepSeek's ladder is Flash < Pro. Pro is the top tier.\n"
+            "Superseded by: DeepSeek V4 Pro 0813, the newer snapshot.\n"
+            "Strengths: Strong at coding, reasoning, and long-context tasks."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6927,6 +7901,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/deepseek-ai/deepseek-v4-pro-0813",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -6939,6 +7914,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.deepseek_4_flash,
         friendly_name="DeepSeek V4 Flash",
         editorial_notes="Faster V4 variant with 284B params (13B activated). 1M context, same reasoning capabilities.",
+        agent_notes=(
+            "Description: DeepSeek's Flash model in the V4 generation.\n"
+            "Lineup: DeepSeek's ladder is Flash < Pro. Below V4.1 Flash.\n"
+            "Superseded by: DeepSeek V4.1 Flash, which is stronger."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6966,8 +7946,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
-                suggested_for_synthetic_user=True,
                 model_id="@cf/deepseek-ai/deepseek-v4-flash-0731",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=DEEPSEEK_V4_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -6987,6 +7967,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.deepseek_3_2,
         friendly_name="DeepSeek 3.2",
         editorial_notes="Open and powerful. A fraction of the cost of other large models.",
+        agent_notes=(
+            "Description: A solid MoE coding model in the DeepSeek V3 generation.\n"
+            "Lineup: Below DeepSeek V4 Flash in DeepSeek's progression.\n"
+            "Superseded by: DeepSeek V4 Flash, then V4.1 Flash."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7503,6 +8488,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.grok,
         name=ModelName.grok_4_7,
         friendly_name="Grok 4.7",
+        agent_notes=(
+            "Description: xAI's flagship model, the strongest in the Grok 4 line.\n"
+            "Lineup: Grok 4 progressed through 4.20, 4.3, 4.5, and 4.7. Grok 4.7 replaced Grok 4.5.\n"
+            "Strengths: Competitive coding and agentic benchmarks."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7533,6 +8524,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.grok,
         name=ModelName.grok_4_5,
         friendly_name="Grok 4.5",
+        agent_notes=(
+            "Description: A mid-generation model in the Grok 4 line.\n"
+            "Lineup: Grok 4 progressed through 4.20, 4.3, 4.5, and 4.7. Between 4.3 and 4.7.\n"
+            "Superseded by: Grok 4.7, which is stronger across benchmarks."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7563,6 +8559,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.grok,
         name=ModelName.grok_4_3,
         friendly_name="Grok 4.3",
+        agent_notes=(
+            "Description: An early model in the Grok 4 line.\n"
+            "Lineup: Grok 4 progressed through 4.20, 4.3, 4.5, and 4.7. Between 4.20 and 4.5.\n"
+            "Superseded by: Grok 4.5, then Grok 4.7."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7593,6 +8594,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.grok,
         name=ModelName.grok_4_20,
         friendly_name="Grok 4.20",
+        agent_notes=(
+            "Description: The first model in the Grok 4 line.\n"
+            "Lineup: Grok 4 progressed through 4.20, 4.3, 4.5, and 4.7. The 4.20 was the starting point.\n"
+            "Superseded by: Grok 4.3, then Grok 4.7."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7712,12 +8718,71 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 4 Max
+    # reasoning_capable left False: reasoning is on by default but can be turned off with the "none" effort.
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_4_max,
+        friendly_name="Qwen 4 Max",
+        agent_notes=(
+            "Description: The flagship model of Alibaba's Qwen4 series.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. Qwen 4 Max replaced Qwen 3.8 Max 0902 at the Max level."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen4-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_4_MAX_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen4-max",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
+        ],
+    ),
     # Qwen 3.8 Max 0902
     KilnModel(
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p8_max_0902,
         friendly_name="Qwen 3.8 Max 0902",
         featured_rank=6,
+        agent_notes=(
+            "Description: Qwen's flagship closed-weight model in the 3.8 generation.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. The 0902 snapshot is the dated release of 3.8 Max.\n"
+            "Superseded by: Qwen 4 Max, the Max model of the Qwen4 series.\n"
+            "Strengths: Strong at coding, reasoning, and agentic frameworks."
+        ),
+        tags=[],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7777,6 +8842,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p8_max_prime,
         friendly_name="Qwen 3.8 Max Prime",
+        agent_notes=(
+            "Description: Premium tier of Qwen's 3.8 closed lineup, above Max.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. Max Prime uses more compute than Max."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7801,6 +8871,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p8_2p4t_a95b,
         friendly_name="Qwen 3.8 2.4T A95B",
+        agent_notes=(
+            "Description: Qwen's largest open-weight MoE, the open twin of Qwen 3.8 Max.\n"
+            "Lineup: Qwen's open models run from 9B through 2.4T. This is the flagship open MoE.\n"
+            "Strengths: Strong at coding and reasoning; competitive with closed models at the same tier.\n"
+            "Deployment: MoE with 95B active parameters out of 2.4T total."
+        ),
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7840,6 +8917,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p8_flash,
         friendly_name="Qwen 3.8 Flash",
+        agent_notes=(
+            "Description: Qwen's Flash-tier closed model in the 3.8 generation.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. Flash is the budget tier. Replaced Qwen 3.7 Flash."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7875,6 +8957,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p8_omni_flash,
         friendly_name="Qwen 3.8 Omni Flash",
+        agent_notes=(
+            "Description: Qwen's omni-modal Flash model with text, vision, and audio input.\n"
+            "Lineup: A multimodal variant of the Flash tier in the Qwen 3.8 generation."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7908,6 +8995,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p8_27b,
         friendly_name="Qwen 3.8 27B",
+        agent_notes=(
+            "Description: Qwen's dense 27B open-weight model in the 3.8 generation.\n"
+            "Lineup: Qwen's open models by size: 9B < 27B < 35B MoE < larger MoE. Replaced Qwen 3.6 27B.\n"
+            "Useful for: Self-hosted or on-prem work with moderate GPU resources.\n"
+            "Deployment: Dense 27B, runs on a single mid-range GPU."
+        ),
+        tags=["current", "top_open", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7981,6 +9075,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p7_max,
         friendly_name="Qwen 3.7 Max",
+        agent_notes=(
+            "Description: Qwen's Max-tier closed model in the 3.7 generation.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. Below Qwen 3.8 Max.\n"
+            "Superseded by: Qwen 3.8 Max 0902, the updated Max model."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8000,6 +9099,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p7_plus,
         friendly_name="Qwen 3.7 Plus",
+        agent_notes=(
+            "Description: Qwen's Plus-tier closed model in the 3.7 generation.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. Plus sits between Flash and Max.\n"
+            "Useful for: Mid-tier tasks where Flash quality is not enough but Max is more than needed."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8034,6 +9139,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p7_flash,
         friendly_name="Qwen 3.7 Flash",
+        agent_notes=(
+            "Description: Qwen's Flash-tier closed model in the 3.7 generation.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime. Below Qwen 3.8 Flash.\n"
+            "Superseded by: Qwen 3.8 Flash, the updated Flash model."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8063,6 +9173,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p6_plus,
         friendly_name="Qwen 3.6 Plus",
+        agent_notes=(
+            "Description: Qwen's Plus-tier closed model in the 3.6 generation.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime.\n"
+            "Superseded by: Qwen 3.7 Plus, the updated Plus model."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8100,6 +9215,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p6_flash,
         friendly_name="Qwen 3.6 Flash",
+        agent_notes=(
+            "Description: Qwen's Flash-tier closed model in the 3.6 generation.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime.\n"
+            "Superseded by: Qwen 3.7 Flash, then Qwen 3.8 Flash."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8129,6 +9249,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p6_35b_a3b,
         friendly_name="Qwen 3.6 35B A3B",
+        agent_notes=(
+            "Description: Qwen's efficient open-weight MoE with 3B active parameters.\n"
+            "Lineup: Qwen's open models by size: 9B < 27B < 35B MoE < larger. Replaced Qwen 3.5 35B A3B.\n"
+            "Deployment: MoE with only 3B active parameters; runs on lightweight hardware."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8158,6 +9284,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p6_27b,
         friendly_name="Qwen 3.6 27B",
+        agent_notes=(
+            "Description: Qwen's dense 27B open-weight model in the 3.6 generation.\n"
+            "Lineup: Qwen's open 27B line: 3.5 < 3.6 < 3.8. Below Qwen 3.8 27B.\n"
+            "Superseded by: Qwen 3.8 27B, which is stronger at the 27B level."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8223,6 +9354,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p5_plus,
         friendly_name="Qwen 3.5 Plus",
+        agent_notes=(
+            "Description: Qwen's Plus-tier closed model in the 3.5 generation.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime.\n"
+            "Superseded by: Qwen 3.6 Plus, then Qwen 3.7 Plus."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8252,6 +9388,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p5_flash,
         friendly_name="Qwen 3.5 Flash",
+        agent_notes=(
+            "Description: Qwen's Flash-tier closed model in the 3.5 generation.\n"
+            "Lineup: Qwen's closed ladder is Flash < Plus < Max < Max Prime.\n"
+            "Superseded by: Qwen 3.6 Flash, then Qwen 3.8 Flash."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8282,6 +9423,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p5_397b_a17b,
         friendly_name="Qwen 3.5 397B (17B Active)",
+        agent_notes=(
+            "Description: Qwen's large open-weight MoE with 17B active parameters.\n"
+            "Lineup: Qwen's open models by size. Below the 2.4T A95B, above the 122B A10B.\n"
+            "Deployment: MoE with 397B total and 17B active parameters."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8335,6 +9482,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p5_122b_a10b,
         friendly_name="Qwen 3.5 122B (10B Active)",
+        agent_notes=(
+            "Description: Qwen's mid-size open-weight MoE with 10B active parameters.\n"
+            "Lineup: Qwen's open models by size. Below the 397B A17B, above the 35B A3B.\n"
+            "Deployment: MoE with 122B total and 10B active parameters."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8364,6 +9517,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p5_35b_a3b,
         friendly_name="Qwen 3.5 35B (3B Active)",
+        agent_notes=(
+            "Description: Qwen's small open-weight MoE in the 3.5 generation.\n"
+            "Lineup: Qwen's open models by size. Below the 122B A10B.\n"
+            "Superseded by: Qwen 3.6 35B A3B, which is stronger at the same size."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8395,6 +9553,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p5_27b,
         friendly_name="Qwen 3.5 27B",
+        agent_notes=(
+            "Description: Qwen's dense 27B open-weight model in the 3.5 generation.\n"
+            "Lineup: Qwen's open 27B line. Below Qwen 3.6 27B.\n"
+            "Superseded by: Qwen 3.6 27B, then Qwen 3.8 27B."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8421,6 +9584,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p5_9b,
         friendly_name="Qwen 3.5 9B",
+        agent_notes=(
+            "Description: Qwen's small 9B dense open-weight model.\n"
+            "Lineup: The smallest Qwen open-weight model in the selected set.\n"
+            "Useful for: Budget self-hosted work or on-device tasks.\n"
+            "Deployment: Dense 9B, runs on consumer hardware easily."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8442,6 +9612,32 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 4B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_4b,
+        friendly_name="Qwen 3.5 4B",
+        agent_notes=(
+            "Description: Qwen's small 4B dense open-weight model in the 3.5 generation.\n"
+            "Lineup: Qwen 3.5 open sizes run 0.8B < 2B < 4B < 9B < 27B, then larger MoE models. A step down from Qwen 3.5 9B."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.5-4B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                # Featherless returns the thinking text inline, ending in </think>.
+                reasoning_capable=True,
+                parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3.5-4B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -9583,6 +10779,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3-VL-30B-A3B-Thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=False,
                 reasoning_capable=True,
@@ -10102,6 +11299,13 @@ built_in_models: List[KilnModel] = [
         friendly_name="GLM 5.3",
         featured_rank=7,
         editorial_notes="Z.ai's newest flagship, with a 1M token context window and configurable reasoning. Strong long-horizon agentic and coding performance.",
+        agent_notes=(
+            "Description: Zhipu AI's open-weight flagship in the GLM 5.3 generation.\n"
+            "Lineup: GLM generations progress 4.x < 5 < 5.1 < 5.2 < 5.3. Within 5.3: Flash < FlashX < base < Prime. Replaced GLM 5.2.\n"
+            "Same weights: GLM 5.3 Fast is a faster hosted version.\n"
+            "Strengths: Strong at coding and agentic tasks with hybrid reasoning."
+        ),
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10153,6 +11357,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5_3_fast,
         friendly_name="GLM 5.3 Fast",
+        agent_notes=(
+            "Description: Speed-optimized serving of GLM 5.3.\n"
+            "Lineup: Within GLM 5.3: Flash < FlashX < base < Prime. Fast is a throughput variant of the base.\n"
+            "Same weights: GLM 5.3 is the standard version; GLM 5.3 Fast is a faster hosted version.\n"
+            "Useful for: Not the fastest model overall, but the faster way to run GLM 5.3."
+        ),
+        tags=["top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -10169,6 +11380,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5_3_prime,
         friendly_name="GLM 5.3 Prime",
+        agent_notes=(
+            "Description: Premium tier of GLM 5.3 with higher quality.\n"
+            "Lineup: Within GLM 5.3: Flash < FlashX < base < Prime. Prime is the top tier."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10183,6 +11399,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5_3_flash,
         friendly_name="GLM 5.3 Flash",
+        agent_notes=(
+            "Description: Budget model in the GLM 5.3 generation.\n"
+            "Lineup: Within GLM 5.3: Flash < FlashX < base < Prime. Flash is the entry tier.\n"
+            "Useful for: High-volume lightweight tasks."
+        ),
+        tags=["current", "top_value"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10273,8 +11495,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
-                suggested_for_synthetic_user=True,
                 model_id="@cf/zai-org/glm-5.3-flash",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_3_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -10296,6 +11518,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5_3_flashx,
         friendly_name="GLM 5.3 FlashX",
+        agent_notes=(
+            "Description: Mid-tier model in the GLM 5.3 generation.\n"
+            "Lineup: Within GLM 5.3: Flash < FlashX < base < Prime. FlashX sits between Flash and base."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10328,6 +11555,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5_3_flashx_legal,
         friendly_name="GLM 5.3 FlashX Legal",
+        agent_notes=(
+            "Description: Legal-domain variant of GLM 5.3 FlashX.\n"
+            "Lineup: A domain-specific variant of FlashX, tuned for legal tasks."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10358,6 +11590,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5_2,
         friendly_name="GLM 5.2",
+        agent_notes=(
+            "Description: Zhipu AI's open-weight flagship in the GLM 5.2 generation.\n"
+            "Lineup: GLM generations: 4.x < 5 < 5.1 < 5.2 < 5.3. Below GLM 5.3.\n"
+            "Superseded by: GLM 5.3, which is stronger across benchmarks."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10388,6 +11625,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/zai-org/glm-5.2",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GLM_5_2_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="max",
@@ -10413,6 +11651,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5_1,
         friendly_name="GLM 5.1",
+        agent_notes=(
+            "Description: Zhipu AI's model in the GLM 5.1 generation.\n"
+            "Lineup: GLM generations: 4.x < 5 < 5.1 < 5.2 < 5.3.\n"
+            "Superseded by: GLM 5.2, then GLM 5.3."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10454,6 +11697,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5v_turbo,
         friendly_name="GLM 5V Turbo (Vision-Language)",
+        agent_notes=(
+            "Description: GLM 5 with vision support.\n"
+            "Lineup: A multimodal variant in the GLM 5 generation.\n"
+            "Superseded by: GLM 5.3 FlashX, which includes multimodal capabilities."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10484,6 +11732,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5_turbo,
         friendly_name="GLM 5 Turbo",
+        agent_notes=(
+            "Description: Speed-optimized variant in the GLM 5 generation.\n"
+            "Lineup: Below GLM 5.1 in the GLM progression.\n"
+            "Superseded by: GLM 5.1, then GLM 5.3."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10498,6 +11751,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5,
         friendly_name="GLM 5",
+        agent_notes=(
+            "Description: Zhipu AI's model in the GLM 5 generation.\n"
+            "Lineup: GLM generations: 4.x < 5 < 5.1 < 5.2 < 5.3.\n"
+            "Superseded by: GLM 5.1, then GLM 5.3."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10539,6 +11797,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_4_7,
         friendly_name="GLM 4.7",
+        agent_notes=(
+            "Description: Zhipu AI's model in the GLM 4.7 generation.\n"
+            "Lineup: Below GLM 5 in the GLM progression.\n"
+            "Superseded by: GLM 5, then GLM 5.3."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10574,6 +11837,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.glm_4_7_flash,
         friendly_name="GLM 4.7 Flash",
         editorial_notes="Cost-effective, fast, and open model from Z.ai.",
+        agent_notes=(
+            "Description: Budget model in the GLM 4.7 generation.\n"
+            "Lineup: Flash tier in the 4.7 generation, below GLM 5.3 Flash.\n"
+            "Superseded by: GLM 5.3 Flash, which is stronger at the Flash level."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10593,6 +11861,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_4_6v,
         friendly_name="GLM 4.6V (Vision-Language)",
+        agent_notes=(
+            "Description: Early GLM vision-language model in the 4.6 generation.\n"
+            "Lineup: Below GLM 4.7 in the GLM progression.\n"
+            "Superseded by: GLM 5v Turbo, then GLM 5.3."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10696,6 +11969,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="zai-org/GLM-4.5V",
+                deprecated=True,
                 supports_structured_output=False,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
@@ -10839,6 +12113,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.kimi,
         name=ModelName.kimi_k3_1_pro,
         friendly_name="Kimi K3.1 Pro",
+        agent_notes=(
+            "Description: Moonshot AI's premium flagship in the K3 line.\n"
+            "Lineup: Kimi's line: K2 < K3 < K3.1 Pro. K3.1 Pro is a higher-tier update to K3.\n"
+            "Strengths: Strong coding and agentic benchmarks."
+        ),
+        tags=["current", "recommended"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10881,6 +12161,14 @@ built_in_models: List[KilnModel] = [
         friendly_name="Kimi K3",
         featured_rank=5,
         editorial_notes="Open, state-of-the-art model from Moonshot AI. 2.8T-parameter MoE with a 1M token context, configurable reasoning, and strong agentic performance.",
+        agent_notes=(
+            "Description: Moonshot AI's open-weight flagship, one of the largest open models.\n"
+            "Lineup: Kimi's line: K2 < K3 < K3.1 Pro. K3 is the base flagship.\n"
+            "Same weights: Kimi K3 Fast is a faster hosted version.\n"
+            "Strengths: Strong at coding and agentic tasks; competitive with closed models.\n"
+            "Deployment: Very large model at 2.8T parameters."
+        ),
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -10943,6 +12231,12 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.kimi,
         name=ModelName.kimi_k3_fast,
         friendly_name="Kimi K3 Fast",
+        agent_notes=(
+            "Description: Speed-optimized serving of Kimi K3.\n"
+            "Lineup: Kimi's line: K2 < K3 < K3.1 Pro. K3 Fast is a throughput variant of K3.\n"
+            "Same weights: Kimi K3 is the standard version; Kimi K3 Fast is a faster hosted version."
+        ),
+        tags=[],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -10972,6 +12266,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.kimi_k2_6,
         friendly_name="Kimi K2.6",
         editorial_notes="Open, state-of-the-art model from Moonshot AI. Excellent price-to-performance ratio. Enhanced agent planning and reasoning capabilities.",
+        agent_notes=(
+            "Description: A mid-generation Kimi model with multimodal support.\n"
+            "Lineup: Kimi's line: K2 < K3. K2.6 is in the K2 generation.\n"
+            "Superseded by: Kimi K3, which is substantially stronger."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -11049,6 +12348,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cloudflare,
                 model_id="@cf/moonshotai/kimi-k2.6",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=KIMI_K2_6_CLOUDFLARE_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -11072,6 +12372,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.kimi_k2_5,
         friendly_name="Kimi K2.5",
         editorial_notes="Open, state-of-the-art model from Moonshot AI. Excellent price-to-performance ratio.",
+        agent_notes=(
+            "Description: An earlier Kimi model in the K2 generation.\n"
+            "Lineup: Kimi's line: K2 < K3. Below K2.6.\n"
+            "Superseded by: Kimi K2.6, then Kimi K3."
+        ),
         providers=[
             # Fireworks provider commented out due to immutable parameter requirements:
             # top_p must be exactly 0.95 (thinking mode) or temperature must be 0.6 (non-thinking mode)
@@ -11150,6 +12455,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="moonshotai/kimi-k2-thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
@@ -11166,6 +12472,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,
                 model_id="moonshotai/Kimi-K2-Thinking",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
             ),
@@ -11180,6 +12487,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="moonshotai/kimi-k2-0905:exacto",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
@@ -11231,6 +12539,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="moonshotai/kimi-k2",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
@@ -11273,6 +12582,28 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    KilnModel(
+        family=ModelFamily.ernie,
+        name=ModelName.ernie_light_dt_1_0,
+        friendly_name="Ernie Light DT 1.0",
+        agent_notes=(
+            "Description: Baidu's light model built on open-source GLM models, with the Baidu Sparse Attention mechanism from Baidu Search's Lightning model.\n"
+            "Lineup: A light model in Baidu's ERNIE family. The sources checked do not place it against Baidu's larger ERNIE models."
+        ),
+        editorial_notes="Baidu's ERNIE-Light-DT-1.0, built on open GLM models with Baidu Sparse Attention. Text only, 1M context. Not recommended as an eval judge: in testing it sometimes gave ratings outside the requested scale.",
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="baidu/ernie-light-dt-1.0-intl",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=ERNIE_LIGHT_DT_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="max",
+                openrouter_reasoning_object=True,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     # Ernie 4.5 300B A47B
     KilnModel(
         family=ModelFamily.ernie,
@@ -11303,6 +12634,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.hunyuan,
         name=ModelName.hunyuan_hy4,
         friendly_name="Hunyuan Hy4",
+        agent_notes=(
+            "Description: Tencent's reasoning model in the Hunyuan Hy4 generation.\n"
+            "Lineup: Hunyuan progressed from Hy3 to Hy4. Hy4 replaced Hy3."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11323,6 +12659,58 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="tencent/Hy4",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+        ],
+    ),
+    # Hy4 Flash is Tencent's lower-cost Hy4 variant. OpenRouter lists no reasoning efforts for it, so it has no thinking levels.
+    # reasoning_capable left False: reasoning is on by default but not mandatory, so a response can carry no reasoning.
+    KilnModel(
+        family=ModelFamily.hunyuan,
+        name=ModelName.hunyuan_hy4_flash,
+        friendly_name="Hunyuan Hy4 Flash",
+        agent_notes=(
+            "Description: Tencent's cost-efficient variant of Hunyuan Hy4, for code assistance and agent workloads.\n"
+            "Lineup: Below Hunyuan Hy4, with about a quarter of Hy4's parameters. It has its own weights, so it is not a serving variant of Hy4."
+        ),
+        editorial_notes="Tencent's lower-cost Hy4 variant. Text and image input, 1M context. Not recommended as an eval judge: in testing it sometimes gave ratings outside the requested scale.",
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="tencent/hy4-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/hy4-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # Hunyuan Hy3 — Tencent's 295B MoE (21B active), 256K context, text-only reasoning + tool-calling model.
@@ -11331,6 +12719,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.hunyuan,
         name=ModelName.hunyuan_hy3,
         friendly_name="Hunyuan Hy3",
+        agent_notes=(
+            "Description: Tencent's reasoning model in the Hunyuan Hy3 generation.\n"
+            "Lineup: Below Hunyuan Hy4 in the Hunyuan progression.\n"
+            "Superseded by: Hunyuan Hy4, which improves reasoning quality."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11357,6 +12750,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="tencent/Hunyuan-A13B-Instruct",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
@@ -11371,6 +12765,13 @@ built_in_models: List[KilnModel] = [
         name=ModelName.minimax_m3_1_flash,
         friendly_name="Minimax M3.1 Flash",
         editorial_notes="MiniMax's faster M3.1 variant. 1M context, native image and video input, built for agentic tasks.",
+        agent_notes=(
+            "Description: MiniMax's flagship MoE model in the M3.1 generation.\n"
+            "Lineup: MiniMax progressed through M2.x < M3 < M3.1. Replaced MiniMax M3.\n"
+            "Strengths: Strong coding and agentic benchmarks.\n"
+            "Deployment: MoE with 428B total and 23B active parameters."
+        ),
+        tags=["current", "top_value", "top_open"],
         providers=[
             # Unlike M3, M3.1 Flash does not always return reasoning on OpenRouter,
             # so the R1 parser and required reasoning are off.
@@ -11430,6 +12831,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.minimax,
         name=ModelName.minimax_m3,
         friendly_name="Minimax M3",
+        agent_notes=(
+            "Description: MiniMax's MoE model in the M3 generation.\n"
+            "Lineup: MiniMax progressed through M2.x < M3 < M3.1.\n"
+            "Superseded by: MiniMax M3.1 Flash, which is stronger."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11509,6 +12915,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.minimax,
         name=ModelName.minimax_m2_7,
         friendly_name="Minimax M2.7",
+        agent_notes=(
+            "Description: An incremental update in the MiniMax M2 generation.\n"
+            "Lineup: Below MiniMax M3 in the MiniMax progression.\n"
+            "Superseded by: MiniMax M3, then M3.1 Flash."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11556,6 +12967,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.minimax,
         name=ModelName.minimax_m2_5,
         friendly_name="Minimax M2.5",
+        agent_notes=(
+            "Description: An earlier model in the MiniMax M2 generation.\n"
+            "Lineup: Below MiniMax M2.7 in the MiniMax progression.\n"
+            "Superseded by: MiniMax M2.7, then M3.1 Flash."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11784,6 +13200,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.stepfun,
         name=ModelName.stepfun_step5_preview,
         friendly_name="StepFun Step 5 Preview",
+        agent_notes=(
+            "Description: StepFun's flagship preview model.\n"
+            "Lineup: StepFun's line includes Step3.7 Flash and Step5 Preview. Step5 is the higher tier."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11829,6 +13250,11 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.stepfun,
         name=ModelName.stepfun_step3_7_flash,
         friendly_name="StepFun Step 3.7 Flash",
+        agent_notes=(
+            "Description: StepFun's flash-tier model.\n"
+            "Lineup: StepFun's line includes Step3.7 Flash and Step5 Preview. Flash is the budget tier."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11906,6 +13332,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mimo,
         name=ModelName.mimo_v2_6_pro,
         friendly_name="MiMo-V2.6-Pro",
+        agent_notes=(
+            "Description: Xiaomi's peak-capability open-weight model.\n"
+            "Lineup: MiMo's ladder is Flash < Pro. V2.6 Pro replaced V2.5 Pro.\n"
+            "Same weights: MiMo-V2.6-Pro-UltraSpeed is a faster hosted version.\n"
+            "Strengths: Top open-weight model on several intelligence indices; strong at coding and agentic tasks."
+        ),
+        tags=["current", "top_open"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11933,6 +13366,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mimo,
         name=ModelName.mimo_v2_6_pro_ultraspeed,
         friendly_name="MiMo-V2.6-Pro-UltraSpeed",
+        agent_notes=(
+            "Description: Speed-optimized serving of MiMo V2.6 Pro.\n"
+            "Lineup: MiMo's ladder is Flash < Pro. UltraSpeed is a throughput variant of V2.6 Pro.\n"
+            "Same weights: MiMo-V2.6-Pro is the standard version; UltraSpeed is a faster hosted version.\n"
+            "Useful for: Not the fastest model overall, but the faster way to run MiMo-V2.6-Pro."
+        ),
+        tags=["top_fast"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11955,11 +13395,55 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # MiMo-V2.6-Flash-MOPD
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_6_flash_mopd,
+        friendly_name="MiMo-V2.6-Flash-MOPD",
+        agent_notes=(
+            "Description: An updated checkpoint of Xiaomi's MiMo-V2.6-Flash, a 309B-total, 15B-active MoE model, with an added multi-teacher on-policy distillation (MOPD) stage in post-training.\n"
+            "Lineup: MiMo's ladder is Flash < Pro. MOPD is a separate checkpoint at the Flash level, with its own weights, so it is not a serving variant of MiMo-V2.6-Flash."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.6-flash-mopd",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                ],
+            ),
+        ],
+    ),
     # MiMo-V2.6-Flash
     KilnModel(
         family=ModelFamily.mimo,
         name=ModelName.mimo_v2_6_flash,
         friendly_name="MiMo-V2.6-Flash",
+        agent_notes=(
+            "Description: Xiaomi's budget open-weight model in the V2.6 generation.\n"
+            "Lineup: MiMo's ladder is Flash < Pro. Flash is the entry tier. Replaced V2.5.\n"
+            "Useful for: Budget multimodal tasks."
+        ),
+        tags=["current", "top_value"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -11987,10 +13471,16 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mimo,
         name=ModelName.mimo_v2_5_pro,
         friendly_name="MiMo-V2.5-Pro",
+        agent_notes=(
+            "Description: Xiaomi's Pro-tier model in the MiMo V2.5 generation.\n"
+            "Lineup: Below MiMo V2.6 Pro in the MiMo progression.\n"
+            "Superseded by: MiMo V2.6 Pro, which is a massive improvement."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="xiaomi/mimo-v2.5-pro",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
             ),
@@ -12001,10 +13491,16 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.mimo,
         name=ModelName.mimo_v2_5,
         friendly_name="MiMo-V2.5",
+        agent_notes=(
+            "Description: Xiaomi's base model in the MiMo V2.5 generation.\n"
+            "Lineup: Below MiMo V2.6 Flash in the MiMo progression.\n"
+            "Superseded by: MiMo V2.6 Flash, which is stronger."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="xiaomi/mimo-v2.5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 supports_vision=True,
@@ -12074,12 +13570,118 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    KilnModel(
+        family=ModelFamily.thinking_machines,
+        name=ModelName.inkling_2_small,
+        friendly_name="Inkling 2 Small",
+        agent_notes=(
+            "Description: Thinking Machines' small multimodal reasoning model, the first model of the Inkling 2 generation.\n"
+            "Lineup: Thinking Machines ships Inkling and a Small variant. Inkling 2 Small replaced Inkling Small.\n"
+            "Deployment: Mixture of experts with 17B active parameters out of 594B total."
+        ),
+        editorial_notes="The first model of Thinking Machines' second Inkling generation (Apache 2.0). A 594B-parameter MoE (17B active) with image input, a 1M-token context and configurable reasoning.",
+        tags=["current", "top_open"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thinkingmachines/inkling-2-small",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=INKLING_2_SMALL_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="thinkingmachines/Inkling-2-Small",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/inkling-2-small",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cloudflare,
+                model_id="@cf/thinkingmachines/inkling-2-small",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=INKLING_2_SMALL_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.thinking_machines,
+        name=ModelName.inkling_2_mini,
+        friendly_name="Inkling 2 Mini",
+        editorial_notes="The smallest model of Thinking Machines' Inkling 2 generation (open weights). A 26.4B-parameter looped MoE (3.4B active) with image input, a 1M-token context and configurable reasoning.",
+        agent_notes=(
+            "Description: Thinking Machines' smallest open-weight multimodal model in the Inkling 2 generation, a looped MoE transformer whose middle layers run three times.\n"
+            "Lineup: Inkling 2 sizes are Mini < Small. Mini is a new size class with no Inkling 1 counterpart."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thinkingmachines/inkling-2-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=INKLING_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/inkling-2-mini",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     # Inkling (Thinking Machines)
     KilnModel(
         family=ModelFamily.thinking_machines,
         name=ModelName.inkling,
         friendly_name="Inkling",
         editorial_notes="Thinking Machines' first open-weights foundation model (Apache 2.0). A 975B-parameter MoE (41B active) with configurable reasoning. Hosted on Together AI.",
+        agent_notes=(
+            "Description: Thinking Machines' reasoning model for coding tasks.\n"
+            "Lineup: Inkling has a base and small variant. This is the full-size model."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12109,6 +13711,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.inkling_small,
         friendly_name="Inkling Small",
         editorial_notes="The smaller sibling of Thinking Machines' Inkling (Apache 2.0). A 276B-parameter MoE (12B active) with image and audio input and configurable reasoning.",
+        agent_notes=(
+            "Description: Smaller variant of Inkling for lighter workloads.\n"
+            "Lineup: Below Inkling in size and capability.\n"
+            "Superseded by: Inkling 2 Small, which scores far higher on Artificial Analysis (index 31 vs 10)."
+        ),
+        tags=[],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12140,6 +13748,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.fugu_max,
         friendly_name="Fugu Max",
         editorial_notes="Sakana's largest Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        agent_notes=(
+            "Description: Sakana AI's multi-agent orchestration model.\n"
+            "Lineup: Sakana's ladder is Max < Ultra. Max is a lighter alternative to Ultra."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12170,6 +13783,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.fugu_ultra_v2,
         friendly_name="Fugu Ultra v2",
         editorial_notes="The second generation of Sakana's Fugu Ultra, a Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        agent_notes=(
+            "Description: Sakana AI's peak-capability orchestration model.\n"
+            "Lineup: Sakana's ladder is Max < Ultra. Ultra v2 replaced Ultra.\n"
+            "Strengths: Strong agentic benchmarks through multi-agent orchestration."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12200,6 +13819,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.fugu_ultra,
         friendly_name="Fugu Ultra",
         editorial_notes="Sakana's Fable-tier model from Japan. A learned multi-agent orchestrator that routes across a pool of models, including recursive instances of itself. 1M context, with vision and configurable reasoning.",
+        agent_notes=(
+            "Description: An earlier version of Sakana's Ultra-tier model.\n"
+            "Lineup: Sakana's ladder is Max < Ultra.\n"
+            "Superseded by: Fugu Ultra v2, which improves on coding and agentic tasks."
+        ),
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12249,6 +13873,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.lfm_2_5_24b_a2b,
         friendly_name="LFM 2.5 24B A2B",
         editorial_notes="Liquid AI's open-weights MoE reasoning model (24B total, about 2B active), built for tool-calling agents and on-device use. Text only, 128K context.",
+        agent_notes=(
+            "Description: Liquid's reasoning model with very low active parameters.\n"
+            "Lineup: Liquid's model line. This is their 24B/2B-active reasoning model.\n"
+            "Deployment: MoE with only 2B active parameters; runs on lightweight hardware."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12264,6 +13894,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.beam_1_0,
         friendly_name="Beam 1.0",
         editorial_notes="Reflection's open-weights MoE reasoning model (501B total, 23B active), built for coding and long-horizon agentic work. Text only, 1M context.",
+        agent_notes=(
+            "Description: Reflection AI's MoE model.\n"
+            "Lineup: Reflection AI's first major model release.\n"
+            "Deployment: MoE with 501B total and 23B active parameters."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12285,6 +13921,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.glimpse,
         friendly_name="Glimpse",
         editorial_notes="Elorian's multimodal visual reasoning model, built for understanding images and video. 256K context.",
+        agent_notes=(
+            "Description: Elorian's multimodal reasoning model.\n"
+            "Lineup: Elorian's model line. Competes at the mid-tier level."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12302,6 +13943,23 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MD,
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="elorian-labs/glimpse-1.0",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -12328,6 +13986,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.ling_3_1_flash,
         friendly_name="Ling 3.1 Flash",
         editorial_notes="inclusionAI's hybrid-reasoning MoE model (560B total, 25B active). Text only, 256K context.",
+        agent_notes=(
+            "Description: InclusionAI's efficient open-weight flash model.\n"
+            "Lineup: InclusionAI's flash-tier model.\n"
+            "Useful for: Budget tasks at high volume."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12358,6 +14022,12 @@ built_in_models: List[KilnModel] = [
         name=ModelName.ternary_bonsai_2_9b,
         friendly_name="Ternary Bonsai 2 9B",
         editorial_notes="PrismML's compact open-weights model with ternary weights, built on Qwen 3.5 9B. Text and image input, 256K context.",
+        agent_notes=(
+            "Description: PrismML's 9B model using ternary quantization.\n"
+            "Lineup: PrismML's research-oriented model.\n"
+            "Deployment: Ternary quantization gives a very small memory footprint for its parameter count."
+        ),
+        tags=["current", "top_on_device"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12407,6 +14077,11 @@ built_in_models: List[KilnModel] = [
         name=ModelName.ripple_65b_preview,
         friendly_name="Ripple 65B Preview",
         editorial_notes="ricursiveAI's 65B preview model with native tool calling. Text only, 1M context.",
+        agent_notes=(
+            "Description: Ricursive AI's 65B preview model.\n"
+            "Lineup: Ricursive's first public model release."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12427,6 +14102,8 @@ built_in_models: List[KilnModel] = [
         name=ModelName.nex_n2_6,
         friendly_name="Nex N2.6",
         editorial_notes="Nex AGI's agentic model, post-trained from GLM 5.3 Flash (about 321B parameters) for tool use, computer use and long-horizon tasks. Text and image input.",
+        agent_notes=("Description: Nex AGI's model.\nLineup: Nex AGI's model line."),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12451,6 +14128,10 @@ built_in_models: List[KilnModel] = [
         name=ModelName.motif_3,
         friendly_name="Motif 3",
         editorial_notes="Motif Technologies' 314B mixture-of-experts model (13.2B active), multilingual for English and Korean, with optional reasoning. Text only, no tool calling.",
+        agent_notes=(
+            "Description: Motif Technologies' model.\nLineup: Motif's model line."
+        ),
+        tags=["current"],
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -12458,6 +14139,93 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.kt,
+        name=ModelName.midm_k_3_0_pro,
+        friendly_name="Mi:dm K 3.0 Pro",
+        editorial_notes="KT's 120B mixture-of-experts reasoning model (12B active), with a hybrid Mamba, MoE and attention architecture. Text only, no tool calling.",
+        agent_notes=(
+            "Description: KT's Mi:dm K 3.0 Pro for analysis and coding.\n"
+            "Lineup: KT's model line."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="kt/midm-k-3.0-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.radixark,
+        name=ModelName.daisyrose_27b,
+        friendly_name="DaisyRose 27B",
+        editorial_notes="RadixArk's open-weight multimodal reasoning model, trained from Qwen 3.8 27B with reinforcement learning on long-horizon agent tasks only.",
+        agent_notes=(
+            "Description: RadixArk's open-weight multimodal reasoning model, trained from Qwen 3.8 27B with reinforcement learning only, on long-horizon agent tasks.\n"
+            "Lineup: RadixArk's first public model. Same size class as its base, Qwen 3.8 27B."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="radixark/daisyrose-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DAISYROSE_27B_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="xhigh",
+                openrouter_reasoning_object=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="RadixArk/DaisyRose-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.upstage,
+        name=ModelName.solar_mini_4_5_preview,
+        friendly_name="Solar Mini 4.5 Preview",
+        agent_notes=(
+            "Description: Upstage's compact model, a 35B-total, 3B-active mixture-of-experts model, released as a preview.\n"
+            "Lineup: Upstage's ladder is Solar Mini < Solar Pro. Solar Mini 4.5 follows Solar Mini 4, which Kiln does not list."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="upstage/solar-mini-4-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=SOLAR_MINI_4_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="medium",
+                openrouter_reasoning_object=True,
             ),
         ],
     ),

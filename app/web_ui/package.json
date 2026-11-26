@@ -19,7 +19,7 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@redocly/cli": "^2.51.2",
-    "@sveltejs/adapter-static": "^3.0.2",
+    "@sveltejs/adapter-static": "^3.0.11",
     "@sveltejs/kit": "^2.70.2",
     "@sveltejs/vite-plugin-svelte": "^3.1.1",
     "@tailwindcss/typography": "^0.5.13",
@@ -57,7 +57,7 @@
     "@floating-ui/dom": "^1.7.2",
     "@kinde-oss/kinde-auth-pkce-js": "^4.3.0",
     "@sentry/sveltekit": "^10.76.2",
-    "dompurify": "^3.4.16",
+    "dompurify": "^3.4.17",
     "echarts": "^6.1.0",
     "highlight.js": "^11.10.0",
     "marked": "^17.0.5",

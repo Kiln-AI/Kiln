@@ -399,3 +399,32 @@ def test_concurrent_access_from_threads_does_not_raise(model_cache, test_path):
         sys.setswitchinterval(switch_interval)
 
     assert errors == []
+
+
+def test_disable_drops_cached_models_and_stops_caching(model_cache, test_path):
+    # Forced on so the test checks something where timestamps are coarse.
+    model_cache._enabled = True
+    model = KilnModelTest(name="test", value=123)
+    model.mark_as_readonly()
+    mtime_ns = test_path.stat().st_mtime_ns
+    model_cache.set_model(test_path, model, mtime_ns)
+    assert model_cache.get_model(test_path, KilnModelTest) is not None
+
+    model_cache.disable()
+
+    assert model_cache.enabled is False
+    assert model_cache.get_model(test_path, KilnModelTest) is None
+    model_cache.set_model(test_path, model, mtime_ns)
+    assert model_cache.get_model(test_path, KilnModelTest) is None
+
+
+def test_disabled_cache_serves_nothing(model_cache, test_path):
+    model_cache._enabled = True
+    model = KilnModelTest(name="test", value=123)
+    model.mark_as_readonly()
+    model_cache.disable()
+    # As if a store that started before disable() finished after it.
+    model_cache.model_cache[test_path] = (model, test_path.stat().st_mtime_ns)
+
+    assert model_cache.get_model(test_path, KilnModelTest) is None
+    assert model_cache.get_model_id(test_path, KilnModelTest) is None

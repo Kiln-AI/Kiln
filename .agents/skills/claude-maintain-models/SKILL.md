@@ -1,6 +1,6 @@
 ---
 name: claude-maintain-models
-description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, asks to discover/find new models that are available but not yet in Kiln, or wants to add a net-new AI provider to Kiln.
+description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, asks to discover/find new models that are available but not yet in Kiln, wants to add a net-new AI provider to Kiln, or wants to write or fix the agent notes and tags of a model, a provider entry or a provider.
 allowed-tools: Read Edit Write Bash Grep Glob Agent WebSearch WebFetch
 ---
 
@@ -17,6 +17,7 @@ For a new model on an already-supported provider, integrating it into
 1. **`ModelName` enum** – add an enum member
 2. **`built_in_models` list** – add a `KilnModel(...)` entry with providers
 3. **`ModelFamily` enum** – only if the vendor is brand-new
+4. **Agent notes and tags** – on the new `KilnModel` and its provider entries, when a source supports them (see [Agent notes and tags](#agent-notes-and-tags))
 
 After code changes, run paid integration tests, then draft a Discord post.
 
@@ -248,6 +249,254 @@ If the model supports configurable reasoning effort (not just on/off), add `avai
 - `default_thinking_level` must be one of the values in `available_thinking_levels`
 - If the entry sets `suggested_for_evals=True`, `default_thinking_level` must be `"medium"` (or `"low"` if the model has no medium level) — never `"none"`. See [Judge Models Must Reason by Default](#judge-models-must-reason-by-default)
 
+### 3g. Agent notes and tags
+
+For each new model, write `agent_notes` and the model `tags`, then run the `current` procedure and the set-review procedure. For each new provider entry, including one added to an existing model, set its `tags` (provider-entry tags are empty today; do not use model tags on a provider entry). Follow [Agent notes and tags](#agent-notes-and-tags).
+
+**Every new model always gets at least:**
+- A minimal note with `Description:` and `Lineup:` from the lab's own model page or announcement. These two lines need no benchmark source.
+- The `current` tag, when it is the newest release at its lab's price level. `current` is mechanical: it needs only the release date, not a benchmark.
+- A `Superseded by:` line on the predecessor, when the `current` tag moves.
+
+Other note lines (Strengths, Behavior, etc.) need an independent source; when none supports a line, leave it out and say so in the PR. Set tags are different: the set review below is required for every new model. The cost-band sets (`recommended`, `top_value`, `top_open`) and `top_fast` use Artificial Analysis numbers; without an AA cost per task, the three cost-band sets are deferred, and `top_fast` takes the model only as a faster serving of a model in `top_open` or `recommended`. `top_on_device` and `top_writing` do not need AA: they use device fit and a writing source. Say in **Set review** which source each decision used, or that none was found.
+
+`test_live_models_have_notes` in `test_ml_model_list.py` fails for any live model without `agent_notes`, except the older models in `MODELS_WITHOUT_NOTES`. Never add a new model to that list.
+
+Steps for each new model:
+
+1. Write the model's `agent_notes` — at minimum `Description:` + `Lineup:`.
+2. Run the `current` procedure for its lab and price level (always).
+3. Fetch its Artificial Analysis page if it has one (`https://artificialanalysis.ai/models/<slug>`; try the obvious slug variants). AA often benchmarks a model days or weeks after release, so a new model may have no page yet; that is expected and is not evidence against the model. Record the intelligence index with its effort variant (for example "61, Xhigh"), the cost per Intelligence Index task, the output speed and the time to first token. Use the cost per task, not the blended $/M-token price, which the page shows in another table. If there is no page yet, write "AA page not yet available; set review deferred" in **Set review**. Until AA data exists the model skips `recommended`, `top_value` and `top_open`, and joins `top_fast` only as a faster serving of a model in `top_open` or `recommended`. The sets that do not use AA are still reviewed. A later sweep re-runs the deferred review once the page appears, for models added in the last 30 days (see the sweep skill); after that a human picks it up.
+4. Run the [set review](#set-tags) for every set in `MODEL_TAGS`. List each set's members from `built_in_models`. Then fetch same-day AA pages for every member of each set, `current` or not (a serving variant in `top_fast` is not `current`), and for every `current` non-member whose cost per task can fall inside the new model's cost band. Token prices do not bound task cost, because models use different numbers of tokens per task, so never drop a candidate on its token price: fetch its AA page and use its cost per task. The join test compares against all fetched models, and the removal review against the members among them.
+5. Write judgment note lines where a source supports them.
+6. Add a **Set review** section to the PR (see 3h), even when no set changed.
+
+### 3h. PR description — set changes
+
+When any set changed (a model added to or removed from a set tag), add a section at the top of the PR description that lists each addition and removal, per set, with a short reason for each. Example:
+
+```
+## Set changes
+- **recommended**: +GPT-6.1 Terra (strong general quality, current); −GPT-5.6 Terra (superseded)
+- **top_value**: +Claude Haiku 5.5 (best quality at its price)
+```
+
+Every PR that adds a model also has a **Set review** section, one line per set and per new model, that states the numbers compared. A reviewer can then see that the review ran, also when nothing changed. Example:
+
+```
+## Set review
+- **Gemini 4 Neon** (AA 61 at $6.44/task, 110 tok/s):
+  - recommended: joins; highest index within 1.5x of its cost, above GPT-6 Astra (57 at $6.24).
+    Candidate removals: none inside the band.
+  - top_value: no; top price, and 61 / $6.44 is far below the members' index per dollar (GPT-6.1 Terra: 51 / $0.96).
+  - top_fast: no; 110 tok/s is below every member with a speed.
+  - top_open, top_on_device: no; closed weights, not local.
+  - top_writing: no writing source checked.
+```
+
+---
+
+## Agent notes and tags
+
+`KilnModel.agent_notes`, `KilnModel.tags`, `KilnModelProvider.tags`, and the `notes` and `tags` of each item in `built_in_providers` (`libs/core/kiln_ai/adapters/ml_provider_list.py`) are for agents that choose or configure a model, such as the Harness Tuner optimizer and the Kiln assistant. `recommended` is an agent's main candidate list for new agents, and a model without the `current` tag is not chosen for a new run config unless asked. Agents outside Kiln read these from the published remote config; Kiln clients do not load the provider list from it. `editorial_notes` is different: it is short text for people, shown on the models page of the Kiln UI. Do not copy one into the other.
+
+### Note format
+
+A model's `agent_notes` is one string of labeled lines, joined by `\n`, in this order:
+
+| Label | Required | Content |
+|---|---|---|
+| `Description:` | yes | One line: what this model is. |
+| `Lineup:` | yes | Its place on the lab's ladder, and what it replaced. Explains names that do not show the order. |
+| `Superseded by:` | when not `current`, except on a serving variant of a `current` model | The model that replaced it, and why in a few words. Not present on a `current` model. |
+| `Same weights:` | on a serving variant and on its standard model | Names the other model that serves the same weights, and how it differs. |
+| `Useful for:` | no | Cases where it is a good choice, when it is not the general pick for its level. |
+| `Strengths:` | no | Its character, not its rank: "strong at agentic coding, weak at factual recall". |
+| `Behavior:` | no | Settings that help or hurt, output quirks, verbosity, tool-call reliability. |
+| `Deployment:` | no | Facts that change a hosting decision: dense or MoE, runs on a laptop, fits affordable GPUs. |
+
+Each label is used at most once. A line has one or a few sentences. In `ml_model_list.py`, write a note as adjacent string literals, one per labeled line, each but the last ending in `\n`, so each line is one source line.
+
+**Never in a note.** Anything that Kiln or models.dev already keeps: price, batch and cache discounts, and claims like "most expensive"; context window and maximum output; release date and knowledge cutoff; open weights; which providers host the model; support for function calling, structured output or vision; the available and default thinking levels. A note can say how the model behaves when a setting is used. It does not say which settings exist.
+
+**No words relative to time.** A note must not need edits as it ages. Do not use "current", "latest", "newest", "now", "previous", "frontier", "state of the art", "best" or "peers". To compare, name an exact model or generation: "near Claude Opus 4.6 level, with open weights", "a step down from GPT-6.1 Sol", "in the GPT-6.1 generation". The `current` tag and the `Superseded by:` line, added once, are the only places that show age.
+
+### Approved examples
+
+These show the format. Their facts are illustrative, not checked. Follow the same style.
+
+**GPT-6.1 Terra** · tags: `current`, `recommended`
+```
+Description: OpenAI's mid-price general model in the GPT-6.1 generation.
+Lineup: OpenAI's ladder is Luna < Terra < Sol < Astra. A large step up from GPT-6 Luna, a step down from GPT-6.1 Sol. Replaced GPT-5.6 Terra.
+Strengths: Steady quality in multi-turn tool use; GPT-6.1 Sol is better on hard reasoning.
+Behavior: High effort helps on hard problems; xhigh adds latency for little gain on routine tasks.
+```
+
+**GPT-5.4 Nano** · tags: none
+```
+Description: The smallest model in the GPT-5.4 generation.
+Lineup: Below GPT-5.4 Mini.
+Superseded by: GPT-6 Luna, which is stronger at a lower price.
+```
+
+**Gemini 4 Argon** · tags: `current`, `recommended`
+```
+Description: Google's Pro-level reasoning model in the Gemini 4 generation.
+Lineup: Gemini 4 uses element names, not size names. Argon is the Pro-level model. Replaced the Gemini 3.x Pro previews.
+Strengths: Strong multimodal reasoning over charts, video and documents; mixed on long autonomous coding runs.
+Behavior: Very verbose: uses far more output tokens than GPT-6.1 Sol or Claude Opus 5.5 on the same tasks, so cost per task is high. Slow to the first token at high effort.
+```
+
+**Claude Haiku 5.5** · tags: `current`, `recommended`, `top_value`, `top_fast`
+```
+Description: Anthropic's smallest and fastest model in the 5.5 generation.
+Lineup: Anthropic's ladder is Haiku < Sonnet < Opus < Fable. A large step down from Claude Sonnet 5.5.
+Useful for: Subagents, routing, classification and extraction at high volume.
+Behavior: Reliable tool calls for its size; quality drops on long multi-step reasoning.
+```
+
+**Mistral Large 4** · tags: `current` (not `recommended`)
+```
+Description: Mistral's open-weight flagship of the Large 4 generation.
+Lineup: Mistral's ladder is Ministral < Small < Medium < Large. Replaced Mistral Large 3.
+Useful for: Teams that need a European lab.
+Strengths: Strong at coding and terminal tasks; near GPT-5.6 Terra level on general intelligence.
+```
+
+**Qwen 3.8 27B** · tags: `current`, `top_open`
+```
+Description: Qwen's dense mid-size open-weight model in the 3.8 generation.
+Lineup: Below the Qwen 3.8 2.4T A95B open MoE. The closed Qwen 3.8 Max and Flash API models are a separate line.
+Useful for: Self-hosted or on-prem work where you manage your own GPUs.
+Strengths: Close to Gemma 4 31B at reasoning and coding.
+Deployment: Dense, so it runs on one affordable GPU more easily than MoE models of similar quality.
+```
+
+**Gemma 4 2B** · tags: `current`, `top_on_device`
+```
+Description: The smallest open-weight model in Google's Gemma 4 generation.
+Lineup: Gemma 4 sizes are 2B < 4B < 27B MoE < 31B dense. Gemma is Google's open-weight line, separate from Gemini.
+Useful for: Local or on-device agents, when data must stay on the machine.
+Behavior: Follows simple instructions well; unreliable at multi-step tool use.
+Deployment: Runs on consumer laptops and high-end phones.
+```
+
+### Provider note format
+
+A provider's `notes` in `built_in_providers` follow the same rules, with these labels, in this order, each optional but at least one present:
+
+| Label | Content |
+|---|---|
+| `Data retention:` | Whether it logs or trains on prompts; whether a zero-retention option exists, and how to get it. |
+| `Rate limits:` | How limits are set (account tier, per model); free-tier limits that break agents. |
+| `Routing:` | Whether it sends requests to more than one upstream host, so output or quality can change. |
+| `Gotchas:` | Setup or runtime problems: model access approval, region locks, project or quota setup. |
+
+Never in a provider note: pricing, the models it hosts (the model list has that) and the friendly name.
+
+**OpenRouter** (provider note example)
+```
+Data retention: Depends on the upstream host. Account settings can block hosts that log or train on prompts.
+Routing: Routes each request to one of several upstream hosts; quality and quantization can differ between them.
+Gotchas: Some models are free variants with low rate limits; do not use them for production agents.
+```
+
+### Tags
+
+There are two tag kinds:
+
+- **Lineage tag.** There is one: `current`. It moves along a lab's line of models. See [The `current` tag](#the-current-tag).
+- **Set tag.** Every other tag. A set tag names a short list of models that share a judgment, such as "the best open-weight models". Each set has a size limit. See [Set tags](#set-tags).
+
+The `top_` prefix marks a set that is the best few models with a property, not every model with it: `top_open` is not "has open weights".
+
+Read each tag's meaning, kind and limit in `libs/core/kiln_ai/adapters/model_agent_info.py`. This skill keeps no copy of the list, so the list and its meanings exist in one place. There are three maps:
+
+- `MODEL_TAGS` for `KilnModel.tags`: true of the model on every provider.
+- `PROVIDER_ENTRY_TAGS` for `KilnModelProvider.tags`: true of one provider entry only.
+- `PROVIDER_LIST_TAGS` for the `tags` of a `built_in_providers` item.
+
+Use a tag only from the map for that field. A tag in the wrong map fails the tests. Format `^[a-z0-9_]{1,40}$` (`TAG_PATTERN`), at most 12 tags on one entry (`MAX_TAGS_PER_ENTRY`), and no tag twice.
+
+### The `current` tag
+
+**Price level** is a step on the lab's own ladder, as the note's `Lineup:` line describes it: for example Luna < Terra < Sol < Astra, or Haiku < Sonnet < Opus < Fable. For open-weight labs, a size class.
+
+Procedure when a model is added:
+
+1. Find the `current` model from the same lab at the same price level.
+2. Remove its `current` tag.
+3. Add a `Superseded by:` line to its note, naming the new model and why in a few words.
+4. Tag the new model `current`.
+5. Skip this if the new model is at a different price level. No other records change.
+
+Rules:
+
+- Each lab has one `current` model at each price level: the newest release of that line, by release date, whatever its name.
+- `current` is mechanical: it needs only the release date and the lab's product line. No benchmark source is needed.
+- **Snapshots and aliases.** When a plain alias and a dated snapshot serve the same weights, decide with the information available and state the assumption in the PR body. For example, if the lab says the alias tracks the snapshot, the alias is `current`. If not clear, treat both as separate entries — the snapshot gets `current` when it is newer.
+- A variant that is a separate product (Pro, Omni) is a line of its own. It is `current` when it is the newest model of that variant line.
+- **Unclear price levels.** When a lab's naming does not make the price level clear (for example, Qwen 3.8 Max versus Qwen 3.8 Max Prime), decide with the information available and state the assumption in the PR body. For example, treat a variant with its own name as its own line unless the lab says it is an alias.
+- **One `current` per weight release.** A serving variant serves the same weights as another model, under another name, for example a faster hosted version (GLM 5.3 Fast, Kimi K3 Fast, MiMo-V2.6-Pro-UltraSpeed). A serving variant is never `current`; only the standard model is. Both notes get a `Same weights:` line that names the other: "GLM 5.3 Fast is a faster hosted version" and "GLM 5.3 is the standard version." A serving variant can still be in a set other than `recommended` (for example `top_fast`). When the standard model is superseded, its serving variants get a `Superseded by:` line too.
+- **Deprecations.** A model whose provider entries are all deprecated loses all its tags. A successor-slug migration moves `current` to the new entry. Tests skip fully deprecated models for the `Superseded by:` rule.
+
+**Local-only models.** A model whose non-deprecated provider entries are all on local providers (Ollama, Docker Model Runner) is local-only. Local-only models are selected mainly so they can be judged for `top_on_device` (and `top_open`); they are hard to experiment with, so they are never `recommended`, and their notes can be short. They still follow the `current` procedure for their lab and size class.
+
+### Set tags
+
+Procedure when a model could be in a set:
+
+1. Load the whole set (every model with that tag across `built_in_models`).
+2. Decide whether the new model joins the set.
+3. If it joins, review every member for one that no longer earns its place. That can be an older model at the same level, or a model from any lab or level that the new model beats for the set's purpose. Remove a member only when it lost `current` (for `recommended`) or the set is full (step 4); list every other one under **Candidate removals** in **Set review** and leave it in the set.
+4. A set never goes over its limit (`max_models` in the tag map). To add a model to a full set, remove one, by the full-set rule below.
+
+The comparison rules the log already applies, so each run decides the same way:
+
+- **Cost band.** Compare a model only with models whose AA cost per task is within 1.5x of its own, in either direction. The sets keep models at several price levels on purpose, so a much cheaper model with a higher index does not keep a model out. Example: GPT-6.1 Sol (55 at $1.27) is outside the band of Claude 5.5 Sonnet ($10.02), and both are members.
+- **`recommended`:** a model joins when it is `current`, is not available only on local providers, and has the highest AA index in its cost band, among all `current` models with AA numbers (members or not). Without an AA cost per task the cost band is unknown, so the decision is deferred. Example: Gemini 4 Neon (61 at $6.44) is above GPT-6 Astra (57 at $6.24), Gemini 4 Carbon (60 at $7.76) and Gemini 4 Argon (50 at $4.97), so it joins; Carbon is below Neon in its band, so it does not.
+- **`top_value`:** low and mid price only; a top-price model never joins. It joins when its index per dollar is near the members'. This set compares index per dollar across all its members, not within a cost band.
+- **`top_fast`:** output speed and time to first token from AA, or a faster serving of a model in `top_open` or `recommended`.
+- **`top_writing`:** needs a writing source (an AA writing score, a writing benchmark, or the lab's writing evals with an independent check). No source, no join.
+- **`top_open`:** open-weight models only, compared by AA index within the cost band with other open-weight models. Without an AA cost per task, the decision is deferred. **`top_on_device`:** models that run on a laptop or phone.
+- **Removals.** A member that loses `current` leaves `recommended` in the same change. Any other removal is a judgment: a member that the new model beats on both index and cost inside the band may also stand for something the numbers do not show (a lab, a region, a size). List it under **Candidate removals** in the PR's **Set review** and leave it in the set; a human decides. The exception is a full set. Then remove the member that ranks lowest on the set's own property inside the new model's cost band: AA index for `recommended` and `top_open`, index per dollar for `top_value`, output speed and time to first token for `top_fast` (when the two metrics pick different members, a human decides). Say so in **Set changes**. When no member is inside the band, or the set has no comparable numbers for its property (as in `top_on_device` and `top_writing`), do not add the model: put the proposed swap under **Decisions required** and a human picks the member to remove.
+
+Rules:
+
+- **The bar for a `top_` set:** when an agent optimizes for that property, it should know about this model. So `top_fast` can hold a serving variant that is not among the fastest models overall, but is the faster way to run a strong model; its note says so.
+- Every `recommended` model is also `current`. When a model loses `current`, it also leaves `recommended`.
+- **The `recommended` bar.** `recommended` is not one model per lab or per level; `current` already gives that. A model is `recommended` only when Artificial Analysis shows its quality is high for its cost, compared with the models across all labs at a similar cost. "The lab's flagship" or "the lab's smallest model" is not a reason. A model available only on local providers (Ollama, Docker Model Runner) is never `recommended`: an optimizer cannot easily test it.
+- When a comparison model's AA page cannot be fetched, name it under **Sources**. Its cost and index are unknown, so it could fall in the band: put each cost-band join or removal that it could change under **Decisions required** instead of applying it, unless that model is clearly outside the band (for example a top-price model against a low-price one). This never delays removing a model that lost `current` from `recommended`, and it does not touch `top_on_device` or `top_writing`, which do not use AA.
+- A model in a set has a note, so a reviewer can read the reason.
+- A set tag is a claim the maintainer would stand behind. Apply it only when a source supports it, as for notes.
+
+### Sources
+
+- Artificial Analysis first for comparisons across labs: model pages (`https://artificialanalysis.ai/models/<slug>`) give the intelligence index, cost per task, output speed, time to first token and output tokens used.
+- A lab's own release benchmarks are chosen to look good. They can support a claim but are never its only source.
+- Common sense.
+
+### Sources in the PR
+
+Put the evidence in the PR body, so a reviewer can answer "why is this model in this set?" without redoing the research. Do not edit files under `specs/`, including `specs/projects/model-agent-info/backfill_sources.md`, a point-in-time record of the Phase 4 and 5 backfill.
+
+- **Set review:** for each set, the AA intelligence index, AA cost per task and AA output speed of the new model and of the models it was compared with. A blended $/M-token price is not a cost per task: when AA has no cost per task for a model, say so and leave that model out of the cost-band and value comparisons, deferring any decision that depends on it. The reason states the comparison ("index 52 at $1.10/task; next best at that cost is 44"), not a description ("strong flagship").
+- **Sources:** the URL behind each note line other than `Description:` and `Lineup:` when those come from the lab's own model page, which is cited once. When the lab page is unreachable and the note uses another description (for example the OpenRouter model description), name that source and say the lab page was unreachable. For a provider note, the URL behind each line.
+- Every figure is checked against its source; a price is labeled input or output.
+
+### Adding a tag
+
+Add it to the right map in `model_agent_info.py` with its meaning, kind and limit, and add it to `test_starting_tags` in `test_model_agent_info.py`, in the same change that first uses it. A new set tag that names "the best" of something uses the `top_` prefix. An unsupported claim is left out; the PR says so.
+
+### How the rules are checked
+
+Kiln does not validate tags or notes when it loads the remote config, so an older client keeps loading a file that uses newer tags. Tests check the built-in data instead. Run them after every change to notes, tags or the provider list:
+
+```bash
+uv run pytest -q libs/core/kiln_ai/adapters/test_model_agent_info.py libs/core/kiln_ai/adapters/test_ml_model_list.py libs/core/kiln_ai/adapters/test_ml_provider_list.py
+```
+
 ---
 
 ## Phase 4 – Run Tests
@@ -461,6 +710,9 @@ Replace the `` `Insert AI summary of PR using .agents/skills/open-pr/SKILL.md` `
 - [ ] Every `suggested_for_evals` entry with thinking levels defaults to `"medium"` (or `"low"`), never `"none"` (see [Judge Models Must Reason by Default](#judge-models-must-reason-by-default))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
+- [ ] `agent_notes` always written (at minimum `Description:` + `Lineup:`); `test_live_models_have_notes` passes (see [Agent notes and tags](#agent-notes-and-tags))
+- [ ] AA page fetched (or its absence noted), set review run for every set with same-day AA numbers for the members in the band, and a **Set review** section in the PR
+- [ ] Note and set sources cited in the PR body's **Sources** section
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
 - [ ] API keys bridged into the test env (see 4a — settings.yaml is NOT used by tests)
 - [ ] Smoke test passed
@@ -479,7 +731,7 @@ Most recent models use *adaptive* reasoning and sometimes return no reasoning at
 `reasoning_capable` is **orthogonal to `available_thinking_levels`** — you keep the important behavior with it set to `False`:
 - Thinking-level / effort selection still works (every GPT-5.x entry sets `available_thinking_levels` with `reasoning_capable` unset).
 - Reasoning is still parsed and displayed when the model returns it (parser-driven, independent of this flag).
-- The `test_thinking_level_reasoning_content` paid test still runs and still asserts reasoning is present — it is gated on `available_thinking_levels`, not `reasoning_capable`. So you do NOT lose the ability to test the model's reasoning, as long as it has thinking levels.
+- The `test_thinking_level_reasoning_content` paid test still runs and still asserts reasoning is present — it is gated on `available_thinking_levels`, not `reasoning_capable`. So you do NOT lose the ability to test the model's reasoning, as long as it has thinking levels. OpenAI-direct providers are the exception: OpenAI returns reasoning only as a summary, so that test checks only that the run succeeds, and `test_openai_reasoning_summaries_paid` (same file) checks the summary on providers that set `openai_reasoning_summary`.
 
 What you give up with `reasoning_capable=False`:
 - The conditional "reasoning is present in `intermediate_outputs`" assertion inside the structured-output / structured-input paid tests stops firing (the tests themselves still run — no whole test is skipped).
@@ -511,12 +763,15 @@ entries had to be rolled back.
 
 1. **PR 1 — provider plumbing only.** The `ModelProviderName` enum member and
    everything else in the checklist below EXCEPT the model catalog. Merge
-   whenever ready.
+   whenever ready. The provider's item in `built_in_providers` belongs here,
+   because it holds the friendly name.
 2. **PR 2 — model catalog.** ALL `ml_model_list.py` changes: `ModelName`
    members, `ModelFamily` (if the vendor is new), and the `built_in_models`
    entries. Open it, but **merge only after a client release containing PR 1
-   is live.** (Only `built_in_models` is published via the remote config, but
-   the enums belong in the same PR as the entries they exist for.)
+   is live.** (Kiln clients load only the model lists from the remote config.
+   The provider list is published too, but only agents outside Kiln read it,
+   so its item is safe in PR 1. The enums belong in the same PR as the entries
+   they exist for.)
 
 ### Touchpoint checklist (from the Featherless integration, #1618)
 
@@ -536,10 +791,16 @@ model.
   providers: a new key with `env_var`; otherwise whatever fields the auth
   model needs)
 - LiteLLM provider mapping — `libs/core/kiln_ai/utils/litellm.py`
-- `libs/core/kiln_ai/adapters/provider_tools.py` — three spots: the
-  `provider_name_from_id` match (friendly name; pyright flags a missed case),
+- `libs/core/kiln_ai/adapters/provider_tools.py` — two spots:
   `provider_warnings` (missing-credential message, `required_config_keys`),
   and the adapter config (credential / base URL / headers plumbing)
+- Provider list — a `KilnProviderInfo` item in `built_in_providers`
+  (`libs/core/kiln_ai/adapters/ml_provider_list.py`), at the same position as
+  the enum member: `id`, `friendly_name` (the one Python source of the
+  friendly name; `provider_name_from_id` reads it), `models_dev_id` (the
+  provider's key in `https://models.dev/api.json`, checked there, or `None`
+  when models.dev has no entry for it), and `notes` and `tags` when a source
+  supports them (see [Agent notes and tags](#agent-notes-and-tags))
 - Model catalog — `libs/core/kiln_ai/adapters/ml_model_list.py`: `ModelName`
   members, `ModelFamily` if needed, and the `built_in_models` entries
   (**PR 2 only**, see gating rule)
@@ -560,7 +821,10 @@ model.
   provider card (name, description, and the auth flow — `api_key_steps` /
   `api_key_fields` for key providers, or the custom flow the auth model
   needs) plus connected-status
-  wiring from `settings` keys
+  wiring from `settings` keys. A setting chosen at connect time is an
+  `api_key_options` checkbox; its value reaches `connect_api_key` in the
+  payload's `options` dict, and the provider's disconnect case resets it, because the
+  dialog always opens unchecked (see OpenAI's reasoning summaries)
 - `src/lib/api_schema.d.ts` — regenerate with `make schema` (needs the server
   running on :8757)
 
@@ -588,10 +852,12 @@ the PR rather than hand-editing generated code.
 ### Friendly names everywhere
 
 The raw enum value must never be user-visible. When you add the provider,
-verify a friendly name exists in **both** name maps (python
-`provider_name_from_id` and web `provider_name_map`) — pyright and typescript
-respectively force these when the enum gains a member, which is why the
-plumbing PR must not skip them.
+verify a friendly name exists in **both** name maps: the Python provider list
+(`built_in_providers` in `ml_provider_list.py`, which `provider_name_from_id`
+reads) and the web `provider_name_map`. When the enum gains a member,
+`test_one_item_per_provider_in_enum_order` in `test_ml_provider_list.py`
+fails until the provider list has its item, and TypeScript forces the web
+map. That is why the plumbing PR must not skip them.
 
 ---
 
@@ -605,6 +871,7 @@ plumbing PR must not skip them.
 ### OpenAI
 - Most GPT models use `json_schema` for structured output
 - GPT-5.x models support `available_thinking_levels` — see [Thinking Levels Reference](#thinking-levels-reference)
+- Reasoning summaries: set `openai_reasoning_summary="auto"` on the `openai` provider of GPT-5.4+ and GPT-6+ reasoning models, and of the Pro models LiteLLM already sends to `/v1/responses` (GPT-5.2 Pro, GPT-5.4 Pro). Kiln passes the value to OpenAI as `reasoning.summary` unchanged, and only sends it when the user turned on the reasoning summaries checkbox when connecting OpenAI. Leave it unset on every other provider, OpenRouter included, and on models without reasoning.
 - Chat/instant variants (e.g. GPT-5.3 Instant) may not support reasoning effort
 - o-series models have fixed thinking tiers (separate model entries per tier, not configurable levels)
 

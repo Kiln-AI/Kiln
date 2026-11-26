@@ -1766,12 +1766,11 @@ def require_dataset_run_test_split_or_400(
     once per job at run time, where every job raises inside `_run_legacy_job` and
     `AsyncJobRunner` reports them as a bare error count with no reason.
 
-    Phrased as "present but not usable" rather than "is an EvalInputSplit" — the same
-    choice, for the same reason, as `reject_unusable_train_splits` in
-    prompt_optimization_job_api: a SplitRef variant added later is refused by default
-    instead of slipping through into the failure this exists to prevent. A missing test
-    split is left alone: `Eval.validate_splits` already requires one, and this guard is
-    not where that is re-litigated.
+    Phrased as "present but not usable" rather than "is an EvalInputSplit", so a
+    SplitRef variant added later is refused by default instead of slipping through
+    into the failure this exists to prevent. A missing test split is left alone:
+    `Eval.validate_splits` already requires one, and this guard is not where that
+    is re-litigated.
     """
     if not judge_scores_dataset_runs(config_type):
         return
@@ -2180,8 +2179,8 @@ def connect_evals_api(app: FastAPI):
         if request.status is not None:
             eval.status = request.status
 
-        # legacy evals (not created with Specs) do not have a train split, but we need one
-        # for some features such as prompt optimization
+        # legacy evals (not created with Specs) do not have a train split, but we need one:
+        # it is the split agents may optimize against
         if request.train_set_filter_id is not None:
             # if the eval already has a train split, we do not allow changing it because it
             # would make comparing results before and after the change very confusing

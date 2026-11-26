@@ -53,6 +53,8 @@ class ModelCache:
         return cached_mtime_ns == current_mtime_ns
 
     def _get_model(self, path: Path, model_type: Type[T]) -> Optional[T]:
+        if not self._enabled:
+            return None
         # One dict call, not a membership test and then an index: another thread
         # can remove the entry between the two, and the index raises KeyError.
         entry = self.model_cache.get(path)
@@ -109,6 +111,25 @@ class ModelCache:
 
     def clear(self):
         self.model_cache.clear()
+
+    @property
+    def enabled(self) -> bool:
+        """Whether models are cached and served from the cache.
+
+        False after ``disable()``, and from the start on filesystems without fine-grained
+        timestamps, where a cached model could miss a change to its file.
+        """
+        return self._enabled
+
+    def disable(self) -> None:
+        """Stop caching models for the life of this cache, and drop the cached ones.
+
+        Every later load parses its file again. Use it to trade load speed for a smaller,
+        steadier memory footprint, or to rule the cache out while debugging. It can't be
+        undone: there is no way to turn the cache back on.
+        """
+        self._enabled = False
+        self.clear()
 
     def _check_timestamp_granularity(self) -> bool:
         """Check if filesystem supports fine-grained timestamps (microseconds or better)."""
