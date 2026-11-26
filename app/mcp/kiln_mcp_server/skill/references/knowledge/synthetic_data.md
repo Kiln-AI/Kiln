@@ -5,18 +5,18 @@ description: |
 ---
 # Knowledge: Synthetic Data
 
-Kiln's synthetic data generation makes data for a task. It builds a tree of topics, generates realistic inputs under each topic, shaped by the task's Data Guide (`references/knowledge/data_guides.md`), and runs the task on them to make the outputs. The runs are saved to the dataset with tags, for an eval's splits or for a fine-tune. For a RAG task it generates question and answer pairs from the documents.
+Kiln's synthetic data generation makes data for a task, for two main goals: the items of an eval (its train, val and test splits), and the training data of a fine-tune. It generates realistic inputs, shaped by the task's Data Guide (`references/knowledge/data_guides.md`), and runs the task on them to make the outputs. The runs are saved to the dataset with tags, for an eval's splits or for a fine-tune. For a RAG task it generates question and answer pairs from the documents.
 
 ## The app does this better than an agent
 
-Synthetic data generation is a UI-first case: the app's flow is better than the API driven from a chat. The flow runs in steps, and the user is in each one: they pick and edit topics, review the inputs, steer the generation with guidance, and remove bad samples before anything is saved. Each step corrects the one before it. An agent that drives the endpoints skips that review, and the dataset fills with data that nobody checked. That data usually covers fewer cases and is less realistic, and its errors carry into every eval score and fine-tune built on it.
+Synthetic data generation is a UI-first case: the app's flow is better than the API driven from a chat. The flow runs in steps, and the user is in each one: they review the plan of what to generate, review the inputs, steer the generation with guidance, and remove bad samples before anything is saved. Each step corrects the one before it. An agent that drives the endpoints skips that review, and the dataset fills with data that nobody checked. That data usually covers fewer cases and is less realistic, and its errors carry into every eval score and fine-tune built on it.
 
 So, by default, send the user to the app:
 
 - **Data for an eval:** the "Add Data for your Eval" page, `http://localhost:8757/dataset/{project_id}/{task_id}/add_data?reason=eval&eval_id={eval_id}` (`references/knowledge/create_eval.md`, "Adding the eval's data"). It sends generated data to the eval's tags.
 - **Data for a fine-tune:** the [Create a New Fine Tune](http://localhost:8757/fine_tune/{project_id}/{task_id}/create_finetune) screen. Synthetic data started from there gets the `fine_tune` tag (`references/knowledge/fine_tuning.md`).
 - **Other data:** the [Synthetic Data](http://localhost:8757/generate/{project_id}/{task_id}) page.
-- **No Data Guide yet:** the user makes one first, also in the app (`references/knowledge/data_guides.md`).
+- **Data Guides:** the flows above ask the user to make a Data Guide when the task needs one (`references/knowledge/data_guides.md`). You need not check for one first.
 
 Say why in one or two sentences, then give the link.
 

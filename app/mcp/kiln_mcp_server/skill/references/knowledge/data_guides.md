@@ -63,10 +63,9 @@ Both ways end in the same review loop: ~5 preview inputs → the user rates each
 
 ## Agent's role
 
-1. **Recommend a guide before synthetic data generation on a task without one.** Check with a `GET`; without a guide, generation guesses at what realistic inputs look like.
-2. **Send the user to the chooser to make one** (above).
-3. **Read, explain and edit a saved guide.** Read it with a `GET`. When the user asks for a specific change, draft it, preview it with `data_gen_guide_preview`, show the samples, and `POST` it after they agree. Preview and refine call models: say so before you start them.
-4. When the user asks you to write a whole guide in the chat after hearing why the app is better, use the same draft → preview → feedback → refine → `POST` loop, with the user rating each preview.
+1. **When the user asks for a guide, send them to the chooser** (above). The app's synthetic data flows also ask the user to make one when the task needs it, so you need not check for a guide before you link them.
+2. **Read, explain and edit a saved guide.** Read it with a `GET`. When the user asks for a specific change, draft it, preview it with `data_gen_guide_preview`, show the samples, and `POST` it after they agree. Preview and refine call models: say so before you start them.
+3. When the user asks you to write a whole guide in the chat after hearing why the app is better, use the same draft → preview → feedback → refine → `POST` loop, with the user rating each preview.
 
 ## UI Deep Links
 

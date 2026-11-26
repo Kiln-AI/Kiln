@@ -38,7 +38,8 @@ Only emit deep links matching one of these prefixes (each starts with the app ad
 
 - `http://localhost:8757/optimize/{project_id}/{task_id}` — run configs page
 - `http://localhost:8757/optimize/{project_id}/{task_id}/run_config/{rcid}` — single run config
-- `http://localhost:8757/specs/{project_id}/{task_id}/select_template` — Eval Builder (the guided flow; it also lists the templates and the checks)
+- `http://localhost:8757/specs/{project_id}/{task_id}/builder` — Eval Builder (the guided flow for an LLM judge; needs Kiln Pro)
+- `http://localhost:8757/specs/{project_id}/{task_id}/select_template` — Create Eval (every way to make an eval: the Eval Builder, the templates and the checks)
 - `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder` — the form for a template or a check (`?type={spec_type}` preselects the eval type — verified values: `desired_behaviour`, `issue`; `?judge={type}` a check)
 - `http://localhost:8757/generate/{project_id}/{task_id}/synth` — Synthetic Data page; also `http://localhost:8757/generate/{project_id}/{task_id}/data_guide`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_chooser`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup`, `http://localhost:8757/generate/{project_id}/{task_id}/data_guide_setup_copilot` (Data Guide surfaces — see `references/knowledge/data_guides.md`)
 - `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}` — single spec (its scores are test scores; `references/knowledge/train_val_test.md`)

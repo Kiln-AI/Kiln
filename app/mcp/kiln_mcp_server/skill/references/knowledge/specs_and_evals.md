@@ -179,7 +179,8 @@ Tags and splits are managed automatically by the Eval Builder; don't rename or r
 | Action | Link |
 |--------|------|
 | View all evals | `http://localhost:8757/specs/{project_id}/{task_id}` |
-| Eval Builder (guided; also lists the templates and the checks) | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` |
+| Eval Builder (guided, for an LLM judge; needs Kiln Pro) | `http://localhost:8757/specs/{project_id}/{task_id}/builder` |
+| Create Eval (every way to make an eval: the Eval Builder, the templates and the checks) | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` |
 | Form for a template — new "should do X" eval | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type=desired_behaviour` |
 | Form for a template — new bug/regression eval | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type=issue` |
 | View an eval definition (spec) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id}` |

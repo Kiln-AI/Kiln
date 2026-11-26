@@ -139,9 +139,9 @@ Execute a run with `POST /api/projects/{project_id}/tasks/{task_id}/run`: `{run_
 Help the user define 2-3 quality dimensions, and create each eval with `references/knowledge/create_eval.md`.
 
 > "Now let's define what 'good' looks like for your agent. I'd suggest starting with 2-3 evals:
-> [Create Eval]({Eval Builder deep-link})"
+> [Create Eval]({Create Eval deep-link})"
 
-Deep-link to the [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/select_template).
+Deep-link to [Create Eval](http://localhost:8757/specs/{project_id}/{task_id}/select_template).
 
 ### When an Existing Task Is Discovered
 

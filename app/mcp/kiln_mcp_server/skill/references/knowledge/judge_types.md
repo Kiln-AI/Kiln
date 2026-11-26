@@ -95,7 +95,8 @@ For a new eval, follow `references/knowledge/create_eval.md`: you create a deter
 | Action | Link |
 |--------|------|
 | New programmatic-check eval: the form for a check (skips the spec step) | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?judge={type}&workflow=manual` — `{type}` is any type above except `llm_judge` |
-| New LLM-judge eval (guided): the Eval Builder | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` per `references/knowledge/create_eval.md` |
+| New LLM-judge eval (guided): the Eval Builder | `http://localhost:8757/specs/{project_id}/{task_id}/builder` per `references/knowledge/create_eval.md` |
+| New eval of any kind: the Create Eval page (the Eval Builder, the templates and the checks) | `http://localhost:8757/specs/{project_id}/{task_id}/select_template` |
 | New LLM-judge eval: the form for a template | `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}` per `references/knowledge/create_eval.md` |
 | Add a judge to an existing eval (picker) | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config` |
 | Add a specific judge type to an existing eval | `http://localhost:8757/specs/{project_id}/{task_id}/{spec_id_or_legacy}/{eval_id}/create_eval_config/{type}` |

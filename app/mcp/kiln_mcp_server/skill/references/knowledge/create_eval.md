@@ -56,6 +56,8 @@ Choose from the concern, with `references/knowledge/judge_types.md`:
 
 ### 2. A deterministic check or a code eval: offer to create it
 
+Deterministic eval types include Exact Match, Contains, Pattern Match (regex), Set Check, Tool Call Check, Step Count Check and code evals (the full menu: `references/knowledge/judge_types.md`).
+
 Offer to create the eval yourself. You are good at these, and the API path loses nothing against the app.
 
 1. Create the eval with no spec: `POST /api/projects/{project_id}/tasks/{task_id}/create_evaluator` (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_create_evaluator.md`). Its links use `legacy` (`references/knowledge/specs_and_evals.md`, "UI Deep Links").
@@ -69,9 +71,9 @@ When the user prefers the app, link the form for the check: `http://localhost:87
 The guided **Eval Builder** is the best way to make an LLM-judge eval. It asks the user clarifying questions, generates test data from their answers, has the user rate it, and aligns the judge to those ratings. It needs a **Kiln Pro** account (`references/knowledge/specs_and_evals.md`, "What is Kiln Pro?"). It takes about 5 minutes, against 30 or more by hand.
 
 1. Check Kiln Pro: `GET /api/provider/verify_kiln_copilot_api_key` returns `is_valid`.
-2. **Kiln Pro is connected:** link the [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/select_template). It opens on a box where the user describes the eval.
+2. **Kiln Pro is connected:** link the [Eval Builder](http://localhost:8757/specs/{project_id}/{task_id}/builder). It opens on a box where the user describes the eval.
 3. **Kiln Pro is not connected:** recommend that the user signs in at [Kiln Pro](http://localhost:8757/settings/providers/kiln_pro), because the Eval Builder gives the best LLM-judge eval. Registration is free. When they have signed in, check again and link the Eval Builder.
-4. **The user declines Kiln Pro:** link the [Create Eval](http://localhost:8757/specs/{project_id}/{task_id}/select_template) page. Without Kiln Pro it offers the templates, where the user defines the eval, its examples and its judge. When the type is already chosen, link the form for that template instead: `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}` (`?type=desired_behaviour` for "should do X", `?type=issue` for a bug or a regression).
+4. **The user declines Kiln Pro:** link the [Create Eval](http://localhost:8757/specs/{project_id}/{task_id}/select_template) page. It offers every way to make an eval; without Kiln Pro it opens on the templates, where the user defines the eval, its examples and its judge. When the type is already chosen, link the form for that template instead: `http://localhost:8757/specs/{project_id}/{task_id}/spec_builder?type={spec_type}` (`?type=desired_behaviour` for "should do X", `?type=issue` for a bug or a regression).
 
 **When the user asks you to build the LLM judge in the chat**, say that it is not recommended: an eval built this way has no clarifying questions, no generated data and no judge aligned with the user's ratings, so its scores are less trustworthy. If the user still wants it, create it: `POST /api/projects/{project_id}/tasks/{task_id}/specs` (`references/knowledge/api_docs/post_api_projects_project_id_tasks_task_id_specs.md`) creates the spec and its eval, and `references/knowledge/judge_types.md` adds the judge. Then send the user to add its data ("Adding the eval's data" below). Never create the data yourself.
 
@@ -79,11 +81,17 @@ The Eval Builder saves the eval's splits as eval inputs, with its data. The form
 
 ### Adding the eval's data
 
-Every eval that you create, and every eval the user makes with a form, needs data. Always end with the link to the page where the user adds it:
+The Eval Builder generates the eval's data as part of its flow. An eval that you create through the API has no data: it needs items in its train, val and test splits. Always end with the link to the page where the user adds them:
 
 `http://localhost:8757/dataset/{project_id}/{task_id}/add_data?reason=eval&eval_id={eval_id}`
 
-Use the eval's own `id`. The page reads the rest from the eval: which tags the data goes to and in what shares, the tool of a tool-call eval, and the link back. Do not add other parameters. From there the user generates synthetic data (recommended), uploads a CSV, or tags existing runs.
+Use the eval's own `id`. The page reads the rest from the eval: which tags the data goes to and in what shares, the tool of a tool-call eval, and the link back. Do not add other parameters.
+
+The page offers several ways to add the data, and sends each item to the eval's splits:
+
+- generate synthetic data, the recommended way (`references/knowledge/synthetic_data.md`);
+- upload a CSV file;
+- tag existing runs in the dataset.
 
 - **Existing runs.** When the user names real runs and asks you to tag them into one of the eval's splits, tag them with `POST /api/projects/{project_id}/tasks/{task_id}/runs/edit_tags`. Never choose runs yourself to fill a split, and never make runs to tag.
 - **An eval whose test split holds eval inputs** (a benchmark eval, `references/knowledge/benchmark_eval_inputs.md`): the page cannot add to it. Its data comes from the Eval Builder.

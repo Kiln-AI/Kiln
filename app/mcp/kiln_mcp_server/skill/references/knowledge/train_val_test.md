@@ -86,7 +86,7 @@ So tell the user that the eval has no val split, and offer the two choices.
 The user chooses; do not choose for them:
 
 - **Make the eval again with the Eval Builder**, at
-  `http://localhost:8757/specs/{project_id}/{task_id}/select_template`
+  `http://localhost:8757/specs/{project_id}/{task_id}/builder`
   (`references/knowledge/create_eval.md`). An eval that the Eval Builder
   makes has a train, a val and a test split, unless the user picks its
   test-only size.
