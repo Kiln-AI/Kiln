@@ -182,6 +182,14 @@ built_in_providers: tuple[KilnProviderInfo, ...] = (
         models_dev_id="cloudflare-workers-ai",
     ),
     KilnProviderInfo(
+        id=ModelProviderName.openllm,
+        friendly_name="OpenLLM",
+        notes=(
+            "Routing: A gateway that routes each request to one of several backends; behavior depends on the backend behind the model alias.\n"
+            "Gotchas: Usually runs as a local daemon, so it must be running and signed in before Kiln can list or call models."
+        ),
+    ),
+    KilnProviderInfo(
         id=ModelProviderName.typesafe,
         friendly_name="TypeSafe AI",
         notes="Gotchas: Uses a custom adapter (Jev); not OpenAI-compatible.",

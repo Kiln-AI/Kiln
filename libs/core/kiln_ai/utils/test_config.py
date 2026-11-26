@@ -923,6 +923,20 @@ def test_cloudflare_properties(key, env_var, sensitive):
     assert prop.sensitive is sensitive
 
 
+@pytest.mark.parametrize(
+    "key,env_var,sensitive",
+    [
+        ("openllm_base_url", "OPENLLM_BASE_URL", False),
+        ("openllm_api_key", "OPENLLM_API_KEY", True),
+    ],
+)
+def test_openllm_properties(key, env_var, sensitive):
+    prop = Config()._properties[key]
+    assert prop.type is str
+    assert prop.env_var == env_var
+    assert prop.sensitive is sensitive
+
+
 def test_open_ai_reasoning_summaries_defaults_to_false(default_config):
     assert default_config.open_ai_reasoning_summaries is False
 

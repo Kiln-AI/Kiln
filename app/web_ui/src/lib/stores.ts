@@ -541,6 +541,7 @@ const provider_name_map: Record<ModelProviderName, string> = {
   docker_model_runner: "Docker Model Runner",
   featherless_ai: "Featherless AI",
   cloudflare: "Cloudflare",
+  openllm: "OpenLLM",
   typesafe: "TypeSafe AI",
 }
 
