@@ -847,7 +847,7 @@ class JudgeTracesRun(JudgeStreamBase):
         # classmethod's TypeVar bound to TaskRun through to_thread.
         leaves: dict[str, TaskRun] = await asyncio.to_thread(
             lambda: TaskRun.from_ids_and_parent_path(
-                set(self._leaf_run_ids), self._task.path
+                set(self._leaf_run_ids), self._task.path, readonly=True
             )
         )
         for case_index, leaf_run_id in enumerate(self._leaf_run_ids):

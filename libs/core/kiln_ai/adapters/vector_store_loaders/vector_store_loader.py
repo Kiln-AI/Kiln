@@ -64,7 +64,7 @@ class VectorStoreLoader:
                     ):
                         continue
                     for chunk_embeddings in deduplicate_chunk_embeddings(
-                        chunked_document.chunk_embeddings()
+                        chunked_document.chunk_embeddings(readonly=True)
                     ):
                         if (
                             chunk_embeddings.embedding_config_id

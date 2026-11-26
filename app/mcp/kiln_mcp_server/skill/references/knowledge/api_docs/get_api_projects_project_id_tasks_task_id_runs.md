@@ -20,6 +20,7 @@ List the task's runs (its dataset items), in full. For multi-turn tasks, only le
 |Name|Type|Required|Default|Description|
 |-|-|-|-|-|
 |limit|one of: integer or null|No||Maximum number of runs to return. When set, the most recent runs (by created_at) are returned. When omitted, all runs are returned.|
+|run_ids|one of: array of string or null|No||Only return the runs with these IDs. Repeat the parameter for each ID. IDs of intermediate runs, or IDs that match no run, are ignored. When omitted, runs are not filtered by ID.|
 
 ## Responses
 
