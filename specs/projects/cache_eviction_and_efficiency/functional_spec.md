@@ -233,11 +233,11 @@ Marking `EvalRun`'s large fields (above) means score summaries and the eval work
 - **Change detection:** tests for a changed size, a replaced file (new file id) and a changed modified time. The skip guards in `test_model_cache.py` are removed, so all cache tests run on Linux.
 - **Platforms:** cache tests pass locally on Linux (the agent's environment) and in the normal CI run, which uses Ubuntu.
   - CI today runs the Python tests only on Ubuntu, plus one Windows job scoped to a single test file.
-  - This project adds a macOS and Windows run of the full Python test suite that does not run on every push. It runs:
+  - This project adds a Linux, macOS and Windows run of the full Python test suite that does not run on every push. It runs:
     - when a release is created, the same trigger the desktop release build uses;
     - when started by hand from the Actions tab, on any branch.
   - Pushes keep running Ubuntu only, as today.
-  - The macOS and Windows run uses Python 3.13, the desktop app's version, to keep it short. The workflow's steps are adjusted so they run on all three operating systems.
+  - The Linux, macOS and Windows run uses Python 3.13, the desktop app's version, to keep it short. The workflow's steps are adjusted so they run on all three operating systems.
   - Before merge, a maintainer starts it by hand on the PR branch.
   - The cache and datamodel tests must pass on macOS and Windows. The suite has never run on macOS, and only one file has run on Windows, so other tests may fail there. Failures outside this project's code are listed in the PR, not fixed in this project.
 - **Hosts:** tests check the cache is on after each host's startup (desktop app, `kiln_server`, `kiln_mcp`), off by default in the library, and that the library switch works.

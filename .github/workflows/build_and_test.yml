@@ -52,16 +52,16 @@ jobs:
         run: uv build
         working-directory: ./libs/server
 
-  # The full Python suite on the desktop app's other platforms. Too slow for every push,
-  # so it runs on release and when started by hand from the Actions tab.
-  test_macos_windows:
+  # The full Python suite on every platform the desktop app ships on. Too slow for every
+  # push, so it runs on release and when started by hand from the Actions tab.
+  test_all_platforms:
     name: Test Python (${{ matrix.os }})
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     defaults:
       run:
         shell: bash

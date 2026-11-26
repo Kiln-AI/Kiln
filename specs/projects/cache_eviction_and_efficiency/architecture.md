@@ -56,7 +56,7 @@ When the cache is off (the library default), step 3 never runs. Every load retur
 | `app/desktop/desktop_server.py` | The lifespan turns the cache on and restores the previous setting on shutdown, the same way it handles strict mode. When the `disable_model_cache` setting is true, it calls `ModelCache.shared().disable()` instead, through `apply_model_cache_setting`. |
 | `libs/server/kiln_server/server.py` | `make_app` installs a default lifespan that turns the cache on (or disables it for good when `disable_model_cache` is true), used when the caller passes no lifespan. |
 | `libs/server/kiln_server/mcp/mcp.py` | `main()` turns the cache on before serving, or disables it for good when `disable_model_cache` is true. |
-| `.github/workflows/build_and_test.yml` | A macOS and Windows test job, triggered on release and by hand. |
+| `.github/workflows/build_and_test.yml` | A Linux, macOS and Windows test job, triggered on release and by hand. |
 | `app/web_ui/src/lib/utils/task_sample_example.ts` | Requests the 100 newest runs (5c). |
 | `conftest.py` (repo root) | A `model_cache_enabled` fixture. The default test state is the library default (off). |
 
@@ -169,13 +169,13 @@ Any that reads a large field only to test whether it's set switches to a summary
 
 Each host reads the setting and passes its value, so the library never reads it. `disable()` is one-way, so the restore in `finally` can't turn a disabled cache back on. Nothing turns the cache on at import. The process-wide `ModelCache.shared()` singleton stays. It is an existing global, and it follows the same documented pattern as `set_strict_mode`: off in the library, switched on by hosts. Replacing it with an injected cache would touch every datamodel load call, which is out of scope.
 
-### CI: macOS and Windows on release
+### CI: Linux, macOS and Windows on release
 
 In `.github/workflows/build_and_test.yml`:
 - **Triggers:** add `release: types: [created]` and `workflow_dispatch` to `on:`.
 - **The existing `build` job:** gains `if: github.event_name != 'release'`. The release's commit was already tested on Ubuntu when it was pushed.
-- **New job `test_macos_windows`**, with `if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'`. Its settings:
-  - matrix `os: [macos-latest, windows-latest]`, with `fail-fast: false`;
+- **New job `test_all_platforms`**, with `if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'`. Its settings:
+  - matrix `os: [ubuntu-latest, macos-latest, windows-latest]`, with `fail-fast: false`;
   - `defaults.run.shell: bash`;
   - `env: UV_PYTHON: "3.13"`.
 - **Its steps** match `build`'s install and mock-web-UI steps, then run `uv run python -m pytest --runslow .`. It has no type check and no package builds.
@@ -202,7 +202,7 @@ In `.github/workflows/build_and_test.yml`:
   - the existing `test_benchmark_load_from_file` must not regress;
   - a new warm `task.runs(readonly=True)` benchmark must not regress;
   - a new memory benchmark loads 2,000 synthetic 20-turn runs with a 20 MB test budget, and asserts the cache's accounted total stays at or below budget and `tracemalloc`'s retained size is within 50% of it.
-- **Platforms:** locally on Linux, plus the new macOS and Windows job, started by hand before merge.
+- **Platforms:** locally on Linux, plus the new Linux, macOS and Windows job, started by hand before merge.
 
 ## Implementation order (outline for the plan)
 
