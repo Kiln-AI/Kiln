@@ -29,7 +29,7 @@ flowchart LR
 Data path for a readonly load with the cache on:
 
 1. `load_from_file(path, readonly=True)` asks the cache. On a hit (same file identity), it returns the cached record, as today.
-2. On a miss, it reads the file and validates it **once** (change 5a), with `parent` and `path` included in the validated data. If another thread is already loading the same file, it waits for that load, up to 5 s, and returns the record it cached.
+2. On a miss, it reads the file and validates it **once** (change 5a), with `parent` and `path` included in the validated data. If another thread is already loading the same file, it waits for that load, up to 5 s, and returns the record it cached if that record is still current; otherwise it parses the file itself.
 3. If the class uses `LazyFieldsMixin`, `detach_large_values` computes the summary values, removes the large values from the record, and hands them to the cache along with a size estimate.
 4. The cache stores the record (its normal part) and the large values as two separately counted, separately evicted pieces.
 5. Later, reading a large field on the record goes through `__getattr__`. It gets the value from the cache's store, or re-reads the file if the value was evicted.

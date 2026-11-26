@@ -492,9 +492,9 @@ class KilnBaseModel(BaseModel):
                 cached_model = cache.get_model(path, cls, readonly=readonly)
                 if cached_model is not None:
                     return cached_model
-        # Readonly loads get here unshared after another thread's load that cached
-        # nothing (it failed, or the record is over budget), a timed-out wait, or a
-        # nested load of a file this thread is already loading.
+        # Readonly loads get here unshared after a timed-out wait, a nested load, or
+        # another thread's load that left nothing current to serve (it failed, its
+        # record was over budget, or the file changed after it was read).
         return cls._parse_validate_and_cache(path, readonly, parent)
 
     @classmethod

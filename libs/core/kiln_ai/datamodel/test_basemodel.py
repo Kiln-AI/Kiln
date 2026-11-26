@@ -648,17 +648,26 @@ def watch_waits(cache: ModelCache, monkeypatch) -> threading.Event:
 def race_two_loads(
     path: Path, cache: ModelCache, parse_spy: ParseSpy, monkeypatch
 ) -> tuple[Future, Future]:
-    """Loads `path` readonly in two threads; the second starts and waits while the
-    first is parsing the file."""
+    """Loads `path` readonly in two threads; the second blocks in `wait_for_load`
+    while the first is parsing the file, and must be woken by its release."""
     gate = Gate()
     parse_spy.during_first_parse = gate.hold
-    waiting = watch_waits(cache, monkeypatch)
+    # Far longer than the checks below allow, so a release that doesn't wake the
+    # waiter fails the test instead of passing once the wait times out.
+    monkeypatch.setattr(model_cache_module, "LOAD_WAIT_TIMEOUT_SECONDS", 30.0)
     with ThreadPoolExecutor(2) as pool:
         first = pool.submit(KilnBaseModel.load_from_file, path, readonly=True)
         assert gate.reached.wait(5)
         second = pool.submit(KilnBaseModel.load_from_file, path, readonly=True)
-        assert waiting.wait(5)
+        # The waiter counts itself under the registry's lock and holds it until it
+        # blocks, so once it's counted, the first load's release must notify it.
+        deadline = time.monotonic() + 5
+        while cache._load_waiters == 0:
+            assert time.monotonic() < deadline
+            time.sleep(0.001)
         gate.open()
+        first.exception(timeout=5)
+        second.exception(timeout=5)
     return first, second
 
 
@@ -700,12 +709,52 @@ def test_load_waiting_on_an_uncached_record_parses_the_file_itself(
     assert first.result() is not second.result()
     assert second.result().path == path
     assert parse_spy.parses == 2
+    assert cache._loading == {}
+
+
+def test_load_waiting_on_a_load_of_an_older_version_reads_the_file_again(
+    test_base_file, model_cache_enabled, parse_spy, monkeypatch
+):
+    wait_for_load = model_cache_enabled.wait_for_load
+
+    def rewrite_then_wait(path: Path) -> bool:
+        # The first load has read the old version and is held in validation.
+        path.write_text(
+            json.dumps(
+                {"v": 1, "model_type": "kiln_base_model", "id": "v2"},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return wait_for_load(path)
+
+    gate = Gate()
+    parse_spy.during_first_parse = gate.hold
+    monkeypatch.setattr(model_cache_enabled, "wait_for_load", rewrite_then_wait)
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(KilnBaseModel.load_from_file, test_base_file, readonly=True)
+        assert gate.reached.wait(5)
+        second = pool.submit(
+            KilnBaseModel.load_from_file, test_base_file, readonly=True
+        )
+        deadline = time.monotonic() + 5
+        while model_cache_enabled._load_waiters == 0:
+            assert time.monotonic() < deadline
+            time.sleep(0.001)
+        gate.open()
+
+    assert first.result().id != "v2"
+    assert second.result().id == "v2"
+    assert parse_spy.parses == 2
+    assert model_cache_enabled._loading == {}
 
 
 def test_load_whose_wait_times_out_parses_the_file_itself(
     test_base_file, model_cache_enabled, parse_spy, monkeypatch
 ):
     monkeypatch.setattr(model_cache_module, "LOAD_WAIT_TIMEOUT_SECONDS", 0.01)
+    wait_for_load = MagicMock(wraps=model_cache_enabled.wait_for_load)
+    monkeypatch.setattr(model_cache_enabled, "wait_for_load", wait_for_load)
     gate = Gate()
     parse_spy.during_first_parse = gate.hold
 
@@ -717,6 +766,7 @@ def test_load_whose_wait_times_out_parses_the_file_itself(
         gate.open()
 
     assert first.result() is not second
+    wait_for_load.assert_called_once_with(test_base_file)
     assert model_cache_enabled._loading == {}
 
 
@@ -759,6 +809,18 @@ def test_loads_the_cache_does_not_keep_never_claim_or_wait(
 
     claim_load.assert_not_called()
     wait_for_load.assert_not_called()
+
+
+def test_readonly_hit_never_claims_or_waits(
+    test_base_file, model_cache_enabled, monkeypatch
+):
+    KilnBaseModel.load_from_file(test_base_file, readonly=True)
+    claim_load = MagicMock(wraps=model_cache_enabled.claim_load)
+    monkeypatch.setattr(model_cache_enabled, "claim_load", claim_load)
+
+    KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    claim_load.assert_not_called()
 
 
 def test_save_to_file_invalidates_cache(test_base_file, model_cache_enabled):
