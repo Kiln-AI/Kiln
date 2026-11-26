@@ -98,7 +98,10 @@ class TestGetCopilotApiKey:
             with pytest.raises(HTTPException) as exc_info:
                 get_copilot_api_key()
             assert exc_info.value.status_code == 401
-            assert "API key not configured" in exc_info.value.detail
+            assert exc_info.value.detail == (
+                "This needs Kiln Pro, which is not connected. Connect it in the "
+                "Kiln app under Settings > AI Providers > Kiln Pro."
+            )
 
     def test_raises_401_when_empty_string(self):
         with patch(
@@ -1701,7 +1704,9 @@ class TestTaskCapabilitiesForANamedRunConfig:
             await task_capabilities_for_task(task, run_config_id)
 
         assert exc.value.status_code == 404
-        assert exc.value.detail == f"Task run config not found. ID: {run_config_id}"
+        assert exc.value.detail.startswith(
+            f"Task run config not found. ID: {run_config_id}."
+        )
 
     async def test_a_missing_finetune_is_404(self, project_and_task):
         """A fine-tune id whose fine-tune is gone is a bad id, not an
@@ -1715,7 +1720,9 @@ class TestTaskCapabilitiesForANamedRunConfig:
             await task_capabilities_for_task(task, run_config_id)
 
         assert exc.value.status_code == 404
-        assert exc.value.detail == f"Task run config not found. ID: {run_config_id}"
+        assert exc.value.detail.startswith(
+            f"Task run config not found. ID: {run_config_id}."
+        )
 
     async def test_unreadable_storage_fails_a_named_config(
         self, task_with_a_second_run_config

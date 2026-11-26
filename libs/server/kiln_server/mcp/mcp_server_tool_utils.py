@@ -1,4 +1,4 @@
-"""Utilities for preparing Kiln tools for the MCP server."""
+"""Prepare Kiln tools for the Kiln project tools MCP server."""
 
 from __future__ import annotations
 

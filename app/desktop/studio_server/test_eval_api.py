@@ -182,11 +182,15 @@ class _FakeLlmTool:
         return ToolCallResult(output="a judgement")
 
 
+# A non-default address, so a link built from the default one fails a test.
+APP_ORIGIN = "http://kiln.lan:9000"
+
+
 @pytest.fixture
 def app():
     app = FastAPI()
     connect_custom_errors(app)
-    connect_evals_api(app)
+    connect_evals_api(app, app_origin=APP_ORIGIN)
     return app
 
 
@@ -403,7 +407,7 @@ def test_get_eval_not_found(client, mock_task, mock_task_from_id):
     response = client.get("/api/projects/project1/tasks/task1/evals/non_existent")
 
     assert response.status_code == 404
-    assert response.json()["message"] == "Eval not found. ID: non_existent"
+    assert response.json()["message"].startswith("Eval not found. ID: non_existent.")
 
 
 @pytest.fixture
@@ -1167,7 +1171,11 @@ async def test_create_eval_config_code_eval_untrusted_403(
         )
 
     assert response.status_code == 403
-    assert "not trusted" in response.json()["message"].lower()
+    assert response.json()["message"] == (
+        "Project not trusted to add code evals. Only the user can grant code "
+        "trust, at http://kiln.lan:9000/settings/trust_code/project1 in the Kiln "
+        "app. Confirm with GET /api/projects/project1/add_code_trust, then retry."
+    )
     # Nothing should have been persisted.
     assert len(mock_v2_eval.configs()) == 0
 
@@ -7146,7 +7154,12 @@ class TestTestV2Eval:
         body = response.json()
         assert body["scores"] == {}
         assert body["skipped_reason"] == "code_eval_not_trusted"
-        assert body["skipped_detail"] == "Project not trusted for code eval execution."
+        assert body["skipped_detail"] == (
+            "Project not trusted for code eval execution. Only the user can grant "
+            "code trust, at http://kiln.lan:9000/settings/trust_code/project1 in "
+            "the Kiln app. Confirm with GET /api/projects/project1/add_code_trust, "
+            "then retry."
+        )
 
     def test_code_eval_trusted_execution(self, client, mock_v2_eval):
         payload = {

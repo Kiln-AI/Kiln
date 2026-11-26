@@ -1,4 +1,4 @@
-"""Runtime helpers for configuring and running the Kiln MCP server."""
+"""Runtime helpers for the Kiln project tools MCP server."""
 
 from __future__ import annotations
 

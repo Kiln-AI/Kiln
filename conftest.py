@@ -60,6 +60,12 @@ def skip_remote_model_list():
         del os.environ["KILN_SKIP_REMOTE_MODEL_LIST"]
 
 
+@pytest.fixture(autouse=True)
+def skip_models_dev(monkeypatch):
+    """Turn off the models.dev load of every desktop app built in a test."""
+    monkeypatch.setenv("KILN_SKIP_MODELS_DEV", "true")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def load_env():
     load_dotenv()

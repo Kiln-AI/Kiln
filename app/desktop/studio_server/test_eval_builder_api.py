@@ -431,7 +431,9 @@ class TestBuildClaims:
             mock_config.kiln_copilot_api_key = None
             response = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+            assert (
+                "needs Kiln Pro, which is not connected" in response.json()["message"]
+            )
 
     def test_build_claims_success(
         self, client, build_claims_input, mock_api_key, build_claims_task
@@ -630,7 +632,9 @@ class TestAuthorJudge:
             mock_config.kiln_copilot_api_key = None
             response = client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+            assert (
+                "needs Kiln Pro, which is not connected" in response.json()["message"]
+            )
 
     def test_author_judge_success(
         self, client, author_judge_input, mock_api_key, author_judge_task
@@ -818,9 +822,8 @@ class TestAuthorJudge:
             )
 
         assert response.status_code == 404
-        assert (
-            response.json()["message"]
-            == "Task run config not found. ID: no-such-config"
+        assert response.json()["message"].startswith(
+            "Task run config not found. ID: no-such-config."
         )
         mock_post.assert_not_awaited()
 
@@ -943,7 +946,9 @@ class TestRefineJudge:
             mock_config.kiln_copilot_api_key = None
             response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+            assert (
+                "needs Kiln Pro, which is not connected" in response.json()["message"]
+            )
 
     def test_refine_judge_success(self, client, refine_judge_input, mock_api_key):
         mock_output = MagicMock(spec=RefineJudgePromptOutput)
@@ -1873,7 +1878,7 @@ class TestMultiTurnPipeline:
             resp = client.post(PIPELINE_URL, json=pipeline_request)
 
         assert resp.status_code == 401
-        assert "API key not configured" in resp.json()["message"]
+        assert "needs Kiln Pro, which is not connected" in resp.json()["message"]
         runner_mock.assert_not_called()
 
     def test_rejects_own_batch_tag_in_replace_list(
@@ -2210,12 +2215,14 @@ class TestJudgeTraces:
         4xx before the user spends on judging every case."""
         with patch(
             "app.desktop.studio_server.eval_builder_api.get_copilot_api_key",
-            side_effect=HTTPException(status_code=401, detail="API key not configured"),
+            side_effect=HTTPException(
+                status_code=401, detail="needs Kiln Pro, which is not connected"
+            ),
         ):
             resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
 
         assert resp.status_code == 401
-        assert "API key not configured" in resp.json()["message"]
+        assert "needs Kiln Pro, which is not connected" in resp.json()["message"]
         judge_traces_seams["loader"].assert_not_called()
 
 

@@ -316,7 +316,9 @@ def test_update_prompt_not_found(client, project_and_task):
         )
 
     assert response.status_code == 404
-    assert "Prompt not found" in response.json()["message"]
+    assert response.json()["message"].startswith(
+        "Prompt not found. ID: id::nonexistent_id."
+    )
 
 
 def test_update_prompt_unsupported_type(client, project_and_task):
@@ -332,7 +334,11 @@ def test_update_prompt_unsupported_type(client, project_and_task):
         )
 
     assert response.status_code == 400
-    assert "Only custom prompts can be updated" in response.json()["message"]
+    assert response.json()["message"] == (
+        "Prompt fine_tune_prompt::some_id can't be edited or deleted. Only custom "
+        "prompts, whose IDs start with id::, can be. Prompt generators are built "
+        "in, and frozen prompts are fixed because evals depend on them."
+    )
 
 
 def test_delete_prompt_success(client, project_and_task):

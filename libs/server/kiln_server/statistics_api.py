@@ -457,7 +457,7 @@ _OPERATIONS = {
     "compare_paired": _op_compare_paired,
 }
 
-_STATISTICS_DESCRIPTION = """Confidence intervals and significance tests on eval metrics — use this INSTEAD of computing standard errors or significance by hand. Set `operation`:
+_STATISTICS_DESCRIPTION = """Confidence intervals and significance tests on eval metrics. Use this INSTEAD of computing standard errors or significance by hand. Set `operation`:
 
 - "proportion_ci": confidence interval + standard error for ONE proportion (e.g. an "85% pass, n=200" cell). Params: `proportion` (a fraction in [0,1]) and `n`.
 - "compare_proportions": difference of two INDEPENDENT proportions with a significance verdict (conservative — for marginals only). Params: `proportion_a`, `n_a`, `proportion_b`, `n_b`.

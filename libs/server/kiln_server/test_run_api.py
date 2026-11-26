@@ -37,6 +37,7 @@ from kiln_server.run_api import (
     _position_chain_turns,
     connect_run_api,
     deep_update,
+    missing_run_input_text,
     model_provider_from_string,
     parse_splits,
     run_from_id,
@@ -581,7 +582,7 @@ async def test_update_run(client, tmp_path):
             "task_id": "non_existent_task_id",
             "run_id": run.id,
             "expected_status": 404,
-            "expected_detail": "Task not found. ID: non_existent_task_id",
+            "expected_detail": "Task not found. ID: non_existent_task_id. Check the ID, or list the tasks to find the right one.",
             "updates": {"input": "Updated input"},
         },
         {
@@ -589,7 +590,7 @@ async def test_update_run(client, tmp_path):
             "task_id": task.id,
             "run_id": "non_existent_run_id",
             "expected_status": 404,
-            "expected_detail": "Run not found. ID: non_existent_run_id",
+            "expected_detail": "Run not found. ID: non_existent_run_id. Check the ID, or list the task's runs to find the right one.",
             "updates": {"input": "Updated input"},
         },
         {
@@ -678,7 +679,9 @@ def test_run_from_id_not_found(test_run):
                 test_run.parent.parent.id, test_run.parent.id, "non_existent_run_id"
             )
         assert exc_info.value.status_code == 404
-        assert exc_info.value.detail == "Run not found. ID: non_existent_run_id"
+        assert exc_info.value.detail.startswith(
+            "Run not found. ID: non_existent_run_id."
+        )
 
 
 async def test_get_run_success(client, test_run):
@@ -1053,7 +1056,9 @@ async def test_delete_run_not_found(client, task_run_setup):
         )
 
     assert response.status_code == 404
-    assert response.json()["message"] == "Run not found. ID: non_existent_run_id"
+    assert response.json()["message"].startswith(
+        "Run not found. ID: non_existent_run_id."
+    )
 
 
 @pytest.mark.asyncio
@@ -3686,3 +3691,21 @@ async def test_bulk_delete_reads_no_large_fields(
     assert response.status_code == 200
     assert all(run.path is not None and not run.path.exists() for run in runs)
     large_field_restores.assert_not_called()
+
+
+def test_missing_run_input_text_names_the_field_the_task_reads():
+    plain = Task(name="Plain", instruction="Reply.")
+    structured = Task(
+        name="Structured",
+        instruction="Reply.",
+        input_json_schema='{"type": "object", "properties": {"a": {"type": "string"}}}',
+    )
+
+    assert missing_run_input_text(plain) == (
+        "No input provided. This task takes plain text input, so its input goes "
+        "in plaintext_input."
+    )
+    assert missing_run_input_text(structured) == (
+        "No input provided. This task has an input schema, so its input goes "
+        "in structured_input, as a JSON object that matches the schema."
+    )

@@ -41,6 +41,7 @@ from kiln_ai.synthetic_user.parser import (
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
+from kiln_server.custom_errors import not_found_error
 from kiln_server.utils.spec_utils import SpecEvalTags, SplitShare
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -124,7 +125,10 @@ def get_copilot_api_key() -> str:
     if not api_key:
         raise HTTPException(
             status_code=401,
-            detail="Kiln Copilot API key not configured. Please connect your API key in settings.",
+            detail=(
+                "This needs Kiln Pro, which is not connected. Connect it in the "
+                "Kiln app under Settings > AI Providers > Kiln Pro."
+            ),
         )
     return api_key
 
@@ -198,9 +202,8 @@ def _capability_run_config(
             # it means a run config file couldn't be read.
             if not run_config_id.startswith("finetune_run_config::"):
                 raise
-            raise HTTPException(
-                status_code=404,
-                detail=f"Task run config not found. ID: {run_config_id}",
+            raise not_found_error(
+                "Task run config", run_config_id, "task's run configs"
             ) from exc
 
     if not task.default_run_config_id:

@@ -31,6 +31,7 @@ from kiln_ai.tools.mcp_session_manager import (
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_server.custom_errors import not_found_error
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -238,7 +239,7 @@ def tool_server_from_id(project_id: str, tool_server_id: str) -> ExternalToolSer
     if tool_server is not None:
         return tool_server
 
-    raise HTTPException(status_code=404, detail="Tool server not found")
+    raise not_found_error("Tool server", tool_server_id, "project's tool servers")
 
 
 async def available_mcp_tools(
@@ -299,6 +300,10 @@ def connect_tool_servers_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> List[ToolSetApiDescription]:
+        """List every tool the project's tasks can use, grouped by kind.
+
+        The kinds are built-in tools, MCP servers, search tools, Kiln task tools
+        and code tools."""
         project = project_from_id(project_id)
 
         tool_sets = []
@@ -496,6 +501,9 @@ def connect_tool_servers_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> List[KilnToolServerDescription]:
+        """List the project's tool servers, with any secrets they are missing.
+
+        Tool servers are remote and local MCP servers and Kiln task tools."""
         project = project_from_id(project_id)
 
         results = []
@@ -526,6 +534,8 @@ def connect_tool_servers_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> List[KilnTaskToolDescription]:
+        """List the Kiln tasks the project offers as tools, with each one's tool name
+        and run config."""
         project = project_from_id(project_id)
 
         results = []
@@ -569,6 +579,8 @@ def connect_tool_servers_api(app: FastAPI):
             str, Path(description="The unique identifier of the tool server.")
         ],
     ) -> ExternalToolServerApiDescription:
+        """Get one tool server and the tools it serves now. Connects to the server to
+        list them."""
         tool_server = tool_server_from_id(project_id, tool_server_id)
 
         # Check if the tool server has missing secrets (e.g. new user syncing existing project)
@@ -675,6 +687,7 @@ def connect_tool_servers_api(app: FastAPI):
             str, Path(description="The unique identifier of the tool server.")
         ],
     ) -> ExternalToolServerApiDescription:
+        """Get one tool server's saved settings, without connecting to it."""
         tool_server = tool_server_from_id(project_id, tool_server_id)
         return ExternalToolServerApiDescription(
             id=tool_server.id,
@@ -699,6 +712,7 @@ def connect_tool_servers_api(app: FastAPI):
         ],
         tool_data: ExternalToolServerCreationRequest,
     ) -> ExternalToolServer:
+        """Add a remote MCP server (an HTTP URL) to the project as a tool server."""
         project = project_from_id(project_id)
 
         tool_server = ExternalToolServer(
@@ -731,6 +745,8 @@ def connect_tool_servers_api(app: FastAPI):
         ],
         tool_data: ExternalToolServerCreationRequest,
     ) -> ExternalToolServer:
+        """Change a remote MCP tool server's name, description, URL, headers or archived
+        flag."""
         existing_tool_server = tool_server_from_id(project_id, tool_server_id)
         if existing_tool_server.type != ToolServerType.remote_mcp:
             raise HTTPException(
@@ -772,6 +788,8 @@ def connect_tool_servers_api(app: FastAPI):
         ],
         tool_data: LocalToolServerCreationRequest,
     ) -> ExternalToolServer:
+        """Add a local MCP server (a command Kiln starts) to the project as a tool
+        server."""
         project = project_from_id(project_id)
 
         tool_server = ExternalToolServer(
@@ -805,6 +823,8 @@ def connect_tool_servers_api(app: FastAPI):
         ],
         tool_data: LocalToolServerCreationRequest,
     ) -> ExternalToolServer:
+        """Change a local MCP tool server's name, description, command, arguments or
+        environment."""
         existing_tool_server = tool_server_from_id(project_id, tool_server_id)
         if existing_tool_server.type != ToolServerType.local_mcp:
             raise HTTPException(
@@ -841,6 +861,8 @@ def connect_tool_servers_api(app: FastAPI):
         ],
         archive_request: ToolServerArchiveRequest,
     ) -> ExternalToolServer:
+        """Archive or unarchive a tool server. An archived server is hidden from tool
+        pickers."""
         tool_server = tool_server_from_id(project_id, tool_server_id)
 
         tool_server.properties["is_archived"] = archive_request.is_archived
@@ -891,6 +913,8 @@ def connect_tool_servers_api(app: FastAPI):
         ],
         tool_data: KilnTaskToolServerCreationRequest,
     ) -> ExternalToolServer:
+        """Offer a Kiln task as a tool that other tasks' agents can call, through one of
+        its run configs."""
         _validate_kiln_task_tool_task_and_run_config(project_id, tool_data)
 
         project = project_from_id(project_id)
@@ -930,6 +954,7 @@ def connect_tool_servers_api(app: FastAPI):
         ],
         tool_data: KilnTaskToolServerCreationRequest,
     ) -> ExternalToolServer:
+        """Change a Kiln task tool's name, description, task or run config."""
         _validate_kiln_task_tool_task_and_run_config(project_id, tool_data)
 
         existing_tool_server = tool_server_from_id(project_id, tool_server_id)
@@ -967,6 +992,7 @@ def connect_tool_servers_api(app: FastAPI):
             str, Path(description="The unique identifier of the tool server.")
         ],
     ):
+        """Delete a tool server from the project."""
         tool_server = tool_server_from_id(project_id, tool_server_id)
         # Delete the secrets from the settings
         tool_server.delete_secrets()
@@ -975,6 +1001,7 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.get("/api/demo_tools", tags=["Tools & MCP"], openapi_extra=DENY_AGENT)
     async def get_demo_tools() -> bool:
+        """Check whether Kiln's demo math tools are turned on."""
         return Config.shared().enable_demo_tools
 
     @app.post("/api/demo_tools", tags=["Tools & MCP"], openapi_extra=DENY_AGENT)
@@ -983,6 +1010,7 @@ def connect_tool_servers_api(app: FastAPI):
             bool, Query(description="Whether to enable demo tools.")
         ],
     ) -> bool:
+        """Turn Kiln's demo math tools on or off."""
         Config.shared().enable_demo_tools = enable_demo_tools
         return Config.shared().enable_demo_tools
 
@@ -996,6 +1024,8 @@ def connect_tool_servers_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[SearchToolApiDescription]:
+        """List the project's search tools: one per RAG config, with its tool name and
+        description."""
         project = project_from_id(project_id)
         return [
             SearchToolApiDescription(

@@ -9,13 +9,13 @@ async function seedDataGuide(
   taskId: string,
   guide: string = SEED_GUIDE,
 ): Promise<void> {
-  const resp = await apiRequest.put(
+  const resp = await apiRequest.post(
     `/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/data_gen_guide`,
     { data: { guide } },
   )
   expect(
     resp.ok(),
-    `PUT /data_gen_guide failed: ${resp.status()} ${await resp.text()}`,
+    `POST /data_gen_guide failed: ${resp.status()} ${await resp.text()}`,
   ).toBeTruthy()
 }
 
@@ -81,8 +81,8 @@ test("/synth intro routes through chooser to manual setup", async ({
 ## Goals
 The Edit dialog on /data_guide offers two paths: "Verify Changes" (which
 re-runs preview via the refine handoff) and "Save Without Verifying" (which
-PUTs the edited examples directly, skipping the preview loop entirely). This
-test covers the direct-PUT path: open Edit, modify the examples textarea,
+POSTs the edited examples directly, skipping the preview loop entirely). This
+test covers the direct-POST path: open Edit, modify the examples textarea,
 click Save Without Verifying, confirm the new content is persisted.
 
 ## Fixtures
@@ -91,7 +91,7 @@ click Save Without Verifying, confirm the new content is persisted.
 - apiRequest
 
 ## Hints
-- Pre-seed a guide via PUT.
+- Pre-seed a guide via POST.
 - The Edit action button is rendered by AppPage with label "Edit". It opens
   an edit chooser dialog first (open_edit_chooser); pick "Edit Manually" to
   reach the textarea dialog (open_edit_dialog).
@@ -104,9 +104,9 @@ click Save Without Verifying, confirm the new content is persisted.
 
 ## Assertions
 - After clicking Save Without Verifying, GET /data_gen_guide returns
-  guide equal to the user's edit (i.e. the PUT happened).
+  guide equal to the user's edit (i.e. the POST happened).
 */
-test("edit dialog Save Without Verifying does a direct PUT", async ({
+test("edit dialog Save Without Verifying does a direct POST", async ({
   page,
   apiRequest,
   registeredUser,
@@ -159,7 +159,7 @@ deletion, /data_guide must redirect back to setup (since the guide is gone).
 - apiRequest
 
 ## Hints
-- Pre-seed a guide via PUT /api/projects/:pid/tasks/:tid/data_gen_guide.
+- Pre-seed a guide via POST /api/projects/:pid/tasks/:tid/data_gen_guide.
 - The delete action button on /data_guide is an icon-only button (no label),
   rendered by AppPage with <img src="/images/delete.svg">. Locate it by the
   image's src attribute.

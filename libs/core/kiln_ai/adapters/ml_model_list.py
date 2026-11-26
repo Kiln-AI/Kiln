@@ -58,6 +58,7 @@ class ModelFamily(str, Enum):
     motif = "motif"
     kt = "kt"
     radixark = "radixark"
+    upstage = "upstage"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -374,6 +375,7 @@ class ModelName(str, Enum):
     mimo_v2_5_pro = "mimo_v2_5_pro"
     mimo_v2_6_pro = "mimo_v2_6_pro"
     mimo_v2_6_pro_ultraspeed = "mimo_v2_6_pro_ultraspeed"
+    mimo_v2_6_flash_mopd = "mimo_v2_6_flash_mopd"
     mimo_v2_6_flash = "mimo_v2_6_flash"
     inkling_2_small = "inkling_2_small"
     inkling_2_mini = "inkling_2_mini"
@@ -393,6 +395,7 @@ class ModelName(str, Enum):
     motif_3 = "motif_3"
     midm_k_3_0_pro = "midm_k_3_0_pro"
     daisyrose_27b = "daisyrose_27b"
+    solar_mini_4_5_preview = "solar_mini_4_5_preview"
 
 
 class ModelParserID(str, Enum):
@@ -936,6 +939,17 @@ DAISYROSE_27B_OPENROUTER_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "Extra High": "xhigh",
+}
+
+# OpenRouter also lists `minimal`, but Solar Mini 4.5 Preview returns no
+# reasoning at that effort, so the entry does not offer it.
+SOLAR_MINI_4_5_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
 }
 
 NEX_N2_6_OPENROUTER_THINKING_LEVELS = {
@@ -6944,6 +6958,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="mistralai/mistral-medium-3.1",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -8735,6 +8750,23 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MD,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen4-max",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
             ),
         ],
     ),
@@ -12663,6 +12695,22 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/hy4-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # Hunyuan Hy3 — Tencent's 295B MoE (21B active), 256K context, text-only reasoning + tool-calling model.
@@ -13347,6 +13395,44 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # MiMo-V2.6-Flash-MOPD
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_6_flash_mopd,
+        friendly_name="MiMo-V2.6-Flash-MOPD",
+        agent_notes=(
+            "Description: An updated checkpoint of Xiaomi's MiMo-V2.6-Flash, a 309B-total, 15B-active MoE model, with an added multi-teacher on-policy distillation (MOPD) stage in post-training.\n"
+            "Lineup: MiMo's ladder is Flash < Pro. MOPD is a separate checkpoint at the Flash level, with its own weights, so it is not a serving variant of MiMo-V2.6-Flash."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2.6-flash-mopd",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                ],
+            ),
+        ],
+    ),
     # MiMo-V2.6-Flash
     KilnModel(
         family=ModelFamily.mimo,
@@ -13414,6 +13500,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="xiaomi/mimo-v2.5",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 supports_vision=True,
@@ -13575,6 +13662,12 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/inkling-2-mini",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
             ),
         ],
     ),
@@ -14112,6 +14205,27 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.upstage,
+        name=ModelName.solar_mini_4_5_preview,
+        friendly_name="Solar Mini 4.5 Preview",
+        agent_notes=(
+            "Description: Upstage's compact model, a 35B-total, 3B-active mixture-of-experts model, released as a preview.\n"
+            "Lineup: Upstage's ladder is Solar Mini < Solar Pro. Solar Mini 4.5 follows Solar Mini 4, which Kiln does not list."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="upstage/solar-mini-4-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=SOLAR_MINI_4_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="medium",
+                openrouter_reasoning_object=True,
             ),
         ],
     ),

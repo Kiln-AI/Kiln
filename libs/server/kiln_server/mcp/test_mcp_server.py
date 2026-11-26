@@ -411,3 +411,23 @@ def test_main_disables_model_cache_for_good_when_setting_is_true(
 
     set_model_cache_enabled(True)
     assert not model_cache_enabled()
+
+
+def test_create_server_keeps_protocol_name() -> None:
+    # Clients may show or log serverInfo.name, so it keeps the protocol-facing name.
+    server = create_fastmcp_server(
+        [],
+        project_name="Demo Project",
+        host="127.0.0.1",
+        port=8000,
+        log_level="info",
+        transport="stdio",
+        mount_path=None,
+    )
+    assert server.name.startswith("Kiln MCP Server")
+
+
+def test_help_text_names_the_project_tools_server() -> None:
+    description = mcp.build_argument_parser().description
+    assert description is not None
+    assert description.startswith("Run the Kiln project tools MCP server")

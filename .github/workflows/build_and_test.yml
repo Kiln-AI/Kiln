@@ -15,10 +15,14 @@ jobs:
     strategy:
       matrix:
         python-version:
-          - "3.10"
           - "3.11"
           - "3.12"
           - "3.13"
+          - "3.14"
+    env:
+      # libs/core and libs/server track a .python-version of 3.13, which uv would
+      # otherwise follow in their build steps. Pin every uv command to this leg's Python.
+      UV_PYTHON: ${{ matrix.python-version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +55,10 @@ jobs:
       - name: Build Server
         run: uv build
         working-directory: ./libs/server
+
+      - name: Build MCP Server
+        run: uv build
+        working-directory: ./app/mcp
 
   # The full Python suite on every platform the desktop app ships on. Too slow for every
   # push, so it runs on release and when started by hand from the Actions tab.

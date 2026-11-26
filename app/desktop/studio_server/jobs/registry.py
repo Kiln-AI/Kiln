@@ -112,6 +112,10 @@ class JobRegistry:
         worker = worker_cls()
         self._workers[worker_cls.type_name] = worker
 
+    def type_names(self) -> list[str]:
+        """The registered job type names, sorted."""
+        return sorted(self._workers)
+
     def worker_for(self, type_name: str) -> JobWorker:
         worker = self._workers.get(type_name)
         if worker is None:
