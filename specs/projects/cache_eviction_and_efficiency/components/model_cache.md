@@ -85,6 +85,7 @@ LOAD_WAIT_TIMEOUT_SECONDS = 5.0
 
 def set_model_cache_enabled(value: bool) -> None: ...   # ModelCache.shared().set_enabled(value)
 def model_cache_enabled() -> bool: ...
+def apply_model_cache_setting(*, disable: bool) -> None: ...  # hosts: on, or ModelCache.shared().disable()
 def default_cache_budget_bytes() -> int: ...            # min(2 GiB, 20% of physical RAM)
 def physical_memory_bytes() -> int | None: ...
 ```
@@ -198,7 +199,8 @@ log.debug(...)  # counts only
 - `ModelCache.shared()` creates the instance with `enabled=False`.
 - `set_enabled(False)` clears the cache.
 - `set_enabled(True)` on an already-enabled cache changes nothing.
-- `disable()` turns the cache off and clears it for the life of the instance. A later `set_enabled(True)` does nothing apart from a debug log. Hosts call it on the shared cache when the `disable_model_cache` setting is true.
+- `disable()` turns the cache off and clears it for the life of the instance. A later `set_enabled(True)` does nothing apart from a debug log. Hosts call it on the shared cache through `apply_model_cache_setting(disable=...)`, which they pass their `disable_model_cache` setting.
+- The switch (`set_enabled`, `disable`) runs under the entries' lock, and `set_model` checks `enabled` again under that lock before storing. So a store or a `set_enabled(True)` racing `disable()` can't leave an entry behind or turn the cache back on.
 - When disabled: `get_model` and `get_model_id` return `None`; `set_model` does nothing; `large_values_for` returns `None`; `store_restored_values` returns `False`.
 
 `basemodel.load_from_file` checks `ModelCache.shared().enabled` before calling `detach_large_values`, so a cache-off load never creates lazy state.
@@ -229,7 +231,7 @@ The timeout bounds a cycle where two loads each wait on the other. No validator 
 
 ### Thread safety
 
-- The entries' bookkeeping happens under one `RLock`, and the loads in progress under their own `Condition`. I/O never happens under either.
+- The entries' bookkeeping and the on/off switch happen under one `RLock`, and the loads in progress under their own `Condition`. I/O never happens under either.
 - Records are immutable once published. That's the core rule in `lazy_fields.md`.
 - Values stored in `large_values` are treated as immutable. Readers get the same objects, as they do today with cached records.
 - A read can race with eviction. A reader that got `large_values` before eviction keeps a valid mapping. A reader after eviction restores from disk.
@@ -237,7 +239,7 @@ The timeout bounds a cycle where two loads each wait on the other. No validator 
 ## Dependencies
 
 - **Depends on:** `lazy_fields` (`DetachedValues`, `FieldPath` and `LazyFieldsMixin`, typing only); `basemodel.KilnBaseModel` (typing only, as today).
-- **Depended on by:** `basemodel` (load, save, delete, id lookups, `mutable_copy`'s staleness check through `FileIdentity`); `lazy_fields` (through `LargeValueSource`); `memory.py`, `memory_store.py` and `migrate_eval_runs.py` (`invalidate`, `get_model_id`); hosts (`set_model_cache_enabled`).
+- **Depended on by:** `basemodel` (load, save, delete, id lookups, `mutable_copy`'s staleness check through `FileIdentity`); `lazy_fields` (through `LargeValueSource`); `memory.py`, `memory_store.py` and `migrate_eval_runs.py` (`invalidate`, `get_model_id`); hosts (`set_model_cache_enabled`, `ModelCache.shared().disable()`, both through `apply_model_cache_setting`).
 
 ## Test Plan
 
@@ -246,8 +248,12 @@ In `libs/core/kiln_ai/datamodel/test_model_cache.py` (rewritten). Each test uses
 - `test_disabled_by_default`: `ModelCache.shared()` starts disabled; `set_model` stores nothing and `get_model` returns `None`.
 - `test_set_enabled_false_clears`
 - `test_set_model_cache_enabled_switch`: the module functions read and write the shared instance.
-- `test_disable_drops_cached_models_and_stops_caching`, `test_disabled_cache_serves_nothing`: the second runs `disable()` inside a `set_model` call that already passed its enabled check.
+- `test_disable_drops_cached_models_and_stops_caching`
+- `test_disabled_cache_serves_nothing`: an entry left in a cache switched off without the clear is not served.
+- `test_store_racing_disable_keeps_nothing`: `disable()` runs inside a `set_model` call that already passed its first enabled check, and nothing is kept.
 - `test_set_enabled_true_after_disable_leaves_cache_off`, `test_set_model_cache_enabled_after_disable_leaves_shared_cache_off`
+- `test_set_enabled_true_racing_disable_leaves_cache_off`: `disable()` runs on another thread just after `set_enabled(True)` reads the disabled-for-good flag.
+- `test_apply_model_cache_setting_turns_shared_cache_on`, `test_apply_model_cache_setting_disable_keeps_shared_cache_off_for_good`
 - `test_hit_returns_same_instance_readonly_and_copy_mutable`
 - `test_changed_mtime_invalidates`, `test_changed_size_invalidates`, `test_replaced_file_new_inode_invalidates`: the last replaces the file with one of the same size and resets its mtime with `os.utime`, so only the inode differs.
 - `test_deleted_file_invalidates`

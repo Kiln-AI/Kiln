@@ -41,7 +41,7 @@ When the cache is off (the library default), step 3 never runs. Every load retur
 | File | Change |
 |---|---|
 | `libs/core/kiln_ai/datamodel/lazy_fields.py` | **New.** `LargeField`, `summary_value`, `LazyFieldsMixin`, `LargeFieldUnavailableError`, `detach_large_values`, `approx_value_size`, and the internal per-record lazy state. See the component doc. |
-| `libs/core/kiln_ai/datamodel/model_cache.py` | **Rewritten.** `FileIdentity`, the LRU entries and large-value store, the budget, `set_model_cache_enabled` / `model_cache_enabled`, RAM detection, and the registry of readonly loads in progress. The broken Linux check is removed. See the component doc. |
+| `libs/core/kiln_ai/datamodel/model_cache.py` | **Rewritten.** `FileIdentity`, the LRU entries and large-value store, the budget, `set_model_cache_enabled` / `model_cache_enabled`, the one-way `ModelCache.disable()` and `apply_model_cache_setting` for hosts, RAM detection, and the registry of readonly loads in progress. The broken Linux check is removed. See the component doc. |
 | `libs/core/kiln_ai/datamodel/basemodel.py` | `load_from_file` validates once and calls `detach_large_values` before caching. Concurrent readonly misses on one file share a parse through the cache's load registry. A new `_validate_file_data` classmethod is shared by load and restore. `mutable_copy` rebuilds from disk when a lazy record's file has changed. |
 | `libs/core/kiln_ai/datamodel/task_run.py` | `TaskRun` gains `LazyFieldsMixin`, markers, and four summary values. `has_thinking_training_data` uses the summary value. |
 | `libs/core/kiln_ai/datamodel/task_output.py` | `TaskOutput` gains `LazyFieldsMixin`, and `output` is marked. |
@@ -53,9 +53,9 @@ When the cache is off (the library default), step 3 never runs. Every load retur
 | `app/desktop/studio_server/eval_api.py` | `_split_judge_trace` uses `judge_trace_length`. Score-summary functions are reviewed (5d). `eval_configs_score_summary` loads runs readonly (5b). |
 | `libs/core/kiln_ai/adapters/eval/trace_index.py` | The "unfinished OpenEnv episode" check uses `has_final_state`. |
 | Bulk callers in 5b | `readonly=True` where the caller doesn't edit. |
-| `app/desktop/desktop_server.py` | The lifespan turns the cache on and restores the previous setting on shutdown, the same way it handles strict mode. |
-| `libs/server/kiln_server/server.py` | `make_app` installs a default lifespan that turns the cache on, used when the caller passes no lifespan. |
-| `libs/server/kiln_server/mcp/mcp.py` | `main()` turns the cache on before serving. |
+| `app/desktop/desktop_server.py` | The lifespan turns the cache on and restores the previous setting on shutdown, the same way it handles strict mode. When the `disable_model_cache` setting is true, it calls `ModelCache.shared().disable()` instead, through `apply_model_cache_setting`. |
+| `libs/server/kiln_server/server.py` | `make_app` installs a default lifespan that turns the cache on (or disables it for good when `disable_model_cache` is true), used when the caller passes no lifespan. |
+| `libs/server/kiln_server/mcp/mcp.py` | `main()` turns the cache on before serving, or disables it for good when `disable_model_cache` is true. |
 | `.github/workflows/build_and_test.yml` | A macOS and Windows test job, triggered on release and by hand. |
 | `app/web_ui/src/lib/utils/task_sample_example.ts` | Requests the 100 newest runs (5c). |
 | `conftest.py` (repo root) | A `model_cache_enabled` fixture. The default test state is the library default (off). |
@@ -163,11 +163,11 @@ Any that reads a large field only to test whether it's set switches to a summary
 
 | Host | Where | How |
 |---|---|---|
-| Desktop app and dev server | `desktop_server.lifespan` | Save `model_cache_enabled()`, call `set_model_cache_enabled(True)`, and restore the saved value in `finally`. This is the same pattern as strict mode. When `Config.shared().disable_model_cache` is true, call `ModelCache.shared().disable()` instead of turning the cache on. |
+| Desktop app and dev server | `desktop_server.lifespan` | Save `model_cache_enabled()`, call `apply_model_cache_setting(disable=Config.shared().disable_model_cache)`, and restore the saved value in `finally`. This is the same pattern as strict mode. The helper turns the cache on, or calls `ModelCache.shared().disable()` when the setting is true. |
 | `kiln_server` | `kiln_server.server.make_app` | When `lifespan is None`, use a default lifespan that does the same. The desktop app passes its own lifespan, so the default never runs there. |
-| `kiln_mcp` | `kiln_server.mcp.mcp.main` | Call `set_model_cache_enabled(True)` before serving, or `ModelCache.shared().disable()` when `disable_model_cache` is true. It's a process entry point. |
+| `kiln_mcp` | `kiln_server.mcp.mcp.main` | Call `apply_model_cache_setting(disable=Config.shared().disable_model_cache)` before serving. It's a process entry point. |
 
-`disable()` is one-way, so the restore in `finally` can't turn a disabled cache back on. Nothing turns the cache on at import. The process-wide `ModelCache.shared()` singleton stays. It is an existing global, and it follows the same documented pattern as `set_strict_mode`: off in the library, switched on by hosts. Replacing it with an injected cache would touch every datamodel load call, which is out of scope.
+Each host reads the setting and passes its value, so the library never reads it. `disable()` is one-way, so the restore in `finally` can't turn a disabled cache back on. Nothing turns the cache on at import. The process-wide `ModelCache.shared()` singleton stays. It is an existing global, and it follows the same documented pattern as `set_strict_mode`: off in the library, switched on by hosts. Replacing it with an injected cache would touch every datamodel load call, which is out of scope.
 
 ### CI: macOS and Windows on release
 
