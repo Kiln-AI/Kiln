@@ -488,7 +488,9 @@ def test_no_models_dev_gives_null_prices_and_kiln_data():
     [
         (b"{not json", "not valid JSON"),
         (b"\xff\xfe", "not valid JSON"),
-        (b"[" * 100_000 + b"]" * 100_000, "not valid JSON"),
+        # Left unclosed so it is invalid on every Python: 3.14 sizes its JSON
+        # depth limit to the C stack, so a deep but closed array can parse.
+        (b"[" * 100_000, "not valid JSON"),
         (b'["not", "an", "object"]', "not an object"),
         (b"null", "not an object"),
     ],
