@@ -260,8 +260,9 @@ def test_set_enabled_true_racing_disable_leaves_cache_off():
 
     class DisableOnFirstRead:
         """Stands in for the disabled-for-good flag. The first read starts `disable()` on
-        another thread and gives it time to finish before `set_enabled` acts on the
-        value it read."""
+        another thread and waits up to 0.2 s for it to finish before `set_enabled` acts on
+        the value it read, which is time enough unless `set_enabled` holds the lock
+        `disable()` needs."""
 
         def __bool__(self) -> bool:
             if racer.ident is None:

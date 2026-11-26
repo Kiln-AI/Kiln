@@ -1,9 +1,11 @@
 """
 A process-wide cache of parsed, validated datamodel records, keyed by file path.
 
-- Off by default. Hosts that want it (the desktop app, kiln_server, kiln_mcp) turn it on
-  with `set_model_cache_enabled(True)`, and library users can do the same.
-  `ModelCache.disable()` turns a cache off for good: nothing can turn it back on.
+- Off by default. Hosts (the desktop app, kiln_server, kiln_mcp) start it with
+  `apply_model_cache_setting`, which turns it on, or off for good when their
+  `disable_model_cache` setting is true. Library users turn it on with
+  `set_model_cache_enabled(True)`. `ModelCache.disable()` turns a cache off for good:
+  nothing can turn it back on.
 - Only readonly loads add to it, always straight from a disk read, so each cached record
   matches the file it was parsed from. A record built in memory is never cached.
 - Before serving a record, the cache stats its file. If the modified time, size or file id
@@ -573,7 +575,9 @@ def apply_model_cache_setting(*, disable: bool) -> None:
     """
     if disable:
         ModelCache.shared().disable()
-        logger.info("Model cache disabled for the rest of the process")
+        logger.info(
+            "Model cache disabled for the rest of the process by the disable_model_cache setting"
+        )
     else:
         set_model_cache_enabled(True)
 
