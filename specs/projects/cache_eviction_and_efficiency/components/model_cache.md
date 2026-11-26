@@ -271,8 +271,10 @@ In `libs/core/kiln_ai/datamodel/test_basemodel.py`:
 - `test_cache_on_load_detaches_large_values`
 - `test_concurrent_readonly_loads_of_a_file_share_one_parse`: one parse, and both threads get the same instance.
 - `test_load_waiting_on_a_failed_load_parses_the_file_itself`, `test_load_waiting_on_an_uncached_record_parses_the_file_itself`, `test_load_whose_wait_times_out_parses_the_file_itself`
+- `test_load_waiting_on_a_load_of_an_older_version_reads_the_file_again`: the file changes while the first load is held, and the waiter gets the new version.
 - `test_nested_load_of_a_file_being_loaded_parses_it_without_waiting`: the outer claim is still held after the nested load.
 - `test_loads_the_cache_does_not_keep_never_claim_or_wait`: editable and cache-off loads.
+- `test_readonly_hit_never_claims_or_waits`
 
 In `libs/core/kiln_ai/datamodel/test_model_perf.py`:
 - `test_benchmark_claim_and_release_load`: about 1.5 µs per pair, against about 700 µs to parse a 50-turn run. It fails above 10 µs.
