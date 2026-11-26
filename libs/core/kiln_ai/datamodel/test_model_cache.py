@@ -210,18 +210,28 @@ def test_disable_drops_cached_models_and_stops_caching(model_cache, test_path):
 
 
 def test_disabled_cache_serves_nothing(model_cache, test_path):
+    cache_with_model(model_cache, test_path)
+    # Off without the clear that switching off does, so the entry is still there.
+    model_cache._enabled = False
+    assert model_cache.stats().records == 1
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+    assert model_cache.get_model_id(test_path, KilnModelTest) is None
+
+
+def test_store_racing_disable_keeps_nothing(model_cache, test_path):
     def disable_then_key(path: Path) -> str:
         model_cache.disable()
         return _cache_key(path)
 
-    # A store that passed the enabled check before disable() and finishes after it.
+    # disable() runs after set_model's first enabled check and before it takes the lock.
     with patch(
         "kiln_ai.datamodel.model_cache._cache_key", side_effect=disable_then_key
     ):
         cache_with_model(model_cache, test_path)
 
-    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
-    assert model_cache.get_model_id(test_path, KilnModelTest) is None
+    assert model_cache.enabled is False
+    assert model_cache.stats().records == 0
 
 
 def test_set_enabled_true_after_disable_leaves_cache_off(model_cache, test_path):
@@ -241,6 +251,28 @@ def test_set_model_cache_enabled_after_disable_leaves_shared_cache_off():
     set_model_cache_enabled(True)
 
     assert model_cache_enabled() is False
+
+
+def test_set_enabled_true_racing_disable_leaves_cache_off():
+    cache = ModelCache()
+    racer = threading.Thread(target=cache.disable)
+
+    class DisableOnFirstRead:
+        """Stands in for the disabled-for-good flag. The first read starts `disable()` on
+        another thread and gives it time to finish before `set_enabled` acts on the
+        value it read."""
+
+        def __bool__(self) -> bool:
+            if racer.ident is None:
+                racer.start()
+                racer.join(timeout=0.2)
+            return False
+
+    cache._disabled_for_good = DisableOnFirstRead()
+    cache.set_enabled(True)
+    racer.join()
+
+    assert cache.enabled is False
 
 
 def test_hit_returns_same_instance_readonly_and_copy_mutable(model_cache, test_path):

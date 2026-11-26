@@ -241,12 +241,14 @@ class ModelCache:
 
         After `disable()`, turning it on does nothing: the cache stays off.
         """
-        if value and self._disabled_for_good:
+        with self._lock:
+            refused = value and self._disabled_for_good
+            if not refused:
+                self._enabled = value
+                if not value:
+                    self.clear()
+        if refused:
             logger.debug("Model cache stays off: disable() turned it off for good")
-            return
-        self._enabled = value
-        if not value:
-            self.clear()
 
     def disable(self) -> None:
         """Stop caching records for the life of this cache, and drop the cached ones.
@@ -256,8 +258,10 @@ class ModelCache:
         undone: a later `set_enabled(True)`, or `set_model_cache_enabled(True)` on the
         shared cache, leaves it off.
         """
-        self._disabled_for_good = True
-        self.set_enabled(False)
+        with self._lock:
+            self._disabled_for_good = True
+            self._enabled = False
+            self.clear()
 
     def _get_model(self, path: Path, model_type: Type[T]) -> Optional[T]:
         if not self._enabled:
@@ -349,6 +353,10 @@ class ModelCache:
             entry = _Entry(model=model, identity=identity, normal_bytes=estimated_bytes)
         key = _cache_key(path)
         with self._lock:
+            # set_enabled(False) and disable() switch off and clear under this lock, so
+            # this second check stops a store that passed the first from outliving them.
+            if not self._enabled:
+                return
             self._remove(key)
             if entry.normal_bytes > self._budget_bytes:
                 return
