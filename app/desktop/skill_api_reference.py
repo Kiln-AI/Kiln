@@ -16,13 +16,13 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from kiln_mcp_server.skill_checks.api_reference import (
-    TARGET,
     ApiReferenceError,
     diff_folder,
     render,
     write_folder,
 )
 from kiln_mcp_server.skill_checks.knowledge_schema import default_root
+from kiln_mcp_server.skill_files import API_DOCS_FOLDER
 
 from app.desktop.desktop_server import make_app
 
@@ -40,7 +40,7 @@ def current_spec() -> dict:
 
 
 def default_target() -> Path:
-    return default_root() / TARGET
+    return default_root() / API_DOCS_FOLDER
 
 
 def _parser() -> argparse.ArgumentParser:

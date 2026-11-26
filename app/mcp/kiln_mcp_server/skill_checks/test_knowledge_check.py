@@ -561,6 +561,19 @@ def test_an_external_link_and_an_anchor_are_not_reported(tree):
     assert tree.problems() == []
 
 
+def test_an_angle_bracket_link_counts_as_its_target(tree):
+    tree.edit(
+        f"{PLAYBOOKS}/p-one.md",
+        f"]({TECHNIQUES}/t-one.md)",
+        f"](<{TECHNIQUES}/t-one.md>)",
+    )
+    assert tree.problems() == []
+    assert check_tree(tree.root) == []
+    playbook = load(tree.root).get("playbooks", "p-one")
+    assert playbook is not None
+    assert [link.resolved for link in playbook.links] == [f"{TECHNIQUES}/t-one.md"]
+
+
 @pytest.mark.parametrize(
     "fence",
     [

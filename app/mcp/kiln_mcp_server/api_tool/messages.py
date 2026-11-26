@@ -47,7 +47,8 @@ def _as_sentence(text: str) -> str:
 
 
 def request_failed(core_text: str, method: str) -> str:
-    """A timeout or a failed connection: the request may or may not have run."""
+    """A timeout, a failed connection or another transport failure: the request
+    may or may not have run."""
     if method == "GET":
         return core_text
     return (

@@ -88,7 +88,10 @@ Only paths the instructions list are valid; do not guess. If the instructions ar
 
 ```
 DEFAULT_ORIGIN = "http://localhost:8757"
-API_CATALOGUE_INDEX_PATH = "references/knowledge/api_docs/api_index.md"     # final name; the pipeline writes it (section 6)
+API_DOCS_FOLDER = "references/knowledge/api_docs"
+API_CATALOGUE_SUFFIX = "_api_list.md"
+API_CATALOGUE_INDEX_NAME = "api_index.md"
+API_CATALOGUE_INDEX_PATH = f"{API_DOCS_FOLDER}/{API_CATALOGUE_INDEX_NAME}"  # final name; the pipeline writes it (section 6)
 
 @dataclass(frozen=True)
 class SkillIndex:
@@ -106,7 +109,7 @@ def apply_origin(text: str, origin: str) -> str
 def read_skill(raw: str | None, origin: str, index: SkillIndex | None = None) -> str
 ```
 
-- `API_CATALOGUE_INDEX_PATH` is the one definition of the catalogue index path. The `call_kiln_api` error texts use it (server doc 4.3), and so does `skill_checks/api_reference.py`. `test_the_catalogue_index_exists` checks that it is a file of the shipped tree (section 10).
+- `API_CATALOGUE_INDEX_PATH` is the one definition of the catalogue index path, and the constants above it of the folder, the catalogue suffix and the index name. The `call_kiln_api` error texts use the path (server doc 4.3); `skill_checks` and `app/desktop/skill_api_reference.py` import the others and define no copies. `test_the_catalogue_index_exists` checks that it is a file of the shipped tree (section 10).
 - Root: `importlib.resources.files("kiln_mcp_server").joinpath("skill")`. Use only `files`, `iterdir`, `is_dir`, `is_file`, `name`, `read_bytes` and single-segment `joinpath` (all in 3.10). Import `Traversable` from `importlib.resources.abc` on 3.11+, else `importlib.abc`.
 - Walk: depth first, skip names that start with `.` and `__pycache__`; build each key by joining names with `/`. Sort the keys. No OS path is ever built from tool input. The index is immutable after the build, so concurrent calls need no lock.
 - `read_file`: `index.files[key].read_bytes().decode("utf-8")`. No newline translation.
@@ -398,7 +401,6 @@ The brief asked for a stricter test: no shared file links into `references/clien
 
 ```
 ALLOWED_METHODS = ("get", "post", "patch", "delete")
-TARGET = "references/knowledge/api_docs"
 
 def drop_blocked(spec: dict) -> dict
 def normalise(spec: dict) -> dict
@@ -457,7 +459,7 @@ COMPONENT_ROOTS = {"levers": "references/levers",
 INDEX_BLOCKS = {"references/levers/index.md": ("levers",),
                 "references/improving_agents/index.md": ("smells", "playbooks-goal", "playbooks-order",
                     "playbooks-failure", "playbooks-eval", "playbooks-design", "techniques", "techniques-dormant")}
-API_DOCS_PREFIX = "references/knowledge/api_docs/"
+# API_DOCS_FOLDER, API_CATALOGUE_SUFFIX and API_CATALOGUE_INDEX_NAME come from skill_files.py.
 
 AppliesTo = Literal["all"] | list[str]             # "all", or a list of task shapes that is not empty
 PlaybookKind = Literal["goal", "order", "failure", "eval", "design"]
@@ -516,7 +518,7 @@ Rules after the port (19 of 22):
 | `link` | Changes: resolves from the skill root against the tree |
 | `reachable`, `depth` | Go. The `index` rule gives every component a row in an index file, and the tree check covers reachability from `SKILL.md` |
 | `technique-lever-ids`, `technique-lever-links`, `technique-stance`, `technique-priors`, `playbook-priors`, `alternatives`, `playbook-steps`, `smell-remedies` | Stay |
-| `lever-ops` | Becomes `lever-api-docs`: each `api_docs` value starts with `API_DOCS_PREFIX`, is in the tree, and is an endpoint doc (not a catalogue, not `api_index.md`). A blocked endpoint has no doc, so a lever cannot name one |
+| `lever-ops` | Becomes `lever-api-docs`: each `api_docs` value is under `API_DOCS_FOLDER`, is in the tree, and is an endpoint doc (not a catalogue, not `api_index.md`). A blocked endpoint has no doc, so a lever cannot name one |
 | `smell-detectors` | Goes. A smell names Kiln Harness Tuner's code detection and states its threshold, so an agent without the detection checks it by hand; the detector registry stays in harness-tuner |
 | `subfile` | Stays; the folder test uses `COMPONENT_ROOTS` |
 | `index` | Changes: the blocks of `INDEX_BLOCKS` |

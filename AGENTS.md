@@ -47,7 +47,7 @@ Agents have access to a range of tools for running tests, linting, formatting an
 
 Our end-to-end UI tests are separate and not part of `checks.sh`.
 
-To change the knowledge of the Kiln skill (`app/mcp/kiln_mcp_server/skill/references/levers/` and `references/improving_agents/`) or its backlog (`app/mcp/knowledge_backlog.md`), use the `knowledge-maintenance` skill (`.agents/skills/knowledge-maintenance/SKILL.md`). A person approves a case study or a prior before it is committed, unless it is clearly public, with its link.
+To change the Kiln skill (`app/mcp/kiln_mcp_server/skill/`), including its knowledge (`references/levers/` and `references/improving_agents/`), or its backlog (`app/mcp/knowledge_backlog.md`), use the `knowledge-maintenance` skill (`.agents/skills/knowledge-maintenance/SKILL.md`). A person approves a case study or a prior before it is committed, unless it is clearly public, with its link.
 
 ### Agent Prompts
 

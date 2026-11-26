@@ -40,9 +40,6 @@ INDEX_BLOCKS: dict[str, tuple[str, ...]] = {
 # Rewrites every generated index of the skill, then checks the tree.
 BUILD_COMMAND = "uv run python -m kiln_mcp_server.skill_checks build"
 
-API_DOCS_PREFIX = "references/knowledge/api_docs/"
-API_CATALOGUE_SUFFIX = "_api_list.md"
-
 TASK_SHAPES: tuple[str, ...] = (
     "single_turn",
     "multi_turn",

@@ -9,7 +9,6 @@ Reachability from `SKILL.md` is the tree check's rule, not one of these.
 
 import re
 from collections.abc import Callable, Iterable
-from pathlib import PurePosixPath
 
 from kiln_mcp_server.skill_checks.knowledge_index import read_block, render_blocks
 from kiln_mcp_server.skill_checks.knowledge_load import (
@@ -20,8 +19,6 @@ from kiln_mcp_server.skill_checks.knowledge_load import (
     fence_marked,
 )
 from kiln_mcp_server.skill_checks.knowledge_schema import (
-    API_CATALOGUE_SUFFIX,
-    API_DOCS_PREFIX,
     BUILD_COMMAND,
     COMPONENT_ROOTS,
     EVAL_STANCES,
@@ -38,7 +35,11 @@ from kiln_mcp_server.skill_checks.knowledge_schema import (
     Problem,
     TechniqueMeta,
 )
-from kiln_mcp_server.skill_files import API_CATALOGUE_INDEX_PATH
+from kiln_mcp_server.skill_files import (
+    API_CATALOGUE_INDEX_NAME,
+    API_CATALOGUE_SUFFIX,
+    API_DOCS_FOLDER,
+)
 
 PRIOR_ITEM_RE = re.compile(r"^- ", re.MULTILINE)
 PRIOR_SOURCE_RE = re.compile(
@@ -47,7 +48,6 @@ PRIOR_SOURCE_RE = re.compile(
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 # The maintenance templates mark each value to fill in as `{{NAME}}`.
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}\n]*(?:\}\})?")
-API_INDEX_NAME = PurePosixPath(API_CATALOGUE_INDEX_PATH).name
 
 
 class _Context:
@@ -203,11 +203,13 @@ def _lever_api_docs(ctx: _Context) -> Iterable[Problem]:
             continue
         for path in doc.meta.api_docs:
             name = path.rpartition("/")[2]
-            if not path.startswith(API_DOCS_PREFIX):
-                message = f"{path!r} is not under {API_DOCS_PREFIX}"
+            if not path.startswith(f"{API_DOCS_FOLDER}/"):
+                message = f"{path!r} is not under {API_DOCS_FOLDER}/"
             elif path not in ctx.tree:
                 message = f"{path!r} is not a file of the API reference"
-            elif name == API_INDEX_NAME or name.endswith(API_CATALOGUE_SUFFIX):
+            elif name == API_CATALOGUE_INDEX_NAME or name.endswith(
+                API_CATALOGUE_SUFFIX
+            ):
                 message = f"{path!r} is a catalogue; name the endpoint doc"
             else:
                 continue

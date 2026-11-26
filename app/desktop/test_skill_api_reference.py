@@ -8,16 +8,19 @@ import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from kiln_mcp_server.skill_checks.api_reference import (
-    CATALOGUE_SUFFIX,
     HAND_WRITTEN_NAMES,
-    INDEX_NAME,
-    TARGET,
     ApiReferenceError,
     diff_folder,
     endpoint_doc_name,
     render,
 )
-from kiln_mcp_server.skill_files import get_index, read_file
+from kiln_mcp_server.skill_files import (
+    API_CATALOGUE_INDEX_NAME,
+    API_CATALOGUE_SUFFIX,
+    API_DOCS_FOLDER,
+    get_index,
+    read_file,
+)
 from kiln_server.utils.agent_checks import is_mcp_denied
 
 from app.desktop import skill_api_reference
@@ -49,9 +52,9 @@ def test_committed_docs_match_the_block_list():
     committed = {
         path.name
         for path in skill_api_reference.default_target().iterdir()
-        if path.name != INDEX_NAME
+        if path.name != API_CATALOGUE_INDEX_NAME
         and path.name not in HAND_WRITTEN_NAMES
-        and not path.name.endswith(CATALOGUE_SUFFIX)
+        and not path.name.endswith(API_CATALOGUE_SUFFIX)
         and not path.name.startswith(".")
     }
     assert committed == allowed
@@ -109,7 +112,7 @@ def test_no_skill_file_names_a_blocked_endpoint():
     hits = {
         key: found
         for key in index.files
-        if not key.startswith(TARGET + "/")
+        if not key.startswith(API_DOCS_FOLDER + "/")
         and (found := _blocked_endpoint_hits(read_file(key, index), blocked, allowed))
     }
     assert hits == {}

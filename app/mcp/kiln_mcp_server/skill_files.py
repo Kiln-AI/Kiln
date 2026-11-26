@@ -14,13 +14,14 @@ else:
     from importlib.abc import Traversable
 
 DEFAULT_ORIGIN = "http://localhost:8757"
-API_CATALOGUE_INDEX_PATH = "references/knowledge/api_docs/api_index.md"
+API_DOCS_FOLDER = "references/knowledge/api_docs"
+API_CATALOGUE_SUFFIX = "_api_list.md"
+API_CATALOGUE_INDEX_NAME = "api_index.md"
+API_CATALOGUE_INDEX_PATH = f"{API_DOCS_FOLDER}/{API_CATALOGUE_INDEX_NAME}"
 # The one hand-written file of the generated API reference folder.
-API_RULES_PATH = "references/knowledge/api_docs/calling_the_kiln_api.md"
+API_RULES_PATH = f"{API_DOCS_FOLDER}/calling_the_kiln_api.md"
 
 ROOT_FILE = "SKILL.md"
-_API_DOCS_FOLDER = "references/knowledge/api_docs"
-_API_CATALOGUE_SUFFIX = "_api_list.md"
 _RAW_MAX_CHARS = 200
 
 HINT = "Give a path relative to the skill root, exactly as the skill's instructions wrote it, for example `references/knowledge/specs_and_evals.md`. Omit the path to read the skill's instructions."
@@ -173,7 +174,7 @@ def _nearest_folder(key: str, index: SkillIndex) -> str:
 
 def _file_lines(folder: str, index: SkillIndex) -> list[str]:
     files = [key for key in index.files if _parent(key) == folder]
-    if folder != _API_DOCS_FOLDER:
+    if folder != API_DOCS_FOLDER:
         return files or ["(none)"]
 
     # The full listing of endpoint docs would flood the agent's context; the
@@ -182,7 +183,7 @@ def _file_lines(folder: str, index: SkillIndex) -> list[str]:
         key
         for key in files
         if key in (API_CATALOGUE_INDEX_PATH, API_RULES_PATH)
-        or key.endswith(_API_CATALOGUE_SUFFIX)
+        or key.endswith(API_CATALOGUE_SUFFIX)
     ]
     lines = listed or ["(none)"]
     unlisted = len(files) - len(listed)
