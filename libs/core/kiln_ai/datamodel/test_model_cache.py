@@ -811,23 +811,18 @@ def test_entry_replaced_during_freshness_stat_is_kept_but_not_served(
     "ram, budget",
     [(4 * GIB, int(0.2 * 4 * GIB)), (16 * GIB, 2 * GIB), (None, 1 * GIB)],
 )
-def test_default_budget_formula(ram, budget):
+def test_default_budget_formula(monkeypatch, ram, budget):
+    monkeypatch.delenv("KILN_CACHE_SIZE", raising=False)
     with patch("kiln_ai.datamodel.model_cache.physical_memory_bytes", return_value=ram):
         assert default_cache_budget_bytes() == budget
 
 
-@pytest.mark.parametrize("cache_size_env, budget", [(None, 2 * GIB), ("12345", 12345)])
-def test_default_budget_is_the_cache_size_setting_when_set(
-    monkeypatch, cache_size_env, budget
-):
-    if cache_size_env is None:
-        monkeypatch.delenv("KILN_CACHE_SIZE", raising=False)
-    else:
-        monkeypatch.setenv("KILN_CACHE_SIZE", cache_size_env)
+def test_default_budget_is_the_cache_size_setting_when_set(monkeypatch):
+    monkeypatch.setenv("KILN_CACHE_SIZE", "12345")
     with patch(
         "kiln_ai.datamodel.model_cache.physical_memory_bytes", return_value=16 * GIB
     ):
-        assert default_cache_budget_bytes() == budget
+        assert default_cache_budget_bytes() == 12345
 
 
 def test_budget_defaults_to_default_cache_budget_bytes():

@@ -86,7 +86,7 @@ LOAD_WAIT_TIMEOUT_SECONDS = 5.0
 def set_model_cache_enabled(value: bool) -> None: ...   # ModelCache.shared().set_enabled(value)
 def model_cache_enabled() -> bool: ...
 def apply_model_cache_setting(*, disable: bool) -> None: ...  # hosts: on, or ModelCache.shared().disable()
-def default_cache_budget_bytes() -> int: ...            # min(2 GiB, 20% of physical RAM)
+def default_cache_budget_bytes() -> int: ...            # KILN_CACHE_SIZE if set, else min(2 GiB, 20% of physical RAM)
 def physical_memory_bytes() -> int | None: ...
 ```
 
