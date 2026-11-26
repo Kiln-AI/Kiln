@@ -281,6 +281,8 @@ With the cache on, readonly loads (`readonly=True`) keep each record in memory a
 
 The cache keeps its memory under 2 GB or 20% of RAM, whichever is smaller. To stay under it, the cache can drop the large fields of a record, such as a run's input, output and trace, and read them back from disk the next time your code uses them. `set_model_cache_enabled(False)` turns the cache off and empties it.
 
+`ModelCache.shared().disable()` (from `kiln_ai.datamodel.model_cache`) turns it off and empties it for the rest of the process: a later `set_model_cache_enabled(True)` leaves it off. The Kiln app, `kiln_server` and `kiln_mcp` do this at startup when `KILN_DISABLE_MODEL_CACHE=true` is set, and turn the cache on otherwise. The library itself never reads that variable.
+
 ### Building and Running a Kiln Task from Code
 
 ```python

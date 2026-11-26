@@ -40,7 +40,7 @@ make dev_desktop
 
 The desktop app's API server keeps parsed project files in memory so repeat reads are fast. Set `KILN_DISABLE_MODEL_CACHE=true` before starting it (`make dev`, `make dev_desktop`, or the packaged app) to turn this off for the whole process. Every read then parses its file again, including each file checked when looking a model up by ID: memory stays lower and steadier, and large projects load noticeably more slowly. Useful for chasing a memory problem or ruling the cache out while debugging.
 
-The variable is read when the desktop app's server starts. The `kiln_server` and `kiln_mcp` scripts don't read it; SDK code can call `ModelCache.shared().disable()` instead. On Linux filesystems without fine-grained timestamps the cache is already off.
+The variable is read when the server starts, and the cache then stays off until the process exits. The `kiln_server` and `kiln_mcp` scripts read it too. SDK code, where the cache is off unless you turn it on, can call `ModelCache.shared().disable()` to keep it off for good.
 
 On macOS, start the packaged app with it set from a terminal:
 
