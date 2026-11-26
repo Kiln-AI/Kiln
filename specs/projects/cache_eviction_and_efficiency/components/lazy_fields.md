@@ -263,7 +263,7 @@ Summary values are plain descriptors, not pydantic fields or `computed_field`s. 
 ### `approx_value_size`
 
 Estimates the in-memory bytes of decoded JSON-like values without a full object walk:
-- `str`: `49 + len(s)`; `bytes`: `33 + len(b)`
+- `str`: `49 + len(s)` when ASCII, else `sys.getsizeof(s)`, since CPython stores the whole string at 1, 2 or 4 bytes per character; `bytes`: `33 + len(b)`
 - `int`, `float`, `bool`, `None`: 28
 - `list`/`tuple`: `56 + 8 * len` plus the items
 - `dict`: `64 + 40 * len` plus keys and values

@@ -860,6 +860,7 @@ class SizedModel(BaseModel):
 
 class SizedRole(str, Enum):
     USER = "user"
+    ACCENTED = "usér"
 
 
 class SizedLevel(IntEnum):
@@ -868,6 +869,8 @@ class SizedLevel(IntEnum):
 
 def test_approx_value_size():
     assert approx_value_size("abc") == 52
+    wide = "a" * 1000 + "😀"
+    assert approx_value_size(wide) == sys.getsizeof(wide) > 4 * len(wide)
     assert approx_value_size(b"ab") == 35
     assert {approx_value_size(v) for v in (None, True, 7, 1.5)} == {28}
     assert approx_value_size(["a", ("b",)]) == (56 + 16) + 50 + (56 + 8 + 50)
@@ -876,6 +879,7 @@ def test_approx_value_size():
     assert approx_value_size({"k": 1}) == 64 + 40 + 50 + 28
     assert approx_value_size(SizedModel(text="a")) == 56 + 50
     assert approx_value_size(SizedRole.USER) == 49 + 4
+    assert approx_value_size(SizedRole.ACCENTED) == sys.getsizeof(SizedRole.ACCENTED)
     assert approx_value_size(SizedLevel.HIGH) == 28
     assert approx_value_size(OrderedDict(k=1)) == 64 + 40 + 50 + 28
     marker = object()

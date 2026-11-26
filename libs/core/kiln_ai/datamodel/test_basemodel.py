@@ -38,7 +38,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
 )
 from kiln_ai.datamodel.model_cache import (
-    MEMORY_FACTOR,
+    MIN_RECORD_BYTES,
     FileIdentity,
     ModelCache,
     _cache_key,
@@ -568,9 +568,8 @@ def install_shared_cache(
 
 def test_readonly_load_evicts_least_recently_used(tmp_path, monkeypatch):
     paths = write_base_model_files(tmp_path, 3)
-    record_bytes = int(paths[0].stat().st_size * MEMORY_FACTOR)
-    # Room for two records, so the third load evicts the first.
-    install_shared_cache(monkeypatch, int(2.5 * record_bytes))
+    # Each small record counts MIN_RECORD_BYTES: room for two, so the third load evicts the first.
+    install_shared_cache(monkeypatch, int(2.5 * MIN_RECORD_BYTES))
 
     first, second, third = [
         KilnBaseModel.load_from_file(path, readonly=True) for path in paths
@@ -928,28 +927,26 @@ def test_from_id_and_parent_path(test_base_parented_file, model_cache_enabled):
 
 
 def test_from_id_and_parent_path_with_cache(
-    test_base_parented_file, model_cache_enabled
+    test_base_parented_file, model_cache_enabled, monkeypatch
 ):
-    # Set up parent and child
     parent = BaseParentExample.load_from_file(test_base_parented_file)
     child = DefaultParentedModel(parent=parent, name="Child")
     child.save_to_file()
+    assert child.id is not None and child.path is not None
+    DefaultParentedModel.load_from_file(child.path, readonly=True)
+    get_model_id = MagicMock(wraps=model_cache_enabled.get_model_id)
+    model_cache_enabled.get_model_id = get_model_id
+    parse_child = MagicMock(wraps=DefaultParentedModel._parse_validate_and_cache)
+    monkeypatch.setattr(DefaultParentedModel, "_parse_validate_and_cache", parse_child)
 
-    # First load to populate cache
-    assert child.id is not None  # Type safety
-    _ = DefaultParentedModel.from_id_and_parent_path(child.id, test_base_parented_file)
-
-    # Mock cache to verify it's used
-    model_cache_enabled.get_model_id = MagicMock(return_value=child.id)
-
-    # Load again - should use cache
     found_child = DefaultParentedModel.from_id_and_parent_path(
         child.id, test_base_parented_file
     )
 
     assert found_child is not None
     assert found_child.id == child.id
-    model_cache_enabled.get_model_id.assert_called()
+    get_model_id.assert_called_once_with(child.path, DefaultParentedModel)
+    parse_child.assert_not_called()
 
 
 def test_from_id_and_parent_path_without_parent():

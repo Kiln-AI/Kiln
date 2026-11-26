@@ -707,7 +707,9 @@ def approx_value_size(value: Any) -> int:
         # embedding, and the isinstance chain below tests several types per item.
         kind = type(item)
         if kind is str:
-            total += 49 + len(item)
+            # CPython stores a string at 1, 2 or 4 bytes per character, set by its
+            # widest character, so one emoji makes a long string four times larger.
+            total += 49 + len(item) if item.isascii() else sys.getsizeof(item)
         elif kind is dict:
             total += 64 + 40 * len(item)
             pending.extend(item.keys())
@@ -722,7 +724,7 @@ def approx_value_size(value: Any) -> int:
         elif kind is float or kind is int or kind is bool or item is None:
             total += 28
         elif isinstance(item, str):
-            total += 49 + len(item)
+            total += 49 + len(item) if item.isascii() else sys.getsizeof(item)
         elif isinstance(item, (int, float)):
             total += 28
         elif isinstance(item, (list, tuple)):

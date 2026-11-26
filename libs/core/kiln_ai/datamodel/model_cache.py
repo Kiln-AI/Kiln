@@ -57,13 +57,12 @@ Task runs of 10 to 100 turns measure about 1.15 to 1.4.
 """
 
 MIN_RECORD_BYTES = 8 * 1024
-"""The least a record with large values counts for its other fields, whatever its file
+"""The least a record counts for its fields other than large values, whatever its file
 size says.
 
 Measured without their large values, a cached task run takes about 9 KiB, an eval run
 about 6 KiB and a chunk embeddings record about 3 KiB, almost all of it fixed overhead.
-
-Records without large values count `MEMORY_FACTOR` times their file size, with no floor.
+Small records of classes without large fields take about 2 KiB, so the floor counts them about four times over.
 """
 
 MAX_BUDGET_BYTES = 2 * 1024**3
@@ -355,7 +354,11 @@ class ModelCache:
                 large_owner=detached.owner,
             )
         else:
-            entry = _Entry(model=model, identity=identity, normal_bytes=estimated_bytes)
+            entry = _Entry(
+                model=model,
+                identity=identity,
+                normal_bytes=max(estimated_bytes, MIN_RECORD_BYTES),
+            )
         key = _cache_key(path)
         with self._lock:
             # set_enabled(False) and disable() switch off and clear under this lock, so

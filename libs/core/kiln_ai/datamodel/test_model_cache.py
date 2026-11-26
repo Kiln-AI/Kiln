@@ -529,10 +529,16 @@ def test_claim_load_is_per_file_and_per_thread(model_cache, tmp_path):
 
 
 def test_entry_size_estimate_from_file_size(model_cache, tmp_path):
-    cache_with_model(model_cache, write_record_file(tmp_path / "record.kiln", 2000))
+    cache_with_model(model_cache, write_record_file(tmp_path / "record.kiln", 20_000))
 
     stats = model_cache.stats()
-    assert (stats.records, stats.total_bytes) == (1, int(2000 * MEMORY_FACTOR))
+    assert (stats.records, stats.total_bytes) == (1, int(20_000 * MEMORY_FACTOR))
+
+
+def test_entry_size_of_a_small_record_is_min_record_bytes(model_cache, tmp_path):
+    cache_with_model(model_cache, write_record_file(tmp_path / "record.kiln", 100))
+
+    assert model_cache.stats().total_bytes == MIN_RECORD_BYTES
 
 
 def test_under_budget_add_does_not_evict(record_files):

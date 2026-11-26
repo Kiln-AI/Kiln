@@ -121,10 +121,10 @@ The lock is never held during file I/O, parsing or validation. Inside the lock, 
 
 `set_model` computes:
 - `file_size = identity.size`
-- If `detached` is `None`, the class has no large fields: `normal_size = int(file_size * MEMORY_FACTOR)` and `large_size = 0`.
+- If `detached` is `None` or holds no values: `normal_size = max(int(file_size * MEMORY_FACTOR), MIN_RECORD_BYTES)` and `large_size = 0`.
 - Otherwise: `large_size = detached.size` and `normal_size = max(int(file_size * MEMORY_FACTOR) - large_size, MIN_RECORD_BYTES)`.
 
-The starting values are `MEMORY_FACTOR = 1.3` (measured 1.15–1.5) and `MIN_RECORD_BYTES = 1024`. Both are module constants, tuned by the memory benchmark.
+The starting values are `MEMORY_FACTOR = 1.3` (measured 1.15–1.5) and `MIN_RECORD_BYTES = 8 * 1024`. Both are module constants, tuned by the memory benchmark.
 
 ### Change detection
 

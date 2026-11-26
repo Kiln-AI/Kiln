@@ -181,9 +181,10 @@ Bulk loads that return editable copies defeat lazy loading: each copy needs ever
 - `DatasetSplit` creation (`dataset_split.py`)
 - `eval_configs_score_summary` (`eval_api.py`)
 - the copilot `spec_with_copilot` flow and the eval builder's single-turn and multi-turn pipelines (`copilot_utils.py`)
+- the JSONL export (`dataset_formatter.py`), so only the split's runs read their large fields
 - any others found during implementation
 
-Callers that really edit keep mutable loads: `edit_tags`, which only touches the selected runs, and the JSONL export, which needs large fields but only for the split's runs. A caller wrongly switched to readonly raises `ReadOnlyMutationError` at once, so mistakes fail loudly.
+Callers that really edit keep mutable loads: `edit_tags`, which only touches the selected runs. A caller wrongly switched to readonly raises `ReadOnlyMutationError` at once, so mistakes fail loudly.
 
 `Task.runs()` keeps `readonly=False` as its default, so the library API doesn't change.
 

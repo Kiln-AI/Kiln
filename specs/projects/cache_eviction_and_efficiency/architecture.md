@@ -129,10 +129,11 @@ Switch to `readonly=True` after confirming the caller never assigns to, saves, o
 - `app/desktop/studio_server/eval_api.py`: `eval_configs_score_summary` (`task.runs()` at about line 3346).
 - `app/desktop/studio_server/utils/copilot_utils.py`: the run loads at about lines 650, 686, 758 and 781. These are the `spec_with_copilot` flow and the eval builder pipelines.
 - `app/desktop/studio_server/eval_builder_api.py`: `judge_traces` (`from_ids`, about line 849) reads traces only.
+- `libs/core/kiln_ai/adapters/fine_tune/dataset_formatter.py`: the JSONL export's `task.runs()` (about line 383). Only the split's runs read their large fields.
 
-**Procedure.** For each `task.runs(`, `.runs(readonly=False`, `all_children_of_parent_path(` and `from_ids_and_parent_path(` call in `libs/` and `app/desktop/` outside tests, the implementer records one of two outcomes in the phase plan. Either "switched", or "kept mutable" with the reason (for example "edits tags" or "export needs full records for the split only").
+**Procedure.** For each `task.runs(`, `.runs(readonly=False`, `all_children_of_parent_path(` and `from_ids_and_parent_path(` call in `libs/` and `app/desktop/` outside tests, the implementer records one of two outcomes in the phase plan. Either "switched", or "kept mutable" with the reason (for example "edits tags").
 
-**Kept mutable:** `edit_tags`, which edits selected runs; the JSONL export in `dataset_formatter.py`, which needs full records but only for the split's ids; and any caller that saves.
+**Kept mutable:** `edit_tags`, which edits selected runs, and any caller that saves.
 
 ### 5c. Add-example dialog
 
