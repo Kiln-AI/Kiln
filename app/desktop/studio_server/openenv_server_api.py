@@ -12,15 +12,18 @@ from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.basemodel import FilenameString
-from kiln_ai.datamodel.openenv import OpenEnvServer
-from kiln_ai.datamodel.tool_id import build_openenv_tool_id
+from kiln_ai.datamodel.openenv import NamedResetKwargs, OpenEnvServer
+from kiln_ai.datamodel.tool_id import ToolId, build_openenv_tool_id
 from kiln_ai.openenv.session_manager import OpenEnvError, shared_session_manager
+from kiln_ai.tools.openenv_reach import OpenEnvReachError, single_openenv_server_id
+from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.project_api import project_from_id
+from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic import ValidationError as PydanticValidationError
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,32 @@ _URL_DESCRIPTION = (
     "http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in "
     "this OpenEnv server send their tool calls to it."
 )
+_NAMED_RESET_KWARGS_DESCRIPTION = (
+    "Named reset kwargs a run can start the environment with, in order. The first is "
+    "the default. Names must be unique."
+)
+_URL_ERROR = (
+    "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8000."
+)
+_RESET_KWARGS_NOT_OBJECT_ERROR = "Reset arguments must be a JSON object."
+
+
+class NamedResetKwargsRequest(BaseModel):
+    """Reset kwargs saved under a name, shown in the UI as an Environment Preset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(description="User-facing name, unique within the environment.")
+    description: str | None = Field(
+        default=None,
+        description="User-facing notes on what this preset starts the environment with.",
+    )
+    # Any JSON is accepted here so a non-object gets the friendly 400 from the
+    # handler instead of FastAPI's generic 422; OpenEnv enforces the object type.
+    reset_kwargs: JsonValue = Field(
+        default_factory=dict,
+        description="Keyword arguments for the environment's reset(), as a JSON object.",
+    )
 
 
 class OpenEnvServerCreateRequest(BaseModel):
@@ -43,16 +72,23 @@ class OpenEnvServerCreateRequest(BaseModel):
     name: FilenameString = Field(description=_NAME_DESCRIPTION)
     description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
     url: str | None = Field(default=None, description=_URL_DESCRIPTION)
+    named_reset_kwargs: list[NamedResetKwargsRequest] = Field(
+        default_factory=list, description=_NAMED_RESET_KWARGS_DESCRIPTION
+    )
 
 
 class OpenEnvServerUpdateRequest(BaseModel):
-    """Changes to an OpenEnv server. Only the fields sent are changed."""
+    """Changes to an OpenEnv server. Only the fields sent are changed, and
+    `named_reset_kwargs`, when sent, replaces the whole list."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: FilenameString | None = Field(default=None, description=_NAME_DESCRIPTION)
     description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
     url: str | None = Field(default=None, description=_URL_DESCRIPTION)
+    named_reset_kwargs: list[NamedResetKwargsRequest] | None = Field(
+        default=None, description=_NAMED_RESET_KWARGS_DESCRIPTION
+    )
 
 
 class OpenEnvServerResponse(BaseModel):
@@ -62,12 +98,26 @@ class OpenEnvServerResponse(BaseModel):
     name: str = Field(description=_NAME_DESCRIPTION)
     description: str | None = Field(default=None, description=_DESCRIPTION_DESCRIPTION)
     url: str | None = Field(default=None, description=_URL_DESCRIPTION)
+    named_reset_kwargs: list[NamedResetKwargs] = Field(
+        default_factory=list, description=_NAMED_RESET_KWARGS_DESCRIPTION
+    )
     created_at: datetime | None = Field(
         default=None, description="When the OpenEnv server was created."
     )
     created_by: str | None = Field(
         default=None, description="Who created the OpenEnv server."
     )
+    is_archived: bool = Field(
+        default=False, description="Whether the OpenEnv server is archived."
+    )
+
+
+class OpenEnvServerArchiveRequest(BaseModel):
+    """Archive or unarchive an OpenEnv server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_archived: bool = Field(description="Whether the OpenEnv server is archived.")
 
 
 class OpenEnvToolResponse(BaseModel):
@@ -85,6 +135,47 @@ class OpenEnvToolResponse(BaseModel):
     )
 
 
+class OpenEnvServerVersionResponse(BaseModel):
+    """What the environment's OpenEnv server reports about itself."""
+
+    openenv_version: str = Field(
+        description="The name@version the server reports, or its name alone when it reports no version."
+    )
+
+
+class OpenEnvServerResetSchemaResponse(BaseModel):
+    """The JSON schema the OpenEnv server publishes for its reset arguments."""
+
+    reset_schema: dict[str, Any] | None = Field(
+        default=None,
+        description="The JSON schema of the server's reset arguments, or null when it publishes none.",
+    )
+
+
+class RunOpenEnvServerRequest(BaseModel):
+    """The tools a run would use."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool_ids: list[ToolId] = Field(
+        description="The run config's tool ids, saved or not yet saved."
+    )
+
+
+class RunOpenEnvServerResponse(BaseModel):
+    """The environment a run with these tools would start a session on. Both fields
+    are null when the tools reach no environment."""
+
+    openenv_server: OpenEnvServerResponse | None = Field(
+        default=None,
+        description="The one environment the tools reach, directly or through code tools and Kiln task tools.",
+    )
+    error: str | None = Field(
+        default=None,
+        description="Why the tools can't be run: they reach more than one environment, or the one they reach no longer exists.",
+    )
+
+
 def _openenv_server_from_id(project_id: str, openenv_server_id: str) -> OpenEnvServer:
     project = project_from_id(project_id)
     openenv_server = OpenEnvServer.from_id_and_parent_path(
@@ -95,15 +186,54 @@ def _openenv_server_from_id(project_id: str, openenv_server_id: str) -> OpenEnvS
     return openenv_server
 
 
+def _require_url(openenv_server: OpenEnvServer) -> None:
+    if not openenv_server.url:
+        raise HTTPException(
+            status_code=400,
+            detail=f"OpenEnv server '{openenv_server.name}' has no url. Kiln does not "
+            "start environments: run the OpenEnv server and set url.",
+        )
+
+
 def _openenv_server_response(openenv_server: OpenEnvServer) -> OpenEnvServerResponse:
     return OpenEnvServerResponse(
         id=openenv_server.id,
         name=openenv_server.name,
         description=openenv_server.description,
         url=openenv_server.url,
+        named_reset_kwargs=openenv_server.named_reset_kwargs,
         created_at=openenv_server.created_at,
         created_by=openenv_server.created_by,
+        is_archived=openenv_server.is_archived,
     )
+
+
+async def _require_reachable(openenv_server: OpenEnvServer) -> None:
+    """Refuse to save a URL that no OpenEnv server answers at, with a 502 so clients
+    can tell it from a 400 for an invalid field."""
+    if not openenv_server.url:
+        return
+    try:
+        await shared_session_manager().check_reachable(openenv_server)
+    except OpenEnvError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+def _friendly_error(error: PydanticValidationError) -> str:
+    """The first validation error, in the words the UI shows the user."""
+    first = error.errors()[0]
+    loc = first["loc"]
+    if loc[:1] == ("url",):
+        return _URL_ERROR
+    if (
+        loc[:1] == ("named_reset_kwargs",)
+        and loc[-1:] == ("reset_kwargs",)
+        and first["type"] == "dict_type"
+    ):
+        return _RESET_KWARGS_NOT_OBJECT_ERROR
+    if first["type"] == "value_error":
+        return str(first["ctx"]["error"])
+    return str(error)
 
 
 def connect_openenv_server_api(app: FastAPI):
@@ -127,10 +257,14 @@ def connect_openenv_server_api(app: FastAPI):
                 name=request.name,
                 description=request.description,
                 url=request.url,
+                named_reset_kwargs=[
+                    option.model_dump() for option in request.named_reset_kwargs
+                ],
                 parent=project,
             )
-        except (ValueError, PydanticValidationError) as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        except PydanticValidationError as e:
+            raise HTTPException(status_code=400, detail=_friendly_error(e))
+        await _require_reachable(openenv_server)
         openenv_server.save_to_file()
         return _openenv_server_response(openenv_server)
 
@@ -190,12 +324,41 @@ def connect_openenv_server_api(app: FastAPI):
         ],
         request: OpenEnvServerUpdateRequest,
     ) -> OpenEnvServerResponse:
-        openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
+        """Change an OpenEnv server. A new url is saved only if an OpenEnv server
+        answers at it; other changes are saved without contacting the server."""
+        existing = _openenv_server_from_id(project_id, openenv_server_id)
+        # Changes go on a copy, so a refused update leaves no trace on a cached record.
+        openenv_server = existing.model_copy(deep=True)
         try:
             for field, value in request.model_dump(exclude_unset=True).items():
                 setattr(openenv_server, field, value)
-        except (ValueError, PydanticValidationError) as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        except PydanticValidationError as e:
+            raise HTTPException(status_code=400, detail=_friendly_error(e))
+        if openenv_server.url != existing.url:
+            await _require_reachable(openenv_server)
+        openenv_server.save_to_file()
+        return _openenv_server_response(openenv_server)
+
+    @app.post(
+        "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/archive",
+        summary="Archive OpenEnv Server",
+        description="Archive or unarchive an OpenEnv server. An archived server's tools aren't offered in tool pickers; run configs that already list them still run.",
+        tags=["OpenEnv Servers"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to archive or unarchive an OpenEnv server?"
+        ),
+    )
+    async def archive_openenv_server(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        openenv_server_id: Annotated[
+            str, Path(description="The unique identifier of the OpenEnv server.")
+        ],
+        request: OpenEnvServerArchiveRequest,
+    ) -> OpenEnvServerResponse:
+        openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
+        openenv_server.is_archived = request.is_archived
         openenv_server.save_to_file()
         return _openenv_server_response(openenv_server)
 
@@ -258,12 +421,7 @@ def connect_openenv_server_api(app: FastAPI):
         ],
     ) -> list[OpenEnvToolResponse]:
         openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
-        if not openenv_server.url:
-            raise HTTPException(
-                status_code=400,
-                detail=f"OpenEnv server '{openenv_server.name}' has no url. Kiln does not "
-                "start environments: run the OpenEnv server and set url.",
-            )
+        _require_url(openenv_server)
         try:
             tools = await shared_session_manager().list_tools(
                 openenv_server, fresh=True
@@ -279,3 +437,86 @@ def connect_openenv_server_api(app: FastAPI):
             )
             for tool in tools
         ]
+
+    @app.get(
+        "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_schema",
+        summary="Get OpenEnv Server Reset Schema",
+        description="The JSON schema the OpenEnv server publishes for its reset arguments, read fresh from the running server at url. Null when it publishes none.",
+        tags=["OpenEnv Servers"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_openenv_server_reset_schema(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        openenv_server_id: Annotated[
+            str, Path(description="The unique identifier of the OpenEnv server.")
+        ],
+    ) -> OpenEnvServerResetSchemaResponse:
+        openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
+        _require_url(openenv_server)
+        try:
+            reset_schema = await shared_session_manager().reset_schema(openenv_server)
+        except (OpenEnvError, ValueError) as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        return OpenEnvServerResetSchemaResponse(reset_schema=reset_schema)
+
+    @app.get(
+        "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/version",
+        summary="Get Environment Version",
+        description="The name@version the environment's OpenEnv server reports, read fresh from the running server at url.",
+        tags=["OpenEnv Servers"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_openenv_server_version(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        openenv_server_id: Annotated[
+            str, Path(description="The unique identifier of the environment.")
+        ],
+    ) -> OpenEnvServerVersionResponse:
+        openenv_server = _openenv_server_from_id(project_id, openenv_server_id)
+        session_manager = shared_session_manager()
+        try:
+            await session_manager.refresh(openenv_server)
+            openenv_version = await session_manager.openenv_version(openenv_server)
+        except (OpenEnvError, ValueError) as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        return OpenEnvServerVersionResponse(openenv_version=openenv_version)
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/run_openenv_server",
+        summary="Get Run Environment",
+        description="The environment a run with these tools would use, found from tool ids alone without contacting any server. Returns an error instead when the tools reach more than one environment.",
+        tags=["OpenEnv Servers"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    @no_write_lock  # writes nothing; the run page calls it on every tool change
+    async def get_run_openenv_server(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
+        request: RunOpenEnvServerRequest,
+    ) -> RunOpenEnvServerResponse:
+        project = project_from_id(project_id)
+        task_from_id(project_id, task_id)
+        try:
+            openenv_server_id = single_openenv_server_id(
+                project, list(request.tool_ids)
+            )
+        except OpenEnvReachError as e:
+            return RunOpenEnvServerResponse(error=e.message)
+        if openenv_server_id is None:
+            return RunOpenEnvServerResponse()
+        openenv_server = OpenEnvServer.from_id_and_parent_path(
+            openenv_server_id, project.path
+        )
+        if openenv_server is None:
+            return RunOpenEnvServerResponse(
+                error=f"OpenEnv server {openenv_server_id} wasn't found."
+            )
+        return RunOpenEnvServerResponse(
+            openenv_server=_openenv_server_response(openenv_server)
+        )

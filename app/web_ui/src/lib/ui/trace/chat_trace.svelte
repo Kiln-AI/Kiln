@@ -23,6 +23,9 @@
   export let on_fork:
     | ((run_id: string, trace_index: number) => void)
     | undefined = undefined
+  // When set, every fork affordance is shown disabled with this text as its
+  // tooltip.
+  export let fork_disabled_reason: string | null = null
   // Show the per-message usage info button.
   export let show_per_message_usage: boolean = false
   // Optional citation highlight: a resolved span pointing at one block of one
@@ -752,6 +755,7 @@
                 align="end"
                 show_usage={show_info}
                 show_fork={!!show_fork}
+                {fork_disabled_reason}
                 on_usage={() => open_usage_dialog(message)}
                 on_fork={() => {
                   if (fork_run_id) on_fork?.(fork_run_id, index)

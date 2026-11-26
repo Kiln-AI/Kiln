@@ -24,6 +24,11 @@ and allowing more than one requires the environment to keep its state per sessio
 capacity error before any model call, and re-running the eval runs only the jobs that
 failed.
 
+Outside evals, a run whose tools reach an OpenEnv server (directly, through code tools or
+through Kiln task tools) holds one session for the run too, reset with the run's
+`openenv_reset_kwargs`, and records its episode on the run (see
+`kiln_ai.openenv.run_session`).
+
 An eval input carries an `OpenEnvReset`: the OpenEnv server plus `reset_kwargs`, the keyword
 arguments of the environment's `reset`. An **episode** is one reset-to-close run on a session of
 that environment: the state one eval job acts on. Its outcome is recorded on the trace
@@ -46,10 +51,10 @@ tool-call checks read the same.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, JsonValue, field_validator
+from pydantic import BaseModel, Field, JsonValue, StringConstraints, field_validator
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
 
@@ -76,7 +81,7 @@ class OpenEnvReset(BaseModel):
     that episode.
 
     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
-    environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
+    environment's `reset`, and which keywords exist depends on the environment. The
     trace key carries a digest of the whole reset, so an input whose reset is edited
     after its trace was made generates a new one rather than reusing it.
     """
@@ -86,7 +91,7 @@ class OpenEnvReset(BaseModel):
     )
     reset_kwargs: dict[str, JsonValue] = Field(
         default_factory=dict,
-        description="Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.",
+        description="Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist depends on the environment.",
     )
 
 
@@ -134,6 +139,25 @@ class OpenEnvEpisode(BaseModel):
         }
 
 
+class NamedResetKwargs(BaseModel):
+    """Reset keyword arguments saved under a name, so a run can pick them by name.
+
+    Shown in the UI as an Environment Preset. A run records the kwargs it used, not
+    the name, because a preset can be renamed or removed later."""
+
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ] = Field(description="User-facing name, unique within its environment.")
+    description: str | None = Field(
+        default=None,
+        description="User-facing notes on what this preset starts the environment with.",
+    )
+    reset_kwargs: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        description="Keyword arguments for the environment's reset(), passed verbatim.",
+    )
+
+
 class OpenEnvServer(KilnParentedModel):
     """Kiln's saved pointer to a running OpenEnv environment.
 
@@ -147,8 +171,30 @@ class OpenEnvServer(KilnParentedModel):
     )
     url: str | None = Field(
         default=None,
-        description="Base URL of the running OpenEnv server (e.g. http://127.0.0.1:8004). Kiln connects to it; it never starts one.",
+        description="Base URL of the running OpenEnv server (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one.",
     )
+    named_reset_kwargs: list[NamedResetKwargs] = Field(
+        default_factory=list,
+        description="Named reset kwargs a run can start the environment with, in the order they were added. The first is the default.",
+    )
+    is_archived: bool = Field(
+        default=False,
+        description="Whether the OpenEnv server is archived. An archived server's tools aren't offered in tool pickers, but run configs that already list them still run.",
+    )
+
+    @field_validator("named_reset_kwargs")
+    @classmethod
+    def unique_option_names(
+        cls, value: list[NamedResetKwargs]
+    ) -> list[NamedResetKwargs]:
+        seen: set[str] = set()
+        for option in value:
+            if option.name in seen:
+                raise ValueError(
+                    f"An Environment Preset named {option.name} already exists."
+                )
+            seen.add(option.name)
+        return value
 
     @classmethod
     def type_name(cls) -> str:

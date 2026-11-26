@@ -10,6 +10,14 @@ import type { SandboxCodeContext } from "$lib/stores/tools_store"
 
 vi.mock("$app/navigation", () => ({ goto: vi.fn() }))
 
+const archived_ids = vi.fn<[string], Promise<Set<string>>>(
+  async () => new Set(),
+)
+vi.mock("$lib/api/openenv_server_api", () => ({
+  load_archived_openenv_server_ids: (project_id: string) =>
+    archived_ids(project_id),
+}))
+
 vi.mock("$lib/utils/form_element.svelte", async () => {
   const { default: Stub } = await import(
     "./__tests__/form_element_options_stub.svelte"
@@ -226,6 +234,96 @@ describe("ToolsSelector context scoping on the write path", () => {
     })
 
     expect(tools).toEqual(["mcp::remote::demo::search"])
+  })
+
+  it("keeps an offline OpenEnv's tools selected", async () => {
+    // An OpenEnv that can't be reached is missing from available_tools; its
+    // tools stay so Run reports the server is unreachable.
+    const task_id = "task_offline_openenv"
+    seed_persisted_tools(task_id, [
+      "mcp::remote::demo::search",
+      "kiln_tool::openenv::openenv_1::list_items",
+      "mcp::remote::demo::deleted",
+    ])
+
+    const tools = await bound_tools({
+      project_id: "proj_offline_openenv",
+      sandbox_code_context: "none",
+      task_id,
+    })
+
+    expect(tools).toEqual([
+      "mcp::remote::demo::search",
+      "kiln_tool::openenv::openenv_1::list_items",
+    ])
+    expect(persisted_tools(task_id)).toEqual(tools)
+  })
+
+  it("drops an archived OpenEnv server's tools, as for an archived MCP server", async () => {
+    const task_id = "task_archived_openenv"
+    archived_ids.mockResolvedValueOnce(new Set(["openenv_archived"]))
+    seed_persisted_tools(task_id, [
+      "mcp::remote::demo::search",
+      "kiln_tool::openenv::openenv_1::list_items",
+      "kiln_tool::openenv::openenv_archived::list_items",
+    ])
+
+    await bound_tools({
+      project_id: "proj_archived_openenv",
+      sandbox_code_context: "none",
+      task_id,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tick()
+
+    expect(archived_ids).toHaveBeenCalledWith("proj_archived_openenv")
+    expect(persisted_tools(task_id)).toEqual([
+      "mcp::remote::demo::search",
+      "kiln_tool::openenv::openenv_1::list_items",
+    ])
+  })
+
+  it("doesn't read the archive list without an OpenEnv tool selected", async () => {
+    archived_ids.mockClear()
+    const task_id = "task_no_openenv"
+    seed_persisted_tools(task_id, ["mcp::remote::demo::search"])
+
+    await bound_tools({
+      project_id: "proj_no_openenv",
+      sandbox_code_context: "none",
+      task_id,
+    })
+
+    expect(archived_ids).not.toHaveBeenCalled()
+  })
+
+  it("names an offline OpenEnv's tools by tool name in the label", async () => {
+    // An offline OpenEnv has no option, so the label comes from the tool id.
+    const task_id = "task_offline_openenv_label"
+    seed_persisted_tools(task_id, [
+      "mcp::remote::demo::search",
+      "kiln_tool::openenv::openenv_1::list_items",
+    ])
+    available_tools.set({ proj_offline_label: [ai_models_set, mcp_set] })
+    const { container } = render(ToolsSelector, {
+      props: {
+        project_id: "proj_offline_label",
+        task_id,
+        settings: { sandbox_code_context: "none" },
+      },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tick()
+    const el = container.querySelector('[data-testid="form-element-options"]')
+
+    // Listed tools are named by their option; only the OpenEnv tool needs a name.
+    expect(
+      JSON.parse(el?.getAttribute("data-unlisted-labels") ?? "null"),
+    ).toEqual([null, "list_items"])
+    // The offline OpenEnv stays out of the option list.
+    expect(
+      JSON.parse(el?.getAttribute("data-option-values") ?? "[]"),
+    ).not.toContain("kiln_tool::openenv::openenv_1::list_items")
   })
 })
 

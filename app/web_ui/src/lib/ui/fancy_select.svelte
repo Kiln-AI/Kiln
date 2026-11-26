@@ -1,6 +1,9 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
-  import type { OptionGroup } from "./fancy_select_types"
+  import {
+    option_description_for_display,
+    type OptionGroup,
+  } from "./fancy_select_types"
   import { filter_option_groups } from "./fancy_select_search"
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
@@ -15,6 +18,11 @@
   export let multi_select: boolean = false
   export let disabled: boolean = false
   export let error_outline: boolean = false
+  // Names a selected value that has no option, for a picker that keeps a
+  // selection it can't offer. Returning null, or leaving this unset, shows
+  // empty_label as before.
+  export let unlisted_value_label: ((value: unknown) => string | null) | null =
+    null
 
   // Add this variable to track scrollability
   let isMenuScrollable = false
@@ -143,15 +151,18 @@
     cleanupAutoUpdate = null
   }
 
-  function getEffectiveViewportHeight(element: HTMLElement): number {
-    // Check if we're inside a Kiln Dialog.svelte or DaisyUI dialog element
+  // The on-screen area the list must stay inside: the dialog box it's in, or
+  // the window.
+  function getVisibleBounds(element: HTMLElement): {
+    top: number
+    bottom: number
+  } {
     const dialog = element.closest(".modal-box")
     if (dialog) {
-      return dialog.clientHeight
+      const rect = dialog.getBoundingClientRect()
+      return { top: rect.top, bottom: rect.top + dialog.clientHeight }
     }
-
-    // Fall back to window height if not in a dialog
-    return window.innerHeight
+    return { top: 0, bottom: window.innerHeight }
   }
 
   function setupFloatingPosition() {
@@ -167,15 +178,21 @@
           {
             name: "customPositioningAndSizing",
             fn: ({ x, y, rects, elements }) => {
-              // Find the effective viewport height - could be constrained by a dialog/modal
-              const viewportHeight = getEffectiveViewportHeight(selectedElement)
+              // Measured on screen. Inside a dialog, `y` is relative to the
+              // dialog box (its transform makes it the containing block) and
+              // includes its scroll, so on-screen positions are converted back
+              // by the offset between the two.
+              const bounds = getVisibleBounds(selectedElement)
+              const viewportHeight = bounds.bottom - bounds.top
               const referenceRect = rects.reference
+              const referenceBottom =
+                selectedElement.getBoundingClientRect().bottom
+              const toFloatingY = y - (referenceBottom + 2)
               const padding = 10
               const floatingEl = elements.floating
 
               // Calculate space below reference element
-              const spaceBelow =
-                viewportHeight - (referenceRect.y + referenceRect.height) - 2 // 2px gap
+              const spaceBelow = bounds.bottom - referenceBottom - 2 // 2px gap
 
               // Get the natural height of the dropdown content (measure only once)
               if (naturalDropdownHeight === null) {
@@ -207,13 +224,14 @@
               else if (naturalDropdownHeight <= viewportHeight - 20) {
                 finalHeight = naturalDropdownHeight
                 // Anchor to bottom of viewport with 10px padding
-                finalY = viewportHeight - naturalDropdownHeight - padding
+                finalY =
+                  bounds.bottom - naturalDropdownHeight - padding + toFloatingY
               }
               // CASE 3: Taller than viewport - 20px (padding)
               else {
                 finalHeight = viewportHeight - 2 * padding
                 // Position from top of viewport with 10px padding
-                finalY = padding
+                finalY = bounds.top + padding + toFloatingY
               }
 
               // Set the width of the dropdown
@@ -439,7 +457,10 @@
     selected_values: unknown[],
     options: OptionGroup[],
     empty_label: string,
+    unlisted_value_label: ((value: unknown) => string | null) | null,
   ) {
+    const unlisted_label = (value: unknown) =>
+      unlisted_value_label?.(value) ?? empty_label
     if (multi_select && selected_values.length > 1) {
       return (
         "" +
@@ -451,7 +472,7 @@
             const selectedOption = flatOptions.find(
               (item) => item.value === value,
             )
-            return selectedOption ? selectedOption.label : empty_label
+            return selectedOption ? selectedOption.label : unlisted_label(value)
           })
           .join(", ")
       )
@@ -471,7 +492,9 @@
     const selectedOption = flatOptions.find(
       (item) => item.value === effective_selected,
     )
-    return selectedOption ? selectedOption.label : empty_label
+    return selectedOption
+      ? selectedOption.label
+      : unlisted_label(effective_selected)
   }
 
   function containerKeyDown(event: KeyboardEvent) {
@@ -571,7 +594,13 @@
     on:keydown={containerKeyDown}
   >
     <span class="truncate">
-      {selectedLabel(selected, selected_values, options, empty_label)}
+      {selectedLabel(
+        selected,
+        selected_values,
+        options,
+        empty_label,
+        unlisted_value_label,
+      )}
     </span>
   </div>
 
@@ -766,7 +795,7 @@
                       <div
                         class="text-xs font-medium text-base-content/40 w-full line-clamp-3 whitespace-pre-line"
                       >
-                        {item.description}
+                        {option_description_for_display(item.description)}
                       </div>
                     {/if}
                   </div>

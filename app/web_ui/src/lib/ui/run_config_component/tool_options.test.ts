@@ -101,6 +101,21 @@ const skill_set: ToolSetApiDescription = {
 const all_options = (groups: ReturnType<typeof build_tool_option_groups>) =>
   groups.flatMap((group) => group.options)
 
+describe("AGENT_TOOL_SET_ORDER", () => {
+  it("places OpenEnv sets after MCP servers and before demo tools", () => {
+    expect(AGENT_TOOL_SET_ORDER).toEqual([
+      "builtin",
+      "sandbox_code",
+      "code",
+      "search",
+      "kiln_task",
+      "mcp",
+      "openenv",
+      "demo",
+    ])
+  })
+})
+
 describe("build_tool_option_groups labelling", () => {
   it("labels by tool name and subtitles by the tool's own description", () => {
     const [option] = all_options(build_tool_option_groups([mcp_set]))

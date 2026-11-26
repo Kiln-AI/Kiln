@@ -18,6 +18,14 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
+from kiln_ai.openenv.run_session import (
+    ConversationSessionState,
+    OpenEnvRunError,
+    OpenEnvRunErrorKind,
+    conversation_session_status,
+    openenv_run_error_code,
+)
+from kiln_ai.openenv.session_manager import shared_conversation_sessions
 from kiln_ai.utils.dataset_import import (
     DatasetFileImporter,
     DatasetImportFormat,
@@ -25,7 +33,7 @@ from kiln_ai.utils.dataset_import import (
     KilnInvalidImportFormat,
 )
 from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -44,6 +52,19 @@ EVAL_TRACE_DELETE_MESSAGE = "This run can't be deleted because it's needed for a
 # Defensive cap on parent-chain depth. Real multiturn conversations are tiny
 # compared to this; the guard exists to terminate on disk corruption or cycles.
 _MAX_ANCESTOR_DEPTH = 1000
+
+_OPENENV_RUN_ERROR_STATUS: dict[OpenEnvRunErrorKind, int] = {
+    "reach": 400,
+    "kwargs_without_openenv": 400,
+    "reset_rejected": 400,
+    "not_found": 404,
+    "session_ended": 409,
+    "fork_refused": 409,
+    "not_started_with_openenv": 409,
+    "openenv_changed": 409,
+    "unreachable": 502,
+    "at_capacity": 503,
+}
 
 
 def _walk_run_chain(
@@ -238,6 +259,14 @@ class RunTaskRequest(BaseModel):
         default=None,
         description="The ID of the saved TaskRunConfig the caller used to populate run_config_properties, if any. Stored on the resulting TaskRun so the run can be traced back to its originating saved config. None for ad-hoc runs that were not initiated from a saved TaskRunConfig.",
     )
+    openenv_reset_kwargs: dict[str, JsonValue] | None = Field(
+        default=None,
+        description=(
+            "Keyword arguments for resetting the OpenEnv environment the run config's "
+            "tools reach. Omit to reset it with none. Refused when the tools reach no "
+            "environment."
+        ),
+    )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
@@ -421,6 +450,17 @@ class CreateTaskRunRequest(BaseModel):
     )
 
 
+class ConversationOpenEnvSession(BaseModel):
+    state: ConversationSessionState = Field(
+        description='"none" when the conversation uses no OpenEnv server, "open" when '
+        'it can take another message, "ended" when its session is gone.'
+    )
+    message: str | None = Field(
+        default=None,
+        description='Why the conversation can\'t continue. Set when "ended".',
+    )
+
+
 def run_from_id(project_id: str, task_id: str, run_id: str) -> TaskRun:
     _, run = task_and_run_from_id(project_id, task_id, run_id)
     return run
@@ -460,6 +500,32 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> TaskRun:
         return run_from_id(project_id, task_id, run_id)
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/openenv_session",
+        summary="Get Conversation OpenEnv Session",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_conversation_openenv_session(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str,
+            Path(description="The latest turn of the multi-turn conversation."),
+        ],
+    ) -> ConversationOpenEnvSession:
+        """Whether a message sent after this turn can use the conversation's OpenEnv
+        session. Sessions live in this process, so after a restart every
+        conversation that used one reports "ended"."""
+        task, run = task_and_run_from_id(project_id, task_id, run_id)
+        status = conversation_session_status(task, run)
+        return ConversationOpenEnvSession(state=status.state, message=status.message)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain",
@@ -556,8 +622,14 @@ def connect_run_api(app: FastAPI):
         # is in our delete-set. Stop at the first ancestor that still has another
         # live child (a sibling branch) — or one an eval still needs.
         runs_to_delete = _collect_cascade_delete_runs(task, run)
-        for r in runs_to_delete:
-            r.delete()
+        deleted_ids: list[str] = []
+        try:
+            for r in runs_to_delete:
+                r.delete()
+                deleted_ids.append(str(r.id))
+        finally:
+            # A failure partway still ends the sessions of the turns already gone.
+            await shared_conversation_sessions().release_runs(deleted_ids)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
@@ -719,12 +791,15 @@ def connect_run_api(app: FastAPI):
             except Exception as e:
                 record_failure(run_id, str(e))
 
+        deleted_ids: list[str] = []
         for r in runs_to_delete:
             try:
                 r.delete()
+                deleted_ids.append(str(r.id))
             except Exception as e:
                 if r.id is not None:
                     record_failure(str(r.id), str(e))
+        await shared_conversation_sessions().release_runs(deleted_ids)
 
         if failed_runs:
             raise HTTPException(
@@ -782,6 +857,7 @@ def connect_run_api(app: FastAPI):
                 default_tags=request.tags,
                 skills=skills,
                 task_run_config_id=request.task_run_config_id,
+                openenv_reset_kwargs=request.openenv_reset_kwargs,
             ),
         )
 
@@ -808,11 +884,17 @@ def connect_run_api(app: FastAPI):
                 )
             prior_trace = parent_task_run.trace
 
-        run = await adapter.invoke(
-            input,
-            prior_trace=prior_trace,
-            parent_task_run=parent_task_run,
-        )
+        try:
+            run = await adapter.invoke(
+                input,
+                prior_trace=prior_trace,
+                parent_task_run=parent_task_run,
+            )
+        except OpenEnvRunError as e:
+            raise HTTPException(
+                status_code=_OPENENV_RUN_ERROR_STATUS[e.kind],
+                detail={"message": e.message, "code": openenv_run_error_code(e)},
+            ) from e
 
         # The conversation may have been cascade-deleted while the model was
         # generating (invoke autosaves the new run before returning). Don't
@@ -826,6 +908,7 @@ def connect_run_api(app: FastAPI):
             if not parent_still_exists:
                 if run.path is not None:
                     run.delete()
+                await shared_conversation_sessions().release_runs([str(run.id)])
                 raise HTTPException(
                     status_code=409,
                     detail="The conversation was deleted while the response was being generated, so the new message was discarded.",

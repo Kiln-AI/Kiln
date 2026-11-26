@@ -1,0 +1,251 @@
+import { client } from "$lib/api_client"
+import type { OpenEnvServer, OpenEnvTool, NamedResetKwargs } from "$lib/types"
+import {
+  format_reset_arguments,
+  parse_reset_arguments,
+  type ResetKwargs,
+} from "$lib/utils/openenv"
+import {
+  form_value_to_kwargs,
+  kwargs_fit_form,
+  reset_schema_to_form_schema,
+} from "$lib/utils/openenv_reset_schema"
+import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
+import {
+  load_openenv_server_reset_schema,
+  openenv_server_error,
+} from "$lib/api/openenv_server_api"
+
+export {
+  load_openenv_server,
+  load_openenv_server_reset_schema,
+} from "$lib/api/openenv_server_api"
+
+/**
+ * The form schema for the server's reset arguments, or null when the server
+ * publishes none the form can show or can't be reached. The preset dialog
+ * falls back to Raw JSON on null.
+ */
+export async function load_reset_form_schema(
+  project_id: string,
+  openenv_server_id: string,
+): Promise<JsonSchemaProperty | null> {
+  try {
+    return reset_schema_to_form_schema(
+      await load_openenv_server_reset_schema(project_id, openenv_server_id),
+    )
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether a save moves the record to a different URL. Only then does the page
+ * re-read the server's tools, version and reset schema.
+ */
+export function url_changed(
+  before: Pick<OpenEnvServer, "url">,
+  url: string | null | undefined,
+): boolean {
+  return (before.url ?? "") !== (url ?? "")
+}
+
+/**
+ * Whether the detail page re-reads tools, version and reset schema after an
+ * Edit save. With the same URL it keeps what it has, so nothing flickers.
+ */
+export function reload_details_after_edit(
+  before: Pick<OpenEnvServer, "url"> | null,
+  saved: Pick<OpenEnvServer, "url">,
+): boolean {
+  return before === null || url_changed(before, saved.url)
+}
+
+export async function load_openenv_server_tools(
+  project_id: string,
+  openenv_server_id: string,
+): Promise<OpenEnvTool[]> {
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/tools",
+    { params: { path: { project_id, openenv_server_id } } },
+  )
+  if (error) {
+    throw error
+  }
+  return data
+}
+
+export async function load_openenv_server_version(
+  project_id: string,
+  openenv_server_id: string,
+): Promise<string> {
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/version",
+    { params: { path: { project_id, openenv_server_id } } },
+  )
+  if (error) {
+    throw error
+  }
+  return data.openenv_version
+}
+
+/** Archive or unarchive the OpenEnv server. */
+export async function set_openenv_server_archived(
+  project_id: string,
+  openenv_server_id: string,
+  is_archived: boolean,
+): Promise<OpenEnvServer> {
+  const { data, error } = await client.POST(
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/archive",
+    {
+      params: { path: { project_id, openenv_server_id } },
+      body: { is_archived },
+    },
+  )
+  if (error) {
+    throw openenv_server_error(error)
+  }
+  return data
+}
+
+/** PATCH the whole Environment Presets list; the server replaces it. */
+export async function save_environment_presets(
+  project_id: string,
+  openenv_server_id: string,
+  presets: NamedResetKwargs[],
+): Promise<OpenEnvServer> {
+  const { data, error } = await client.PATCH(
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}",
+    {
+      params: { path: { project_id, openenv_server_id } },
+      body: { named_reset_kwargs: presets },
+    },
+  )
+  if (error) {
+    throw openenv_server_error(error)
+  }
+  return data
+}
+
+/** What the Environment Preset dialog edits: its fields and the editor's text. */
+export type PresetDraft = {
+  name: string
+  description: string
+  reset_arguments: string
+}
+
+export function blank_draft(): PresetDraft {
+  return { name: "", description: "", reset_arguments: "" }
+}
+
+export function draft_from(preset: NamedResetKwargs): PresetDraft {
+  return {
+    name: preset.name,
+    description: preset.description ?? "",
+    reset_arguments: format_reset_arguments(preset.reset_kwargs),
+  }
+}
+
+export function clone_draft(preset: NamedResetKwargs): PresetDraft {
+  return { ...draft_from(preset), name: `${preset.name} (copy)` }
+}
+
+export type DraftResult =
+  | { presets: NamedResetKwargs[]; error: null }
+  | { presets: null; error: string }
+
+/**
+ * The list to save after the dialog's Save: the draft replaces the preset at
+ * `editing_index`, or is appended when it's null. Returns the error to show
+ * instead when the Reset Arguments aren't a JSON object.
+ */
+export function presets_with_draft(
+  presets: NamedResetKwargs[],
+  editing_index: number | null,
+  draft: PresetDraft,
+): DraftResult {
+  const parsed = parse_reset_arguments(draft.reset_arguments)
+  if (parsed.error !== null) {
+    return { presets: null, error: parsed.error }
+  }
+  const preset: NamedResetKwargs = {
+    name: draft.name.trim(),
+    description: draft.description.trim() || null,
+    reset_kwargs: parsed.reset_kwargs,
+  }
+  if (editing_index === null) {
+    return { presets: [...presets, preset], error: null }
+  }
+  return {
+    presets: presets.map((existing, i) =>
+      i === editing_index ? preset : existing,
+    ),
+    error: null,
+  }
+}
+
+/** Reset arguments on one line, for a table cell that expands to the full JSON. */
+export function compact_reset_arguments(
+  reset_kwargs: ResetKwargs | null | undefined,
+): string {
+  return JSON.stringify(reset_kwargs ?? {})
+}
+
+export const RESET_ARGUMENTS_DESCRIPTION =
+  "Passed to the OpenEnv server's reset(). Which keys exist depends on the server."
+export const RESET_ARGUMENTS_SCHEMA_DESCRIPTION =
+  "From the OpenEnv server's reset schema. Fields left empty aren't sent to the server."
+
+export type FormSwitch = { form_value: ResetKwargs } | { error: string }
+
+/**
+ * The value to show in the reset schema form for the Reset Arguments editor's
+ * text, or why the form can't show it.
+ */
+export function reset_arguments_for_form(
+  text: string,
+  form_schema: JsonSchemaProperty,
+): FormSwitch {
+  const parsed = parse_reset_arguments(text)
+  if (parsed.error !== null) {
+    return { error: parsed.error }
+  }
+  const fit = kwargs_fit_form(parsed.reset_kwargs, form_schema)
+  if (!fit.fits) {
+    return {
+      error: `The form can't show these reset arguments: ${fit.reason}. Edit them as JSON.`,
+    }
+  }
+  return { form_value: parsed.reset_kwargs }
+}
+
+/** The Reset Arguments editor's text for a value read from the form. */
+export function reset_arguments_from_form(
+  form_value: unknown,
+  form_schema: JsonSchemaProperty,
+): string {
+  return format_reset_arguments(
+    form_value_to_kwargs(form_value, form_schema) as ResetKwargs,
+  )
+}
+
+/** Preset names are unique, so a removal names the preset rather than its row. */
+export function presets_without(
+  presets: NamedResetKwargs[],
+  name: string,
+): NamedResetKwargs[] {
+  return presets.filter((preset) => preset.name !== name)
+}
+
+/**
+ * Runs each task after the one before it settles. Each preset save sends the
+ * whole list, so a save that started from an older list would undo a newer one.
+ */
+export function one_at_a_time(): (task: () => Promise<void>) => Promise<void> {
+  let last: Promise<void> = Promise.resolve()
+  return (task) => {
+    const run = last.then(task)
+    last = run.catch(() => undefined)
+    return run
+  }
+}

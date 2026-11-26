@@ -2,7 +2,7 @@
   import AppPage from "../app_page.svelte"
   import { agentInfo } from "$lib/agent"
   import { current_task, current_project, ui_state } from "$lib/stores"
-  import { createKilnError } from "$lib/utils/error_handlers"
+  import { run_request_error } from "$lib/utils/openenv"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import Run from "./run.svelte"
@@ -24,6 +24,7 @@
   import ErrorWithTraceComponent from "$lib/ui/error_with_trace.svelte"
   import type { ErrorWithTrace } from "$lib/types"
   import { is_error_with_trace } from "./error_with_trace_detection"
+  import { build_run_request } from "./run_request"
 
   $: agentInfo.set({
     name: "Run",
@@ -143,23 +144,30 @@
         selected_run_config_id && selected_run_config_id !== "custom"
           ? selected_run_config_id
           : null
+      // The preset lookup and the run can wait, and the selected task can
+      // change meanwhile: the run goes to the task the input was entered for.
+      const run_project_id = project_id
+      const run_task_id = task_id
+      const body = await build_run_request({
+        run_config_properties,
+        plaintext_input: input_form.get_plaintext_input_data(),
+        // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
+        structured_input: input_form.get_structured_input_data(),
+        task_run_config_id,
+        get_openenv_reset_kwargs: run_config_component.get_openenv_reset_kwargs,
+        current_run_config_properties: () =>
+          run_config_component.run_options_as_run_config_properties(),
+      })
       const { data, error: fetch_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/run",
         {
           params: {
             path: {
-              project_id: project_id,
-              task_id: task_id,
+              project_id: run_project_id,
+              task_id: run_task_id,
             },
           },
-          body: {
-            run_config_properties: run_config_properties,
-            plaintext_input: input_form.get_plaintext_input_data(),
-            // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
-            structured_input: input_form.get_structured_input_data(),
-            tags: ["manual_run"],
-            task_run_config_id: task_run_config_id,
-          },
+          body,
         },
       )
       if (fetch_error) {
@@ -192,9 +200,13 @@
           ).length,
         })
       }
-      response = data
+      // The run is saved under the task it was sent for. Its output isn't shown
+      // under another task picked while it ran.
+      if (project_id === run_project_id && task_id === run_task_id) {
+        response = data
+      }
     } catch (e) {
-      run_error = createKilnError(e)
+      run_error = run_request_error(e)
     } finally {
       submitting = false
       await tick() // ensure {#if !submitting && response} has rendered
@@ -354,6 +366,7 @@
             {pending_tool_id}
             {pending_run_config_id}
             show_name_field={false}
+            show_environment_preset={true}
           />
         </div>
       </div>
@@ -400,6 +413,7 @@
               {pending_tool_id}
               {pending_run_config_id}
               show_name_field={false}
+              show_environment_preset={true}
             />
           </div>
         {/if}

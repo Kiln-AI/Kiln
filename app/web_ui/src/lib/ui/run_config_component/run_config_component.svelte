@@ -27,6 +27,8 @@
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import ToolsSelector from "./tools_selector.svelte"
   import SkillsSelector from "./skills_selector.svelte"
+  import EnvironmentPresetField from "./environment_preset_field.svelte"
+  import type { ResetKwargs } from "$lib/utils/openenv"
   import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import McpRunConfigPanel from "$lib/ui/run_config_component/mcp_run_config_panel.svelte"
@@ -71,6 +73,9 @@
   export let selected_model_specific_run_config_id: string | null = null
   export let run_config_name: string = generate_memorable_name()
   export let show_name_field: boolean = true
+  // Show the Environment Preset field when the tools reach an OpenEnv server.
+  // Only for callers that start a run: the choice isn't part of the run config.
+  export let show_environment_preset: boolean = false
 
   export let model: string | null = $ui_state.selected_model
   // Optional: seed every run option (model, prompt, tools, temperature, top_p,
@@ -567,6 +572,15 @@
     skills = []
   }
 
+  let environment_preset_field: EnvironmentPresetField | null = null
+
+  /** The chosen Environment Preset's reset arguments, or null if none applies. */
+  export async function get_openenv_reset_kwargs(): Promise<ResetKwargs | null> {
+    return environment_preset_field
+      ? await environment_preset_field.get_openenv_reset_kwargs()
+      : null
+  }
+
   // Put the options a user edits here back to where a fresh component would
   // have them for the model now selected. For a caller whose dialog stays
   // mounted between opens with no config to reseed from: an abandoned visit
@@ -654,6 +668,16 @@
             null}
           has_structured_output={requires_structured_output}
         />
+        <!-- Last, and collapsed with the rest: it appears only after the tools
+             lookup answers, so outside the collapse it would push the page down. -->
+        {#if show_environment_preset}
+          <EnvironmentPresetField
+            bind:this={environment_preset_field}
+            {project_id}
+            task_id={current_task?.id ?? null}
+            tool_ids={[...tools, ...skills]}
+          />
+        {/if}
       </Collapse>
     {:else}
       <Collapse title="Advanced Options">

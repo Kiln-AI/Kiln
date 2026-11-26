@@ -92,6 +92,8 @@ export function tool_set_type_label(type: ToolSetType): string {
       return "Code Tool"
     case "mcp":
       return "MCP"
+    case "openenv":
+      return "OpenEnv"
     case "search":
       return "Search"
     case "kiln_task":

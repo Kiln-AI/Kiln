@@ -93,6 +93,7 @@
 <Dialog
   title={"Edit " + name}
   bind:this={dialog}
+  on:close
   header_buttons={delete_url
     ? [
         {

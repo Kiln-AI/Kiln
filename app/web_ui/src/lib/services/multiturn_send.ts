@@ -4,6 +4,7 @@ import {
   type RunConfigProperties,
   type TaskRun,
 } from "$lib/types"
+import { reset_kwargs_for_send, type ResetKwargs } from "$lib/utils/openenv"
 
 export type RunConfigController = {
   clear_run_options_errors: () => void
@@ -11,6 +12,10 @@ export type RunConfigController = {
   run_options_as_run_config_properties: () => RunConfigProperties
   get_selected_model: () => string | null
   set_model_dropdown_error: (msg: string) => void
+  // The chosen Environment Preset's reset arguments, or null when the tools
+  // reach no OpenEnv. Sent on a conversation's first turn only: the session
+  // keeps its starting state for the rest of the conversation.
+  get_openenv_reset_kwargs?: () => Promise<ResetKwargs | null>
 }
 
 export type InputFormController = {
@@ -41,7 +46,8 @@ export type SendMultiturnArgs = {
 
 export type SendMultiturnResult =
   | { ok: true; new_run_id: string }
-  | { ok: false; error: unknown }
+  // status is the HTTP status when the server refused the send.
+  | { ok: false; error: unknown; status?: number }
 
 // Pure-ish, side-effect-light helper that performs the multiturn Send flow.
 // On success the caller-provided on_success runs first (so navigation happens),
@@ -96,22 +102,33 @@ export async function send_multiturn(
   }
 
   const text = plaintext ?? input_form?.get_plaintext_input_data() ?? ""
-  const { data, error: fetch_error } = await client.POST(
-    "/api/projects/{project_id}/tasks/{task_id}/run",
-    {
-      params: { path: { project_id, task_id } },
-      body: {
-        run_config_properties,
-        plaintext_input: text,
-        structured_input: null,
-        tags,
-        parent_task_run_id: parent_task_run_id ?? null,
-      },
+  const get_openenv_reset_kwargs = run_config_component.get_openenv_reset_kwargs
+  let openenv_reset_kwargs: ResetKwargs | null = null
+  if (!parent_task_run_id && get_openenv_reset_kwargs) {
+    openenv_reset_kwargs = await reset_kwargs_for_send(
+      run_config_properties,
+      get_openenv_reset_kwargs,
+      () => run_config_component.run_options_as_run_config_properties(),
+    )
+  }
+  const {
+    data,
+    error: fetch_error,
+    response,
+  } = await client.POST("/api/projects/{project_id}/tasks/{task_id}/run", {
+    params: { path: { project_id, task_id } },
+    body: {
+      run_config_properties,
+      plaintext_input: text,
+      structured_input: null,
+      tags,
+      parent_task_run_id: parent_task_run_id ?? null,
+      ...(openenv_reset_kwargs ? { openenv_reset_kwargs } : {}),
     },
-  )
+  })
 
   if (fetch_error) {
-    return { ok: false, error: fetch_error }
+    return { ok: false, error: fetch_error, status: response?.status }
   }
   if (!data?.id) {
     return {

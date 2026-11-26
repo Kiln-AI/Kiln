@@ -18,3 +18,13 @@ export type Option = {
   disabled?: boolean
   hide_check?: boolean
 }
+
+/**
+ * An option's description as the menu shows it. Descriptions can come from
+ * someone else's docstrings, with blank lines between paragraphs. The menu
+ * keeps line breaks but clamps to three lines, so a blank line would use up
+ * one of them and could leave the clamp's "…" on an empty line.
+ */
+export function option_description_for_display(description: string): string {
+  return description.replace(/\n[ \t]*(?:\n[ \t]*)+/g, "\n").trim()
+}

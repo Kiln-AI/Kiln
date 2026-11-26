@@ -246,6 +246,14 @@
             button_text: "Connect",
             on_click: () => goto(`/tools/${project_id}/add_tools/local_mcp`),
           },
+          {
+            type: "settings",
+            name: "OpenEnv Servers",
+            description:
+              "Connect to OpenEnv servers to add tools to your project.",
+            button_text: "Connect",
+            on_click: () => goto(`/tools/${project_id}/add_tools/openenv`),
+          },
         ]}
       />
     </div>

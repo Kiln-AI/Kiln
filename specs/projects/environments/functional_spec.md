@@ -1,0 +1,228 @@
+---
+status: complete
+---
+
+# Functional Spec: OpenEnv Environments on the Run Page
+
+## Summary
+
+Today a run config can list OpenEnv tools, but only the eval runner can run them, and they have no UI. This project lets people connect OpenEnv environments in the app and run a task against one on the run page.
+
+An environment gets a list of named reset kwargs, such as "Acme Manager" and "Acme Tech". When the selected run config can reach an environment's tools, the run page shows an "Environment Preset" dropdown of those names, at the bottom of Advanced Options. The run starts a session on the environment, reset with the chosen kwargs.
+
+An environment is any OpenEnv server. Kiln doesn't care how it's built. Most are copies of a product, often built with Kiln Seahaven, but one could call real systems. UI copy says "copy of your product", never "synthetic" or "mock".
+
+Swapping a run config between synthetic and real tools (staging, prod) is V2. See the end of this spec.
+
+## Naming
+
+Today's code calls these "worlds". This project renames them to environments, in code and files as well as the UI. Nothing has shipped in a release yet, so this is the cheapest time to do it.
+
+| Today | Renamed |
+|---|---|
+| `World` (`datamodel/world.py`) | `OpenEnvServer` (`datamodel/openenv.py`) |
+| `worlds/<id> - <name>/world.kiln` | `openenv_servers/<id> - <name>/openenv_server.kiln` |
+| `Project.worlds()` | `Project.openenv_servers()` |
+| `kiln_tool::world::<id>::<tool>` | `kiln_tool::openenv::<id>::<tool>` |
+| `/api/projects/{project_id}/worlds` | `/api/projects/{project_id}/openenv_servers` |
+| `WorldReset`, `EvalInput.world_reset` | `OpenEnvReset`, `EvalInput.openenv_reset` |
+| `WorldEpisode`, `TaskRun.world_episode` | `OpenEnvEpisode`, `TaskRun.openenv_episode` |
+| `kiln_ai/worlds/session_manager.py` | `kiln_ai/openenv/session_manager.py` |
+| `WorldReset.world_id`, `WorldEpisode.world_version` | `OpenEnvReset.openenv_server_id`, `OpenEnvEpisode.openenv_version` |
+| `world_api.py`, `validate_world_tool_ids` | `openenv_server_api.py`, `validate_openenv_tool_ids` |
+
+`OpenEnvSessionManager` keeps its name, since it already names the protocol.
+
+The UI calls the saved record an "OpenEnv Server", the way MCP servers are shown as "MCP Server" while the data model is `ExternalToolServer`; it matches the code's `OpenEnvServer`. "OpenEnv" alone means only the framework or protocol. Named reset kwargs are called "Environment Presets" in the UI, and the kwargs themselves "Reset Arguments". The data model keeps `named_reset_kwargs` / `NamedResetKwargs`. UI copy never says "kwargs", "world", "synthetic" or "mock".
+
+The rename is its own first phase: a pure rename with no behaviour change, so it's easy to review. Dev projects, the `eb3` scripts and any code judge reading `world_episode` are converted by hand, outside the Kiln repo.
+
+## Scope
+
+In scope:
+
+- The rename above.
+- `named_reset_kwargs` on `OpenEnvServer`.
+- OpenEnv Server pages in the Tools area, next to MCP servers: Add Tools, Connect OpenEnv Server, the detail page and Edit OpenEnv Server.
+- Archiving an OpenEnv server, as for MCP servers.
+- Adding `@codemirror/lang-json` so the code editor can edit JSON.
+- OpenEnv tools in the tool picker.
+- The "Environment Preset" dropdown on the run page.
+- Environment sessions for run page runs and the run API, single-turn and multi-turn.
+- One environment per run, checked across everything a run can reach.
+- A Kiln Seahaven callout on the Connect OpenEnv Server page.
+
+Out of scope:
+
+- `ToolDefinition`s and swapping real tools for synthetic ones. These are V2.
+- Changes to evals beyond the rename. Eval inputs keep their own `openenv_reset`.
+- Eval Builder generating data tied to an environment. This is a separate spec.
+- A free-form JSON override for reset kwargs on the run page.
+- Running environment tools from the code tool test panel. A call there fails with a clear error.
+- A default Environment Preset other than the first one added (P2).
+- Pinning a run to a server version. A run records the version it ran against, and the run sidebar shows it.
+- Deleting an environment from the UI. Archive covers it, including a mistyped URL that was saved.
+- Saving a snapshot of an environment's tools, or Kiln starting an environment's server. Like a remote MCP server, an environment must be running for its tools to be picked or run.
+- Migration code. Environments haven't shipped in any release.
+
+## Named reset kwargs
+
+`OpenEnvServer` gains:
+
+```python
+class NamedResetKwargs(BaseModel):
+    name: str                    # e.g. "Acme Tech"
+    description: str | None = None  # e.g. "Acme's data, as a technician"
+    reset_kwargs: dict[str, Any] # e.g. {"fixture": "acme", "role": "tech"}
+
+class OpenEnvServer:
+    named_reset_kwargs: list[NamedResetKwargs] = []
+    is_archived: bool = False
+```
+
+Rules:
+
+- Names are required and unique within an environment. A description is optional; files saved without one still load.
+- `reset_kwargs` is opaque to Kiln and passed to the environment's `reset` as-is. It can be empty.
+- The dropdown shows entries in the order they were added. Kiln has no user-ordered lists, so entries can't be reordered.
+- Entries can be added, edited, cloned and removed. Clone prefills a new entry named "[name] (copy)". Removing needs no confirmation. Past runs aren't affected, because each run saves the kwargs it used.
+- The UI calls each entry an "Environment Preset". The run page dropdown shows its description, never its kwargs.
+
+## Reset argument forms
+
+An OpenEnv server can publish a JSON schema for its reset arguments. When it does, the Environment Preset dialog shows a form built from that schema instead of a JSON editor.
+
+- **Where the schema comes from:** Kiln reads the `reset` key of the server's `GET /schema` answer (OpenEnv 0.11 and later, from openenv/OpenEnv#1270). If that answer has no `reset` key, or the server can't be reached, there is no schema.
+- **No schema:** the dialog is the JSON editor, as before, with no error or notice.
+- **The form:** one field per schema property, using Kiln's own form controls: a dropdown for an enum, number inputs for numbers and integers, a text input for strings, and a nested group for an object. Each field shows the schema's title and description, and is marked optional unless the schema requires it.
+- **Raw JSON:** a toggle switches between the form and the JSON editor. Values carry across in both directions.
+- **What gets saved:** an empty form field is left out of `reset_kwargs`, so the server's `reset()` never receives it. What the server does with a missing argument is up to the server. An optional nested object whose fields are all empty is left out too; a required one is saved as `{}`. A field the schema requires stays required in the form, even when it also allows `null`. Saving an explicit `null` needs Raw JSON.
+- **Optional enums:** an optional enum's dropdown starts on "Not Set", listed first. A required enum asks for a pick. This is the shared run input form, so the run page's structured inputs behave the same way.
+- **Checks:** the form checks what the schema states: types, enum values and required fields. It doesn't enforce rules the schema can't express, such as two fields that can't be combined. The schema is a description, not a contract: the server still checks the arguments when a run starts, with the existing reset error.
+- **When the form can't be used:** if the schema uses a construct the form can't show, the dialog stays on the JSON editor. An optional field that is an object with no fields of its own, such as Seahaven's `startup` for a world with no startup keywords, is left out of the form instead, since there's nothing in it to fill in. If an existing preset's arguments include keys or values the form can't show, the dialog opens on Raw JSON, and switching to the form is refused with the reason. Nothing is dropped silently.
+- **Fields Kiln sets:** the form leaves out `episode_id`, which OpenEnv's base reset request declares but Kiln sets on every reset; saved arguments that include it open on Raw JSON, and switching to the form is refused with that reason.
+- **When it's read:** the detail page reads the schema when it loads the server, with its tools and version, and again only when the URL changes. The dialog reuses that result. If it opens before the schema arrives, it shows a loading spinner in place of its body until it does.
+- **Nothing new is saved.** The schema isn't stored or cached on disk, and `reset_kwargs` keeps its shape.
+
+## OpenEnv Server pages
+
+Environments are managed in the Tools area, next to MCP servers. See `ui_design.md`.
+
+- **Connect and edit:** name, description and `url`, with the MCP connect form's field copy. The existing create and update routes are reused. The URL stays editable, because a local server's port can change, and a new environment would mean a new id in every saved tool id. Each run records the version the server reported.
+- **Reachable on save:** as MCP connect does, the create route reads the server's `/metadata` (the same read the version uses) before saving, and the update route does when the URL changes. If the server doesn't answer, nothing is saved and the route returns 502 with the reason (as the tools and version routes do for an unreachable server), which the Connect page and Edit dialog show as it is, under one shared "Can't Reach OpenEnv Server" title and troubleshooting steps. Other errors, such as a 400 for an invalid field, show as the form's plain error line. Changing only the name, description or presets doesn't contact the server, and the detail page keeps the tools and version it already loaded.
+- **URL format:** the Server URL field refuses anything that isn't `http://` or `https://` plus a host before submitting, with "Enter a full URL starting with http:// or https://, like http://127.0.0.1:8000." The route checks the same rule. The check lives in the routes, so the API can't save an unreachable URL either.
+- **Tools:** the detail page shows the tools the environment serves, read live from `GET /api/projects/{project_id}/openenv_servers/{openenv_server_id}/tools`. If it's offline, the page shows the error instead.
+- **Environment Presets:** each entry is a name, an optional description and its kwargs. The kwargs are edited in a form built from the server's reset schema when it publishes one (see Reset argument forms), and otherwise in the app's code editor in JSON mode. Invalid JSON, or JSON that isn't an object, is shown inline and blocks saving.
+- **Archive:** `OpenEnvServer.is_archived`, set by `POST .../openenv_servers/{id}/archive` with `{"is_archived": bool}`, the same field name and request shape as an MCP server's archive. The detail page has Archive and Unarchive, and the Tools list shows "Archived". An archived server's tools behave as an archived MCP server's do: `available_tools` leaves them out, the tool picker drops them from the selection, and a saved run config that already lists them still runs, since tool ids resolve without checking the archive flag.
+- **No delete in V1:** the UI has no way to delete an environment. The existing delete route and its rule (refused while a saved eval input resets into the environment) are unchanged.
+- **Seahaven:** a callout at the top of the Connect OpenEnv Server page promotes Kiln Seahaven (https://github.com/Kiln-AI/Seahaven) for people who don't have an environment yet.
+- **Docs:** Connect OpenEnv Server's "Read the Docs" link points at https://docs.kiln.tech/docs/evals-and-specs/openenv. The OpenEnv Servers item on Add Tools has no link, like the other items there.
+
+## Tool picker
+
+Environment tools appear in the tool picker, grouped as "OpenEnv Server: Acme", like "MCP Server: Docs Search".
+
+- Each tool shows the name the environment serves. These names can't be renamed in Kiln.
+- Environment tools come from `available_tools`, which already lists each MCP server's tools live.
+- An offline environment is hidden from the picker, like an MCP server that can't be reached. Tools already selected from it stay selected (the picker keeps `kiln_tool::openenv::` ids unless their server is archived), so Run fails with the can't-reach error rather than the selection silently changing. Showing an offline group is a possible later change.
+- Nothing is disabled. Tools from several environments can be selected, and the one-environment error appears in the Environment Preset field and when Run is clicked.
+
+## One environment per run
+
+A run can reach at most one environment. The environment ids a run can reach are collected from:
+
+- The run config's tools.
+- The allowlists of code tools it lists, including code tools nested inside those code tools.
+- The run configs of Kiln task tools it lists. A Kiln task tool's sub-run shares the parent's session.
+
+Every environment tool id names its environment (`kiln_tool::openenv::<openenv_server_id>::<tool>`), so this is a check on lists of ids, never on code. A code tool can only call tools on its allowlist.
+
+The check runs:
+
+- On the run page, as tools are selected. The Environment Preset field shows the error in place of the dropdown.
+- When a run config is saved. Today's check only covers the run config's own tools.
+- When a run starts, before any model call.
+- In code tool allowlist editing, where a code tool's allowlist can't reach more than one environment itself.
+
+Evals use the same collection to decide whether a job runs in its input's environment. A run config that reaches the environment only through a code tool or a Kiln task tool starts the input's episode, the same as one that lists the environment's tools.
+
+## Run page
+
+### The Environment Preset dropdown
+
+- It sits at the bottom of Advanced Options, which starts collapsed, so its late appearance doesn't shift the page.
+- It appears only when the selected run config, saved or unsaved, can reach an environment's tools.
+- It's labelled "Environment Preset" and lists the environment's presets by name, in order, each described by its own description. No JSON is shown.
+- The first entry is selected by default.
+- If the environment has no Environment Presets, the dropdown shows "No Environment Presets" and an "Add Environment Preset" link to its page. The run resets with no kwargs. If the environment needs some, its error is shown.
+- Changing the run config to one that reaches no environment hides the dropdown.
+- If the selected tools reach more than one environment, the field shows the error in place of the dropdown: "Your tools use more than one OpenEnv server (Acme, Beta). A run can only use one." Clicking Run returns the same error, so the field being collapsed can't let a bad run through.
+
+### Environment sessions
+
+A run with an environment starts a session before the model is called, resetting with the chosen kwargs. The session is held by Kiln's server, not the browser.
+
+Single-turn tasks:
+
+- The session starts with the run and closes when the run ends. The final state is saved on the run.
+
+Multi-turn tasks:
+
+- The Environment Preset choice is locked when the conversation starts.
+- One session lasts for the whole conversation, across turns.
+- The session closes after 30 minutes without a turn, when the app exits, or when the conversation is deleted. Leaving the page doesn't close it, because browsers don't reliably report that and the conversation page can be reopened.
+- Each turn's run saves the environment's state at the end of that turn.
+- If the session is gone for any reason, the conversation can't take another message: "The OpenEnv session for this conversation ended[ reason]. Start a new conversation to keep using this OpenEnv server." The history stays readable. Kiln never silently starts a new session, because the agent would be in a different state from the one in its history.
+  - The reason says why, when this Kiln process ended the session: "after 30 minutes without a message", "when the [tool] tool call failed: [error]", "when reading the OpenEnv server's state failed: [error]", or "when a message failed after calling the OpenEnv server's tools". Reasons are kept in memory, so after a restart the message has none.
+  - A tool call that drops the session partway through a turn doesn't fail the turn by itself. Later OpenEnv calls in that turn fail with "The OpenEnv session ended when [cause]. OpenEnv tools can't be called again in this run.", so the model can say what happened. The turn is saved with its episode but no final state, and the conversation ends.
+  - `GET /api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/openenv_session` reports `none`, `open`, or `ended` with that message, so the conversation page can show it before anyone types. A send is still refused with the same message if the session ends in between.
+- If a message fails before any of the environment's tools ran, the user can send it again in the same session. If one of the environment's tools already ran, the session ends, because the environment may have changed in a way the history doesn't show. Tools reached through code tools and Kiln task tools count too.
+- A later turn whose tools reach a different OpenEnv server, or none, is refused with "This conversation uses OpenEnv server X. Start a new conversation to ...". A turn that reaches none is refused after the session has ended too, because the earlier turns' saved episodes show the conversation used one. With no held session to name the server, the message is "This conversation uses an OpenEnv server. Start a new conversation to run without it."
+- Continuing from anything but the latest turn is refused in a conversation with an environment, because its state has moved past it.
+
+### Run records
+
+Each run with an environment saves `openenv_episode` as evals do today, including the reset kwargs it used and the final state. A saved run shows the OpenEnv server, the version it reported (`openenv_episode.openenv_version`) and those kwargs, not the preset's name, because presets can be renamed or removed later.
+
+## Run API and library
+
+The page runs through the run API, so these changes apply to every caller:
+
+- **Run API:** the run request takes optional `openenv_reset_kwargs`. The environment comes from the run config. Sending kwargs for a config that reaches no environment is refused.
+- **Python library:** the adapter's config takes the same option.
+- **Kiln Assistant:** gets the same option through the run API.
+
+The API takes kwargs, not a name, so callers outside the app aren't tied to an environment's named list.
+
+## Errors
+
+Every error says what failed and how to fix it. Each of these happens before the model is called:
+
+- The run reaches more than one environment. The error names them and where each is reached.
+- The environment can't be found, is offline or is at capacity. OpenEnv servers need `max_concurrent_envs` high enough for open chats as well as eval jobs.
+- The environment rejects the reset kwargs. Its error is shown.
+
+A session lost during or between turns fails that run with the error above.
+
+## Existing text this changes
+
+- `kiln_ai/run_context.py` says world tool ids can never resolve in API, chat or export code paths. They now resolve in run page and run API runs that have a session.
+- `kiln_ai/adapters/adapter_registry.py` says only the eval runner starts an episode.
+
+## Constraints
+
+- No client names in specs, code, tests or commits.
+- Nothing changes for projects with no environments, or for run configs that reach none.
+- Evals behave as they do today, apart from the rename and from counting environments reached through code tools and Kiln task tools (see One environment per run).
+
+## V2: swapping real and synthetic tools
+
+Planned next, not built in this project. The goal is to run the same run config against synthetic environments, staging and prod. The object that does the swap needs a new name, since "Environment" now means an OpenEnv server.
+
+- A **`ToolDefinition`** saves what the model sees: `tool_function_name`, `tool_description`, `parameters_schema`. It's immutable. Run configs and code tools list definitions instead of environment or MCP tool ids.
+- A **mapping object (name TBD)** maps definitions to real tools (OpenEnv or MCP), with an environment id and default reset kwargs. It's append-only and archived rather than deleted.
+- Eval inputs replace `openenv_reset` with a setup that names the mapping object and optional reset kwargs.
+- A mapped tool must accept everything its definition can send. This is checked on save and at run start.
+- Code judges have no mapping.
+
+V1's Environment Presets may become the source of V2's default reset kwargs.

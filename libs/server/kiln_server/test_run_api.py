@@ -5,14 +5,16 @@ import logging
 import os
 import shutil
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.ml_model_list import KilnModelProvider, ModelProviderName
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.datamodel import (
     DataSource,
@@ -26,9 +28,14 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.openenv import OpenEnvServer
 from kiln_ai.datamodel.task_run import EvalItemSource
-from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, build_openenv_tool_id
+from kiln_ai.openenv.run_session import OpenEnvRunError
+from kiln_ai.openenv.session_manager import OpenEnvSessionManager
+from kiln_ai.openenv.testing import serve_in_thread
 from kiln_ai.utils.config import Config
+from litellm.types.utils import ModelResponse
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.run_api import (
@@ -374,6 +381,361 @@ async def test_run_task_task_run_config_id_defaults_to_none(client, task_run_set
 
     assert response.status_code == 200
     assert captured["task_run_config_id"] is None
+
+
+def _post_run_with_fake_adapter(client, task_run_setup, request_extra, invoke):
+    """Post a run whose adapter is a fake with *invoke*; returns the response and
+    the AdapterConfig the endpoint built."""
+    task = task_run_setup["task"]
+    captured: dict = {}
+
+    def fake_adapter_for_task(task_arg, run_config_properties, base_adapter_config):
+        captured["config"] = base_adapter_config
+        mock_adapter = MagicMock()
+        mock_adapter.invoke = invoke
+        return mock_adapter
+
+    with (
+        patch("kiln_server.run_api.task_from_id", return_value=task),
+        patch(
+            "kiln_server.run_api.adapter_for_task", side_effect=fake_adapter_for_task
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/project-1/tasks/{task.id}/run",
+            json={**task_run_setup["run_task_request"], **request_extra},
+        )
+    return response, captured["config"]
+
+
+@pytest.mark.parametrize(
+    "request_extra, expected",
+    [
+        (
+            {"openenv_reset_kwargs": {"role": "tech", "seats": [1, 2]}},
+            {"role": "tech", "seats": [1, 2]},
+        ),
+        ({}, None),
+    ],
+)
+def test_run_task_forwards_openenv_reset_kwargs(
+    client, task_run_setup, request_extra, expected
+):
+    response, config = _post_run_with_fake_adapter(
+        client,
+        task_run_setup,
+        request_extra,
+        AsyncMock(return_value=task_run_setup["task_run"]),
+    )
+    assert response.status_code == 200
+    assert config.openenv_reset_kwargs == expected
+
+
+@pytest.mark.parametrize(
+    "kind, status",
+    [
+        ("reach", 400),
+        ("kwargs_without_openenv", 400),
+        ("reset_rejected", 400),
+        ("not_found", 404),
+        ("session_ended", 409),
+        ("fork_refused", 409),
+        ("not_started_with_openenv", 409),
+        ("openenv_changed", 409),
+        ("unreachable", 502),
+        ("at_capacity", 503),
+    ],
+)
+def test_run_task_maps_openenv_errors(client, task_run_setup, kind, status):
+    error = OpenEnvRunError(kind, f"OpenEnv Acme: {kind}")
+    response, _ = _post_run_with_fake_adapter(
+        client, task_run_setup, {}, AsyncMock(side_effect=error)
+    )
+    assert response.status_code == status
+    assert response.json() == {
+        "message": {"message": f"OpenEnv Acme: {kind}", "code": f"openenv_{kind}"}
+    }
+
+
+def _model_reply(content=None, note=None):
+    tool_calls = (
+        [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                    "name": "append_note",
+                    "arguments": json.dumps({"note": note}),
+                },
+            }
+        ]
+        if note is not None
+        else None
+    )
+    response = ModelResponse(
+        model="gpt-4",
+        choices=[{"message": {"content": content, "tool_calls": tool_calls}}],
+    )
+    return response, response.choices[0]
+
+
+@dataclass
+class OpenEnvChat:
+    """A multi-turn task whose tools reach the test OpenEnv server, run through the
+    real adapter with only the model call stubbed."""
+
+    client: TestClient
+    task: Task
+    manager: OpenEnvSessionManager
+    replies: list
+    openenv_server_id: str
+
+    def send(
+        self,
+        note: str,
+        parent_id: str | None = None,
+        during_generation: Callable[[], None] | None = None,
+        **extra,
+    ):
+        """Post one turn. `during_generation` runs when the model is first called."""
+        self.replies += [
+            (during_generation, _model_reply(note=note)),
+            (None, _model_reply(content="noted")),
+        ]
+        return self.client.post(
+            f"/api/projects/project-1/tasks/{self.task.id}/run",
+            json={
+                "run_config_properties": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                    "prompt_id": "simple_prompt_builder",
+                    "structured_output_mode": "json_schema",
+                    "tools_config": {"tools": [self.tool_id]},
+                },
+                "plaintext_input": f"note {note}",
+                "parent_task_run_id": parent_id,
+                **extra,
+            },
+        )
+
+    @property
+    def tool_id(self) -> str:
+        return build_openenv_tool_id(self.openenv_server_id, "append_note")
+
+
+@pytest.fixture
+def openenv_chat(app, task_run_setup_multiturn, request):
+    project = task_run_setup_multiturn["project"]
+    task = task_run_setup_multiturn["task"]
+    # Indirect parametrize with TurnMode.single_turn for a single-turn task.
+    if getattr(request, "param", TurnMode.multiturn) == TurnMode.single_turn:
+        task = Task(name="Single", instruction="keep notes", parent=project)
+        task.save_to_file()
+    provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt-4")
+    manager = OpenEnvSessionManager()
+    replies: list = []
+
+    def next_reply(*args, **kwargs):
+        during_generation, reply = replies.pop(0)
+        if during_generation is not None:
+            during_generation()
+        return reply
+
+    with serve_in_thread() as url:
+        openenv_server = OpenEnvServer(name="Acme", parent=project, url=url)
+        openenv_server.save_to_file()
+        assert openenv_server.id is not None
+        with (
+            TestClient(app) as client,
+            patch("kiln_server.run_api.task_from_id", return_value=task),
+            patch(
+                "kiln_ai.adapters.adapter_registry.kiln_model_provider_from",
+                return_value=provider,
+            ),
+            patch(
+                "kiln_ai.openenv.run_session.shared_session_manager",
+                return_value=manager,
+            ),
+            patch(
+                "kiln_ai.openenv.run_session.shared_conversation_sessions",
+                return_value=manager.conversations,
+            ),
+            patch(
+                "kiln_server.run_api.shared_conversation_sessions",
+                return_value=manager.conversations,
+            ),
+            patch.object(LiteLlmAdapter, "model_provider", return_value=provider),
+            patch.object(LiteLlmAdapter, "build_completion_kwargs", return_value={}),
+            patch.object(
+                LiteLlmAdapter,
+                "acompletion_checking_response",
+                side_effect=next_reply,
+            ),
+        ):
+            # One event loop for every request: the held session's socket lives on it.
+            try:
+                yield OpenEnvChat(client, task, manager, replies, openenv_server.id)
+            finally:
+                client.portal.call(manager.shutdown)
+
+
+class TestRunApiConversation:
+    def test_three_turns_share_one_episode(self, openenv_chat):
+        first = openenv_chat.send("one", openenv_reset_kwargs={"fixture_id": "acme"})
+        assert first.status_code == 200, first.text
+        second = openenv_chat.send("two", parent_id=first.json()["id"])
+        assert second.status_code == 200, second.text
+        third = openenv_chat.send("three", parent_id=second.json()["id"])
+        assert third.status_code == 200, third.text
+
+        episodes = [r.json()["openenv_episode"] for r in (first, second, third)]
+        assert len({e["episode_id"] for e in episodes}) == 1
+        assert [e["final_state"]["notes"] for e in episodes] == [
+            ["one"],
+            ["one", "two"],
+            ["one", "two", "three"],
+        ]
+        assert all(
+            e["reset"]["reset_kwargs"] == {"fixture_id": "acme"} for e in episodes
+        )
+
+    @pytest.mark.parametrize("openenv_chat", [TurnMode.single_turn], indirect=True)
+    def test_single_turn_runs_open_and_close_their_own_session(self, openenv_chat):
+        assert openenv_chat.task.turn_mode == TurnMode.single_turn
+        first = openenv_chat.send("one", openenv_reset_kwargs={"fixture_id": "acme"})
+        assert first.status_code == 200, first.text
+        second = openenv_chat.send("two")
+        assert second.status_code == 200, second.text
+
+        first_episode = first.json()["openenv_episode"]
+        second_episode = second.json()["openenv_episode"]
+        assert first_episode["reset"]["reset_kwargs"] == {"fixture_id": "acme"}
+        assert first_episode["final_state"]["notes"] == ["one"]
+        # A fresh session each run, reset with no arguments when none are sent.
+        assert second_episode["episode_id"] != first_episode["episode_id"]
+        assert second_episode["reset"]["reset_kwargs"] == {}
+        assert second_episode["final_state"]["notes"] == ["two"]
+        assert openenv_chat.manager._sessions == {}
+        assert not openenv_chat.manager.conversations.holds_turn(first.json()["id"])
+
+    def test_earlier_turn_is_refused(self, openenv_chat):
+        first = openenv_chat.send("one")
+        openenv_chat.send("two", parent_id=first.json()["id"])
+        fork = openenv_chat.send("fork", parent_id=first.json()["id"])
+        assert fork.status_code == 409
+        assert fork.json()["message"]["code"] == "openenv_fork_refused"
+        assert "only continue from the latest turn" in fork.json()["message"]["message"]
+
+    def test_deleting_the_latest_turn_ends_the_session(self, openenv_chat):
+        first = openenv_chat.send("one").json()
+        response = openenv_chat.client.delete(
+            f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/{first['id']}"
+        )
+        assert response.status_code == 200
+        assert openenv_chat.manager._sessions == {}
+
+    def test_delete_failing_on_an_ancestor_still_ends_the_session(self, openenv_chat):
+        first = openenv_chat.send("one").json()
+        second = openenv_chat.send("two", parent_id=first["id"]).json()
+        real_delete = TaskRun.delete
+
+        def delete(run):
+            if run.id == first["id"]:
+                raise OSError("disk full")
+            real_delete(run)
+
+        with (
+            patch.object(TaskRun, "delete", delete),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            openenv_chat.client.delete(
+                f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/{second['id']}"
+            )
+        assert openenv_chat.manager._sessions == {}
+
+    def test_bulk_delete_ends_the_session(self, openenv_chat):
+        first = openenv_chat.send("one").json()
+        second = openenv_chat.send("two", parent_id=first["id"]).json()
+        response = openenv_chat.client.post(
+            f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/delete",
+            json=[second["id"]],
+        )
+        assert response.status_code == 200
+        assert openenv_chat.manager._sessions == {}
+
+    def test_conversation_deleted_during_generation_ends_the_session(
+        self, openenv_chat
+    ):
+        first = openenv_chat.send("one").json()
+
+        def delete_conversation():
+            run = TaskRun.from_id_and_parent_path(first["id"], openenv_chat.task.path)
+            assert run is not None
+            run.delete()
+
+        response = openenv_chat.send(
+            "two", parent_id=first["id"], during_generation=delete_conversation
+        )
+        assert response.status_code == 409
+        assert "conversation was deleted" in response.json()["message"]
+        assert openenv_chat.manager._sessions == {}
+
+    def test_session_gone_between_turns_is_a_conflict(self, openenv_chat):
+        first = openenv_chat.send("one").json()
+        openenv_chat.client.portal.call(
+            openenv_chat.manager.conversations.release_runs, [first["id"]]
+        )
+        response = openenv_chat.send("two", parent_id=first["id"])
+        assert response.status_code == 409
+        assert response.json()["message"] == {
+            "message": "The OpenEnv session for this conversation ended. Start a "
+            "new conversation to keep using this OpenEnv server.",
+            "code": "openenv_session_ended",
+        }
+
+    def _session_status(self, openenv_chat, run_id):
+        response = openenv_chat.client.get(
+            f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/{run_id}"
+            "/openenv_session"
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def test_session_status_is_open_then_ended_with_the_reason(self, openenv_chat):
+        first = openenv_chat.send("one").json()
+        assert self._session_status(openenv_chat, first["id"]) == {
+            "state": "open",
+            "message": None,
+        }
+        conversations = openenv_chat.manager.conversations
+        conversations.record_end(first["id"], "after 30 minutes without a message")
+        openenv_chat.client.portal.call(conversations.release_runs, [first["id"]])
+        expected = (
+            "The OpenEnv session for this conversation ended after 30 minutes without "
+            "a message. Start a new conversation to keep using this OpenEnv server."
+        )
+        assert self._session_status(openenv_chat, first["id"]) == {
+            "state": "ended",
+            "message": expected,
+        }
+        refused = openenv_chat.send("two", parent_id=first["id"])
+        assert refused.status_code == 409
+        assert refused.json()["message"]["message"] == expected
+
+    @pytest.mark.parametrize("openenv_chat", [TurnMode.single_turn], indirect=True)
+    def test_session_status_is_none_for_a_single_turn_task(self, openenv_chat):
+        run = openenv_chat.send("one").json()
+        assert self._session_status(openenv_chat, run["id"]) == {
+            "state": "none",
+            "message": None,
+        }
+
+    def test_session_status_of_a_missing_run_is_not_found(self, openenv_chat):
+        response = openenv_chat.client.get(
+            f"/api/projects/project-1/tasks/{openenv_chat.task.id}/runs/missing"
+            "/openenv_session"
+        )
+        assert response.status_code == 404
 
 
 def test_deep_update_with_empty_source():

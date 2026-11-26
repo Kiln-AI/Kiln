@@ -1,0 +1,527 @@
+<script lang="ts">
+  import AppPage from "../../../../app_page.svelte"
+  import PropertyList from "$lib/ui/property_list.svelte"
+  import type { UiProperty } from "$lib/ui/property_list"
+  import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
+  import Warning from "$lib/ui/warning.svelte"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
+  import ToolArgumentsList from "$lib/components/tool_arguments_list.svelte"
+  import EnvironmentPresetDialog from "./environment_preset_dialog.svelte"
+  import OpenEnvServerEditDialog from "./openenv_server_edit_dialog.svelte"
+  import { page } from "$app/stores"
+  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import {
+    load_available_tools,
+    uncache_available_tools,
+    ui_state,
+  } from "$lib/stores"
+  import type { OpenEnvServer, OpenEnvTool, NamedResetKwargs } from "$lib/types"
+  import type { JsonSchemaProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import {
+    OPENENV_UNREACHABLE_STEPS,
+    OPENENV_UNREACHABLE_TITLE,
+    format_reset_arguments,
+  } from "$lib/utils/openenv"
+  import { openenv_server_error } from "$lib/api/openenv_server_api"
+  import {
+    compact_reset_arguments,
+    load_openenv_server,
+    load_openenv_server_tools,
+    load_openenv_server_version,
+    load_reset_form_schema,
+    one_at_a_time,
+    presets_without,
+    save_environment_presets,
+    reload_details_after_edit,
+    set_openenv_server_archived,
+  } from "./openenv_server_detail"
+  import { agentInfo } from "$lib/agent"
+
+  $: project_id = $page.params.project_id!
+  $: openenv_server_id = $page.params.openenv_server_id!
+  $: agentInfo.set({
+    name: "OpenEnv Server Detail",
+    description: `OpenEnv server detail for ID ${openenv_server_id} in project ID ${project_id}. Name: ${openenv_server?.name ?? "[loading]"}. Shows its server URL and version, its Environment Presets (named reset arguments), and the tools its server serves.`,
+  })
+
+  let openenv_server: OpenEnvServer | null = null
+  let loading = true
+  let loading_error: KilnError | null = null
+
+  let tools: OpenEnvTool[] | null = null
+  let tools_error: KilnError | null = null
+  let version: string | null = null
+  let version_error: KilnError | null = null
+  let form_schema: JsonSchemaProperty | null = null
+  let form_schema_loading = true
+  // Counts load_server_details calls. A slow answer for an older call, such as
+  // the old URL timing out after a URL edit, is dropped.
+  let details_request = 0
+
+  let presets_error: KilnError | null = null
+  let preset_dialog: EnvironmentPresetDialog
+  // Which preset rows show their full description and reset arguments.
+  let expanded: boolean[] = []
+
+  let archive_error: KilnError | null = null
+  let archive_loading = false
+
+  let edit_dialog: OpenEnvServerEditDialog
+
+  $: if (project_id && openenv_server_id) {
+    load_page(project_id, openenv_server_id)
+  }
+
+  function is_current(req_project_id: string, req_openenv_server_id: string) {
+    return (
+      req_project_id === project_id &&
+      req_openenv_server_id === openenv_server_id
+    )
+  }
+
+  async function load_page(
+    req_project_id: string,
+    req_openenv_server_id: string,
+  ) {
+    loading = true
+    loading_error = null
+    presets_error = null
+    archive_error = null
+    try {
+      const loaded = await load_openenv_server(
+        req_project_id,
+        req_openenv_server_id,
+      )
+      if (!is_current(req_project_id, req_openenv_server_id)) return
+      openenv_server = loaded
+    } catch (e) {
+      if (!is_current(req_project_id, req_openenv_server_id)) return
+      openenv_server = null
+      loading_error = createKilnError(e)
+    } finally {
+      if (is_current(req_project_id, req_openenv_server_id)) {
+        loading = false
+      }
+    }
+    if (openenv_server) {
+      load_server_details(req_project_id, req_openenv_server_id)
+    }
+  }
+
+  async function load_server_details(
+    req_project_id: string,
+    req_openenv_server_id: string,
+  ) {
+    const request = ++details_request
+    const is_latest = () =>
+      request === details_request &&
+      is_current(req_project_id, req_openenv_server_id)
+    tools = null
+    tools_error = null
+    version = null
+    version_error = null
+    form_schema = null
+    form_schema_loading = true
+    load_reset_form_schema(req_project_id, req_openenv_server_id).then(
+      (loaded) => {
+        if (!is_latest()) return
+        form_schema = loaded
+        form_schema_loading = false
+      },
+    )
+    const [tools_result, version_result] = await Promise.allSettled([
+      load_openenv_server_tools(req_project_id, req_openenv_server_id),
+      load_openenv_server_version(req_project_id, req_openenv_server_id),
+    ])
+    if (!is_latest()) return
+    if (tools_result.status === "fulfilled") {
+      tools = tools_result.value
+    } else {
+      tools_error = openenv_server_error(tools_result.reason)
+    }
+    if (version_result.status === "fulfilled") {
+      version = version_result.value
+    } else {
+      version_error = createKilnError(version_result.reason)
+    }
+  }
+
+  const queue_preset_save = one_at_a_time()
+  // Preset saves not yet finished. While any is pending, Add, Edit, Clone and
+  // Remove are unavailable: a dialog opened now would build its list from the
+  // one before that save, and undo it on Save.
+  let pending_preset_saves = 0
+
+  // `change` builds the new list from the latest saved one when the save starts.
+  function save_presets_with(
+    change: (current: NamedResetKwargs[]) => NamedResetKwargs[],
+  ): Promise<void> {
+    const req_project_id = project_id
+    const req_openenv_server_id = openenv_server_id
+    pending_preset_saves++
+    return queue_preset_save(async () => {
+      if (!openenv_server || !is_current(req_project_id, req_openenv_server_id))
+        return
+      const saved = await save_environment_presets(
+        req_project_id,
+        req_openenv_server_id,
+        change(openenv_server.named_reset_kwargs ?? []),
+      )
+      if (!openenv_server || !is_current(req_project_id, req_openenv_server_id))
+        return
+      // Only the presets: an archive save may have changed the rest meanwhile.
+      openenv_server = {
+        ...openenv_server,
+        named_reset_kwargs: saved.named_reset_kwargs,
+      }
+      expanded = []
+    }).finally(() => pending_preset_saves--)
+  }
+
+  function save_presets(presets: NamedResetKwargs[]): Promise<void> {
+    return save_presets_with(() => presets)
+  }
+
+  async function remove_preset(name: string) {
+    const req_project_id = project_id
+    const req_openenv_server_id = openenv_server_id
+    presets_error = null
+    try {
+      await save_presets_with((current) => presets_without(current, name))
+    } catch (e) {
+      if (is_current(req_project_id, req_openenv_server_id)) {
+        presets_error = createKilnError(e)
+      }
+    }
+  }
+
+  function toggle_expanded(index: number) {
+    expanded[index] = !expanded[index]
+  }
+
+  async function update_archive(is_archived: boolean) {
+    const req_project_id = project_id
+    const req_openenv_server_id = openenv_server_id
+    archive_loading = true
+    archive_error = null
+    try {
+      const saved = await set_openenv_server_archived(
+        req_project_id,
+        req_openenv_server_id,
+        is_archived,
+      )
+      if (openenv_server && is_current(req_project_id, req_openenv_server_id)) {
+        // Only the archive flag: a preset save may have changed the presets.
+        openenv_server = { ...openenv_server, is_archived: saved.is_archived }
+      }
+      await load_available_tools(req_project_id, true)
+    } catch (e) {
+      if (is_current(req_project_id, req_openenv_server_id)) {
+        archive_error = createKilnError(e)
+      }
+    } finally {
+      archive_loading = false
+    }
+  }
+
+  function after_edit(saved: OpenEnvServer) {
+    // A save can finish after moving to another server's page.
+    if (!openenv_server || saved.id !== openenv_server_id) return
+    const reload_server_details = reload_details_after_edit(
+      openenv_server,
+      saved,
+    )
+    openenv_server = {
+      ...openenv_server,
+      name: saved.name,
+      description: saved.description,
+      url: saved.url,
+    }
+    uncache_available_tools(project_id)
+    if (reload_server_details) {
+      load_server_details(project_id, openenv_server_id)
+    }
+  }
+
+  function properties(openenv_server: OpenEnvServer): UiProperty[] {
+    const result: UiProperty[] = [
+      { name: "ID", value: openenv_server.id || "Unknown" },
+      { name: "Name", value: openenv_server.name || "Unknown" },
+      { name: "Description", value: openenv_server.description || "N/A" },
+    ]
+    if (openenv_server.created_at) {
+      result.push({
+        name: "Created At",
+        value: new Date(openenv_server.created_at).toLocaleString(),
+      })
+    }
+    if (openenv_server.created_by) {
+      result.push({ name: "Created By", value: openenv_server.created_by })
+    }
+    return result
+  }
+
+  function connection_properties(
+    openenv_server: OpenEnvServer,
+    version: string | null,
+    version_error: KilnError | null,
+  ): UiProperty[] {
+    return [
+      { name: "Type", value: "OpenEnv" },
+      { name: "Server URL", value: openenv_server.url || "N/A" },
+      version_error
+        ? { name: "Version", value: "Can't reach OpenEnv server", error: true }
+        : { name: "Version", value: version ?? "Loading..." },
+    ]
+  }
+
+  $: presets = openenv_server?.named_reset_kwargs ?? []
+  $: is_archived = openenv_server?.is_archived ?? false
+</script>
+
+<div class="max-w-[1400px]">
+  <AppPage
+    title="OpenEnv Server"
+    subtitle={`Name: ${openenv_server?.name || ""}`}
+    breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+      },
+      {
+        label: "Tools",
+        href: `/tools/${project_id}`,
+      },
+    ]}
+    action_buttons={openenv_server
+      ? [
+          { label: "Edit", handler: () => edit_dialog.show() },
+          {
+            label: is_archived ? "Unarchive" : "Archive",
+            handler: () => update_archive(!is_archived),
+            loading: archive_loading,
+          },
+        ]
+      : []}
+  >
+    {#if archive_error}
+      <Warning
+        warning_message={archive_error.getMessage() ||
+          "An unknown error occurred"}
+        large_icon={true}
+        warning_color="error"
+        outline={true}
+      />
+    {/if}
+    {#if is_archived}
+      <Warning
+        warning_message="This OpenEnv server is archived. You may unarchive it to use it again."
+        large_icon={true}
+        warning_color="warning"
+        outline={true}
+      />
+    {/if}
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if loading_error || !openenv_server}
+      <ErrorDetailsBlock
+        title="Error Loading OpenEnv Server"
+        error_messages={loading_error?.getErrorMessages() ?? [
+          "OpenEnv server not found.",
+        ]}
+      />
+    {:else}
+      <div class="flex flex-col lg:flex-row gap-8 lg:gap-16 mb-10">
+        <div class="flex-1">
+          <PropertyList
+            properties={properties(openenv_server)}
+            title="Properties"
+          />
+        </div>
+        <div class="flex-1">
+          <PropertyList
+            properties={connection_properties(
+              openenv_server,
+              version,
+              version_error,
+            )}
+            title="Connection Details"
+          />
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-4 mb-10">
+        <SettingsHeader
+          title="Environment Presets"
+          subtitle="Named sets of reset arguments for this OpenEnv server. Pick one under Advanced Options on the run page."
+          show_divider={false}
+        >
+          <button
+            slot="actions"
+            class="btn btn-mid"
+            disabled={pending_preset_saves > 0}
+            on:click={() => preset_dialog.show_add()}
+          >
+            Add Environment Preset
+          </button>
+        </SettingsHeader>
+        {#if presets_error}
+          <Warning
+            warning_message={presets_error.getMessage() ||
+              "An unknown error occurred"}
+            warning_color="error"
+          />
+        {/if}
+        {#if presets.length === 0}
+          <div class="text-sm text-gray-500">
+            No Environment Presets yet. Add one by clicking "Add Environment
+            Preset" above.
+          </div>
+        {:else}
+          <div class="overflow-x-auto rounded-lg border">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th style="width: 25%">Name</th>
+                  <th style="width: 30%">Description</th>
+                  <th>Reset Arguments</th>
+                  <th style="width: 40px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each presets as preset, index}
+                  <!-- Click a row to show its full description and reset
+                       arguments, as the synthetic data tables do. -->
+                  <tr
+                    on:click={() => toggle_expanded(index)}
+                    class="cursor-pointer"
+                  >
+                    <td class="font-medium align-top">{preset.name}</td>
+                    <td class="align-top">
+                      {#if expanded[index]}
+                        <div class="whitespace-pre-wrap break-words">
+                          {preset.description || "None"}
+                        </div>
+                      {:else}
+                        <div class="truncate w-0 min-w-full">
+                          {preset.description || "None"}
+                        </div>
+                      {/if}
+                    </td>
+                    <td class="align-top font-mono text-sm">
+                      {#if expanded[index]}
+                        <pre
+                          class="whitespace-pre-wrap break-words">{format_reset_arguments(
+                            preset.reset_kwargs,
+                          )}</pre>
+                      {:else}
+                        <div class="truncate w-0 min-w-full">
+                          {compact_reset_arguments(preset.reset_kwargs)}
+                        </div>
+                      {/if}
+                    </td>
+                    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+                    <td class="p-0 align-top" on:click|stopPropagation>
+                      {#if pending_preset_saves > 0}
+                        <!-- The menu has no disabled state; its actions return
+                             when the save finishes. -->
+                        <div class="flex h-8 w-8 items-center justify-center">
+                          <span class="loading loading-spinner loading-xs"
+                          ></span>
+                        </div>
+                      {:else}
+                        <TableActionMenu
+                          items={[
+                            {
+                              label: "Edit",
+                              onclick: () => preset_dialog.show_edit(index),
+                            },
+                            {
+                              label: "Clone",
+                              onclick: () => preset_dialog.show_clone(index),
+                            },
+                            {
+                              label: "Remove",
+                              onclick: () => remove_preset(preset.name),
+                            },
+                          ]}
+                        />
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </div>
+
+      <div class="mb-10">
+        <h3 class="text-xl font-bold mb-4">Available Tools</h3>
+        {#if tools_error}
+          <ErrorDetailsBlock
+            title={OPENENV_UNREACHABLE_TITLE}
+            error_messages={tools_error.getErrorMessages()}
+            troubleshooting_steps={OPENENV_UNREACHABLE_STEPS}
+            full_width={true}
+          />
+        {:else if tools === null}
+          <div class="w-full min-h-[20vh] flex justify-center items-center">
+            <div class="loading loading-spinner loading-lg"></div>
+          </div>
+        {:else if tools.length > 0}
+          <div class="overflow-x-auto rounded-lg border">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Arguments</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each tools as tool}
+                  <tr>
+                    <td class="font-medium">{tool.name}</td>
+                    <td class="max-w-[300px] whitespace-pre-line break-words"
+                      >{tool.description || "None"}</td
+                    >
+                    <td>
+                      <ToolArgumentsList input_schema={tool.input_schema} />
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {:else}
+          <div class="text-lg mb-4 text-gray-500">
+            This OpenEnv server has no tools.
+          </div>
+        {/if}
+      </div>
+
+      <!-- Moving to another server rebuilds the dialogs, closing an open one,
+           so an edit made on one server is never saved to another. -->
+      {#key `${project_id}/${openenv_server_id}`}
+        <EnvironmentPresetDialog
+          bind:this={preset_dialog}
+          {presets}
+          {form_schema}
+          {form_schema_loading}
+          save={save_presets}
+        />
+        <OpenEnvServerEditDialog
+          bind:this={edit_dialog}
+          {project_id}
+          {openenv_server_id}
+          {openenv_server}
+          after_save={after_edit}
+        />
+      {/key}
+    {/if}
+  </AppPage>
+</div>

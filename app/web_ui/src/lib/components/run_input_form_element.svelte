@@ -8,7 +8,12 @@
     IncompleteObjectError,
   } from "$lib/utils/missing_required_property_error"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import {
+    NOT_SET_LABEL,
+    enum_select_options,
+  } from "./run_input_select_options"
   import RunInputArrayElement from "./run_input_array_element.svelte"
+  import { field_value_from_json, json_property } from "./run_input_form_value"
 
   export let property: SchemaModelProperty
   let value: string = ""
@@ -17,6 +22,9 @@
   export let path: string = ""
   export let hideHeaderAndIndent: boolean = false
   export let parentOptional: boolean = false
+  export let on_see_all_description:
+    | ((title: string, description: string) => void)
+    | null = null
 
   // Trigger onInputChange when value changes
   $: void (value, onInputChange?.())
@@ -72,6 +80,11 @@
   function get_select_options(
     property: SchemaModelProperty,
   ): OptionGroup[] | undefined {
+    // An enum's options are its own raw values, booleans included, matching
+    // what the field holds.
+    if (property.enum) {
+      return enum_select_options(property.enum, is_optional(property))
+    }
     if (property.type === "boolean") {
       return [
         {
@@ -92,23 +105,21 @@
         },
       ]
     }
-    if (property.enum) {
-      return [
-        {
-          options: [
-            ...property.enum.map((value) => ({
-              label: (value ?? "null").toString(),
-              value: value,
-            })),
-            {
-              label: "Not Set",
-              value: undefined,
-            },
-          ],
-        },
-      ]
-    }
     return undefined
+  }
+
+  function is_optional(property: SchemaModelProperty): boolean {
+    return !property.required || parentOptional
+  }
+
+  // An optional enum starts on "Not Set", so its closed dropdown says so rather
+  // than asking for a pick.
+  function empty_label_prop(property: SchemaModelProperty): {
+    empty_label?: string
+  } {
+    return property.enum && is_optional(property)
+      ? { empty_label: NOT_SET_LABEL }
+      : {}
   }
 
   function getHeight(property: SchemaModelProperty): "large" | undefined {
@@ -217,8 +228,12 @@
       // Valid empty value
       return undefined
     }
-    // Usually "", can be undefined (enums) or null (input type=number with non-number string)
-    if (!value && property.required) {
+    // Usually "", can be undefined (enums) or null (input type=number with non-number string).
+    // An enum holds its raw value, so 0 and false are set values.
+    if (
+      (value === "" || value === undefined || value === null) &&
+      property.required
+    ) {
       throw new MissingRequiredPropertyError(
         "Required property not set: " + path,
         path,
@@ -258,6 +273,11 @@
       return value
     }
     if (property.type === "boolean") {
+      // A boolean enum's dropdown holds the raw boolean.
+      const raw: unknown = value
+      if (typeof raw === "boolean") {
+        return raw
+      }
       if (value !== "true" && value !== "false") {
         throw new Error("Boolean property must be 'true' or 'false': " + path)
       }
@@ -284,6 +304,21 @@
     throw new Error("Unknown property type: " + property.type + " at " + path)
   }
 
+  /** Fill this field, and every field under it, from a JSON value. */
+  export async function set_value(json_value: unknown): Promise<void> {
+    if (arrayComponent) {
+      await arrayComponent.set_array_value(json_value)
+    } else if (isObjectProperty(property) && !isGenericObject(property)) {
+      await Promise.all(
+        Object.entries(nestedComponents).map(([id, nestedComponent]) =>
+          nestedComponent.set_value(json_property(json_value, id)),
+        ),
+      )
+    } else {
+      value = field_value_from_json(property, json_value)
+    }
+  }
+
   function getInfoDescription(
     property: SchemaModelProperty,
   ): string | undefined {
@@ -302,6 +337,7 @@
         label={property.title}
         inputType="header_only"
         description={property.description}
+        {on_see_all_description}
         info_msg={describe_type(property)}
         info_description={getInfoDescription(property)}
         value=""
@@ -320,6 +356,7 @@
             level={level + 1}
             path={`${path}.${nestedProp.id}`}
             parentOptional={parentOptional || !property.required}
+            {on_see_all_description}
             on:ref={(e) => {
               // Workaround for svelte 4 to capture the ref
               const { inst } = e.detail
@@ -337,6 +374,7 @@
           level={level + 1}
           {path}
           parentOptional={parentOptional || !property.required}
+          {on_see_all_description}
         />
       {/if}
     </div>
@@ -348,8 +386,10 @@
     inputType={get_input_type(property)}
     height={getHeight(property)}
     description={property.description || "No description"}
-    optional={!property.required || parentOptional}
+    {on_see_all_description}
+    optional={is_optional(property)}
     fancy_select_options={get_select_options(property)}
+    {...empty_label_prop(property)}
     bind:value
     info_msg={describe_type(property)}
     info_description={getInfoDescription(property)}

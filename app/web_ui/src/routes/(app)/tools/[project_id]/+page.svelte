@@ -9,6 +9,7 @@
     KilnTaskToolDescription,
     KilnToolServerDescription,
     CodeToolResponse,
+    OpenEnvServer,
   } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "../empty_tools.svelte"
@@ -21,20 +22,22 @@
   $: project_id = $page.params.project_id!
   $: agentInfo.set({
     name: "Tools",
-    description: `Tools list for project ID ${project_id}. Shows connected tools including RAG search tools, Kiln task tools, and MCP servers.`,
+    description: `Tools list for project ID ${project_id}. Shows connected tools including RAG search tools, Kiln task tools, MCP servers and OpenEnv servers.`,
   })
   $: is_empty =
     !demo_tools_enabled &&
     (!tools || tools.length == 0) &&
     (!kiln_task_tools || kiln_task_tools.length === 0) &&
     (!search_tools || search_tools.length === 0) &&
-    (!code_tools || code_tools.length === 0)
+    (!code_tools || code_tools.length === 0) &&
+    (!openenv_servers || openenv_servers.length === 0)
 
   let tools: KilnToolServerDescription[] | null = null
   let demo_tools_enabled: boolean | null = null
   let search_tools: SearchToolApiDescription[] | null = null
   let kiln_task_tools: KilnTaskToolDescription[] | null = null
   let code_tools: CodeToolResponse[] | null = null
+  let openenv_servers: OpenEnvServer[] | null = null
   let loading = true
   let error: KilnError | null = null
 
@@ -45,6 +48,7 @@
       load_rag_configs(),
       load_kiln_task_tools(),
       load_code_tools(),
+      load_openenv_servers(),
     ])
     loading = false
   })
@@ -55,6 +59,11 @@
 
   $: unarchived_code_tools = (code_tools || []).filter((ct) => !ct.is_archived)
   $: archived_code_tools = (code_tools || []).filter((ct) => ct.is_archived)
+
+  $: sorted_openenv_servers = [
+    ...(openenv_servers || []).filter((server) => !server.is_archived),
+    ...(openenv_servers || []).filter((server) => server.is_archived),
+  ]
 
   async function fetch_available_tool_servers() {
     try {
@@ -161,6 +170,27 @@
     } catch (err) {
       error = createKilnError(err)
       console.error("Error loading code tools", err)
+    }
+  }
+
+  async function load_openenv_servers() {
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/openenv_servers",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      openenv_servers = data
+    } catch (err) {
+      error = createKilnError(err)
     }
   }
 
@@ -394,6 +424,41 @@
                       inline={true}
                     />
                   {:else if tool.is_archived}
+                    <Warning
+                      warning_message="Archived"
+                      warning_color="warning"
+                      inline={true}
+                    />
+                  {:else}
+                    <Warning
+                      warning_message="Ready"
+                      warning_color="success"
+                      warning_icon="check"
+                      inline={true}
+                    />
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+            {#each sorted_openenv_servers as openenv_server}
+              {@const href = `/tools/${project_id}/openenv_servers/${openenv_server.id}`}
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                on:click={() => goto(href)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    goto(href)
+                  }
+                }}
+                role="button"
+                tabindex="0"
+              >
+                <td class="font-medium">{openenv_server.name}</td>
+                <td class="text-sm">OpenEnv</td>
+                <td class="text-sm">{openenv_server.description || "N/A"}</td>
+                <td class="text-sm">
+                  {#if openenv_server.is_archived}
                     <Warning
                       warning_message="Archived"
                       warning_color="warning"

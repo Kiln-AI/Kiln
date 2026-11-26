@@ -17,13 +17,16 @@ what OpenEnv already exposes:
 
     openenv_version the environment's reported name and version
     refresh         re-read `/metadata`, so a new version on the same URL is seen
+    reset_schema    the `reset` JSON schema from `/schema`
     start_episode   open a `/ws` session and `reset(**reset_kwargs)`
     call_tool       `step(CallToolAction)`
+    read_state      `state`, leaving the session open
     end_episode     `state`, then close the session
     release         close the session
 
 One session per episode; sessions are closed by `end_episode`, so the record on the
-trace is the durable state.
+trace is the durable state. A multi-turn conversation keeps its session open between
+turns in the manager's `conversations`.
 """
 
 from __future__ import annotations
@@ -47,6 +50,7 @@ from kiln_ai.datamodel.openenv import (
     OpenEnvServer,
     OpenEnvTool,
 )
+from kiln_ai.openenv.conversations import ConversationSessions
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +88,9 @@ instead of exhausting memory or writing an enormous trace."""
 
 _ERROR_PREVIEW_CHARS = 500
 
+_MAX_LOST_CAUSES = 1000
+"""How many failed sessions' causes are kept for episodes not yet released."""
+
 _CAPACITY_HINT = (
     " The environment holds max_concurrent_envs sessions at once (OpenEnv's default "
     "is 1) and Kiln runs up to 25 eval jobs at once: start the server with "
@@ -102,9 +109,22 @@ class OpenEnvTransientError(OpenEnvError):
     retries these."""
 
 
+class OpenEnvCapacityError(OpenEnvTransientError):
+    """The environment holds as many sessions as it allows and refused another."""
+
+
 class OpenEnvRejectedError(OpenEnvError):
     """The environment answered a message with an error. The session is still in
-    step, so it stays usable."""
+    step, so it stays usable. `server_message` is the environment's own text."""
+
+    def __init__(self, message: str, server_message: str | None = None) -> None:
+        super().__init__(message)
+        self.server_message = server_message
+
+
+class OpenEnvSessionLostError(OpenEnvError):
+    """The episode's session is gone: it was never opened, already closed, or a
+    request on it failed in a way that left it unusable."""
 
 
 def tool_call_error_ends_session(error: BaseException) -> bool:
@@ -172,6 +192,7 @@ class _Session:
     episode_id: str
     ws: ClientConnection
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    tool_calls: int = 0
 
 
 class OpenEnvSessionManager:
@@ -186,6 +207,11 @@ class OpenEnvSessionManager:
         self._servers: dict[str, _ServerInfo] = {}
         self._server_locks: dict[str, asyncio.Lock] = {}
         self._sessions: dict[str, _Session] = {}
+        self._lost_causes: dict[str, str] = {}
+        """Why each dropped session failed, by episode id, until the episode is
+        released."""
+        self.conversations = ConversationSessions()
+        """Sessions held between the turns of multi-turn conversations."""
 
     # ---- public ----
 
@@ -201,6 +227,15 @@ class OpenEnvSessionManager:
         version on the same URL is seen as new. Its tools are re-listed when the
         version changed."""
         await self._server_for(openenv_server, refresh=True)
+
+    async def check_reachable(self, openenv_server: OpenEnvServer) -> None:
+        """Read the server's /metadata now, as `openenv_version` does, without caching
+        what it reports, so a record can be checked before it is saved.
+
+        Raises OpenEnvError when the record has no url or the server doesn't answer."""
+        if not openenv_server.url:
+            raise OpenEnvError(_no_url_message(openenv_server))
+        await self._connect_remote(openenv_server, openenv_server.url.rstrip("/"))
 
     async def list_tools(
         self, openenv_server: OpenEnvServer, fresh: bool = False
@@ -227,6 +262,18 @@ class OpenEnvSessionManager:
         ]
         server.tools = tools
         return tools
+
+    async def reset_schema(
+        self, openenv_server: OpenEnvServer
+    ) -> dict[str, JsonValue] | None:
+        """The JSON schema the environment publishes for its reset arguments, read
+        fresh on every call. None when it publishes none. Raises `OpenEnvError` when
+        the server can't be reached."""
+        if not openenv_server.url:
+            raise OpenEnvError(_no_url_message(openenv_server))
+        base_url = openenv_server.url.rstrip("/")
+        async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT_S) as client:
+            return await _reset_schema_at(client, openenv_server, base_url, "/schema")
 
     async def start_episode(
         self, openenv_server: OpenEnvServer, reset_kwargs: dict[str, JsonValue]
@@ -270,12 +317,21 @@ class OpenEnvSessionManager:
         """Call one of the environment's tools inside a live episode."""
         session = self._sessions.get(episode.episode_id)
         if session is None:
-            raise RuntimeError(
+            cause = self._lost_causes.get(episode.episode_id)
+            if cause is not None:
+                raise OpenEnvSessionLostError(
+                    f"The OpenEnv session ended when {cause}. OpenEnv tools can't be "
+                    "called again in this run."
+                )
+            raise OpenEnvSessionLostError(
                 f"Episode {episode.episode_id} has no live session; tools "
                 "can only be called during generation"
             )
-        async with session.lock:
-            try:
+        try:
+            async with session.lock:
+                # Counted once sent: the environment may act on a call whose reply
+                # never arrives.
+                session.tool_calls += 1
                 data = await self._request(
                     session.ws,
                     {
@@ -288,14 +344,10 @@ class OpenEnvSessionManager:
                     },
                     "observation",
                 )
-            except BaseException as e:
-                if tool_call_error_ends_session(e):
-                    # A late answer to this call would be read as the answer to the
-                    # next one: OpenEnv responses carry no request id. The session is
-                    # dropped so nothing reads from it again.
-                    self._sessions.pop(episode.episode_id, None)
-                    await self._close_quietly(session.ws)
-                raise
+        except BaseException as e:
+            raise await self._session_failure(
+                session, e, f"the {tool_name} tool call failed"
+            )
         reward = data.get("reward")
         observation = data.get("observation") or {}
         error, error_code, error_details = read_observation_error(
@@ -312,9 +364,39 @@ class OpenEnvSessionManager:
             error_details=error_details,
         )
 
+    def tool_calls(self, episode: OpenEnvEpisode) -> int:
+        """How many tool calls have been sent on the episode's live session, including
+        ones that failed after sending. 0 when the episode has no live session."""
+        session = self._sessions.get(episode.episode_id)
+        return session.tool_calls if session is not None else 0
+
+    async def read_state(self, episode: OpenEnvEpisode) -> dict[str, JsonValue]:
+        """Read the environment's state inside a live episode, leaving the session
+        open. A failure drops the session as `call_tool` does."""
+        session = self._sessions.get(episode.episode_id)
+        if session is None:
+            raise OpenEnvSessionLostError(
+                f"Episode {episode.episode_id} has no live session"
+            )
+        try:
+            async with session.lock:
+                data = await self._request(session.ws, {"type": "state"}, "state")
+        except BaseException as e:
+            raise await self._session_failure(
+                session, e, "reading the OpenEnv server's state failed"
+            )
+        return {str(k): v for k, v in data.items()}
+
+    def lost_cause(self, episode: OpenEnvEpisode) -> str | None:
+        """Why the episode's session failed and was dropped, as a clause such as "the
+        search tool call failed: [error]". None while the session is live, when it
+        ended any other way, or after the episode is released."""
+        return self._lost_causes.get(episode.episode_id)
+
     async def end_episode(self, episode: OpenEnvEpisode) -> OpenEnvEpisode:
         """Read the environment's final state and close the session. Returns the
         episode with `final_state` set: the durable record graders read."""
+        self._lost_causes.pop(episode.episode_id, None)
         session = self._sessions.pop(episode.episode_id, None)
         if session is None:
             return episode
@@ -329,14 +411,23 @@ class OpenEnvSessionManager:
     async def release(self, episode: OpenEnvEpisode) -> None:
         """Close an episode's session without reading its state, e.g. after a
         failed generation."""
+        self._lost_causes.pop(episode.episode_id, None)
         session = self._sessions.pop(episode.episode_id, None)
         if session is not None:
             await self._end_session(session.ws)
 
+    def forget(self, episode: OpenEnvEpisode) -> None:
+        """Drop the manager's reference to an episode's session without closing it,
+        for a session opened on an event loop that can no longer be awaited on."""
+        self._lost_causes.pop(episode.episode_id, None)
+        self._sessions.pop(episode.episode_id, None)
+
     async def shutdown(self) -> None:
         """Close every live session and forget every environment."""
+        await self.conversations.close_all()
         sessions = list(self._sessions.values())
         self._sessions.clear()
+        self._lost_causes.clear()
         self._servers.clear()
         await asyncio.gather(*(self._end_session(s.ws) for s in sessions))
 
@@ -352,11 +443,7 @@ class OpenEnvSessionManager:
         if openenv_server.id is None:
             raise ValueError("OpenEnv server must be saved before it can be used")
         if not openenv_server.url:
-            raise OpenEnvError(
-                f"OpenEnv server '{openenv_server.name}' has no url. Kiln does not start "
-                "environments: run the OpenEnv server yourself and set its "
-                "url to it (e.g. http://127.0.0.1:8000)."
-            )
+            raise OpenEnvError(_no_url_message(openenv_server))
         base_url = openenv_server.url.rstrip("/")
         lock = self._server_locks.setdefault(openenv_server.id, asyncio.Lock())
         async with lock:
@@ -445,9 +532,13 @@ class OpenEnvSessionManager:
             await self._send(ws, message)
             raw = await asyncio.wait_for(ws.recv(), timeout=self._step_timeout_s)
         except ConnectionClosed as e:
-            hint = _CAPACITY_HINT if kind == "reset" else ""
+            if kind == "reset":
+                # Some servers close the socket instead of answering a reset over capacity.
+                raise OpenEnvCapacityError(
+                    f"The environment closed the session: {e}.{_CAPACITY_HINT}"
+                ) from e
             raise OpenEnvTransientError(
-                f"The environment closed the session: {e}.{hint}"
+                f"The environment closed the session: {e}."
             ) from e
         except asyncio.TimeoutError as e:
             raise OpenEnvTransientError(
@@ -473,8 +564,8 @@ class OpenEnvSessionManager:
                 f"The environment rejected a '{kind}' message: {_preview(detail)}"
             )
             if str(code).lower() == "capacity_reached":
-                raise OpenEnvTransientError(rejection + _CAPACITY_HINT)
-            raise OpenEnvRejectedError(rejection)
+                raise OpenEnvCapacityError(rejection + _CAPACITY_HINT)
+            raise OpenEnvRejectedError(rejection, server_message=_preview(detail))
         if response_type != expected_type:
             raise OpenEnvError(
                 f"The environment answered a '{kind}' message with a "
@@ -497,6 +588,36 @@ class OpenEnvSessionManager:
         finally:
             await self._close_quietly(ws)
 
+    async def _session_failure(
+        self, session: _Session, error: BaseException, failure: str
+    ) -> BaseException:
+        """Drop the session unless the environment rejected the message, and return
+        the error to raise. Any other `Exception` becomes `OpenEnvSessionLostError`, so
+        callers that check for environment errors see that the session ended;
+        cancellation and other `BaseException`s are returned as they are."""
+        if tool_call_error_ends_session(error):
+            # A late answer to this message would be read as the answer to the next
+            # one: OpenEnv responses carry no request id. The session is dropped so
+            # nothing reads from it again.
+            self._sessions.pop(session.episode_id, None)
+            if isinstance(error, Exception):
+                self._record_lost_cause(
+                    session.episode_id, f"{failure}: {_preview(str(error))}"
+                )
+            await self._close_quietly(session.ws)
+        if isinstance(error, Exception) and not isinstance(error, OpenEnvError):
+            lost = OpenEnvSessionLostError(
+                f"The session for episode {session.episode_id} failed: {error}"
+            )
+            lost.__cause__ = error
+            return lost
+        return error
+
+    def _record_lost_cause(self, episode_id: str, cause: str) -> None:
+        self._lost_causes[episode_id] = cause
+        if len(self._lost_causes) > _MAX_LOST_CAUSES:
+            del self._lost_causes[next(iter(self._lost_causes))]
+
     async def _close_quietly(self, ws: ClientConnection) -> None:
         try:
             await ws.close()
@@ -514,6 +635,11 @@ def shared_session_manager() -> OpenEnvSessionManager:
     if _shared is None:
         _shared = OpenEnvSessionManager()
     return _shared
+
+
+def shared_conversation_sessions() -> ConversationSessions:
+    """The sessions the process-wide session manager holds between conversation turns."""
+    return shared_session_manager().conversations
 
 
 async def shutdown_shared_session_manager() -> None:
@@ -539,6 +665,39 @@ def _compose_openenv_version(name: str, version: str | None) -> str:
     `get_metadata()` and bump its version whenever its behaviour changes. One that
     reports no version is keyed by its name alone and never regenerates."""
     return f"{name}@{version}" if version else name
+
+
+def _no_url_message(openenv_server: OpenEnvServer) -> str:
+    return (
+        f"OpenEnv server '{openenv_server.name}' has no url. Kiln does not start "
+        "environments: run the OpenEnv server yourself and set its "
+        "url to it (e.g. http://127.0.0.1:8000)."
+    )
+
+
+async def _reset_schema_at(
+    client: httpx.AsyncClient,
+    openenv_server: OpenEnvServer,
+    base_url: str,
+    path: str,
+) -> dict[str, JsonValue] | None:
+    """The `reset` object of the JSON object served at `path`, or None when the path
+    is missing, isn't JSON, or has no `reset` object."""
+    try:
+        response = await client.get(f"{base_url}{path}")
+    except httpx.TransportError as e:
+        raise OpenEnvError(
+            f"OpenEnv server '{openenv_server.name}' points at {base_url}, which did "
+            f"not answer {path}: {e}"
+        ) from e
+    if not response.is_success:
+        return None
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    reset = body.get("reset") if isinstance(body, dict) else None
+    return reset if isinstance(reset, dict) else None
 
 
 def _preview(value: Any) -> str:

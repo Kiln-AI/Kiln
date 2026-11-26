@@ -303,6 +303,28 @@ export interface paths {
         patch: operations["update_run_api_projects__project_id__tasks__task_id__runs__run_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/openenv_session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Conversation OpenEnv Session
+         * @description Whether a message sent after this turn can use the conversation's OpenEnv
+         *     session. Sessions live in this process, so after a restart every
+         *     conversation that used one reports "ended".
+         */
+        get: operations["get_conversation_openenv_session_api_projects__project_id__tasks__task_id__runs__run_id__openenv_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/chain": {
         parameters: {
             query?: never;
@@ -3026,8 +3048,32 @@ export interface paths {
         delete: operations["delete_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__delete"];
         options?: never;
         head?: never;
-        /** Update OpenEnv Server */
+        /**
+         * Update OpenEnv Server
+         * @description Change an OpenEnv server. A new url is saved only if an OpenEnv server
+         *     answers at it; other changes are saved without contacting the server.
+         */
         patch: operations["update_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive OpenEnv Server
+         * @description Archive or unarchive an OpenEnv server. An archived server's tools aren't offered in tool pickers; run configs that already list them still run.
+         */
+        post: operations["archive_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/tools": {
@@ -3044,6 +3090,66 @@ export interface paths {
         get: operations["list_openenv_server_tools_api_projects__project_id__openenv_servers__openenv_server_id__tools_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/reset_schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get OpenEnv Server Reset Schema
+         * @description The JSON schema the OpenEnv server publishes for its reset arguments, read fresh from the running server at url. Null when it publishes none.
+         */
+        get: operations["get_openenv_server_reset_schema_api_projects__project_id__openenv_servers__openenv_server_id__reset_schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/openenv_servers/{openenv_server_id}/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Environment Version
+         * @description The name@version the environment's OpenEnv server reports, read fresh from the running server at url.
+         */
+        get: operations["get_openenv_server_version_api_projects__project_id__openenv_servers__openenv_server_id__version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/run_openenv_server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Run Environment
+         * @description The environment a run with these tools would use, found from tool ids alone without contacting any server. Returns an error instead when the tools reach more than one environment.
+         */
+        post: operations["get_run_openenv_server_api_projects__project_id__tasks__task_id__run_openenv_server_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5700,6 +5806,20 @@ export interface components {
              * @enum {string}
              */
             mode: "must_contain" | "must_not_contain";
+        };
+        /** ConversationOpenEnvSession */
+        ConversationOpenEnvSession: {
+            /**
+             * State
+             * @description "none" when the conversation uses no OpenEnv server, "open" when it can take another message, "ended" when its session is gone.
+             * @enum {string}
+             */
+            state: "none" | "open" | "ended";
+            /**
+             * Message
+             * @description Why the conversation can't continue. Set when "ended".
+             */
+            message?: string | null;
         };
         /** CorrelationResult */
         CorrelationResult: {
@@ -10302,6 +10422,50 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * NamedResetKwargs
+         * @description Reset keyword arguments saved under a name, so a run can pick them by name.
+         *
+         *     Shown in the UI as an Environment Preset. A run records the kwargs it used, not
+         *     the name, because a preset can be renamed or removed later.
+         */
+        NamedResetKwargs: {
+            /**
+             * Name
+             * @description User-facing name, unique within its environment.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes on what this preset starts the environment with.
+             */
+            description?: string | null;
+            /**
+             * Reset Kwargs
+             * @description Keyword arguments for the environment's reset(), passed verbatim.
+             */
+            reset_kwargs?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /**
+         * NamedResetKwargsRequest
+         * @description Reset kwargs saved under a name, shown in the UI as an Environment Preset.
+         */
+        NamedResetKwargsRequest: {
+            /**
+             * Name
+             * @description User-facing name, unique within the environment.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes on what this preset starts the environment with.
+             */
+            description?: string | null;
+            /** @description Keyword arguments for the environment's reset(), as a JSON object. */
+            reset_kwargs?: components["schemas"]["JsonValue"];
+        };
+        /**
          * NewProposedSpecEditApi
          * @description A proposed edit to a spec field.
          */
@@ -10477,7 +10641,7 @@ export interface components {
          *     that episode.
          *
          *     `reset_kwargs` is opaque to Kiln: it is passed as the keyword arguments of the
-         *     environment's `reset` (a dataset or scenario identifier, a seed, a clock override). The
+         *     environment's `reset`, and which keywords exist depends on the environment. The
          *     trace key carries a digest of the whole reset, so an input whose reset is edited
          *     after its trace was made generates a new one rather than reusing it.
          */
@@ -10489,11 +10653,22 @@ export interface components {
             openenv_server_id: string;
             /**
              * Reset Kwargs
-             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist is the environment's business, e.g. which dataset or scenario to start from, a seed, a clock override.
+             * @description Keyword arguments for the environment's reset(), passed verbatim. Which keywords exist depends on the environment.
              */
             reset_kwargs?: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+        };
+        /**
+         * OpenEnvServerArchiveRequest
+         * @description Archive or unarchive an OpenEnv server.
+         */
+        OpenEnvServerArchiveRequest: {
+            /**
+             * Is Archived
+             * @description Whether the OpenEnv server is archived.
+             */
+            is_archived: boolean;
         };
         /**
          * OpenEnvServerCreateRequest
@@ -10515,6 +10690,24 @@ export interface components {
              * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
              */
             url?: string | null;
+            /**
+             * Named Reset Kwargs
+             * @description Named reset kwargs a run can start the environment with, in order. The first is the default. Names must be unique.
+             */
+            named_reset_kwargs?: components["schemas"]["NamedResetKwargsRequest"][];
+        };
+        /**
+         * OpenEnvServerResetSchemaResponse
+         * @description The JSON schema the OpenEnv server publishes for its reset arguments.
+         */
+        OpenEnvServerResetSchemaResponse: {
+            /**
+             * Reset Schema
+             * @description The JSON schema of the server's reset arguments, or null when it publishes none.
+             */
+            reset_schema?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * OpenEnvServerResponse
@@ -10542,6 +10735,11 @@ export interface components {
              */
             url?: string | null;
             /**
+             * Named Reset Kwargs
+             * @description Named reset kwargs a run can start the environment with, in order. The first is the default. Names must be unique.
+             */
+            named_reset_kwargs?: components["schemas"]["NamedResetKwargs"][];
+            /**
              * Created At
              * @description When the OpenEnv server was created.
              */
@@ -10551,10 +10749,17 @@ export interface components {
              * @description Who created the OpenEnv server.
              */
             created_by?: string | null;
+            /**
+             * Is Archived
+             * @description Whether the OpenEnv server is archived.
+             * @default false
+             */
+            is_archived: boolean;
         };
         /**
          * OpenEnvServerUpdateRequest
-         * @description Changes to an OpenEnv server. Only the fields sent are changed.
+         * @description Changes to an OpenEnv server. Only the fields sent are changed, and
+         *     `named_reset_kwargs`, when sent, replaces the whole list.
          */
         OpenEnvServerUpdateRequest: {
             /**
@@ -10572,6 +10777,22 @@ export interface components {
              * @description Base URL of an OpenEnv server that is already running (e.g. http://127.0.0.1:8000). Kiln connects to it; it never starts one. Evals run in this OpenEnv server send their tool calls to it.
              */
             url?: string | null;
+            /**
+             * Named Reset Kwargs
+             * @description Named reset kwargs a run can start the environment with, in order. The first is the default. Names must be unique.
+             */
+            named_reset_kwargs?: components["schemas"]["NamedResetKwargsRequest"][] | null;
+        };
+        /**
+         * OpenEnvServerVersionResponse
+         * @description What the environment's OpenEnv server reports about itself.
+         */
+        OpenEnvServerVersionResponse: {
+            /**
+             * Openenv Version
+             * @description The name@version the server reports, or its name alone when it reports no version.
+             */
+            openenv_version: string;
         };
         /**
          * OpenEnvToolResponse
@@ -11854,6 +12075,31 @@ export interface components {
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
         /**
+         * RunOpenEnvServerRequest
+         * @description The tools a run would use.
+         */
+        RunOpenEnvServerRequest: {
+            /**
+             * Tool Ids
+             * @description The run config's tool ids, saved or not yet saved.
+             */
+            tool_ids: string[];
+        };
+        /**
+         * RunOpenEnvServerResponse
+         * @description The environment a run with these tools would start a session on. Both fields
+         *     are null when the tools reach no environment.
+         */
+        RunOpenEnvServerResponse: {
+            /** @description The one environment the tools reach, directly or through code tools and Kiln task tools. */
+            openenv_server?: components["schemas"]["OpenEnvServerResponse"] | null;
+            /**
+             * Error
+             * @description Why the tools can't be run: they reach more than one environment, or the one they reach no longer exists.
+             */
+            error?: string | null;
+        };
+        /**
          * RunSummary
          * @description A summary of a task run for list views.
          */
@@ -11939,6 +12185,13 @@ export interface components {
              * @description The ID of the saved TaskRunConfig the caller used to populate run_config_properties, if any. Stored on the resulting TaskRun so the run can be traced back to its originating saved config. None for ad-hoc runs that were not initiated from a saved TaskRunConfig.
              */
             task_run_config_id?: string | null;
+            /**
+             * Openenv Reset Kwargs
+             * @description Keyword arguments for resetting the OpenEnv environment the run config's tools reach. Omit to reset it with none. Refused when the tools reach no environment.
+             */
+            openenv_reset_kwargs?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
         };
         /**
          * SampleApi
@@ -14031,7 +14284,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "sandbox_code";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "openenv" | "sandbox_code";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -15438,6 +15691,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_conversation_openenv_session_api_projects__project_id__tasks__task_id__runs__run_id__openenv_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The latest turn of the multi-turn conversation. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOpenEnvSession"];
                 };
             };
             /** @description Validation Error */
@@ -21756,6 +22045,44 @@ export interface operations {
             };
         };
     };
+    archive_openenv_server_api_projects__project_id__openenv_servers__openenv_server_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenEnvServerArchiveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_openenv_server_tools_api_projects__project_id__openenv_servers__openenv_server_id__tools_get: {
         parameters: {
             query?: never;
@@ -21777,6 +22104,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenEnvToolResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_openenv_server_reset_schema_api_projects__project_id__openenv_servers__openenv_server_id__reset_schema_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the OpenEnv server. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerResetSchemaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_openenv_server_version_api_projects__project_id__openenv_servers__openenv_server_id__version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the environment. */
+                openenv_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenEnvServerVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_openenv_server_api_projects__project_id__tasks__task_id__run_openenv_server_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunOpenEnvServerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOpenEnvServerResponse"];
                 };
             };
             /** @description Validation Error */

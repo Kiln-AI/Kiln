@@ -45,7 +45,7 @@ def tool_from_id_and_project(
 
     An OpenEnv tool id (`kiln_tool::openenv::<openenv_server_id>::<tool_name>`)
     resolves to the tool the OpenEnv server's environment serves, and only while an episode of
-    that OpenEnv server is active (set by the eval runner for one job). Project tool ids resolve
+    that OpenEnv server is active (set for one run or eval job). Project tool ids resolve
     to the project tool whether or not an episode is active: a run config chooses the
     OpenEnv server's tools by listing their ids, never by substitution.
     """
@@ -63,8 +63,8 @@ def _openenv_tool(
     if episode_ctx is None or episode_ctx.openenv_server.id != openenv_server_id:
         raise ValueError(
             f"OpenEnv tool {tool_id} can only be used while an episode of "
-            f"OpenEnv server {openenv_server_id} is active: run it from an eval whose inputs carry an "
-            "openenv_reset naming that OpenEnv server."
+            f"OpenEnv server {openenv_server_id} is active: run it from a run config that "
+            "reaches that OpenEnv server, or an eval input whose openenv_reset names it."
         )
     served_tool = episode_ctx.tools.get(tool_name)
     if served_tool is None:

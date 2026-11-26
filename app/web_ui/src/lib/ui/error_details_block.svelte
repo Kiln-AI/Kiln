@@ -9,10 +9,13 @@
   export let markdown: boolean = false
   export let trusted: boolean = false
   export let show_logs: boolean = true
+  export let full_width: boolean = false
 </script>
 
 <div
-  class="mb-6 flex flex-col gap-4 max-w-[600px] mx-auto border p-4 rounded-md"
+  class="mb-6 flex flex-col gap-4 border p-4 rounded-md {full_width
+    ? ''
+    : 'max-w-[600px] mx-auto'}"
 >
   <span class="font-bold text-error">{title}</span>
 

@@ -182,6 +182,7 @@ describe("tool_set_type_label", () => {
   it("returns friendly labels for known types", () => {
     expect(tool_set_type_label("code")).toBe("Code Tool")
     expect(tool_set_type_label("mcp")).toBe("MCP")
+    expect(tool_set_type_label("openenv")).toBe("OpenEnv")
     expect(tool_set_type_label("search")).toBe("Search")
     expect(tool_set_type_label("kiln_task")).toBe("Kiln Task")
     expect(tool_set_type_label("demo")).toBe("Demo")

@@ -115,6 +115,13 @@ export type ExternalToolServerApiDescription =
 export type ExternalToolApiDescription =
   components["schemas"]["ExternalToolApiDescription"]
 export type ToolServerType = components["schemas"]["ToolServerType"]
+export type OpenEnvServer = components["schemas"]["OpenEnvServerResponse"]
+export type OpenEnvTool = components["schemas"]["OpenEnvToolResponse"]
+export type NamedResetKwargs = components["schemas"]["NamedResetKwargs"]
+export type RunOpenEnvServer = components["schemas"]["RunOpenEnvServerResponse"]
+export type ConversationOpenEnvSession =
+  components["schemas"]["ConversationOpenEnvSession"]
+export type OpenEnvEpisode = components["schemas"]["OpenEnvEpisode"]
 export type ToolSetType = components["schemas"]["ToolSetType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
 export type ToolSetApiDescription =

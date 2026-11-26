@@ -21,11 +21,19 @@
   // Height of the plaintext textarea. Defaults to the tall input used on the
   // /run page; the multiturn composer overrides it with a shorter box.
   export let height: "base" | "compact" | "medium" | "large" | "xl" = "large"
+  // Set when the schema's descriptions can run long, such as one an
+  // environment serves. See on_see_all_description in FormElement.
+  export let on_see_all_description:
+    | ((title: string, description: string) => void)
+    | null = null
   let plaintext_input: string = ""
   $: void (plaintext_input, onInputChange?.())
 
   // Store ref to the root form element
-  let rootFormElement: { buildValue(): unknown } | null = null
+  let rootFormElement: {
+    buildValue(): unknown
+    set_value(value: unknown): Promise<void>
+  } | null = null
 
   // Key to force component remount when needed
   let formKey = 0
@@ -54,6 +62,13 @@
     plaintext_input = ""
     // resets the form to its initial state
     formKey += 1
+  }
+
+  // Fill the structured form from a JSON value matching input_schema. No-op in
+  // plaintext mode.
+  export async function set_structured_input_data(value: unknown) {
+    if (!input_schema) return
+    await rootFormElement?.set_value(value)
   }
 
   // Set the plaintext input value. No-op when the form is in structured mode
@@ -100,6 +115,7 @@
       level={0}
       path="root"
       hideHeaderAndIndent={true}
+      {on_see_all_description}
       bind:this={rootFormElement}
     />
   {/key}

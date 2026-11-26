@@ -9,6 +9,9 @@
   export let path: string = ""
   export let hideHeaderAndIndent: boolean = false
   export let parentOptional: boolean = false
+  export let on_see_all_description:
+    | ((title: string, description: string) => void)
+    | null = null
 
   const dispatch = createEventDispatcher()
   let inst: RunInputFormElement | null = null
@@ -24,5 +27,6 @@
   {path}
   {hideHeaderAndIndent}
   {parentOptional}
+  {on_see_all_description}
   bind:this={inst}
 />

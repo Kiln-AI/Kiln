@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { RUN_OPTIONS_CHANGED_WHILE_SENDING } from "$lib/utils/openenv"
 
 const postMock = vi.fn()
 vi.mock("$lib/api_client", () => ({
@@ -329,5 +330,119 @@ describe("send_multiturn", () => {
       postMock.mock.calls[0][1] as { body: Record<string, unknown> }
     ).body
     expect(body.run_config_properties).toEqual(props)
+  })
+
+  describe("openenv_reset_kwargs", () => {
+    function posted_body(): Record<string, unknown> {
+      return (postMock.mock.calls[0][1] as { body: Record<string, unknown> })
+        .body
+    }
+
+    function run_config_with_openenv(
+      kwargs: Record<string, unknown> | null,
+    ): RunConfigController & {
+      get_openenv_reset_kwargs: ReturnType<typeof vi.fn>
+    } {
+      return {
+        ...makeRunConfig(),
+        get_openenv_reset_kwargs: vi.fn().mockResolvedValue(kwargs),
+      } as unknown as RunConfigController & {
+        get_openenv_reset_kwargs: ReturnType<typeof vi.fn>
+      }
+    }
+
+    it("sends the chosen reset arguments on a conversation's first turn", async () => {
+      postMock.mockResolvedValue({ data: { id: "root" }, error: null })
+      await send_multiturn({
+        project_id: "p",
+        task_id: "t",
+        parent_task_run_id: null,
+        allow_root_turn: true,
+        run_config_component: run_config_with_openenv({ company: "acme" }),
+        input_form: asInputFormController(makeInputForm("hi")),
+        on_success: vi.fn(),
+      })
+      expect(posted_body().openenv_reset_kwargs).toEqual({ company: "acme" })
+    })
+
+    it("leaves them out when the tools reach no OpenEnv", async () => {
+      postMock.mockResolvedValue({ data: { id: "root" }, error: null })
+      await send_multiturn({
+        project_id: "p",
+        task_id: "t",
+        parent_task_run_id: null,
+        allow_root_turn: true,
+        run_config_component: run_config_with_openenv(null),
+        input_form: asInputFormController(makeInputForm("hi")),
+        on_success: vi.fn(),
+      })
+      expect("openenv_reset_kwargs" in posted_body()).toBe(false)
+    })
+
+    it("refuses the send when the run options changed during the lookup", async () => {
+      const mock = makeRunConfig()
+      const before =
+        mock.run_options_as_run_config_properties() as RunConfigProperties
+      mock.run_options_as_run_config_properties
+        .mockReturnValueOnce(before)
+        .mockReturnValue({
+          ...before,
+          tools_config: { tools: ["kiln_tool::openenv::other::search"] },
+        })
+      const run_config = {
+        ...asRunConfigController(mock),
+        get_openenv_reset_kwargs: vi
+          .fn()
+          .mockResolvedValue({ company: "acme" }),
+      }
+      await expect(
+        send_multiturn({
+          project_id: "p",
+          task_id: "t",
+          parent_task_run_id: null,
+          allow_root_turn: true,
+          run_config_component: run_config,
+          input_form: asInputFormController(makeInputForm("hi")),
+          on_success: vi.fn(),
+        }),
+      ).rejects.toThrow(RUN_OPTIONS_CHANGED_WHILE_SENDING)
+      expect(postMock).not.toHaveBeenCalled()
+    })
+
+    it("never sends them on a later turn", async () => {
+      postMock.mockResolvedValue({ data: { id: "next" }, error: null })
+      const run_config = run_config_with_openenv({ company: "acme" })
+      await send_multiturn({
+        project_id: "p",
+        task_id: "t",
+        parent_task_run_id: "leaf",
+        run_config_component: run_config,
+        input_form: asInputFormController(makeInputForm("hi")),
+        on_success: vi.fn(),
+      })
+      expect("openenv_reset_kwargs" in posted_body()).toBe(false)
+      expect(run_config.get_openenv_reset_kwargs).not.toHaveBeenCalled()
+    })
+  })
+
+  it("returns the HTTP status of a refused send", async () => {
+    postMock.mockResolvedValue({
+      data: null,
+      error: { message: "The OpenEnv session for this conversation ended." },
+      response: { status: 409 },
+    })
+    const result = await send_multiturn({
+      project_id: "p",
+      task_id: "t",
+      parent_task_run_id: "leaf",
+      run_config_component: asRunConfigController(makeRunConfig()),
+      input_form: asInputFormController(makeInputForm("hi")),
+      on_success: vi.fn(),
+    })
+    expect(result).toEqual({
+      ok: false,
+      error: { message: "The OpenEnv session for this conversation ended." },
+      status: 409,
+    })
   })
 })

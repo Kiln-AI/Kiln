@@ -18,6 +18,7 @@
   import { selected_tool_for_task } from "$lib/stores/tools_store"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
+  import ToolArgumentsList from "$lib/components/tool_arguments_list.svelte"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -317,55 +318,11 @@
     return properties
   }
 
-  interface Argument {
-    name: string
-    type: string
-    description: string | null
-    isRequired: boolean
-  }
-
   // Type guard functions for safe type checking
   function isStringArray(value: unknown): value is string[] {
     return (
       Array.isArray(value) && value.every((item) => typeof item === "string")
     )
-  }
-
-  function isObject(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object" && !Array.isArray(value)
-  }
-
-  function isString(value: unknown): value is string {
-    return typeof value === "string"
-  }
-
-  function formatToolArguments(
-    inputSchema: Record<string, unknown>,
-  ): Argument[] {
-    if (!isObject(inputSchema) || !isObject(inputSchema.properties)) {
-      return []
-    }
-
-    const properties = inputSchema.properties
-    const required = isStringArray(inputSchema.required)
-      ? inputSchema.required
-      : []
-
-    const args: Argument[] = []
-
-    for (const [name, schema] of Object.entries(properties)) {
-      if (!isObject(schema)) {
-        continue
-      }
-
-      const isRequired = required.includes(name)
-      const type = isString(schema.type) ? schema.type : "Unknown"
-      const description = isString(schema.description)
-        ? schema.description
-        : null
-      args.push({ name, type, description, isRequired })
-    }
-    return args
   }
 
   async function archive() {
@@ -624,43 +581,13 @@
               </thead>
               <tbody>
                 {#each tool_server.available_tools as tool}
-                  {@const formatted_args = formatToolArguments(
-                    tool.inputSchema || {},
-                  )}
                   <tr>
                     <td class="font-medium">{tool.name}</td>
                     <td class="max-w-[300px] whitespace-pre-line break-words"
                       >{tool.description || "None"}</td
                     >
                     <td>
-                      {#if formatted_args.length > 0}
-                        <div class="divide-y divide-y-[0.5px]">
-                          {#each formatted_args as arg}
-                            <div class="py-2">
-                              <div class="flex flex-row gap-3 items-center">
-                                <span class="font-mono">{arg.name}</span>
-                                <span class="font-mono font-light text-gray-500"
-                                  >{arg.type}
-                                </span>
-                                {#if !arg.isRequired}
-                                  <span class="badge badge-sm badge-outline"
-                                    >Optional</span
-                                  >
-                                {/if}
-                              </div>
-                              {#if arg.description}
-                                <div class="text-gray-500 text-sm mt-1">
-                                  <span class="whitespace-pre-line break-words"
-                                    >{arg.description}</span
-                                  >
-                                </div>
-                              {/if}
-                            </div>
-                          {/each}
-                        </div>
-                      {:else}
-                        <span class="text-gray-500">None</span>
-                      {/if}
+                      <ToolArgumentsList input_schema={tool.inputSchema} />
                     </td>
                     {#if tool_server?.type === "remote_mcp" || tool_server?.type === "local_mcp"}
                       <td class="p-0">
