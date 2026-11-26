@@ -92,6 +92,7 @@ from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.custom_errors import dangling_reference_error, not_found_error
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.provenance_api import validate_provenance_or_400
@@ -99,6 +100,7 @@ from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
     agent_policy_require_approval,
+    with_mcp_deny,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,10 +155,7 @@ def parse_comma_separated_tags(tags: str | None) -> list[str] | None:
 def get_rag_config_from_id(project: Project, rag_config_id: str) -> RagConfig:
     rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
     if rag_config is None:
-        raise HTTPException(
-            status_code=404,
-            detail="RAG config not found",
-        )
+        raise not_found_error("RAG config", rag_config_id, "project's RAG configs")
     return rag_config
 
 
@@ -854,10 +853,7 @@ async def build_rag_workflow_runner(
 ) -> RagWorkflowRunner:
     rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
     if rag_config is None:
-        raise HTTPException(
-            status_code=404,
-            detail="RAG config not found",
-        )
+        raise not_found_error("RAG config", rag_config_id, "project's RAG configs")
 
     # should not happen, but id is optional in the datamodel
     if (
@@ -875,36 +871,32 @@ async def build_rag_workflow_runner(
         rag_config.extractor_config_id, project.path
     )
     if extractor_config is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Extractor config not found",
+        raise dangling_reference_error(
+            "RAG config", "extractor config", rag_config.extractor_config_id
         )
 
     chunker_config = ChunkerConfig.from_id_and_parent_path(
         rag_config.chunker_config_id, project.path
     )
     if chunker_config is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Chunker config not found",
+        raise dangling_reference_error(
+            "RAG config", "chunker config", rag_config.chunker_config_id
         )
 
     embedding_config = EmbeddingConfig.from_id_and_parent_path(
         rag_config.embedding_config_id, project.path
     )
     if embedding_config is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Embedding config not found",
+        raise dangling_reference_error(
+            "RAG config", "embedding config", rag_config.embedding_config_id
         )
 
     vector_store_config = VectorStoreConfig.from_id_and_parent_path(
         rag_config.vector_store_config_id, project.path
     )
     if vector_store_config is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Vector store config not found",
+        raise dangling_reference_error(
+            "RAG config", "vector store config", rag_config.vector_store_config_id
         )
 
     initial_progress = await compute_current_progress_for_rag_config(
@@ -1025,6 +1017,7 @@ def connect_document_api(app: FastAPI):
             Form(description="Tags to apply to all created documents."),
         ] = None,
     ) -> BulkCreateDocumentsResponse:
+        """Upload files to the project's document library, as multipart form data."""
         project = project_from_id(project_id)
 
         if not files:
@@ -1125,6 +1118,8 @@ def connect_document_api(app: FastAPI):
             str | None, Query(description="Comma-separated list of tags to filter by.")
         ] = None,
     ) -> list[Document]:
+        """List the documents in the project's library, optionally only those with given
+        tags."""
         project = project_from_id(project_id)
         target_tags: list[str] | None = None
         if tags:
@@ -1162,7 +1157,9 @@ def connect_document_api(app: FastAPI):
             extractor_config_id, project.path
         )
         if extractor_config is None:
-            raise HTTPException(status_code=404, detail="Extractor config not found")
+            raise not_found_error(
+                "Extractor config", extractor_config_id, "project's extractor configs"
+            )
 
         results: dict[str, list[ExtractionSummary]] = {}
 
@@ -1195,6 +1192,7 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[str]:
+        """List the tags used on the project's documents."""
         project = project_from_id(project_id)
         documents = project.documents(readonly=True)
         all_tags = set()
@@ -1214,6 +1212,7 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> dict[str, int]:
+        """Count the project's documents for each tag."""
         tags_count = {}
         project = project_from_id(project_id)
         # Not particularly efficient, but projects are memory cached after first load so re-compute is fairly cheap
@@ -1238,13 +1237,11 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the document.")
         ],
     ) -> Document:
+        """Get one document's record: name, description, tags and file details."""
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail="Document not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
         return document
 
     @app.patch(
@@ -1263,13 +1260,11 @@ def connect_document_api(app: FastAPI):
         ],
         request: PatchDocumentRequest,
     ) -> Document:
+        """Change a document's display name, description or tags."""
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail="Document not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
 
         if request.name_override is not None:
             if request.name_override == "":
@@ -1305,6 +1300,7 @@ def connect_document_api(app: FastAPI):
             list[str] | None, Body(description="Tags to remove from the documents.")
         ] = None,
     ) -> dict[str, bool]:
+        """Add tags to, or remove tags from, several documents at once."""
         project = project_from_id(project_id)
 
         # all the runs we need to tag
@@ -1366,6 +1362,8 @@ def connect_document_api(app: FastAPI):
         ],
         request: CreateExtractorConfigRequest,
     ) -> ExtractorConfig:
+        """Create an extractor config: how documents are turned into text (model,
+        prompts, output format)."""
         project = project_from_id(project_id)
 
         properties = request.get_properties()
@@ -1403,6 +1401,7 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[ExtractorConfig]:
+        """List the project's extractor configs."""
         project = project_from_id(project_id)
         return project.extractor_configs(readonly=True)
 
@@ -1420,14 +1419,14 @@ def connect_document_api(app: FastAPI):
             Path(description="The unique identifier of the extractor configuration."),
         ],
     ) -> ExtractorConfig:
+        """Get one extractor config."""
         project = project_from_id(project_id)
         extractor_config = ExtractorConfig.from_id_and_parent_path(
             extractor_config_id, project.path
         )
         if extractor_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Extractor config not found",
+            raise not_found_error(
+                "Extractor config", extractor_config_id, "project's extractor configs"
             )
         return extractor_config
 
@@ -1460,6 +1459,8 @@ def connect_document_api(app: FastAPI):
             ),
         ] = None,
     ) -> StreamingResponse:
+        """Extract the text of the project's documents with one extractor config.
+        Streams progress as events."""
         save_context = build_save_context(request)
         target_tags: list[str] | None = None
         if tags:
@@ -1479,9 +1480,10 @@ def connect_document_api(app: FastAPI):
                 extractor_config_id, project.path
             )
             if extractor_config is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Extractor config not found",
+                raise not_found_error(
+                    "Extractor config",
+                    extractor_config_id,
+                    "project's extractor configs",
                 )
 
             if extractor_config.is_archived:
@@ -1518,13 +1520,11 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the document.")
         ],
     ) -> list[ExtractionSummary]:
+        """List a document's extractions, one per extractor config that ran on it."""
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail="Document not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
 
         summaries: list[ExtractionSummary] = []
         for extraction in document.extractions(readonly=True):
@@ -1561,29 +1561,23 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the extraction.")
         ],
     ) -> ExtractionSummary:
+        """Get one extraction of a document, with its text."""
         project = project_from_id(project_id)
 
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {document_id} not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
 
         extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
         if not extraction:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Extraction {extraction_id} not found",
-            )
+            raise not_found_error("Extraction", extraction_id, "document's extractions")
 
         extractor_config = ExtractorConfig.from_id_and_parent_path(
             str(extraction.extractor_config_id), project.path
         )
         if not extractor_config:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Extractor config {extraction.extractor_config_id} not found",
+            raise dangling_reference_error(
+                "extraction", "extractor config", extraction.extractor_config_id
             )
 
         return build_extraction_summary(
@@ -1595,7 +1589,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/download",
         tags=["Documents"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def download_document_file(
         project_id: Annotated[
@@ -1608,10 +1602,7 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {document_id} not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
         if not document.path:
             raise HTTPException(
                 status_code=500,
@@ -1640,19 +1631,14 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the extraction.")
         ],
     ) -> FileResponse:
+        """Download an extraction's text as a file."""
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {document_id} not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
         extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
         if not extraction:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Extraction {extraction_id} not found",
-            )
+            raise not_found_error("Extraction", extraction_id, "document's extractions")
         if not extraction.output.path:
             raise HTTPException(
                 status_code=500,
@@ -1673,7 +1659,7 @@ def connect_document_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder",
         tags=["Documents"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def open_document_enclosing_folder(
         project_id: Annotated[
@@ -1687,10 +1673,7 @@ def connect_document_api(app: FastAPI):
         document = Document.from_id_and_parent_path(document_id, project.path)
 
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {document_id} not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
 
         if not document.path:
             raise HTTPException(
@@ -1715,14 +1698,12 @@ def connect_document_api(app: FastAPI):
             list[str], Body(description="List of document IDs to delete.")
         ],
     ) -> dict:
+        """Delete several documents, with their extractions."""
         project = project_from_id(project_id)
         for document_id in document_ids:
             document = Document.from_id_and_parent_path(document_id, project.path)
             if not document:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Document {document_id} not found",
-                )
+                raise not_found_error("Document", document_id, "project's documents")
 
             document.delete()
 
@@ -1741,13 +1722,11 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the document.")
         ],
     ) -> dict:
+        """Delete one document, with its extractions."""
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {document_id} not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
 
         document.delete()
 
@@ -1767,14 +1746,14 @@ def connect_document_api(app: FastAPI):
             Path(description="The unique identifier of the extractor configuration."),
         ],
     ) -> ExtractionProgress:
+        """Get how many of the project's documents an extractor config has extracted."""
         project = project_from_id(project_id)
         extractor_config = ExtractorConfig.from_id_and_parent_path(
             extractor_config_id, project.path
         )
         if extractor_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Extractor config not found",
+            raise not_found_error(
+                "Extractor config", extractor_config_id, "project's extractor configs"
             )
 
         documents = project.documents(readonly=True)
@@ -1817,14 +1796,13 @@ def connect_document_api(app: FastAPI):
             ),
         ] = None,
     ) -> StreamingResponse:
+        """Extract one document's text with the given extractor configs, or all active
+        ones. Streams progress."""
         save_context = build_save_context(request)
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {document_id} not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
 
         if extractor_config_ids is None:
             extractor_config_ids = [
@@ -1843,9 +1821,10 @@ def connect_document_api(app: FastAPI):
                 str(extractor_config_id), project.path
             )
             if extractor_config is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Extractor config {extractor_config_id} not found",
+                raise not_found_error(
+                    "Extractor config",
+                    extractor_config_id,
+                    "project's extractor configs",
                 )
             extractor_configs.append(extractor_config)
 
@@ -1873,13 +1852,11 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the extraction.")
         ],
     ) -> dict:
+        """Delete one extraction of a document."""
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {document_id} not found",
-            )
+            raise not_found_error("Document", document_id, "project's documents")
 
         # should not happen
         if document.path is None:
@@ -1890,10 +1867,7 @@ def connect_document_api(app: FastAPI):
 
         extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
         if not extraction:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Extraction {extraction_id} not found",
-            )
+            raise not_found_error("Extraction", extraction_id, "document's extractions")
         extraction.delete()
 
         if extraction.extractor_config_id is None:
@@ -1908,9 +1882,8 @@ def connect_document_api(app: FastAPI):
             extraction.extractor_config_id, project.path
         )
         if extractor_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Extractor config not found",
+            raise dangling_reference_error(
+                "extraction", "extractor config", extraction.extractor_config_id
             )
 
         extractor = extractor_adapter_from_type(
@@ -1951,15 +1924,15 @@ def connect_document_api(app: FastAPI):
         ],
         request: PatchExtractorConfigRequest,
     ) -> dict:
+        """Change an extractor config's name or description, or archive it."""
         project = project_from_id(project_id)
         extractor_config = ExtractorConfig.from_id_and_parent_path(
             extractor_config_id, project.path
         )
 
         if extractor_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Extractor config not found",
+            raise not_found_error(
+                "Extractor config", extractor_config_id, "project's extractor configs"
             )
 
         if request.name is not None:
@@ -1984,6 +1957,7 @@ def connect_document_api(app: FastAPI):
         ],
         request: CreateChunkerConfigRequest,
     ) -> ChunkerConfig:
+        """Create a chunker config: how extracted text is split into chunks for search."""
         project = project_from_id(project_id)
 
         # if semantic, validate that the referenced embedding config exists
@@ -1993,9 +1967,10 @@ def connect_document_api(app: FastAPI):
                 project.path,
             )
             if not embedding_config:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Embedding config {request.properties.embedding_config_id} not found",  # type: ignore[possibly-missing-attribute]
+                raise not_found_error(
+                    "Embedding config",
+                    request.properties.embedding_config_id,  # type: ignore[possibly-missing-attribute]
+                    "project's embedding configs",
                 )
 
         chunker_config = ChunkerConfig(
@@ -2026,6 +2001,7 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[ChunkerConfig]:
+        """List the project's chunker configs."""
         project = project_from_id(project_id)
         return project.chunker_configs(readonly=True)
 
@@ -2040,6 +2016,8 @@ def connect_document_api(app: FastAPI):
         ],
         request: CreateEmbeddingConfigRequest,
     ) -> EmbeddingConfig:
+        """Create an embedding config: the embedding model and settings for search
+        chunks."""
         project = project_from_id(project_id)
         if not project:
             raise HTTPException(
@@ -2076,6 +2054,7 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[EmbeddingConfig]:
+        """List the project's embedding configs."""
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
 
@@ -2090,6 +2069,7 @@ def connect_document_api(app: FastAPI):
         ],
         request: CreateRerankerConfigRequest,
     ) -> RerankerConfig:
+        """Create a reranker config: the model that reorders search results."""
         project = project_from_id(project_id)
 
         reranker_config = RerankerConfig(
@@ -2122,6 +2102,7 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[RerankerConfig]:
+        """List the project's reranker configs."""
         project = project_from_id(project_id)
         return project.reranker_configs(readonly=True)
 
@@ -2139,14 +2120,14 @@ def connect_document_api(app: FastAPI):
             Path(description="The unique identifier of the embedding configuration."),
         ],
     ) -> EmbeddingConfig:
+        """Get one embedding config."""
         project = project_from_id(project_id)
         embedding_config = EmbeddingConfig.from_id_and_parent_path(
             embedding_config_id, project.path
         )
         if embedding_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Embedding config {embedding_config_id} not found",
+            raise not_found_error(
+                "Embedding config", embedding_config_id, "project's embedding configs"
             )
         return embedding_config
 
@@ -2161,6 +2142,7 @@ def connect_document_api(app: FastAPI):
         ],
         request: CreateVectorStoreConfigRequest,
     ) -> VectorStoreConfig:
+        """Create a vector store config: the index type and search settings for RAG."""
         project = project_from_id(project_id)
         vector_store_config = VectorStoreConfig(
             parent=project,
@@ -2190,6 +2172,7 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[VectorStoreConfig]:
+        """List the project's vector store configs."""
         project = project_from_id(project_id)
         return project.vector_store_configs(readonly=True)
 
@@ -2209,6 +2192,7 @@ def connect_document_api(app: FastAPI):
         ],
         request: UpdateRagConfigRequest,
     ) -> RagConfig:
+        """Change a RAG config's name, description or archived flag."""
         project = project_from_id(project_id)
         rag_config = get_rag_config_from_id(project, rag_config_id)
         if request.name is not None:
@@ -2231,6 +2215,8 @@ def connect_document_api(app: FastAPI):
         ],
         request: CreateRagConfigRequest,
     ) -> RagConfig:
+        """Create a RAG config from an extractor, chunker, embedding and vector store
+        config. It becomes a search tool."""
         project = project_from_id(project_id)
 
         # check that the extractor, chunker, and embedding configs exist
@@ -2238,34 +2224,36 @@ def connect_document_api(app: FastAPI):
             str(request.extractor_config_id), project.path
         )
         if not extractor_config:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Extractor config {request.extractor_config_id} not found",
+            raise not_found_error(
+                "Extractor config",
+                request.extractor_config_id,
+                "project's extractor configs",
             )
         chunker_config = ChunkerConfig.from_id_and_parent_path(
             str(request.chunker_config_id), project.path
         )
         if not chunker_config:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Chunker config {request.chunker_config_id} not found",
+            raise not_found_error(
+                "Chunker config", request.chunker_config_id, "project's chunker configs"
             )
         embedding_config = EmbeddingConfig.from_id_and_parent_path(
             str(request.embedding_config_id), project.path
         )
         if not embedding_config:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Embedding config {request.embedding_config_id} not found",
+            raise not_found_error(
+                "Embedding config",
+                request.embedding_config_id,
+                "project's embedding configs",
             )
 
         vector_store_config = VectorStoreConfig.from_id_and_parent_path(
             str(request.vector_store_config_id), project.path
         )
         if not vector_store_config:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Vector store config {request.vector_store_config_id} not found",
+            raise not_found_error(
+                "Vector store config",
+                request.vector_store_config_id,
+                "project's vector store configs",
             )
 
         reranker_config = None
@@ -2275,9 +2263,10 @@ def connect_document_api(app: FastAPI):
                 str(request.reranker_config_id), project.path
             )
             if not reranker_config:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Reranker config {request.reranker_config_id} not found",
+                raise not_found_error(
+                    "Reranker config",
+                    request.reranker_config_id,
+                    "project's reranker configs",
                 )
 
         rag_config = RagConfig(
@@ -2314,6 +2303,7 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[RagConfigWithSubConfigs]:
+        """List the project's RAG configs, each with its sub-configs."""
         project = project_from_id(project_id)
 
         rag_configs: list[RagConfigWithSubConfigs] = []
@@ -2322,36 +2312,34 @@ def connect_document_api(app: FastAPI):
                 str(rag_config.extractor_config_id), project.path
             )
             if not extractor_config:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Extractor config {rag_config.extractor_config_id} not found",
+                raise dangling_reference_error(
+                    "RAG config", "extractor config", rag_config.extractor_config_id
                 )
 
             chunker_config = ChunkerConfig.from_id_and_parent_path(
                 str(rag_config.chunker_config_id), project.path
             )
             if not chunker_config:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Chunker config {rag_config.chunker_config_id} not found",
+                raise dangling_reference_error(
+                    "RAG config", "chunker config", rag_config.chunker_config_id
                 )
 
             embedding_config = EmbeddingConfig.from_id_and_parent_path(
                 str(rag_config.embedding_config_id), project.path
             )
             if not embedding_config:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Embedding config {rag_config.embedding_config_id} not found",
+                raise dangling_reference_error(
+                    "RAG config", "embedding config", rag_config.embedding_config_id
                 )
 
             vector_store_config = VectorStoreConfig.from_id_and_parent_path(
                 str(rag_config.vector_store_config_id), project.path
             )
             if not vector_store_config:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Vector store config {rag_config.vector_store_config_id} not found",
+                raise dangling_reference_error(
+                    "RAG config",
+                    "vector store config",
+                    rag_config.vector_store_config_id,
                 )
 
             reranker_config = None
@@ -2361,9 +2349,8 @@ def connect_document_api(app: FastAPI):
                     str(rag_config.reranker_config_id), project.path
                 )
                 if not reranker_config:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Reranker config {rag_config.reranker_config_id} not found",
+                    raise dangling_reference_error(
+                        "RAG config", "reranker config", rag_config.reranker_config_id
                     )
 
             rag_configs.append(
@@ -2401,42 +2388,39 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the RAG configuration.")
         ],
     ) -> RagConfigWithSubConfigs:
+        """Get one RAG config with its sub-configs."""
         project = project_from_id(project_id)
         rag_config = get_rag_config_from_id(project, rag_config_id)
         extractor_config = ExtractorConfig.from_id_and_parent_path(
             str(rag_config.extractor_config_id), project.path
         )
         if not extractor_config:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Extractor config {rag_config.extractor_config_id} not found",
+            raise dangling_reference_error(
+                "RAG config", "extractor config", rag_config.extractor_config_id
             )
 
         chunker_config = ChunkerConfig.from_id_and_parent_path(
             str(rag_config.chunker_config_id), project.path
         )
         if not chunker_config:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Chunker config {rag_config.chunker_config_id} not found",
+            raise dangling_reference_error(
+                "RAG config", "chunker config", rag_config.chunker_config_id
             )
 
         embedding_config = EmbeddingConfig.from_id_and_parent_path(
             str(rag_config.embedding_config_id), project.path
         )
         if not embedding_config:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Embedding config {rag_config.embedding_config_id} not found",
+            raise dangling_reference_error(
+                "RAG config", "embedding config", rag_config.embedding_config_id
             )
 
         vector_store_config = VectorStoreConfig.from_id_and_parent_path(
             str(rag_config.vector_store_config_id), project.path
         )
         if not vector_store_config:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Vector store config {rag_config.vector_store_config_id} not found",
+            raise dangling_reference_error(
+                "RAG config", "vector store config", rag_config.vector_store_config_id
             )
 
         reranker_config = None
@@ -2446,9 +2430,8 @@ def connect_document_api(app: FastAPI):
                 str(rag_config.reranker_config_id), project.path
             )
             if not reranker_config:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Reranker config {rag_config.reranker_config_id} not found",
+                raise dangling_reference_error(
+                    "RAG config", "reranker config", rag_config.reranker_config_id
                 )
 
         return RagConfigWithSubConfigs(
@@ -2487,6 +2470,8 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the RAG configuration.")
         ],
     ) -> StreamingResponse:
+        """Build a RAG config's search index: extract, chunk, embed and index the
+        documents. Streams progress."""
         project = project_from_id(project_id)
 
         rag_config = get_rag_config_from_id(project, rag_config_id)
@@ -2518,6 +2503,8 @@ def connect_document_api(app: FastAPI):
         ],
         request: GetRagConfigProgressRequest,
     ) -> Dict[str, RagProgress]:
+        """Get how far the index of each RAG config is built, for some or all of the
+        project's RAG configs."""
         project = project_from_id(project_id)
         rag_configs: list[RagConfig] = []
 
@@ -2561,10 +2548,7 @@ def connect_document_api(app: FastAPI):
         # Get the RAG config and associated configs
         rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
         if rag_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="RAG config not found",
-            )
+            raise not_found_error("RAG config", rag_config_id, "project's RAG configs")
 
         if rag_config.is_archived:
             raise HTTPException(
@@ -2611,6 +2595,7 @@ def connect_document_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> DocumentLibraryState:
+        """Check whether the project's document library is empty."""
         project = project_from_id(project_id)
         documents = project.documents(readonly=True)
         return DocumentLibraryState(is_empty=len(documents) == 0)
@@ -2646,11 +2631,13 @@ def connect_document_api(app: FastAPI):
             extractor_config_id, project.path
         )
         if extractor_config is None:
-            raise HTTPException(status_code=404, detail="Extractor config not found")
+            raise not_found_error(
+                "Extractor config", extractor_config_id, "project's extractor configs"
+            )
 
         document = Document.from_id_and_parent_path(document_id, project.path)
         if document is None:
-            raise HTTPException(status_code=404, detail="Document not found")
+            raise not_found_error("Document", document_id, "project's documents")
 
         # Find the latest extraction for this extractor config
         extractions = [

@@ -260,7 +260,7 @@
     submitting = true
 
     try {
-      const { error: api_error } = await client.PUT(
+      const { error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         {
           params: { path: { project_id, task_id } },

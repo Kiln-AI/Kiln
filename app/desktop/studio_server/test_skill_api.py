@@ -333,7 +333,9 @@ class TestGetSkills:
     def test_get_skill_not_found(self, client, test_project, mock_project_from_id):
         response = client.get(f"/api/projects/{test_project.id}/skills/nonexistent-id")
         assert response.status_code == 404
-        assert response.json()["message"] == "Skill not found"
+        assert response.json()["message"].startswith(
+            "Skill not found. ID: nonexistent-id."
+        )
 
 
 class TestGetSkillContent:

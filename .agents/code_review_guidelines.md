@@ -49,5 +49,6 @@ Changes impacting APIs include:
 
 ### Project specific guide
 
+- **The Kiln skill:** if anything changed under `app/mcp/kiln_mcp_server/skill/` or in `app/mcp/knowledge_backlog.md`, read `.agents/skills/knowledge-maintenance/SKILL.md` and check the change against it: where each kind of content lives, the labels on text for Kiln Harness Tuner and on chat-only clauses, the port rule for text from Kiln Harness Tuner (word for word, checked by a diff), the placement and content rules, and that its "Finish every change" commands pass (`uv run python -m kiln_mcp_server.skill_checks check`).
 - **`ModelName` enum and user input:** Do not use the `ModelName` enum for validation or typing of user-provided model identifiers (for example in a Pydantic request body that validates an API payload). Kiln loads additional models over the air; those models can use names that are not members of the locally shipped `ModelName` enum. If request validation is tied to the enum, a model that is valid according to the merged model list will fail validation. Appropriate uses of `ModelName` include aliasing a constant chosen at build time (for example default config that references a known shipped model) and entries inside the `ml_model_list` provider definitions.
 

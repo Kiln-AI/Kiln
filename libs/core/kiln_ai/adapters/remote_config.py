@@ -5,6 +5,7 @@ import logging
 import os
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Sequence
 
@@ -35,6 +36,22 @@ logger = logging.getLogger(__name__)
 REMOTE_MODEL_LIST_URL = "https://remote-config.getkiln.ai/kiln_config_v2.json"
 
 refresh_lock = threading.Lock()
+
+
+@dataclass
+class RemoteModelListState:
+    """The last good load of the remote model list in this process. `loaded_at`
+    is None while `built_in_models` is the list shipped with the installed app."""
+
+    loaded_at: datetime | None = None
+
+
+remote_model_list_state = RemoteModelListState()
+
+
+def remote_model_list_loaded_at() -> datetime | None:
+    """UTC time of the last good remote model list load, or None."""
+    return remote_model_list_state.loaded_at
 
 
 def should_skip_remote_model_list() -> bool:
@@ -234,6 +251,7 @@ async def refresh_model_list(url: str = REMOTE_MODEL_LIST_URL) -> None:
         built_in_models[:] = models.model_list
         built_in_embedding_models[:] = models.embedding_model_list
         built_in_rerankers[:] = models.reranker_model_list
+        remote_model_list_state.loaded_at = datetime.now(timezone.utc)
 
 
 def refresh_model_list_background(

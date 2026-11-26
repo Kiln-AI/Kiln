@@ -220,3 +220,13 @@ def test_set_dev_env_vars_overrides_the_dev_mode_flags(env_var):
         set_dev_env_vars()
 
         assert os.environ[env_var] == "true"
+
+
+def test_set_dev_env_vars_leaves_models_dev_on():
+    # The dev server gets live prices on the first model info request.
+    with patch.dict(os.environ):
+        os.environ.pop("KILN_SKIP_MODELS_DEV", None)
+
+        set_dev_env_vars()
+
+        assert "KILN_SKIP_MODELS_DEV" not in os.environ

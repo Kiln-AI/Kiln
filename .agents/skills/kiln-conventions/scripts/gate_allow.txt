@@ -9,3 +9,6 @@ history-comment:^app/web_ui/src/lib/ui/animations/.*\bPHASE \d
 
 # PATH, SHELL and HOME describe the host OS, not app config; subprocess code reads them where it spawns.
 env-access:os\.environ\.get\("(?:PATH|SHELL|HOME)"
+
+# The API reference generator runs as a child process with the parent's environment plus two fixed variables; nothing is read as config.
+env-access:^app/mcp/kiln_mcp_server/skill_checks/api_reference\.py\tenv = \{\*\*os\.environ, "PYTHONUTF8"

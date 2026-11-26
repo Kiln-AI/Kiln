@@ -421,7 +421,7 @@ def client():
     connect_eval_builder_api(app)
     connect_copilot_api(app)
     # The saved eval is executed through the evals UI's own run endpoints.
-    connect_evals_api(app)
+    connect_evals_api(app, app_origin="http://localhost:8757")
     return TestClient(app)
 
 

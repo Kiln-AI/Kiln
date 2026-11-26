@@ -50,6 +50,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_server.custom_errors import not_found_error
 from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -205,11 +206,19 @@ def finetune_from_id(project_id: str, task_id: str, finetune_id: str) -> Finetun
     task = task_from_id(project_id, task_id)
     finetune = Finetune.from_id_and_parent_path(finetune_id, task.path)
     if finetune is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Finetune with ID '{finetune_id}' not found",
-        )
+        raise not_found_error("Fine-tune", finetune_id, "task's fine-tunes")
     return finetune
+
+
+def unknown_finetune_provider_error(provider_id: str) -> HTTPException:
+    providers = ", ".join(finetune_registry)
+    return HTTPException(
+        status_code=400,
+        detail=(
+            f"Fine-tune provider '{provider_id}' not found. "
+            f"Fine-tuning is available on: {providers}."
+        ),
+    )
 
 
 def compute_finetune_tag_info(
@@ -298,6 +307,7 @@ def connect_fine_tune_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> list[DatasetSplit]:
+        """List the task's dataset splits: frozen sets of runs used to fine-tune."""
         task = task_from_id(project_id, task_id)
         return task.dataset_splits()
 
@@ -319,6 +329,8 @@ def connect_fine_tune_api(app: FastAPI):
             bool, Query(description="Whether to update the status of each finetune.")
         ] = False,
     ) -> list[Finetune]:
+        """List the task's fine-tunes. With update_status, ask each provider for the
+        job's current status first."""
         task = task_from_id(project_id, task_id)
         finetunes = task.finetunes()
 
@@ -360,6 +372,7 @@ def connect_fine_tune_api(app: FastAPI):
             str, Path(description="The unique identifier of the finetune.")
         ],
     ) -> FinetuneWithStatus:
+        """Get one fine-tune with its job's current status from the provider."""
         finetune = finetune_from_id(project_id, task_id, finetune_id)
         try:
             provider_name = ModelProviderName[finetune.provider]
@@ -400,6 +413,7 @@ def connect_fine_tune_api(app: FastAPI):
         ],
         request: UpdateFinetuneRequest,
     ) -> Finetune:
+        """Change a fine-tune's name or description."""
         finetune = finetune_from_id(project_id, task_id, finetune_id)
         finetune.name = request.name
         finetune.description = request.description
@@ -413,6 +427,8 @@ def connect_fine_tune_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def finetune_providers() -> list[FinetuneProvider]:
+        """List the providers that can fine-tune, with the base models each offers and
+        whether it is enabled."""
         provider_models: dict[ModelProviderName, list[FinetuneProviderModel]] = {}
 
         # Collect models by provider
@@ -476,10 +492,9 @@ def connect_fine_tune_api(app: FastAPI):
             str, Path(description="The unique identifier of the finetune provider.")
         ],
     ) -> list[FineTuneParameter]:
+        """List the hyperparameters a fine-tune provider accepts, with their types."""
         if provider_id not in finetune_registry:
-            raise HTTPException(
-                status_code=400, detail=f"Fine tune provider '{provider_id}' not found"
-            )
+            raise unknown_finetune_provider_error(provider_id)
         finetune_adapter_class = finetune_registry[provider_id]  # type: ignore[invalid-argument-type]
         return finetune_adapter_class.available_parameters()
 
@@ -508,6 +523,9 @@ def connect_fine_tune_api(app: FastAPI):
             ),
         ] = False,
     ) -> FinetuneDatasetInfo:
+        """Get the task's dataset splits, fine-tunes and run counts by tag, for a fine-tune.
+
+        With tool_ids, only data made with those tools counts as eligible."""
         # In the fine-tune UI, "no tools/skills selected" should mean `tool_ids=[]`,
         # but `openapi-fetch` omits empty arrays, so we recover that state from
         # `empty_tool_filter=true`.
@@ -570,6 +588,7 @@ def connect_fine_tune_api(app: FastAPI):
         ],
         request: CreateDatasetSplitRequest,
     ) -> DatasetSplit:
+        """Freeze a set of the task's runs into a dataset split for fine-tuning."""
         task = task_from_id(project_id, task_id)
         split_definitions = api_split_types[request.dataset_split_type]
 
@@ -605,6 +624,8 @@ def connect_fine_tune_api(app: FastAPI):
         ],
         request: CreateFinetuneRequest,
     ) -> Finetune:
+        """Start a fine-tune of the task on a dataset split. Starts a paid job at the
+        provider."""
         task = task_from_id(project_id, task_id)
         if task.turn_mode == TurnMode.multiturn:
             raise HTTPException(
@@ -612,17 +633,13 @@ def connect_fine_tune_api(app: FastAPI):
                 detail="Fine-tuning is not supported for multi-turn tasks.",
             )
         if request.provider not in finetune_registry:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Fine tune provider '{request.provider}' not found",
-            )
+            raise unknown_finetune_provider_error(request.provider)
         finetune_adapter_class = finetune_registry[request.provider]  # type: ignore[invalid-argument-type]
 
         dataset = DatasetSplit.from_id_and_parent_path(request.dataset_id, task.path)
         if dataset is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Dataset split with ID '{request.dataset_id}' not found",
+            raise not_found_error(
+                "Dataset split", request.dataset_id, "task's dataset splits"
             )
 
         if not request.system_message_generator and not request.custom_system_message:
@@ -718,6 +735,8 @@ def connect_fine_tune_api(app: FastAPI):
             Query(description="Custom thinking instructions for thinking models."),
         ] = None,
     ) -> StreamingResponse:
+        """Download one split of a dataset split as a JSONL file, in a fine-tuning
+        format."""
         if format_type not in [format.value for format in DatasetFormat]:
             raise HTTPException(
                 status_code=400,
@@ -740,10 +759,7 @@ def connect_fine_tune_api(app: FastAPI):
             )
         dataset = DatasetSplit.from_id_and_parent_path(dataset_id, task.path)
         if dataset is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Dataset split with ID '{dataset_id}' not found",
-            )
+            raise not_found_error("Dataset split", dataset_id, "task's dataset splits")
         if split_name not in dataset.split_contents:
             raise HTTPException(
                 status_code=404,

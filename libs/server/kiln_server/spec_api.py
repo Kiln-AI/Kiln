@@ -9,6 +9,7 @@ from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import SpecProperties
 from pydantic import BaseModel, Field
 
+from kiln_server.custom_errors import not_found_error
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -46,10 +47,7 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
     if spec:
         return spec
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Spec not found. ID: {spec_id}",
-    )
+    raise not_found_error("Spec", spec_id, "task's specs")
 
 
 class SpecCreationRequest(BaseModel):
@@ -114,9 +112,9 @@ def connect_spec_api(app: FastAPI):
             Query(description="The candidate spec name to check."),
         ],
     ) -> AvailableSpecNameResponse:
-        """Check a candidate spec name against the task's existing specs and
-        return an available one — the candidate itself, or the nearest
-        suffixed variant on a collision.
+        """Suggest a free spec name: the candidate itself, or the nearest suffixed one.
+
+        The candidate is checked against the task's existing specs.
 
         The check uses the derived-tag comparison the spec-save guard
         enforces (case/spacing-insensitive), so a name this endpoint returns
@@ -153,6 +151,8 @@ def connect_spec_api(app: FastAPI):
         ],
         spec_data: SpecCreationRequest,
     ) -> Spec:
+        """Create a spec: a requirement for the task's output, with the eval that
+        measures it."""
         task = task_from_id(project_id, task_id)
 
         try:
@@ -210,6 +210,7 @@ def connect_spec_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> List[Spec]:
+        """List the task's specs."""
         parent_task = task_from_id(project_id, task_id)
         return parent_task.specs(readonly=True)
 
@@ -229,6 +230,7 @@ def connect_spec_api(app: FastAPI):
         ],
         spec_id: Annotated[str, Path(description="The unique identifier of the spec.")],
     ) -> Spec:
+        """Get one spec."""
         return spec_from_id(project_id, task_id, spec_id)
 
     @app.patch(
@@ -250,6 +252,7 @@ def connect_spec_api(app: FastAPI):
         spec_id: Annotated[str, Path(description="The unique identifier of the spec.")],
         request: UpdateSpecRequest,
     ) -> Spec:
+        """Change a spec's name, definition, properties, priority, status or tags."""
         spec = spec_from_id(project_id, task_id, spec_id)
 
         # Update all provided fields
@@ -331,6 +334,7 @@ def connect_spec_api(app: FastAPI):
         ],
         spec_id: Annotated[str, Path(description="The unique identifier of the spec.")],
     ) -> None:
+        """Delete a spec."""
         spec = spec_from_id(project_id, task_id, spec_id)
 
         # Delete associated eval if it exists

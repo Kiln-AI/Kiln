@@ -5,10 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pygit2
 import pytest
+from pygit2.remotes import RemoteHead
 
 from app.desktop.git_sync.clone import (
     _WINDOWS_RENAME_MAX_ATTEMPTS,
     _WINDOWS_RENAME_RETRY_DELAY,
+    _ls_remote_pygit2,
     clone_repo,
     compute_clone_path,
     compute_temp_clone_path,
@@ -301,26 +303,24 @@ class TestScanForProjects:
         assert paths == sorted(paths)
 
 
-def _make_ref_dicts(refs: list[tuple[str, str | None]]) -> list[dict]:
-    """Helper to build ref dicts matching Remote.ls_remotes() output."""
+def _make_remote_heads(refs: list[tuple[str, str | None]]) -> list[RemoteHead]:
+    """Build stand-ins for the RemoteHead objects Remote.list_heads() returns."""
     result = []
     for name, symref in refs:
-        result.append(
-            {
-                "local": False,
-                "oid": pygit2.Oid(hex="a" * 40),
-                "loid": None,
-                "name": name,
-                "symref_target": symref,
-            }
-        )
+        head = MagicMock(spec=RemoteHead)
+        head.local = False
+        head.oid = pygit2.Oid(hex="a" * 40)
+        head.loid = pygit2.Oid(hex="0" * 40)
+        head.name = name
+        head.symref_target = symref
+        result.append(head)
     return result
 
 
 class TestTestRemoteAccess:
     def test_success_system_keys(self):
         with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
-            mock.return_value = _make_ref_dicts([("HEAD", None)])
+            mock.return_value = _make_remote_heads([("HEAD", None)])
             success, msg, mode = check_remote_access("git@github.com:org/repo.git")
             assert success is True
             assert msg == "Access successful"
@@ -328,7 +328,7 @@ class TestTestRemoteAccess:
 
     def test_success_with_pat(self):
         with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
-            mock.return_value = _make_ref_dicts([("HEAD", None)])
+            mock.return_value = _make_remote_heads([("HEAD", None)])
             success, msg, mode = check_remote_access(
                 "https://github.com/org/repo.git", pat_token="ghp_token"
             )
@@ -356,7 +356,7 @@ class TestTestRemoteAccess:
 
     def test_explicit_auth_mode(self):
         with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
-            mock.return_value = _make_ref_dicts([("HEAD", None)])
+            mock.return_value = _make_remote_heads([("HEAD", None)])
             success, _msg, mode = check_remote_access(
                 "https://github.com/org/repo.git",
                 pat_token="ghp_token",
@@ -374,7 +374,7 @@ class TestTestRemoteAccess:
 
 class TestListRemoteBranches:
     def test_returns_branches_and_default(self):
-        refs = _make_ref_dicts(
+        refs = _make_remote_heads(
             [
                 ("HEAD", "refs/heads/main"),
                 ("refs/heads/main", None),
@@ -397,7 +397,7 @@ class TestListRemoteBranches:
                 assert "repository not found" in str(e)
 
     def test_no_symref_falls_back_to_main(self):
-        refs = _make_ref_dicts(
+        refs = _make_remote_heads(
             [
                 ("HEAD", None),
                 ("refs/heads/main", None),
@@ -410,7 +410,7 @@ class TestListRemoteBranches:
             assert default == "main"
 
     def test_no_symref_falls_back_to_master(self):
-        refs = _make_ref_dicts(
+        refs = _make_remote_heads(
             [
                 ("HEAD", None),
                 ("refs/heads/master", None),
@@ -422,7 +422,7 @@ class TestListRemoteBranches:
             assert default == "master"
 
     def test_ignores_tags(self):
-        refs = _make_ref_dicts(
+        refs = _make_remote_heads(
             [
                 ("refs/heads/main", None),
                 ("refs/tags/v1.0", None),
@@ -432,6 +432,32 @@ class TestListRemoteBranches:
             mock.return_value = refs
             branches, _ = list_remote_branches("https://github.com/org/repo.git")
             assert branches == ["main"]
+
+
+class TestListRemoteBranchesAgainstLocalRemote:
+    """Runs the real pygit2 ls-remote against an on-disk bare repo, with no mocks."""
+
+    def test_lists_heads_from_real_remote(self, git_repos):
+        _local_path, remote_path = git_repos
+        remote_repo = pygit2.Repository(str(remote_path))
+        main_oid = remote_repo.references["refs/heads/main"].target
+        remote_repo.references.create("refs/heads/feature", main_oid)
+        remote_repo.references.create("refs/tags/v1.0", main_oid)
+
+        heads = _ls_remote_pygit2(str(remote_path))
+
+        assert all(isinstance(head, RemoteHead) for head in heads)
+        by_name = {head.name: head for head in heads}
+        assert by_name["refs/heads/main"].oid == main_oid
+        assert by_name["HEAD"].symref_target == "refs/heads/main"
+
+        branches, default = list_remote_branches(str(remote_path))
+        assert branches == ["feature", "main"]
+        assert default == "main"
+
+    def test_missing_remote_raises_git_error(self, tmp_path: Path):
+        with pytest.raises(pygit2.GitError):
+            _ls_remote_pygit2(str(tmp_path / "does-not-exist.git"))
 
 
 class TestCloneRepoFreesRepository:

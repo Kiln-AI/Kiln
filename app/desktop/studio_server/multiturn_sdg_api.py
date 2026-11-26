@@ -418,6 +418,8 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         ],
         input: GenerateCasesApiInput,
     ) -> GenerateCasesApiOutput:
+        """Generate synthetic-user cases (persona, goal, first message) for a multi-turn
+        task (needs Kiln Pro). Saves nothing."""
         task = task_from_id(project_id, task_id)
         guard_multiturn(task)
 
@@ -499,6 +501,9 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         ],
         input: RunCasesBatchApiInput,
     ) -> StreamingResponse:
+        """Run one synthetic-user conversation with the task per case, saving the runs.
+
+        Streams progress as events."""
         # Guard + decode happen before the stream opens so the client sees
         # a clean 400 / 422 rather than a half-open text/event-stream on
         # bad input.
