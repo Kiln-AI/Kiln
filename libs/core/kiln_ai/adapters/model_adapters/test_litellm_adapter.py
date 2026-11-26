@@ -2,6 +2,7 @@ import copy
 import json
 from unittest.mock import ANY, AsyncMock, Mock, patch
 
+import httpx
 import litellm
 import pytest
 from litellm.types.utils import (
@@ -371,7 +372,7 @@ async def test_json_schema_response_format_adds_required_to_nested(config, tmp_p
         (ModelProviderName.cloudflare, "openai"),
     ],
 )
-async def test_litellm_model_id_standard_providers(
+def test_litellm_model_id_standard_providers(
     config, mock_task, provider_name, expected_prefix
 ):
     """Test litellm_model_id for standard providers"""
@@ -383,7 +384,7 @@ async def test_litellm_model_id_standard_providers(
     mock_provider.model_id = "test-model"
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
-        model_id = await adapter.litellm_model_id()
+        model_id = adapter.litellm_model_id()
 
     assert model_id == f"{expected_prefix}/test-model"
     # Verify caching works
@@ -398,7 +399,7 @@ async def test_litellm_model_id_standard_providers(
         ModelProviderName.kiln_fine_tune,
     ],
 )
-async def test_litellm_model_id_custom_providers(config, mock_task, provider_name):
+def test_litellm_model_id_custom_providers(config, mock_task, provider_name):
     """Test litellm_model_id for custom providers that require a base URL"""
     config.base_url = "https://api.custom.com"
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
@@ -409,14 +410,14 @@ async def test_litellm_model_id_custom_providers(config, mock_task, provider_nam
     mock_provider.model_id = "custom-model"
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
-        model_id = await adapter.litellm_model_id()
+        model_id = adapter.litellm_model_id()
 
     # Custom providers should use "openai" as the provider name
     assert model_id == "openai/custom-model"
     assert adapter._litellm_model_id == model_id
 
 
-async def test_litellm_model_id_custom_provider_no_base_url(config, mock_task):
+def test_litellm_model_id_custom_provider_no_base_url(config, mock_task):
     """Test litellm_model_id raises error for custom providers without base URL"""
     config.base_url = None
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
@@ -428,10 +429,10 @@ async def test_litellm_model_id_custom_provider_no_base_url(config, mock_task):
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
         with pytest.raises(ValueError, match="Explicit Base URL is required"):
-            await adapter.litellm_model_id()
+            adapter.litellm_model_id()
 
 
-async def test_litellm_model_id_no_model_id(config, mock_task):
+def test_litellm_model_id_no_model_id(config, mock_task):
     """Test litellm_model_id raises error when provider has no model_id"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
@@ -442,10 +443,10 @@ async def test_litellm_model_id_no_model_id(config, mock_task):
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
         with pytest.raises(ValueError, match="Model ID is required"):
-            await adapter.litellm_model_id()
+            adapter.litellm_model_id()
 
 
-async def test_litellm_model_id_caching(config, mock_task):
+def test_litellm_model_id_caching(config, mock_task):
     """Test that litellm_model_id caches the result"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
@@ -454,13 +455,13 @@ async def test_litellm_model_id_caching(config, mock_task):
 
     # The method should return the cached value without calling model_provider
     with patch.object(adapter, "model_provider") as mock_model_provider:
-        model_id = await adapter.litellm_model_id()
+        model_id = adapter.litellm_model_id()
 
     assert model_id == "cached-value"
     mock_model_provider.assert_not_called()
 
 
-async def test_litellm_model_id_typesafe_not_supported(config, mock_task):
+def test_litellm_model_id_typesafe_not_supported(config, mock_task):
     """TypeSafe AI is served by its own adapter, so LiteLLM must refuse to map it."""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
@@ -472,10 +473,10 @@ async def test_litellm_model_id_typesafe_not_supported(config, mock_task):
         with pytest.raises(
             ValueError, match="TypeSafe AI models do not run through LiteLLM"
         ):
-            await adapter.litellm_model_id()
+            adapter.litellm_model_id()
 
 
-async def test_litellm_model_id_unknown_provider(config, mock_task):
+def test_litellm_model_id_unknown_provider(config, mock_task):
     """Test litellm_model_id raises error for unknown provider"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
@@ -491,7 +492,7 @@ async def test_litellm_model_id_unknown_provider(config, mock_task):
             mock_raise_error.side_effect = Exception("Test error")
 
             with pytest.raises(Exception, match="Test error"):
-                await adapter.litellm_model_id()
+                adapter.litellm_model_id()
 
 
 @pytest.mark.parametrize(
@@ -1007,6 +1008,60 @@ async def test_build_completion_kwargs(
     # Verify extra body is included
     for key, value in extra_body.items():
         assert kwargs[key] == value
+
+
+@pytest.mark.parametrize(
+    "installed,expected_model",
+    [
+        (["nemotron-3-nano:30b"], "openai/nemotron-3-nano:30b"),
+        (["nemotron-3-nano:latest"], "openai/nemotron-3-nano"),
+        ([], "openai/nemotron-3-nano"),
+    ],
+)
+async def test_build_completion_kwargs_uses_installed_ollama_variant(
+    config, mock_task, ollama_installed, installed, expected_model
+):
+    ollama_installed(*installed)
+    provider = KilnModelProvider(
+        name=ModelProviderName.ollama,
+        model_id="nemotron-3-nano",
+        ollama_model_aliases=["nemotron-3-nano:30b"],
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    with (
+        patch.object(adapter, "model_provider", return_value=provider),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(
+            provider, [{"role": "user", "content": "Hello"}], None
+        )
+
+    assert kwargs["model"] == expected_model
+
+
+async def test_build_completion_kwargs_falls_back_to_ollama_model_id_when_down(
+    config, mock_task, ollama_api
+):
+    tags = ollama_api.get("/api/tags").mock(side_effect=httpx.ConnectError("refused"))
+    provider = KilnModelProvider(
+        name=ModelProviderName.ollama,
+        model_id="nemotron-3-nano",
+        ollama_model_aliases=["nemotron-3-nano:30b"],
+    )
+
+    for _ in range(2):
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+        with (
+            patch.object(adapter, "model_provider", return_value=provider),
+            patch.object(adapter, "response_format_options", return_value={}),
+        ):
+            kwargs = await adapter.build_completion_kwargs(
+                provider, [{"role": "user", "content": "Hello"}], None
+            )
+        assert kwargs["model"] == "openai/nemotron-3-nano"
+
+    assert tags.call_count == 1
 
 
 @pytest.mark.asyncio

@@ -114,8 +114,8 @@ class TestLitellmRerankerAdapterProperties:
         provider2 = adapter.model_provider
         assert provider1 is provider2
 
-    async def test_litellm_model_slug(self, adapter):
-        """Test litellm_model_slug."""
+    def test_litellm_model_slug_property(self, adapter):
+        """Test litellm_model_slug property."""
         with patch(
             "kiln_ai.adapters.rerankers.litellm_reranker_adapter.get_litellm_provider_info"
         ) as mock_get_info:
@@ -123,12 +123,12 @@ class TestLitellmRerankerAdapterProperties:
             mock_provider_info.litellm_model_id = "together_ai/Salesforce/Llama-Rank-V1"
             mock_get_info.return_value = mock_provider_info
 
-            slug = await adapter.litellm_model_slug()
+            slug = adapter.litellm_model_slug
             assert slug == "together_ai/Salesforce/Llama-Rank-V1"
             mock_get_info.assert_called_once_with(adapter.model_provider)
 
-    async def test_litellm_model_slug_cached(self, adapter):
-        """Test that litellm_model_slug is cached."""
+    def test_litellm_model_slug_cached(self, adapter):
+        """Test that litellm_model_slug property is cached."""
         with patch(
             "kiln_ai.adapters.rerankers.litellm_reranker_adapter.get_litellm_provider_info"
         ) as mock_get_info:
@@ -136,8 +136,8 @@ class TestLitellmRerankerAdapterProperties:
             mock_provider_info.litellm_model_id = "together_ai/Salesforce/Llama-Rank-V1"
             mock_get_info.return_value = mock_provider_info
 
-            slug1 = await adapter.litellm_model_slug()
-            slug2 = await adapter.litellm_model_slug()
+            slug1 = adapter.litellm_model_slug
+            slug2 = adapter.litellm_model_slug
             assert slug1 is slug2
             mock_get_info.assert_called_once()
 

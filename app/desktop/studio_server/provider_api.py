@@ -31,7 +31,9 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.ollama_tools import (
     OllamaConnection,
     ollama_base_url,
+    ollama_http_client,
     parse_ollama_tags,
+    record_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import (
     CLOUDFLARE_API_BASE,
@@ -63,7 +65,6 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_TIMEOUT_SECONDS = 5
 PROVIDER_CONNECT_TIMEOUT_SECONDS = 30
 
 
@@ -72,6 +73,16 @@ async def _http_request(method: str, url: str, **kwargs: Any) -> httpx.Response:
         follow_redirects=True, timeout=PROVIDER_CONNECT_TIMEOUT_SECONDS
     ) as client:
         return await client.request(method, url, **kwargs)
+
+
+def _error_detail(e: Exception) -> str:
+    # Some httpx errors, such as ReadTimeout, stringify to an empty string.
+    detail = str(e)
+    if detail:
+        return detail
+    if isinstance(e, httpx.TimeoutException):
+        return "The request timed out."
+    return type(e).__name__
 
 
 async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnection:
@@ -87,7 +98,7 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
         )
 
     base_url = custom_ollama_url or ollama_base_url()
-    async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
+    async with ollama_http_client() as client:
         try:
             tags = (await client.get(base_url + "/api/tags")).json()
         except (
@@ -96,16 +107,19 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
             httpx.RemoteProtocolError,
             httpx.ProxyError,
         ):
+            record_ollama_tags(base_url, None)
             raise HTTPException(
                 status_code=417,
                 detail="Failed to connect. Ensure Ollama app is running.",
             )
         except Exception as e:
+            record_ollama_tags(base_url, None)
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to connect to Ollama: {e}",
+                detail=f"Failed to connect to Ollama: {_error_detail(e)}",
             )
 
+        record_ollama_tags(base_url, tags)
         ollama_connection = parse_ollama_tags(tags)
         if ollama_connection is None:
             raise HTTPException(
@@ -157,7 +171,7 @@ async def connect_docker_model_runner(
     except (openai.APIError, httpx.RequestError) as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to connect to Docker Model Runner: {e}",
+            detail=f"Failed to connect to Docker Model Runner: {_error_detail(e)}",
         )
 
     # Save the custom Docker URL if used to connect
@@ -1116,7 +1130,9 @@ async def _create_kiln_copilot_api_key(access_token: str) -> JSONResponse:
     except httpx.RequestError as e:
         return JSONResponse(
             status_code=502,
-            content={"message": f"Failed to connect to Kiln server. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Kiln server. Error: {_error_detail(e)}"
+            },
         )
 
     if response.parsed is not None:
@@ -1174,7 +1190,9 @@ async def connect_openrouter(key: str):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to OpenRouter. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to OpenRouter. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1215,7 +1233,9 @@ async def connect_siliconflow(key: str):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to SiliconFlow. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to SiliconFlow. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1271,7 +1291,9 @@ async def connect_fireworks(key_data: dict):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Fireworks. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Fireworks. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1296,7 +1318,9 @@ async def connect_openai(key: str, reasoning_summaries: bool):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to OpenAI. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to OpenAI. Error: {_error_detail(e)}"
+            },
         )
 
     Config.shared().update_settings(
@@ -1329,7 +1353,9 @@ async def connect_groq(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Groq. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Groq. Error: {_error_detail(e)}"
+            },
         )
 
     Config.shared().groq_api_key = key
@@ -1368,7 +1394,9 @@ async def connect_gemini(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Gemini. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Gemini. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1391,7 +1419,9 @@ async def connect_vertex(project_id: str, project_location: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Vertex. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Vertex. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1424,7 +1454,9 @@ async def connect_together(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Together.ai. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Together.ai. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1457,7 +1489,9 @@ async def connect_huggingface(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Huggingface. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Huggingface. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1493,7 +1527,9 @@ async def connect_anthropic(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Anthropic. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Anthropic. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1532,7 +1568,7 @@ async def connect_wandb(
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to W&B. Error: {e!s}"},
+            content={"message": f"Failed to connect to W&B. Error: {_error_detail(e)}"},
         )
 
 
@@ -1572,7 +1608,9 @@ async def connect_azure_openai(key: str, endpoint: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Azure OpenAI. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Azure OpenAI. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1607,7 +1645,9 @@ async def connect_cerebras(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Cerebras. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Cerebras. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1660,7 +1700,9 @@ async def connect_featherless(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Featherless AI. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Featherless AI. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1773,7 +1815,7 @@ async def connect_cloudflare(key_data: dict):
             content={"message": "Connected to Cloudflare"},
         )
     except Exception as e:
-        return _cloudflare_connect_error(400, f"Error: {str(e) or type(e).__name__}")
+        return _cloudflare_connect_error(400, f"Error: {_error_detail(e)}")
 
 
 async def connect_typesafe(key: str):
@@ -1815,7 +1857,9 @@ async def connect_typesafe(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to TypeSafe AI. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to TypeSafe AI. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1879,7 +1923,9 @@ async def connect_kiln_copilot(key: str):
     except httpx.RequestError as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Kiln Copilot. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Kiln Copilot. Error: {_error_detail(e)}"
+            },
         )
 
     if response.status_code == 200:

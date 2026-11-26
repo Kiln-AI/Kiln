@@ -15,6 +15,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     built_in_embedding_models_from_provider,
     transform_slug_for_litellm,
 )
+from kiln_ai.adapters.ollama_tools import ensure_ollama_tags_fresh
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
@@ -95,9 +96,10 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         super().__init__(embedding_config)
 
         self.litellm_core_config = litellm_core_config
-        self._litellm_model_id: str | None = None
 
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
+        await ensure_ollama_tags_fresh(self.model_provider.name)
+
         # batch the requests
         batches: List[List[str]] = []
         for i in range(0, len(input_texts), MAX_BATCH_SIZE):
@@ -155,7 +157,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             )
 
         aembedding_kwargs: Dict[str, Any] = {
-            "model": await self.litellm_model_id(),
+            "model": self.litellm_model_id,
             "input": input_texts,
             **self.build_options().model_dump(exclude_none=True),
             **completion_kwargs,
@@ -198,17 +200,14 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             )
         return provider
 
-    async def litellm_model_id(self) -> str:
-        if self._litellm_model_id is not None:
-            return self._litellm_model_id
-
-        provider_info = await get_litellm_provider_info(self.model_provider)
+    @cached_property
+    def litellm_model_id(self) -> str:
+        provider_info = get_litellm_provider_info(self.model_provider)
         if provider_info.is_custom and self.litellm_core_config.base_url is None:
             raise ValueError(
                 f"Provider {self.model_provider.name.value} must have an explicit base URL"
             )
 
-        self._litellm_model_id = transform_slug_for_litellm(
+        return transform_slug_for_litellm(
             self.model_provider.name, provider_info.litellm_model_id
         )
-        return self._litellm_model_id

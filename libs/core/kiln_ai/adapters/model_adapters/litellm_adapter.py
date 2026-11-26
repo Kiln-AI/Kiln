@@ -48,6 +48,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.ollama_tools import ensure_ollama_tags_fresh
 from kiln_ai.adapters.retry_classification import is_run_ending_tool_error
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import (
@@ -829,13 +830,13 @@ class LiteLlmAdapter(BaseAdapter):
 
         return extra_body
 
-    async def litellm_model_id(self) -> str:
+    def litellm_model_id(self) -> str:
         # The model ID is an interesting combination of format and url endpoint.
         # It specifics the provider URL/host, but this is overridden if you manually set an api url
         if self._litellm_model_id:
             return self._litellm_model_id
 
-        litellm_provider_info = await get_litellm_provider_info(self.model_provider())
+        litellm_provider_info = get_litellm_provider_info(self.model_provider())
         if litellm_provider_info.is_custom and self._api_base is None:
             raise ValueError(
                 "Explicit Base URL is required for OpenAI compatible APIs (custom models, ollama, fine tunes, and custom registry models)"
@@ -888,10 +889,11 @@ class LiteLlmAdapter(BaseAdapter):
     ) -> dict[str, Any]:
         run_config = as_kiln_agent_run_config(self.run_config)
         extra_body = self.build_extra_body(provider)
+        await ensure_ollama_tags_fresh(provider.name)
 
         # Merge all parameters into a single kwargs dict for litellm
         completion_kwargs = {
-            "model": await self.litellm_model_id(),
+            "model": self.litellm_model_id(),
             "messages": messages,
             "api_base": self._api_base,
             "headers": self._headers,

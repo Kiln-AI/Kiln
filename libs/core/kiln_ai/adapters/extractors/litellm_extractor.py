@@ -18,6 +18,7 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     built_in_models_from_provider,
 )
+from kiln_ai.adapters.ollama_tools import ensure_ollama_tags_fresh
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -151,7 +152,6 @@ class LitellmExtractor(BaseExtractor):
 
         self.litellm_core_config = litellm_core_config
         self.default_max_parallel_requests = default_max_parallel_requests
-        self._litellm_model_slug: str | None = None
 
     def _cache_prefix_for_file_path(self, file_path: Path) -> str:
         if self.extractor_config.id is None:
@@ -233,7 +233,7 @@ class LitellmExtractor(BaseExtractor):
                     path=str(page_path), mime_type="application/pdf"
                 )
 
-            completion_kwargs = await self._build_completion_kwargs(prompt, page_input)
+            completion_kwargs = self._build_completion_kwargs(prompt, page_input)
             response = await litellm.acompletion(**completion_kwargs)
         except Exception as e:
             raise RuntimeError(
@@ -342,11 +342,11 @@ class LitellmExtractor(BaseExtractor):
                 return kind
         return None
 
-    async def _build_completion_kwargs(
+    def _build_completion_kwargs(
         self, prompt: str, extraction_input: ExtractionInput
     ) -> dict[str, Any]:
         completion_kwargs = {
-            "model": await self.litellm_model_slug(),
+            "model": self.litellm_model_slug,
             "messages": [
                 {
                     "role": "user",
@@ -386,6 +386,8 @@ class LitellmExtractor(BaseExtractor):
         if prompt is None:
             raise ValueError(f"No prompt found for kind: {kind}")
 
+        await ensure_ollama_tags_fresh(self.model_provider.name)
+
         # special handling for PDFs - process each page individually
         if extraction_input.mime_type == "application/pdf":
             content = await self._extract_pdf_page_by_page(
@@ -397,9 +399,7 @@ class LitellmExtractor(BaseExtractor):
                 content_format=self.extractor_config.output_format,
             )
 
-        completion_kwargs = await self._build_completion_kwargs(
-            prompt, extraction_input
-        )
+        completion_kwargs = self._build_completion_kwargs(prompt, extraction_input)
 
         response = await litellm.acompletion(**completion_kwargs)
 
@@ -439,8 +439,9 @@ class LitellmExtractor(BaseExtractor):
         value = self.model_provider.max_parallel_requests
         return value if value is not None else self.default_max_parallel_requests
 
-    async def litellm_model_slug(self) -> str:
-        if self._litellm_model_slug is None:
-            provider_info = await get_litellm_provider_info(self.model_provider)
-            self._litellm_model_slug = provider_info.litellm_model_id
-        return self._litellm_model_slug
+    @cached_property
+    def litellm_model_slug(self) -> str:
+        litellm_provider_name = get_litellm_provider_info(
+            self.model_provider,
+        )
+        return litellm_provider_name.litellm_model_id

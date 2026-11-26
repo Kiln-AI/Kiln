@@ -41,7 +41,7 @@ class TestGetLitellmProviderInfo:
             "",
         ],
     )
-    async def test_missing_model_id_raises_error(self, model_id):
+    def test_missing_model_id_raises_error(self, model_id):
         """Test that missing model_id raises ValueError"""
         provider = KilnModelProvider(
             name=ModelProviderName.openai,
@@ -51,7 +51,7 @@ class TestGetLitellmProviderInfo:
         with pytest.raises(
             ValueError, match="Model ID is required for OpenAI compatible models"
         ):
-            await get_litellm_provider_info(provider)
+            get_litellm_provider_info(provider)
 
     @pytest.mark.parametrize(
         "provider_name,expected_litellm_name,expected_is_custom",
@@ -74,7 +74,7 @@ class TestGetLitellmProviderInfo:
             (ModelProviderName.cloudflare, "openai", True),
         ],
     )
-    async def test_provider_mappings_with_model_provider(
+    def test_provider_mappings_with_model_provider(
         self, provider_name, expected_litellm_name, expected_is_custom, sample_model_id
     ):
         """Test provider name mappings for KilnModelProvider"""
@@ -83,7 +83,7 @@ class TestGetLitellmProviderInfo:
             model_id=sample_model_id,
         )
 
-        result = await get_litellm_provider_info(provider)
+        result = get_litellm_provider_info(provider)
 
         assert isinstance(result, LitellmProviderInfo)
         assert result.provider_name == expected_litellm_name
@@ -110,7 +110,7 @@ class TestGetLitellmProviderInfo:
             (ModelProviderName.kiln_fine_tune, "openai", True),
         ],
     )
-    async def test_provider_mappings_with_embedding_provider(
+    def test_provider_mappings_with_embedding_provider(
         self, provider_name, expected_litellm_name, expected_is_custom, sample_model_id
     ):
         """Test provider name mappings for KilnEmbeddingModelProvider"""
@@ -120,25 +120,25 @@ class TestGetLitellmProviderInfo:
             n_dimensions=1536,
         )
 
-        result = await get_litellm_provider_info(provider)
+        result = get_litellm_provider_info(provider)
 
         assert isinstance(result, LitellmProviderInfo)
         assert result.provider_name == expected_litellm_name
         assert result.is_custom == expected_is_custom
         assert result.litellm_model_id == f"{expected_litellm_name}/{sample_model_id}"
 
-    async def test_cloudflare_model_id_keeps_cf_prefix(self):
+    def test_cloudflare_model_id_keeps_cf_prefix(self):
         provider = KilnModelProvider(
             name=ModelProviderName.cloudflare,
             model_id="@cf/zai-org/glm-5.3",
         )
 
-        result = await get_litellm_provider_info(provider)
+        result = get_litellm_provider_info(provider)
 
         assert result.is_custom is True
         assert result.litellm_model_id == "openai/@cf/zai-org/glm-5.3"
 
-    async def test_custom_providers_use_openai_format(self, sample_model_id):
+    def test_custom_providers_use_openai_format(self, sample_model_id):
         """Test that custom providers use 'openai' as the litellm provider name"""
         custom_providers = [
             ModelProviderName.ollama,
@@ -153,13 +153,13 @@ class TestGetLitellmProviderInfo:
                 model_id=sample_model_id,
             )
 
-            result = await get_litellm_provider_info(provider)
+            result = get_litellm_provider_info(provider)
 
             assert result.provider_name == "openai"
             assert result.is_custom is True
             assert result.litellm_model_id == f"openai/{sample_model_id}"
 
-    async def test_non_custom_providers_use_correct_format(self, sample_model_id):
+    def test_non_custom_providers_use_correct_format(self, sample_model_id):
         """Test that non-custom providers use their actual provider names"""
         non_custom_providers = [
             (ModelProviderName.openai, "openai"),
@@ -174,22 +174,22 @@ class TestGetLitellmProviderInfo:
                 model_id=sample_model_id,
             )
 
-            result = await get_litellm_provider_info(provider)
+            result = get_litellm_provider_info(provider)
 
             assert result.provider_name == expected_name
             assert result.is_custom is False
             assert result.litellm_model_id == f"{expected_name}/{sample_model_id}"
 
-    async def test_litellm_model_id_format(self, embedding_provider):
+    def test_litellm_model_id_format(self, embedding_provider):
         """Test that litellm_model_id follows the correct format"""
-        result = await get_litellm_provider_info(embedding_provider)
+        result = get_litellm_provider_info(embedding_provider)
 
         expected_format = f"{result.provider_name}/{embedding_provider.model_id}"
         assert result.litellm_model_id == expected_format
 
-    async def test_return_type_structure(self, model_provider):
+    def test_return_type_structure(self, model_provider):
         """Test that the return type has all expected fields"""
-        result = await get_litellm_provider_info(model_provider)
+        result = get_litellm_provider_info(model_provider)
 
         assert hasattr(result, "provider_name")
         assert hasattr(result, "is_custom")
@@ -199,7 +199,7 @@ class TestGetLitellmProviderInfo:
         assert isinstance(result.is_custom, bool)
         assert isinstance(result.litellm_model_id, str)
 
-    async def test_works_with_both_provider_types(self, sample_model_id):
+    def test_works_with_both_provider_types(self, sample_model_id):
         """Test that function works with both KilnModelProvider and KilnEmbeddingModelProvider"""
         model_provider = KilnModelProvider(
             name=ModelProviderName.openai,
@@ -212,29 +212,29 @@ class TestGetLitellmProviderInfo:
             n_dimensions=1536,
         )
 
-        model_result = await get_litellm_provider_info(model_provider)
-        embedding_result = await get_litellm_provider_info(embedding_provider)
+        model_result = get_litellm_provider_info(model_provider)
+        embedding_result = get_litellm_provider_info(embedding_provider)
 
         # Results should be identical for same provider name and model ID
         assert model_result.provider_name == embedding_result.provider_name
         assert model_result.is_custom == embedding_result.is_custom
         assert model_result.litellm_model_id == embedding_result.litellm_model_id
 
-    async def test_works_with_reranker_provider(self, sample_model_id):
+    def test_works_with_reranker_provider(self, sample_model_id):
         """Test that function works with KilnRerankerModelProvider"""
         reranker_provider = KilnRerankerModelProvider(
             name=ModelProviderName.together_ai,
             model_id=sample_model_id,
         )
 
-        result = await get_litellm_provider_info(reranker_provider)
+        result = get_litellm_provider_info(reranker_provider)
 
         assert result.provider_name == "together_ai"
         assert result.is_custom is False
         assert result.litellm_model_id == f"together_ai/{sample_model_id}"
 
     @patch("kiln_ai.utils.litellm.resolve_ollama_model_variant")
-    async def test_ollama_resolves_model_variant_with_primary_installed(
+    def test_ollama_resolves_model_variant_with_primary_installed(
         self, mock_resolve_variant
     ):
         """Test that Ollama providers resolve to the installed model variant - primary"""
@@ -246,7 +246,7 @@ class TestGetLitellmProviderInfo:
             ollama_model_aliases=["nemotron-3-nano:30b"],
         )
 
-        result = await get_litellm_provider_info(provider)
+        result = get_litellm_provider_info(provider)
 
         # Verify resolve_ollama_model_variant was called with correct args
         mock_resolve_variant.assert_called_once_with(
@@ -257,7 +257,7 @@ class TestGetLitellmProviderInfo:
         assert result.litellm_model_id == "openai/nemotron-3-nano"
 
     @patch("kiln_ai.utils.litellm.resolve_ollama_model_variant")
-    async def test_ollama_resolves_model_variant_with_alias_installed(
+    def test_ollama_resolves_model_variant_with_alias_installed(
         self, mock_resolve_variant
     ):
         """Test that Ollama providers resolve to the installed model variant - alias"""
@@ -269,7 +269,7 @@ class TestGetLitellmProviderInfo:
             ollama_model_aliases=["nemotron-3-nano:30b"],
         )
 
-        result = await get_litellm_provider_info(provider)
+        result = get_litellm_provider_info(provider)
 
         # Verify resolve_ollama_model_variant was called with correct args
         mock_resolve_variant.assert_called_once_with(
@@ -280,9 +280,7 @@ class TestGetLitellmProviderInfo:
         assert result.litellm_model_id == "openai/nemotron-3-nano:30b"
 
     @patch("kiln_ai.utils.litellm.resolve_ollama_model_variant")
-    async def test_ollama_resolves_model_variant_with_no_aliases(
-        self, mock_resolve_variant
-    ):
+    def test_ollama_resolves_model_variant_with_no_aliases(self, mock_resolve_variant):
         """Test that Ollama providers work without aliases"""
         mock_resolve_variant.return_value = "phi3.5"
 
@@ -292,7 +290,7 @@ class TestGetLitellmProviderInfo:
             ollama_model_aliases=None,
         )
 
-        result = await get_litellm_provider_info(provider)
+        result = get_litellm_provider_info(provider)
 
         # Verify resolve_ollama_model_variant was called with None for aliases
         mock_resolve_variant.assert_called_once_with("phi3.5", None)
@@ -301,16 +299,14 @@ class TestGetLitellmProviderInfo:
         assert result.litellm_model_id == "openai/phi3.5"
 
     @patch("kiln_ai.utils.litellm.resolve_ollama_model_variant")
-    async def test_non_ollama_providers_dont_resolve_variants(
-        self, mock_resolve_variant
-    ):
+    def test_non_ollama_providers_dont_resolve_variants(self, mock_resolve_variant):
         """Test that non-Ollama providers don't trigger variant resolution"""
         provider = KilnModelProvider(
             name=ModelProviderName.openai,
             model_id="gpt-4",
         )
 
-        result = await get_litellm_provider_info(provider)
+        result = get_litellm_provider_info(provider)
 
         # Verify resolve was NOT called for non-Ollama providers
         mock_resolve_variant.assert_not_called()

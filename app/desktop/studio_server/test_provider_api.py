@@ -29,6 +29,10 @@ from kiln_ai.adapters.ml_model_list import (
     built_in_models,
     default_structured_output_mode_for_model_provider,
 )
+from kiln_ai.adapters.ollama_tools import (
+    ensure_ollama_tags_fresh,
+    resolve_ollama_model_variant,
+)
 from kiln_ai.adapters.reranker_list import (
     KilnRerankerModel,
     KilnRerankerModelProvider,
@@ -46,6 +50,7 @@ from app.desktop.studio_server.provider_api import (
     ModelDetails,
     OllamaConnection,
     OpenAICompatibleProviderCache,
+    _error_detail,
     _http_request,
     all_fine_tuned_models,
     available_models,
@@ -579,6 +584,37 @@ async def test_connect_groq_non_200_response(mock_http_request):
     assert result.status_code == 400
     response_data = json.loads(result.body)
     assert "Failed to connect to Groq" in response_data["message"]
+
+
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        (httpx.ReadTimeout(""), "The request timed out."),
+        (httpx.ConnectTimeout(""), "The request timed out."),
+        (httpx.RemoteProtocolError(""), "RemoteProtocolError"),
+        (ValueError(), "ValueError"),
+        (Exception("Connection error"), "Connection error"),
+    ],
+)
+def test_error_detail(error, expected):
+    assert _error_detail(error) == expected
+
+
+@pytest.mark.parametrize(
+    "connect,provider_label",
+    [(connect_groq, "Groq"), (connect_openrouter, "OpenRouter")],
+)
+async def test_connect_key_check_timeout_says_it_timed_out(
+    mock_http_request, connect, provider_label
+):
+    mock_http_request.side_effect = httpx.ReadTimeout("")
+
+    result = await connect("test_api_key")
+
+    assert result.status_code == 400
+    assert json.loads(result.body) == {
+        "message": f"Failed to connect to {provider_label}. Error: The request timed out."
+    }
 
 
 @pytest.mark.asyncio
@@ -1894,6 +1930,82 @@ async def test_connect_ollama_tags_failure_status(tags_side_effect, expected_sta
             await connect_ollama("http://ollama.test:11434")
 
     assert exc_info.value.status_code == expected_status
+
+
+async def test_connect_ollama_read_timeout_says_it_timed_out():
+    with mock_ollama_server("http://ollama.test:11434") as ollama:
+        ollama.get("/api/tags").mock(side_effect=httpx.ReadTimeout(""))
+
+        with pytest.raises(HTTPException) as exc_info:
+            await connect_ollama("http://ollama.test:11434")
+
+    assert exc_info.value.status_code == 500
+    assert (
+        exc_info.value.detail == "Failed to connect to Ollama: The request timed out."
+    )
+
+
+async def test_connect_ollama_follows_redirects():
+    with (
+        mock_ollama_server("http://ollama.test:11434") as ollama,
+        patch("app.desktop.studio_server.provider_api.Config.shared"),
+    ):
+        ollama.get("/api/tags").mock(
+            return_value=httpx.Response(
+                307, headers={"Location": "http://ollama.test:11434/v2/api/tags"}
+            )
+        )
+        ollama.get("/v2/api/tags").mock(
+            return_value=httpx.Response(
+                200, json={"models": [{"model": "phi3.5:latest"}]}
+            )
+        )
+
+        connection = await connect_ollama("http://ollama.test:11434")
+
+    assert "phi3.5:latest" in connection.all_models()
+
+
+@contextmanager
+def configured_ollama_url(base_url: str):
+    with patch("kiln_ai.adapters.ollama_tools.ollama_base_url", return_value=base_url):
+        yield
+
+
+async def test_connect_ollama_fills_tag_cache():
+    with (
+        mock_ollama_server(
+            "http://ollama.test:11434",
+            tags={"models": [{"model": "nemotron-3-nano:30b"}]},
+        ) as ollama,
+        patch("app.desktop.studio_server.provider_api.Config.shared"),
+        configured_ollama_url("http://ollama.test:11434"),
+    ):
+        await connect_ollama("http://ollama.test:11434")
+        await ensure_ollama_tags_fresh(ModelProviderName.ollama)
+
+        assert [call.request.url.path for call in ollama.calls] == [
+            "/api/tags",
+            "/api/version",
+        ]
+        assert (
+            resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+            == "nemotron-3-nano:30b"
+        )
+
+
+async def test_connect_ollama_failure_is_remembered():
+    with (
+        mock_ollama_server("http://ollama.test:11434") as ollama,
+        configured_ollama_url("http://ollama.test:11434"),
+    ):
+        ollama.get("/api/tags").mock(side_effect=httpx.ConnectError("refused"))
+
+        with pytest.raises(HTTPException):
+            await connect_ollama("http://ollama.test:11434")
+        await ensure_ollama_tags_fresh(ModelProviderName.ollama)
+
+        assert len(ollama.calls) == 1
 
 
 async def test_connect_ollama_ignores_version_failure():
@@ -4892,7 +5004,7 @@ async def test_connect_cloudflare_timeout_names_the_error(cf_mocks):
 
     assert result.status_code == 400
     assert _json_body(result) == {
-        "message": "Failed to connect to Cloudflare. Error: ReadTimeout"
+        "message": "Failed to connect to Cloudflare. Error: The request timed out."
     }
     mock_shared.assert_not_called()
 

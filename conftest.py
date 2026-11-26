@@ -72,6 +72,18 @@ def reset_config():
     Config._shared_instance = None
 
 
+# Give each test an empty Ollama tag cache, so tags one test stored never resolve
+# another test's model IDs.
+@pytest.fixture(autouse=True)
+def fresh_ollama_tag_cache():
+    ollama_tools = sys.modules.get("kiln_ai.adapters.ollama_tools")
+    if ollama_tools is None:
+        yield
+        return
+    with patch.object(ollama_tools, "_ollama_tag_cache", ollama_tools.OllamaTagCache()):
+        yield
+
+
 # mock out the settings path so we don't clobber the user's actual settings during tests
 @pytest.fixture(autouse=True)
 def use_temp_settings_dir(tmp_path):

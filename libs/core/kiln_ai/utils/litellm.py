@@ -18,13 +18,15 @@ class LitellmProviderInfo:
     litellm_model_id: str
 
 
-async def get_litellm_provider_info(
+def get_litellm_provider_info(
     model_provider: KilnEmbeddingModelProvider
     | KilnModelProvider
     | KilnRerankerModelProvider,
 ) -> LitellmProviderInfo:
     """
     Maps a Kiln model provider to a litellm provider.
+
+    For Ollama, the model ID comes from ollama_tools' installed-tag cache; await ensure_ollama_tags_fresh(model_provider.name) first.
 
     Args:
         model_provider: The model provider to get litellm provider info for
@@ -101,7 +103,7 @@ async def get_litellm_provider_info(
     # for Ollama, we need to resolve which model slug is actually installed
     resolved_model_id = model_provider.model_id
     if model_provider.name == ModelProviderName.ollama:
-        resolved_model_id = await resolve_ollama_model_variant(
+        resolved_model_id = resolve_ollama_model_variant(
             model_provider.model_id,
             getattr(model_provider, "ollama_model_aliases", None),
         )

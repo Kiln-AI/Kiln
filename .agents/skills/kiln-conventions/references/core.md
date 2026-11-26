@@ -23,6 +23,7 @@
 ### Adapters are the hot path
 
 - `BaseAdapter` and `LiteLlmAdapter` are the core run loop; a process may run hundreds of them concurrently. No blocking I/O, no per-call file reads, no per-call client construction. Read files once and pass the result in.
+- `resolve_ollama_model_variant`, and so `get_litellm_provider_info`, reads only the installed-tag cache in `ollama_tools` and returns the primary model ID when nothing is cached. Async code that builds an Ollama model ID must `await ensure_ollama_tags_fresh(provider.name)` first, or an install that has only an alias tag silently gets the wrong ID.
 
 ### Datamodel
 
