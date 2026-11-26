@@ -50,7 +50,6 @@ Cached memory is about 1.15–1.5× the file size. 25k runs of 100 turns take ab
 
 - File watching. It is out of scope (see "Out of scope").
 - Detecting memory pressure from the operating system.
-- A configurable budget.
 - A saved index for faster cold starts. The first list load after startup still reads every run file.
 - Changing how lookups by id work. They must not rely on folder names, because folders are sometimes copied around.
 
@@ -160,7 +159,7 @@ Reading a large field on a cached record can now read the file. This happens onl
 
 ## 4. Memory budget and eviction
 
-- **Budget:** min(2 GB, 20% of physical RAM), computed once at startup. Not configurable. It covers everything in the cache.
+- **Budget:** min(2 GB, 20% of physical RAM), computed once at startup. The `KILN_CACHE_SIZE` env var (the `model_cache_size_bytes` setting), a size in bytes, replaces it when set. It covers everything in the cache.
 - **What counts:** each cached record's estimated memory, split into its normal part and its large-field part. Estimates come from file size, scaled to match measured in-memory size. They are approximate; a benchmark checks the estimate stays within about 50% of real memory for typical runs.
 - **Eviction order** when the cache is over budget:
   1. Large fields, least recently used first. Evicting a record's large fields keeps its normal part and summary values.
@@ -213,7 +212,6 @@ Marking `EvalRun`'s large fields (above) means score summaries and the eval work
   - Synced folders and mounts give unreliable events.
 - **Memory-pressure detection.**
 - **Idle shrink** (dropping cached data when the app is unused). The budget alone bounds memory.
-- **A configurable budget.**
 - **RAG progress endpoint** loading every embedding (`progress.py`). Marking `ChunkEmbeddings.embeddings` as large already stops its vectors from staying cached.
 - **Lookups by id from folder names.**
 - **A "do not cache this class" option.** No model on the field list needs it.

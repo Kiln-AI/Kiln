@@ -48,6 +48,8 @@ On macOS, start the packaged app with it set from a terminal:
 KILN_DISABLE_MODEL_CACHE=true /Applications/Kiln.app/Contents/MacOS/Kiln
 ```
 
+To resize the cache rather than turn it off, set `KILN_CACHE_SIZE` to a budget in bytes; it replaces the default of the smaller of 2 GiB and 20% of physical RAM.
+
 ## Building the Desktop App
 
 Typically building desktop apps are done in a CI/CD pipeline, but if you need to build the desktop app locally, you can do so with:

@@ -56,6 +56,12 @@ class Config:
                 default=False,
                 in_memory=True,
             ),
+            "model_cache_size_bytes": ConfigProperty(
+                int,
+                env_var="KILN_CACHE_SIZE",
+                default=None,
+                in_memory=True,
+            ),
             "open_ai_api_key": ConfigProperty(
                 str,
                 env_var="OPENAI_API_KEY",

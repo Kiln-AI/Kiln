@@ -15,12 +15,13 @@ A process-wide cache of parsed, validated datamodel records, keyed by file path.
 - Records of a class with large fields (see `lazy_fields`) are kept in two parts: the
   record without its large values, and the large values, which code reads back through
   the record and which the cache can drop on their own.
-- Its memory is bounded by a budget of min(2 GiB, 20% of physical RAM). Each record counts
-  an estimate based on its file size, split between its two parts. When an add takes the
-  total over budget, the cache drops large values, least recently used first, then whole
-  records, least recently used first, until the total is at 90% of the budget. A record
-  larger than the whole budget is returned to its caller but not kept; so are large
-  values larger than the budget.
+- Its memory is bounded by a budget of min(2 GiB, 20% of physical RAM), or
+  `KILN_CACHE_SIZE` bytes when that is set. Each record counts an estimate based on its
+  file size, split between its two parts. When an add takes the total over budget, the
+  cache drops large values, least recently used first, then whole records, least recently
+  used first, until the total is at 90% of the budget. A record larger than the whole
+  budget is returned to its caller but not kept; so are large values larger than the
+  budget.
 - Readonly loads that miss on the same file at once share one parse: the first thread
   parses the file and the others wait for it, up to `LOAD_WAIT_TIMEOUT_SECONDS`, then
   read the record it cached.
@@ -36,6 +37,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Type, TypeVar
+
+from kiln_ai.utils.config import Config
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.basemodel import KilnBaseModel
@@ -553,8 +556,8 @@ def set_model_cache_enabled(value: bool) -> None:
 
     Off by default in the library. With it on, readonly loads
     (`load_from_file(..., readonly=True)`, `task.runs(readonly=True)`, ...) keep each
-    parsed record in memory and serve it again until its file changes, within a memory
-    budget of min(2 GiB, 20% of physical RAM). Turning it off drops every cached record.
+    parsed record in memory and serve it again until its file changes, within its
+    budget. Turning it off drops every cached record.
     After `ModelCache.shared().disable()`, turning it on does nothing.
     """
     ModelCache.shared().set_enabled(value)
@@ -583,7 +586,11 @@ def apply_model_cache_setting(*, disable: bool) -> None:
 
 
 def default_cache_budget_bytes() -> int:
-    """min(2 GiB, 20% of physical RAM), or 1 GiB if physical RAM can't be read."""
+    """The `model_cache_size_bytes` setting (`KILN_CACHE_SIZE`) when set, otherwise
+    min(2 GiB, 20% of physical RAM), or 1 GiB if physical RAM can't be read."""
+    size_setting = Config.shared().model_cache_size_bytes
+    if size_setting is not None:
+        return size_setting
     ram = physical_memory_bytes()
     if ram is None:
         return FALLBACK_BUDGET_BYTES

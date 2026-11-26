@@ -843,6 +843,14 @@ def test_env_backed_bool_property_empty_value_is_unset(
     assert caplog.text == ""
 
 
+def test_model_cache_size_bytes_reads_kiln_cache_size(default_config, monkeypatch):
+    monkeypatch.delenv("KILN_CACHE_SIZE", raising=False)
+    assert default_config.model_cache_size_bytes is None
+
+    monkeypatch.setenv("KILN_CACHE_SIZE", "1048576")
+    assert default_config.model_cache_size_bytes == 1048576
+
+
 @pytest.mark.parametrize("in_memory", [True, False])
 def test_bool_property_empty_stored_value_falls_through_to_env_var(
     mock_yaml_file, in_memory

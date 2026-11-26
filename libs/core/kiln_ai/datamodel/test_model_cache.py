@@ -816,6 +816,20 @@ def test_default_budget_formula(ram, budget):
         assert default_cache_budget_bytes() == budget
 
 
+@pytest.mark.parametrize("cache_size_env, budget", [(None, 2 * GIB), ("12345", 12345)])
+def test_default_budget_is_the_cache_size_setting_when_set(
+    monkeypatch, cache_size_env, budget
+):
+    if cache_size_env is None:
+        monkeypatch.delenv("KILN_CACHE_SIZE", raising=False)
+    else:
+        monkeypatch.setenv("KILN_CACHE_SIZE", cache_size_env)
+    with patch(
+        "kiln_ai.datamodel.model_cache.physical_memory_bytes", return_value=16 * GIB
+    ):
+        assert default_cache_budget_bytes() == budget
+
+
 def test_budget_defaults_to_default_cache_budget_bytes():
     with patch(
         "kiln_ai.datamodel.model_cache.default_cache_budget_bytes", return_value=12345
