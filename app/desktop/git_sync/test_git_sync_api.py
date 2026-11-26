@@ -723,6 +723,7 @@ class TestRenameClone:
         assert "proj_123 - My Project" in data["new_clone_path"]
         assert not clone_dir.exists()
 
+    @pytest.mark.windows_ci
     def test_path_traversal_project_id_returns_400(self, api_client, tmp_path):
         clone_dir = tmp_path / "kiln_clone_abc"
         clone_dir.mkdir()
@@ -1399,6 +1400,7 @@ class TestSaveConfigRemoveConflicting:
 
 
 class TestSaveConfigClonePathValidation:
+    @pytest.mark.windows_ci
     def test_rejects_clone_path_outside_project_directory(self, api_client, tmp_path):
         with patch(
             "app.desktop.git_sync.git_sync_api.default_project_path",

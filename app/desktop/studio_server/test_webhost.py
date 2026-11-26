@@ -10,6 +10,8 @@ from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.webhost import connect_webhost
 
+pytestmark = pytest.mark.windows_ci
+
 WEB_APP_404_BODY = "<html><body>custom not found</body></html>"
 
 

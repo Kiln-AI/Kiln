@@ -157,6 +157,7 @@ def test_benchmark_import_chain_adapters(benchmark):
     assert mean < 0.5, f"Import chain averaged {mean:.2f}s — expected under 0.5s"
 
 
+@pytest.mark.windows_ci
 @pytest.mark.benchmark
 @pytest.mark.slow
 def test_benchmark_import_eval_helpers_direct(benchmark):
@@ -168,7 +169,7 @@ def test_benchmark_import_eval_helpers_direct(benchmark):
     import_stmt = (
         "import importlib.util; "
         "spec = importlib.util.spec_from_file_location('eval_helpers', "
-        f"'{_EVAL_HELPERS_PATH}'); "
+        f"{str(_EVAL_HELPERS_PATH)!r}); "
         "mod = importlib.util.module_from_spec(spec); "
         "spec.loader.exec_module(mod)"
     )

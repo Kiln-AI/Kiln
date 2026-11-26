@@ -123,7 +123,8 @@ class TestIntegration:
         config_restored = ChunkerConfig.model_validate(config_dict)
         assert config_restored.chunker_type == ChunkerType.FIXED_WINDOW
 
-    def test_relationships(self, mock_project):
+    @pytest.mark.windows_ci
+    def test_relationships(self, mock_project, tmp_path):
         """Test that relationships are properly validated."""
 
         # Create a config
@@ -140,85 +141,83 @@ class TestIntegration:
         config.save_to_file()
 
         # Dummy file we will use as attachment
-        with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
-            tmp_file.write(b"test content")
-            tmp_path = Path(tmp_file.name)
+        attachment_file = tmp_path / "attachment.txt"
+        attachment_file.write_bytes(b"test content")
 
-            # Create a document
-            document = Document(
-                name="test-document",
-                description="Test document",
-                parent=mock_project,
-                original_file=FileInfo(
-                    filename="test.txt",
-                    size=100,
-                    mime_type="text/plain",
-                    attachment=KilnAttachmentModel.from_file(tmp_path),
-                ),
-                kind=Kind.DOCUMENT,
-            )
-            document.save_to_file()
+        # Create a document
+        document = Document(
+            name="test-document",
+            description="Test document",
+            parent=mock_project,
+            original_file=FileInfo(
+                filename="test.txt",
+                size=100,
+                mime_type="text/plain",
+                attachment=KilnAttachmentModel.from_file(attachment_file),
+            ),
+            kind=Kind.DOCUMENT,
+        )
+        document.save_to_file()
 
-            # Create an extraction
-            extraction = Extraction(
-                source=ExtractionSource.PROCESSED,
-                extractor_config_id=config.id,
-                output=KilnAttachmentModel.from_file(tmp_path),
-                parent=document,
-            )
-            extraction.save_to_file()
+        # Create an extraction
+        extraction = Extraction(
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=config.id,
+            output=KilnAttachmentModel.from_file(attachment_file),
+            parent=document,
+        )
+        extraction.save_to_file()
 
-            # Create some chunks
-            chunks = [Chunk(content=KilnAttachmentModel.from_file(tmp_path))] * 3
+        # Create some chunks
+        chunks = [Chunk(content=KilnAttachmentModel.from_file(attachment_file))] * 3
 
-            chunked_document = ChunkedDocument(
-                parent=extraction,
-                chunks=chunks,
-                chunker_config_id=config.id,
-            )
-            chunked_document.save_to_file()
+        chunked_document = ChunkedDocument(
+            parent=extraction,
+            chunks=chunks,
+            chunker_config_id=config.id,
+        )
+        chunked_document.save_to_file()
 
-            assert len(chunked_document.chunks) == 3
+        assert len(chunked_document.chunks) == 3
 
-            # Check that the document chunked is associated with the correct extraction
-            assert chunked_document.parent_extraction().id == extraction.id
+        # Check that the document chunked is associated with the correct extraction
+        assert chunked_document.parent_extraction().id == extraction.id
 
-            for chunked_document_found in extraction.chunked_documents():
-                assert chunked_document.id == chunked_document_found.id
+        for chunked_document_found in extraction.chunked_documents():
+            assert chunked_document.id == chunked_document_found.id
 
-            assert len(extraction.chunked_documents()) == 1
+        assert len(extraction.chunked_documents()) == 1
 
-            # the chunks should have a filename prefixed with content_
-            for chunk in chunked_document.chunks:
-                filename = chunk.content.path.name
-                assert filename.startswith("content_")
+        # the chunks should have a filename prefixed with content_
+        for chunk in chunked_document.chunks:
+            filename = chunk.content.path.name
+            assert filename.startswith("content_")
 
-            # create an embedding config
-            embedding_config = EmbeddingConfig(
-                name="test-embedding-config",
-                description="Test embedding config",
-                parent=mock_project,
-                model_name="openai_text_embedding_3_small",
-                model_provider_name="openai",
-                properties={},
-            )
-            embedding_config.save_to_file()
+        # create an embedding config
+        embedding_config = EmbeddingConfig(
+            name="test-embedding-config",
+            description="Test embedding config",
+            parent=mock_project,
+            model_name="openai_text_embedding_3_small",
+            model_provider_name="openai",
+            properties={},
+        )
+        embedding_config.save_to_file()
 
-            # create chunk embeddings
-            chunk_embeddings = ChunkEmbeddings(
-                parent=chunked_document,
-                embedding_config_id=embedding_config.id,
-                embeddings=[Embedding(vector=[1.0] * 1536) for _ in range(3)],
-            )
-            chunk_embeddings.save_to_file()
+        # create chunk embeddings
+        chunk_embeddings = ChunkEmbeddings(
+            parent=chunked_document,
+            embedding_config_id=embedding_config.id,
+            embeddings=[Embedding(vector=[1.0] * 1536) for _ in range(3)],
+        )
+        chunk_embeddings.save_to_file()
 
-            retrieved_chunk_embeddings = chunked_document.chunk_embeddings()
-            assert isinstance(retrieved_chunk_embeddings, list)
-            assert len(retrieved_chunk_embeddings) == 1
+        retrieved_chunk_embeddings = chunked_document.chunk_embeddings()
+        assert isinstance(retrieved_chunk_embeddings, list)
+        assert len(retrieved_chunk_embeddings) == 1
 
-            # check project has the embedding config and the chunker config
-            assert (
-                mock_project.embedding_configs(readonly=True)[0].id
-                == embedding_config.id
-            )
-            assert mock_project.chunker_configs(readonly=True)[0].id == config.id
+        # check project has the embedding config and the chunker config
+        assert (
+            mock_project.embedding_configs(readonly=True)[0].id == embedding_config.id
+        )
+        assert mock_project.chunker_configs(readonly=True)[0].id == config.id

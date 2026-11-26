@@ -8,7 +8,7 @@ import uuid
 from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import Any, Callable, Dict, List, Optional, Set, Type, TypeVar
 
 from pydantic import (
@@ -119,6 +119,19 @@ def string_to_valid_name(name: str, truncate_to_max_length: bool = False) -> str
     return valid_name
 
 
+def is_relative_path_within_parent(path: PurePath) -> bool:
+    """Whether `path` is relative and stays inside the folder it is joined to, under both POSIX and Windows rules.
+
+    Returns False for any path with an anchor under either OS (a drive, a root or a UNC
+    share), including Windows rooted paths with no drive such as `/etc/passwd`, and for
+    any `..` segment.
+    """
+    windows_path = PureWindowsPath(path)
+    return (
+        not path.anchor and not windows_path.anchor and ".." not in windows_path.parts
+    )
+
+
 class KilnAttachmentModel(BaseModel):
     path: Path | None = Field(
         default=None,
@@ -145,11 +158,7 @@ class KilnAttachmentModel(BaseModel):
             if isinstance(self.path, str):
                 self.path = Path(self.path)
             self.input_path = None
-            if self.path and (
-                self.path.is_absolute()
-                or PureWindowsPath(self.path).is_absolute()
-                or ".." in PureWindowsPath(self.path).parts
-            ):
+            if self.path and not is_relative_path_within_parent(self.path):
                 raise ValueError(
                     f"Attachment path must be a relative path within the parent: {self.path}"
                 )

@@ -14,6 +14,8 @@ from kiln_ai.datamodel.code_file_storage import (
     write_code_to_sibling_file,
 )
 
+pytestmark = pytest.mark.windows_ci
+
 FILENAME = "tool.py"
 KILN_FILENAME = "code_tool.kiln"
 MODEL_LABEL = "CodeTool"
@@ -36,7 +38,7 @@ def _save(data, ctx, code=CODE):
 
 class TestReadCodeFromSiblingFile:
     def test_injects_code_from_file(self, tmp_path):
-        (tmp_path / FILENAME).write_text(CODE, encoding="utf-8")
+        (tmp_path / FILENAME).write_bytes(CODE.encode("utf-8"))
         result = _load(
             {"name": "My Tool"},
             {"loading_from_file": True, "source_dir": tmp_path},
@@ -97,7 +99,7 @@ class TestReadCodeFromSiblingFile:
         assert _load(data, {}) is data
 
     def test_copy_on_write_does_not_mutate_input(self, tmp_path):
-        (tmp_path / FILENAME).write_text(CODE, encoding="utf-8")
+        (tmp_path / FILENAME).write_bytes(CODE.encode("utf-8"))
         data = {"name": "My Tool"}
         result = _load(data, {"loading_from_file": True, "source_dir": tmp_path})
         assert "code" not in data  # caller's dict untouched

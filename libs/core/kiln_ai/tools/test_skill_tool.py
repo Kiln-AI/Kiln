@@ -235,6 +235,7 @@ class TestSkillToolResource:
         assert result.is_error is True
         assert result.error_message == result.output
 
+    @pytest.mark.windows_ci
     async def test_path_traversal_blocked(self, skill_tool: SkillTool):
         result = await skill_tool.run(
             name="code-review", resource="references/../../etc/passwd"

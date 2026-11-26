@@ -361,6 +361,7 @@ def test_import_csv_plain_text_missing_output(base_task: Task, tmp_path):
     assert "Missing required headers" in str(e.value)
 
 
+@pytest.mark.windows_ci
 def test_import_csv_utf8_encoding(base_task: Task, tmp_path):
     """Ensure UTF-8 encoded files are read correctly."""
 

@@ -2,14 +2,18 @@ import filecmp
 import hashlib
 import json
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Dict, List, Optional
 from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel, Field, SerializationInfo, field_serializer
 
-from kiln_ai.datamodel.basemodel import KilnAttachmentModel, KilnBaseModel
+from kiln_ai.datamodel.basemodel import (
+    KilnAttachmentModel,
+    KilnBaseModel,
+    is_relative_path_within_parent,
+)
 from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 
 
@@ -497,6 +501,7 @@ def _save_then_tamper_attachment_path(
         json.dump(data, f)
 
 
+@pytest.mark.windows_ci
 def test_loading_from_file_rejects_traversal_path(
     test_base_kiln_file, mock_file_factory
 ):
@@ -509,6 +514,7 @@ def test_loading_from_file_rejects_traversal_path(
         ModelWithAttachment.load_from_file(json_path)
 
 
+@pytest.mark.windows_ci
 def test_loading_from_file_rejects_absolute_path(
     test_base_kiln_file, mock_file_factory
 ):
@@ -519,6 +525,7 @@ def test_loading_from_file_rejects_absolute_path(
         ModelWithAttachment.load_from_file(json_path)
 
 
+@pytest.mark.windows_ci
 def test_loading_from_file_rejects_windows_traversal_path(
     test_base_kiln_file, mock_file_factory
 ):
@@ -531,6 +538,43 @@ def test_loading_from_file_rejects_windows_traversal_path(
         ModelWithAttachment.load_from_file(json_path)
 
 
+@pytest.mark.windows_ci
+@pytest.mark.parametrize(
+    "path",
+    [
+        # Rooted, no drive: not is_absolute() on Windows, yet joins to C:\etc\passwd
+        PureWindowsPath("/etc/passwd"),
+        PureWindowsPath("\\etc\\passwd"),
+        PureWindowsPath("C:\\Windows\\win.ini"),
+        PureWindowsPath("C:Windows\\win.ini"),
+        PureWindowsPath("\\\\server\\share\\file.pdf"),
+        PureWindowsPath("..\\secret.pdf"),
+        PureWindowsPath("attachments\\..\\..\\secret.pdf"),
+        PurePosixPath("/etc/passwd"),
+        PurePosixPath("C:\\Windows\\win.ini"),
+        PurePosixPath("\\etc\\passwd"),
+        PurePosixPath("../secret.pdf"),
+    ],
+)
+def test_is_relative_path_within_parent_rejects_escaping_paths(path: PurePath):
+    assert not is_relative_path_within_parent(path)
+
+
+@pytest.mark.windows_ci
+@pytest.mark.parametrize(
+    "path",
+    [
+        PureWindowsPath("file.pdf"),
+        PureWindowsPath("attachments\\file.pdf"),
+        PurePosixPath("attachments/file.pdf"),
+        PurePosixPath("file..pdf"),
+    ],
+)
+def test_is_relative_path_within_parent_allows_contained_paths(path: PurePath):
+    assert is_relative_path_within_parent(path)
+
+
+@pytest.mark.windows_ci
 def test_resolve_path_rejects_escaping_path(test_base_kiln_file, mock_file_factory):
     test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     model = ModelWithAttachment(
@@ -549,6 +593,7 @@ def test_resolve_path_rejects_escaping_path(test_base_kiln_file, mock_file_facto
         model.attachment.resolve_path(test_base_kiln_file.parent)
 
 
+@pytest.mark.windows_ci
 def test_resolve_path_allows_contained_path(test_base_kiln_file, mock_file_factory):
     test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     model = ModelWithAttachment(
