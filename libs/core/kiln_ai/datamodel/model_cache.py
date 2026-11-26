@@ -18,6 +18,9 @@ A process-wide cache of parsed, validated datamodel records, keyed by file path.
   records, least recently used first, until the total is at 90% of the budget. A record
   larger than the whole budget is returned to its caller but not kept; so are large
   values larger than the budget.
+- Readonly loads that miss on the same file at once share one parse: the first thread
+  parses the file and the others wait for it, up to `LOAD_WAIT_TIMEOUT_SECONDS`, then
+  read the record it cached.
 """
 
 import logging
@@ -27,6 +30,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Type, TypeVar
 
@@ -68,6 +72,26 @@ FALLBACK_BUDGET_BYTES = 1 * 1024**3
 EVICTION_TARGET_FRACTION = 0.9
 """An add that takes the total over budget evicts down to this share of the budget, so
 the adds after it don't each evict again."""
+
+LOAD_WAIT_TIMEOUT_SECONDS = 5.0
+"""How long a readonly load waits for another thread's load of the same file before
+parsing the file itself. It bounds the wait when two loads each wait on the other."""
+
+
+class LoadClaim(Enum):
+    """What `ModelCache.claim_load` tells a thread about to parse a file after a miss.
+
+    - LOAD: no other load of the file is in progress. The caller parses it, then calls
+      `release_load`.
+    - NESTED: the calling thread is already loading the file, further up its stack. It
+      parses the file again without waiting, and doesn't release.
+    - WAIT: another thread is loading the file. The caller calls `wait_for_load`, then
+      reads the cache.
+    """
+
+    LOAD = "load"
+    NESTED = "nested"
+    WAIT = "wait"
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,7 +192,9 @@ class ModelCache:
     example one with a small budget.
 
     Safe to use from several threads. The lock that guards the bookkeeping is never held
-    during file I/O or while copying a record.
+    during file I/O or while copying a record. `claim_load`, `release_load` and
+    `wait_for_load` let concurrent readonly loads of one file share a parse, under a lock
+    of their own.
     """
 
     _shared_instance: "ModelCache | None" = None
@@ -189,6 +215,11 @@ class ModelCache:
         # normal_bytes of every entry, plus large_bytes of the entries in _loaded.
         self._total_bytes = 0
         self._lock = threading.RLock()
+        # The key of each file a readonly load is parsing, to the id of the thread parsing
+        # it. Guarded by _load_finished, which wakes waiters when a key leaves it.
+        self._loading: dict[str, int] = {}
+        self._load_finished = threading.Condition(threading.Lock())
+        self._load_waiters = 0
 
     @classmethod
     def shared(cls) -> "ModelCache":
@@ -450,6 +481,42 @@ class ModelCache:
         with self._lock:
             if self.is_current_entry(path, owner):
                 self._remove(_cache_key(path))
+
+    def claim_load(self, path: Path) -> LoadClaim:
+        """Claim the parse of `path` after a readonly miss, so that concurrent loads of
+        the file share one parse. `LoadClaim` says what the caller does next."""
+        key = _cache_key(path)
+        me = threading.get_ident()
+        with self._load_finished:
+            owner = self._loading.get(key)
+            if owner is None:
+                self._loading[key] = me
+                return LoadClaim.LOAD
+        return LoadClaim.NESTED if owner == me else LoadClaim.WAIT
+
+    def release_load(self, path: Path) -> None:
+        """End the claim `claim_load` gave as LOAD, and wake the threads waiting for it.
+
+        Call once, from the thread that holds the claim, whether or not its load
+        succeeded.
+        """
+        with self._load_finished:
+            self._loading.pop(_cache_key(path), None)
+            if self._load_waiters:
+                self._load_finished.notify_all()
+
+    def wait_for_load(self, path: Path) -> bool:
+        """Wait until no thread holds a claim on `path`, up to
+        `LOAD_WAIT_TIMEOUT_SECONDS`. Returns False if one still does then."""
+        key = _cache_key(path)
+        with self._load_finished:
+            self._load_waiters += 1
+            try:
+                return self._load_finished.wait_for(
+                    lambda: key not in self._loading, LOAD_WAIT_TIMEOUT_SECONDS
+                )
+            finally:
+                self._load_waiters -= 1
 
 
 def set_model_cache_enabled(value: bool) -> None:

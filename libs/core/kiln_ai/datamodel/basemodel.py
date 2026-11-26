@@ -34,7 +34,7 @@ from kiln_ai.datamodel.lazy_fields import (
     detach_large_values,
     reload_path_for_editable_copy,
 )
-from kiln_ai.datamodel.model_cache import FileIdentity, ModelCache
+from kiln_ai.datamodel.model_cache import FileIdentity, LoadClaim, ModelCache
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
 from kiln_ai.utils.mime_type import guess_extension
@@ -473,13 +473,37 @@ class KilnBaseModel(BaseModel):
             raise ValueError(
                 f"{cls.__name__} has no parent, so it can't be loaded with one"
             )
-        cached_model = ModelCache.shared().get_model(path, cls, readonly=readonly)
+        cache = ModelCache.shared()
+        cached_model = cache.get_model(path, cls, readonly=readonly)
         if cached_model is not None:
             # A readonly hit is the shared cached instance and keeps the parent it was
             # cached with. A mutable hit is a fresh copy, so it can take the caller's.
             if parent is not None and not readonly:
                 cached_model._attach_parent(parent)  # type: ignore[attr-defined]
             return cached_model
+        if readonly and cache.enabled:
+            claim = cache.claim_load(path)
+            if claim is LoadClaim.LOAD:
+                try:
+                    return cls._parse_validate_and_cache(path, readonly, parent)
+                finally:
+                    cache.release_load(path)
+            if claim is LoadClaim.WAIT and cache.wait_for_load(path):
+                cached_model = cache.get_model(path, cls, readonly=readonly)
+                if cached_model is not None:
+                    return cached_model
+        # Readonly loads get here unshared after another thread's load that cached
+        # nothing (it failed, or the record is over budget), a timed-out wait, or a
+        # nested load of a file this thread is already loading.
+        return cls._parse_validate_and_cache(path, readonly, parent)
+
+    @classmethod
+    def _parse_validate_and_cache(
+        cls: Type[T],
+        path: Path,
+        readonly: bool,
+        parent: "KilnBaseModel | None",
+    ) -> T:
         with open(path, "r", encoding="utf-8") as file:
             # From the open descriptor, so the identity describes the bytes read below.
             identity = FileIdentity.from_stat(os.fstat(file.fileno()))

@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +18,7 @@ from kiln_ai.datamodel.model_cache import (
     MEMORY_FACTOR,
     MIN_RECORD_BYTES,
     FileIdentity,
+    LoadClaim,
     ModelCache,
     _cache_key,
     default_cache_budget_bytes,
@@ -411,6 +413,23 @@ def test_concurrent_access_from_threads_does_not_raise(
     run_racing_threads([threading.Thread(target=run, args=(step,)) for step in steps])
 
     assert errors == []
+
+
+def test_claim_load_is_per_file_and_per_thread(model_cache, tmp_path):
+    path = tmp_path / "a.kiln"
+    other_path = tmp_path / "b.kiln"
+
+    assert model_cache.claim_load(path) is LoadClaim.LOAD
+    assert model_cache.claim_load(path) is LoadClaim.NESTED
+    with ThreadPoolExecutor(1) as pool:
+        assert pool.submit(model_cache.claim_load, path).result() is LoadClaim.WAIT
+        assert pool.submit(model_cache.claim_load, other_path).result() is (
+            LoadClaim.LOAD
+        )
+
+    model_cache.release_load(path)
+    assert model_cache.wait_for_load(path) is True
+    assert model_cache.claim_load(path) is LoadClaim.LOAD
 
 
 def test_entry_size_estimate_from_file_size(model_cache, tmp_path):

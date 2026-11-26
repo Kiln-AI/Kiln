@@ -2,10 +2,13 @@ import datetime
 import json
 import logging
 import shutil
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 from unittest.mock import MagicMock, patch
@@ -17,6 +20,7 @@ from typing_extensions import Self
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import Project, Task, TaskOutput, TaskRun
+from kiln_ai.datamodel import model_cache as model_cache_module
 from kiln_ai.datamodel.basemodel import (
     MAX_FILENAME_LENGTH,
     KilnBaseModel,
@@ -33,7 +37,12 @@ from kiln_ai.datamodel.eval import (
     EvalDataType,
     EvalOutputScore,
 )
-from kiln_ai.datamodel.model_cache import MEMORY_FACTOR, FileIdentity, ModelCache
+from kiln_ai.datamodel.model_cache import (
+    MEMORY_FACTOR,
+    FileIdentity,
+    ModelCache,
+    _cache_key,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
@@ -549,12 +558,12 @@ def write_base_model_files(folder: Path, count: int) -> list[Path]:
     return paths
 
 
-def install_shared_cache(monkeypatch, budget_bytes: int) -> None:
-    monkeypatch.setattr(
-        ModelCache,
-        "_shared_instance",
-        ModelCache(enabled=True, budget_bytes=budget_bytes),
-    )
+def install_shared_cache(
+    monkeypatch, budget_bytes: int, enabled: bool = True
+) -> ModelCache:
+    cache = ModelCache(enabled=enabled, budget_bytes=budget_bytes)
+    monkeypatch.setattr(ModelCache, "_shared_instance", cache)
+    return cache
 
 
 def test_readonly_load_evicts_least_recently_used(tmp_path, monkeypatch):
@@ -581,6 +590,175 @@ def test_readonly_load_larger_than_budget_is_served_not_cached(tmp_path, monkeyp
     assert first.path == path
     assert KilnBaseModel.load_from_file(path, readonly=True) is not first
     assert ModelCache.shared().stats().records == 0
+
+
+class Gate:
+    """Holds the threads that reach `hold()` until the test calls `open()`."""
+
+    def __init__(self) -> None:
+        self.reached = threading.Event()
+        self._opened = threading.Event()
+
+    def hold(self) -> None:
+        self.reached.set()
+        assert self._opened.wait(5)
+
+    def open(self) -> None:
+        self._opened.set()
+
+
+@dataclass
+class ParseSpy:
+    """Counts file parses; the first one calls `during_first_parse` before validating."""
+
+    during_first_parse: Callable[[], None] = lambda: None
+    parses: int = 0
+
+
+@pytest.fixture
+def parse_spy(monkeypatch) -> ParseSpy:
+    spy = ParseSpy()
+    validate = KilnBaseModel.__dict__["_validate_file_data"].__func__
+
+    def counting_validate(cls, raw, path, parent):
+        spy.parses += 1
+        if spy.parses == 1:
+            spy.during_first_parse()
+        return validate(cls, raw, path, parent)
+
+    monkeypatch.setattr(
+        KilnBaseModel, "_validate_file_data", classmethod(counting_validate)
+    )
+    return spy
+
+
+def watch_waits(cache: ModelCache, monkeypatch) -> threading.Event:
+    """Set when a load starts waiting for another thread's load of the same file."""
+    waiting = threading.Event()
+    wait_for_load = cache.wait_for_load
+
+    def signalling_wait(path: Path) -> bool:
+        waiting.set()
+        return wait_for_load(path)
+
+    monkeypatch.setattr(cache, "wait_for_load", signalling_wait)
+    return waiting
+
+
+def race_two_loads(
+    path: Path, cache: ModelCache, parse_spy: ParseSpy, monkeypatch
+) -> tuple[Future, Future]:
+    """Loads `path` readonly in two threads; the second starts and waits while the
+    first is parsing the file."""
+    gate = Gate()
+    parse_spy.during_first_parse = gate.hold
+    waiting = watch_waits(cache, monkeypatch)
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(KilnBaseModel.load_from_file, path, readonly=True)
+        assert gate.reached.wait(5)
+        second = pool.submit(KilnBaseModel.load_from_file, path, readonly=True)
+        assert waiting.wait(5)
+        gate.open()
+    return first, second
+
+
+def test_concurrent_readonly_loads_of_a_file_share_one_parse(
+    test_base_file, model_cache_enabled, parse_spy, monkeypatch
+):
+    first, second = race_two_loads(
+        test_base_file, model_cache_enabled, parse_spy, monkeypatch
+    )
+
+    assert first.result() is second.result()
+    assert parse_spy.parses == 1
+    assert model_cache_enabled._loading == {}
+
+
+def test_load_waiting_on_a_failed_load_parses_the_file_itself(
+    tmp_path, model_cache_enabled, parse_spy, monkeypatch
+):
+    path = tmp_path / "wrong_type.kiln"
+    path.write_text(json.dumps({"v": 1, "model_type": "not_a_kiln_base_model"}))
+
+    first, second = race_two_loads(path, model_cache_enabled, parse_spy, monkeypatch)
+
+    for load in (first, second):
+        with pytest.raises(ValueError, match="model type is incorrect"):
+            load.result()
+    assert parse_spy.parses == 2
+    assert model_cache_enabled._loading == {}
+
+
+def test_load_waiting_on_an_uncached_record_parses_the_file_itself(
+    tmp_path, parse_spy, monkeypatch
+):
+    [path] = write_base_model_files(tmp_path, 1)
+    cache = install_shared_cache(monkeypatch, budget_bytes=path.stat().st_size)
+
+    first, second = race_two_loads(path, cache, parse_spy, monkeypatch)
+
+    assert first.result() is not second.result()
+    assert second.result().path == path
+    assert parse_spy.parses == 2
+
+
+def test_load_whose_wait_times_out_parses_the_file_itself(
+    test_base_file, model_cache_enabled, parse_spy, monkeypatch
+):
+    monkeypatch.setattr(model_cache_module, "LOAD_WAIT_TIMEOUT_SECONDS", 0.01)
+    gate = Gate()
+    parse_spy.during_first_parse = gate.hold
+
+    with ThreadPoolExecutor(1) as pool:
+        first = pool.submit(KilnBaseModel.load_from_file, test_base_file, readonly=True)
+        assert gate.reached.wait(5)
+        second = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+        assert parse_spy.parses == 2
+        gate.open()
+
+    assert first.result() is not second
+    assert model_cache_enabled._loading == {}
+
+
+def test_nested_load_of_a_file_being_loaded_parses_it_without_waiting(
+    test_base_file, model_cache_enabled, parse_spy, monkeypatch
+):
+    waiting = watch_waits(model_cache_enabled, monkeypatch)
+    claims_after_nested_load: list[dict[str, int]] = []
+
+    def load_again() -> None:
+        KilnBaseModel.load_from_file(test_base_file, readonly=True)
+        claims_after_nested_load.append(dict(model_cache_enabled._loading))
+
+    parse_spy.during_first_parse = load_again
+    KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    assert not waiting.is_set()
+    assert claims_after_nested_load == [
+        {_cache_key(test_base_file): threading.get_ident()}
+    ]
+    assert parse_spy.parses == 2
+    assert model_cache_enabled._loading == {}
+
+
+@pytest.mark.parametrize(
+    "cache_on, readonly",
+    [(True, False), (False, True), (False, False)],
+    ids=["editable", "readonly_cache_off", "editable_cache_off"],
+)
+def test_loads_the_cache_does_not_keep_never_claim_or_wait(
+    test_base_file, monkeypatch, cache_on, readonly
+):
+    cache = install_shared_cache(monkeypatch, budget_bytes=1024**3, enabled=cache_on)
+    claim_load = MagicMock(wraps=cache.claim_load)
+    wait_for_load = MagicMock(wraps=cache.wait_for_load)
+    monkeypatch.setattr(cache, "claim_load", claim_load)
+    monkeypatch.setattr(cache, "wait_for_load", wait_for_load)
+
+    KilnBaseModel.load_from_file(test_base_file, readonly=readonly)
+
+    claim_load.assert_not_called()
+    wait_for_load.assert_not_called()
 
 
 def test_save_to_file_invalidates_cache(test_base_file, model_cache_enabled):

@@ -135,6 +135,27 @@ def test_benchmark_load_from_file(benchmark, task_run, readonly, request):
         pytest.fail(f"Ops per second: {ops_per_second:.6f}, expected more than 1k ops")
 
 
+@pytest.mark.benchmark
+def test_benchmark_claim_and_release_load(benchmark, tmp_path):
+    """The cost a readonly cache miss pays to share its parse with concurrent loads of
+    the same file. Cache hits don't pay it."""
+    cache = ModelCache(enabled=True, budget_bytes=MIB)
+    path = tmp_path / "runs" / "run00000001" / TaskRun.base_filename()
+
+    def claim_and_release():
+        cache.claim_load(path)
+        cache.release_load(path)
+
+    benchmark(claim_and_release)
+
+    # About 1.5 µs on a Linux dev machine, next to about 700 µs to parse a 50-turn run.
+    if benchmark.stats.stats.mean > 10e-6:
+        pytest.fail(
+            f"{benchmark.stats.stats.mean * 1e6:.2f} µs per claim and release, "
+            "expected under 10 µs"
+        )
+
+
 def prose(word_count: int) -> str:
     words = "the quick brown fox jumps over a lazy dog while it rains".split()
     return " ".join(words[i % len(words)] for i in range(word_count))

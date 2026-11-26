@@ -792,21 +792,16 @@
     <div class="text-sm font-light text-gray-500 mb-2">
       Tags can be used to organize your dataset.
     </div>
-    <!-- The picker loads the task's tag counts when it mounts, a second full scan of
-    the task's runs. Mounting it once the run summaries arrive keeps the two scans
-    from running at the same time and slowing each other down. -->
-    {#if runs}
-      <TagPicker
-        tags={add_tags}
-        tag_type="task_run"
-        {project_id}
-        {task_id}
-        initial_expanded={true}
-        on:tags_changed={(event) => {
-          add_tags = event.detail.current
-        }}
-      />
-    {/if}
+    <TagPicker
+      tags={add_tags}
+      tag_type="task_run"
+      {project_id}
+      {task_id}
+      initial_expanded={true}
+      on:tags_changed={(event) => {
+        add_tags = event.detail.current
+      }}
+    />
   </div>
 </Dialog>
 
