@@ -79,6 +79,18 @@ def reset_config():
     Config._shared_instance = None
 
 
+# Give each test an empty Ollama tag cache, so tags one test stored never resolve
+# another test's model IDs.
+@pytest.fixture(autouse=True)
+def fresh_ollama_tag_cache():
+    ollama_tools = sys.modules.get("kiln_ai.adapters.ollama_tools")
+    if ollama_tools is None:
+        yield
+        return
+    with patch.object(ollama_tools, "_ollama_tag_cache", ollama_tools.OllamaTagCache()):
+        yield
+
+
 def _drop_shared_model_cache() -> None:
     # Importing kiln_ai.datamodel takes over a second, and some test runs never do.
     # Until something imports it, there is no shared cache to drop.

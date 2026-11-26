@@ -1,8 +1,12 @@
+import asyncio
 import json
 from unittest.mock import patch
 
+import httpx
 import pytest
+import respx
 
+from kiln_ai.adapters.conftest import OLLAMA_TEST_URL
 from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModel,
     KilnEmbeddingModelProvider,
@@ -12,9 +16,14 @@ from kiln_ai.adapters.ml_embedding_model_list import (
 from kiln_ai.adapters.ml_model_list import KilnModel, KilnModelProvider
 from kiln_ai.adapters.ollama_tools import (
     OllamaConnection,
+    OllamaTagCache,
+    ensure_ollama_tags_fresh,
+    get_ollama_connection,
     ollama_embedding_model_installed,
     ollama_model_installed,
+    ollama_online,
     parse_ollama_tags,
+    record_ollama_tags,
     resolve_ollama_model_variant,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -381,119 +390,374 @@ def test_parse_ollama_tags_mixed_models_and_embeddings():
     assert "unknown_embedding:latest" in conn.untested_models
 
 
-@patch("kiln_ai.adapters.ollama_tools.requests.get")
-def test_resolve_ollama_model_variant_primary_installed(mock_get):
-    """Test that primary model_id is returned when it's installed"""
-    mock_response = mock_get.return_value
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "models": [
-            {"model": "nemotron-3-nano"},
-            {"model": "phi3.5:latest"},
-        ]
-    }
-
-    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
-    assert result == "nemotron-3-nano"
+OTHER_OLLAMA_URL = "http://other-ollama.test:11434"
 
 
-@patch("kiln_ai.adapters.ollama_tools.requests.get")
-def test_resolve_ollama_model_variant_alias_installed(mock_get):
-    """Test that alias is returned when primary is not installed but alias is"""
-    mock_response = mock_get.return_value
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "models": [
-            {"model": "nemotron-3-nano:30b"},
-            {"model": "phi3.5:latest"},
-        ]
-    }
-
-    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
-    assert result == "nemotron-3-nano:30b"
-
-
-@patch("kiln_ai.adapters.ollama_tools.requests.get")
-def test_resolve_ollama_model_variant_latest_tag(mock_get):
-    """Test that :latest tag matching works"""
-    mock_response = mock_get.return_value
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "models": [
-            {"model": "nemotron-3-nano:latest"},
-            {"model": "phi3.5:latest"},
-        ]
-    }
-
-    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
-    assert result == "nemotron-3-nano"
-
-
-@patch("kiln_ai.adapters.ollama_tools.requests.get")
-def test_resolve_ollama_model_variant_none_installed(mock_get):
-    """Test that original model_id is returned when nothing is installed"""
-    mock_response = mock_get.return_value
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "models": [
-            {"model": "phi3.5:latest"},
-            {"model": "llama3.1:latest"},
-        ]
-    }
-
-    result = resolve_ollama_model_variant(
-        "nemotron-3-nano", ["nemotron-3-nano:30b", "nemotron-3-nano:70b"]
+def installed_tags(*model_names: str) -> httpx.Response:
+    return httpx.Response(
+        200, json={"models": [{"model": name} for name in model_names]}
     )
-    assert result == "nemotron-3-nano"
 
 
-@patch("kiln_ai.adapters.ollama_tools.requests.get")
-def test_resolve_ollama_model_variant_no_aliases(mock_get):
-    """Test with no aliases provided"""
-    mock_response = mock_get.return_value
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "models": [
-            {"model": "phi3.5:latest"},
-        ]
-    }
-
-    result = resolve_ollama_model_variant("nemotron-3-nano", None)
-    assert result == "nemotron-3-nano"
+def tags_body(*model_names: str) -> dict:
+    return {"models": [{"model": name} for name in model_names]}
 
 
-@patch("kiln_ai.adapters.ollama_tools.requests.get")
-def test_resolve_ollama_model_variant_connection_error(mock_get):
-    """Test that original model_id is returned on connection error"""
-    mock_get.side_effect = Exception("Connection failed")
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 1000.0
 
-    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
-    assert result == "nemotron-3-nano"
-
-
-@patch("kiln_ai.adapters.ollama_tools.requests.get")
-def test_resolve_ollama_model_variant_bad_response(mock_get):
-    """Test that original model_id is returned on bad response"""
-    mock_response = mock_get.return_value
-    mock_response.status_code = 500
-
-    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
-    assert result == "nemotron-3-nano"
+    def __call__(self) -> float:
+        return self.now
 
 
-@patch("kiln_ai.adapters.ollama_tools.requests.get")
-def test_resolve_ollama_model_variant_first_alias_wins(mock_get):
-    """Test that first matching alias is returned"""
-    mock_response = mock_get.return_value
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "models": [
-            {"model": "model:alias1"},
-            {"model": "model:alias2"},
-        ]
-    }
+@pytest.fixture
+def clock():
+    return FakeClock()
 
-    result = resolve_ollama_model_variant(
-        "model:primary", ["model:alias1", "model:alias2"]
+
+@pytest.fixture
+def tag_cache(clock):
+    return OllamaTagCache(ttl_seconds=60, clock=clock)
+
+
+@pytest.mark.parametrize(
+    "installed,model_id,aliases,expected",
+    [
+        (
+            ["nemotron-3-nano", "phi3.5:latest"],
+            "nemotron-3-nano",
+            ["nemotron-3-nano:30b"],
+            "nemotron-3-nano",
+        ),
+        (
+            ["nemotron-3-nano:30b", "phi3.5:latest"],
+            "nemotron-3-nano",
+            ["nemotron-3-nano:30b"],
+            "nemotron-3-nano:30b",
+        ),
+        (
+            ["nemotron-3-nano:latest", "phi3.5:latest"],
+            "nemotron-3-nano",
+            ["nemotron-3-nano:30b"],
+            "nemotron-3-nano",
+        ),
+        (
+            ["phi3.5:latest", "llama3.1:latest"],
+            "nemotron-3-nano",
+            ["nemotron-3-nano:30b", "nemotron-3-nano:70b"],
+            "nemotron-3-nano",
+        ),
+        (["phi3.5:latest"], "nemotron-3-nano", None, "nemotron-3-nano"),
+        (
+            ["model:alias1", "model:alias2"],
+            "model:primary",
+            ["model:alias1", "model:alias2"],
+            "model:alias1",
+        ),
+    ],
+)
+async def test_resolve_ollama_model_variant(
+    ollama_api, installed, model_id, aliases, expected
+):
+    ollama_api.get("/api/tags").mock(return_value=installed_tags(*installed))
+
+    await ensure_ollama_tags_fresh(ModelProviderName.ollama)
+
+    assert resolve_ollama_model_variant(model_id, aliases) == expected
+
+
+def test_resolve_ollama_model_variant_cache_miss_returns_model_id(ollama_api):
+    assert (
+        resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+        == "nemotron-3-nano"
     )
-    assert result == "model:alias1"
+    assert not ollama_api.calls
+
+
+def test_resolve_ollama_model_variant_ignores_tags_from_another_url(ollama_api):
+    record_ollama_tags(OTHER_OLLAMA_URL, tags_body("nemotron-3-nano:30b"))
+
+    assert (
+        resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+        == "nemotron-3-nano"
+    )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.ConnectError("Connection refused"),
+        httpx.ReadTimeout(""),
+        httpx.Response(500),
+        httpx.Response(200, json={"error": "no models key"}),
+        httpx.Response(200, text="not json"),
+    ],
+)
+async def test_resolve_ollama_model_variant_falls_back_to_model_id(
+    ollama_api, response
+):
+    route = ollama_api.get("/api/tags")
+    if isinstance(response, Exception):
+        route.mock(side_effect=response)
+    else:
+        route.mock(return_value=response)
+
+    await ensure_ollama_tags_fresh(ModelProviderName.ollama)
+
+    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+    assert result == "nemotron-3-nano"
+
+
+async def test_ensure_ollama_tags_fresh_skips_other_providers(ollama_api):
+    await ensure_ollama_tags_fresh(ModelProviderName.openai)
+
+    assert not ollama_api.calls
+
+
+async def test_ensure_ollama_tags_fresh_follows_redirects(ollama_api):
+    ollama_api.get("/api/tags").mock(
+        return_value=httpx.Response(
+            307, headers={"Location": f"{OLLAMA_TEST_URL}/v2/api/tags"}
+        )
+    )
+    ollama_api.get("/v2/api/tags").mock(
+        return_value=installed_tags("nemotron-3-nano:30b")
+    )
+
+    await ensure_ollama_tags_fresh(ModelProviderName.ollama)
+
+    assert (
+        resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+        == "nemotron-3-nano:30b"
+    )
+
+
+async def test_tag_cache_hit_skips_request(ollama_api, tag_cache, clock):
+    route = ollama_api.get("/api/tags").mock(return_value=installed_tags("phi3.5"))
+
+    await tag_cache.refresh(OLLAMA_TEST_URL)
+    clock.now += 59
+    await tag_cache.refresh(OLLAMA_TEST_URL)
+
+    assert route.call_count == 1
+    assert tag_cache.installed_models(OLLAMA_TEST_URL) == frozenset({"phi3.5"})
+
+
+async def test_tag_cache_refetches_after_ttl(ollama_api, tag_cache, clock):
+    route = ollama_api.get("/api/tags").mock(
+        side_effect=[installed_tags("phi3.5"), installed_tags("phi3.5", "qwen3")]
+    )
+
+    await tag_cache.refresh(OLLAMA_TEST_URL)
+    clock.now += 60
+    await tag_cache.refresh(OLLAMA_TEST_URL)
+
+    assert route.call_count == 2
+    assert tag_cache.installed_models(OLLAMA_TEST_URL) == frozenset({"phi3.5", "qwen3"})
+
+
+async def test_tag_cache_is_keyed_by_url(tag_cache):
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{OLLAMA_TEST_URL}/api/tags").mock(
+            return_value=installed_tags("phi3.5")
+        )
+        other = router.get(f"{OTHER_OLLAMA_URL}/api/tags").mock(
+            return_value=installed_tags("qwen3")
+        )
+
+        await tag_cache.refresh(OLLAMA_TEST_URL)
+        assert tag_cache.installed_models(OTHER_OLLAMA_URL) is None
+
+        await tag_cache.refresh(OTHER_OLLAMA_URL)
+
+    assert other.call_count == 1
+    assert tag_cache.installed_models(OTHER_OLLAMA_URL) == frozenset({"qwen3"})
+    assert tag_cache.installed_models(OLLAMA_TEST_URL) is None
+
+
+async def test_tag_cache_remembers_failures_for_ttl(ollama_api, tag_cache, clock):
+    route = ollama_api.get("/api/tags").mock(
+        side_effect=httpx.ConnectTimeout("timed out")
+    )
+
+    await tag_cache.refresh(OLLAMA_TEST_URL)
+    clock.now += 59
+    await tag_cache.refresh(OLLAMA_TEST_URL)
+    assert route.call_count == 1
+
+    clock.now += 1
+    await tag_cache.refresh(OLLAMA_TEST_URL)
+    assert route.call_count == 2
+
+
+async def test_tag_cache_keeps_last_known_tags_after_failure(
+    ollama_api, tag_cache, clock
+):
+    ollama_api.get("/api/tags").mock(
+        side_effect=[installed_tags("phi3.5"), httpx.ConnectError("refused")]
+    )
+
+    await tag_cache.refresh(OLLAMA_TEST_URL)
+    clock.now += 60
+    await tag_cache.refresh(OLLAMA_TEST_URL)
+
+    assert tag_cache.installed_models(OLLAMA_TEST_URL) == frozenset({"phi3.5"})
+    assert tag_cache.is_fresh(OLLAMA_TEST_URL)
+
+
+async def test_tag_cache_concurrent_refreshes_share_one_request(ollama_api, tag_cache):
+    release = asyncio.Event()
+
+    async def slow_tags(request):
+        await release.wait()
+        return installed_tags("phi3.5")
+
+    route = ollama_api.get("/api/tags").mock(side_effect=slow_tags)
+
+    refreshes = [
+        asyncio.create_task(tag_cache.refresh(OLLAMA_TEST_URL)) for _ in range(5)
+    ]
+    await asyncio.sleep(0)
+    release.set()
+    await asyncio.gather(*refreshes)
+
+    assert route.call_count == 1
+    assert tag_cache.installed_models(OLLAMA_TEST_URL) == frozenset({"phi3.5"})
+
+
+async def test_tag_cache_cancelled_caller_does_not_cancel_shared_fetch(
+    ollama_api, tag_cache
+):
+    release = asyncio.Event()
+
+    async def slow_tags(request):
+        await release.wait()
+        return installed_tags("phi3.5")
+
+    ollama_api.get("/api/tags").mock(side_effect=slow_tags)
+
+    cancelled = asyncio.create_task(tag_cache.refresh(OLLAMA_TEST_URL))
+    waiting = asyncio.create_task(tag_cache.refresh(OLLAMA_TEST_URL))
+    await asyncio.sleep(0)
+    cancelled.cancel()
+    release.set()
+    await waiting
+
+    assert cancelled.cancelled()
+    assert tag_cache.installed_models(OLLAMA_TEST_URL) == frozenset({"phi3.5"})
+
+
+def test_tag_cache_works_across_event_loops():
+    tag_cache = OllamaTagCache(ttl_seconds=0)
+    with respx.mock() as router:
+        route = router.get(f"{OLLAMA_TEST_URL}/api/tags").mock(
+            return_value=installed_tags("phi3.5")
+        )
+
+        asyncio.run(tag_cache.refresh(OLLAMA_TEST_URL))
+        asyncio.run(tag_cache.refresh(OLLAMA_TEST_URL))
+
+    assert route.call_count == 2
+
+
+@patch("kiln_ai.adapters.ollama_tools.built_in_models", MOCK_BUILT_IN_MODELS)
+@patch(
+    "kiln_ai.adapters.ollama_tools.built_in_embedding_models",
+    MOCK_BUILT_IN_EMBEDDING_MODELS,
+)
+async def test_get_ollama_connection_success(ollama_api):
+    ollama_api.get("/api/tags").mock(
+        return_value=installed_tags("phi3.5:latest", "my-custom-model")
+    )
+
+    conn = await get_ollama_connection()
+
+    assert conn is not None
+    assert conn.supported_models == ["phi3.5:latest"]
+    assert conn.untested_models == ["my-custom-model"]
+
+
+async def test_get_ollama_connection_fills_tag_cache(ollama_api):
+    route = ollama_api.get("/api/tags").mock(
+        return_value=installed_tags("nemotron-3-nano:30b")
+    )
+
+    await get_ollama_connection()
+    await ensure_ollama_tags_fresh(ModelProviderName.ollama)
+
+    assert route.call_count == 1
+    assert (
+        resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+        == "nemotron-3-nano:30b"
+    )
+
+
+async def test_get_ollama_connection_unreachable(ollama_api):
+    route = ollama_api.get("/api/tags").mock(side_effect=httpx.ConnectError("refused"))
+
+    assert await get_ollama_connection() is None
+    await ensure_ollama_tags_fresh(ModelProviderName.ollama)
+
+    assert route.call_count == 1
+
+
+async def test_get_ollama_connection_follows_redirects(ollama_api):
+    ollama_api.get("/api/tags").mock(
+        return_value=httpx.Response(
+            307, headers={"Location": f"{OLLAMA_TEST_URL}/v2/api/tags"}
+        )
+    )
+    ollama_api.get("/v2/api/tags").mock(return_value=installed_tags("phi3.5:latest"))
+
+    conn = await get_ollama_connection()
+
+    assert conn is not None
+    assert "phi3.5:latest" in conn.all_models()
+
+
+@pytest.mark.parametrize(
+    "side_effect,expected",
+    [
+        (installed_tags(), True),
+        (httpx.ConnectError("refused"), False),
+    ],
+)
+async def test_ollama_online(ollama_api, side_effect, expected):
+    ollama_api.get("/api/tags").mock(side_effect=[side_effect])
+
+    assert await ollama_online() is expected
+
+
+async def test_ollama_online_follows_redirects(ollama_api):
+    ollama_api.get("/api/tags").mock(
+        return_value=httpx.Response(
+            307, headers={"Location": f"{OLLAMA_TEST_URL}/v2/api/tags"}
+        )
+    )
+    redirected = ollama_api.get("/v2/api/tags").mock(return_value=installed_tags())
+
+    assert await ollama_online() is True
+    assert redirected.call_count == 1
+
+
+async def test_ollama_tag_refresh_does_not_block_event_loop(ollama_api):
+    other_work_done = asyncio.Event()
+
+    async def ollama_waits_for_other_work(request):
+        await asyncio.wait_for(other_work_done.wait(), timeout=5)
+        return installed_tags("nemotron-3-nano:30b")
+
+    ollama_api.get("/api/tags").mock(side_effect=ollama_waits_for_other_work)
+
+    async def other_work():
+        other_work_done.set()
+
+    await asyncio.gather(
+        ensure_ollama_tags_fresh(ModelProviderName.ollama), other_work()
+    )
+
+    assert (
+        resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+        == "nemotron-3-nano:30b"
+    )

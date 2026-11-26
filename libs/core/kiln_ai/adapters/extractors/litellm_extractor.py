@@ -18,6 +18,7 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     built_in_models_from_provider,
 )
+from kiln_ai.adapters.ollama_tools import ensure_ollama_tags_fresh
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -384,6 +385,8 @@ class LitellmExtractor(BaseExtractor):
         prompt = self.prompt_for_kind.get(kind)
         if prompt is None:
             raise ValueError(f"No prompt found for kind: {kind}")
+
+        await ensure_ollama_tags_fresh(self.model_provider.name)
 
         # special handling for PDFs - process each page individually
         if extraction_input.mime_type == "application/pdf":

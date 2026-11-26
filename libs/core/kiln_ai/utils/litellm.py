@@ -26,6 +26,8 @@ def get_litellm_provider_info(
     """
     Maps a Kiln model provider to a litellm provider.
 
+    For Ollama, the model ID comes from ollama_tools' installed-tag cache; await ensure_ollama_tags_fresh(model_provider.name) first.
+
     Args:
         model_provider: The model provider to get litellm provider info for
 

@@ -61,6 +61,7 @@ async def delete_project(
 - Inconsistent path naming for the same resource type
 - Wordy or filler-padded docstrings ("This endpoint allows you to...")
 - Docstrings containing code artifacts, raw `Args:` blocks, or formatting that doesn't read as clean prose in OpenAPI
+- Blocking IO in `async def` handlers, or in anything they call (`requests`, sync `httpx`, sync SDK clients like `openai.OpenAI`, `time.sleep`, large disk walks). One blocked handler stalls every other request. See "Blocking IO on the event loop" in `code_review_guidelines.md`.
 - SSE endpoints should have 1) `@no_write_lock` annotation (which allows direct streaming). SSE endpoints missing it won't stream. 2) return a CancellableStreamingResponse - needed or closing the browser won't stop the background job (unless a comment says using a StreamingResponse is desired in this case).
 - Pydantic models used in API request/response types (nested included) missing a class docstring, if the class name alone isn't obvious
 - Custom string types with validator-based constraints that don't surface in the OpenAPI schema. Use `StringConstraints` in the `Annotated` type definition so `minLength`/`maxLength` appear automatically (see `FilenameString`, `SkillNameString` for examples). Don't duplicate constraints in individual `Field()` calls.
