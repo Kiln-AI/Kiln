@@ -6,12 +6,13 @@ status: complete
 
 ## Purpose and Scope
 
-`ModelCache` (`libs/core/kiln_ai/datamodel/model_cache.py`) keeps parsed readonly records in memory, keyed by file path. This project adds four things:
+`ModelCache` (`libs/core/kiln_ai/datamodel/model_cache.py`) keeps parsed readonly records in memory, keyed by file path. This project adds five things:
 
 - change detection that works on every platform;
 - one memory budget with least-recently-used eviction, large values first;
 - a store for large values, implementing `LargeValueSource` for [`lazy_fields.md`](lazy_fields.md);
-- a process-wide on/off switch, off by default.
+- a process-wide on/off switch, off by default;
+- a registry of readonly loads in progress, so threads that miss on the same file at once share one parse.
 
 It does **not**:
 - parse or validate files (`basemodel.load_from_file` does that);
@@ -68,6 +69,18 @@ class ModelCache:
         self, root: LazyFieldsMixin, identity: FileIdentity, values: Mapping[FieldPath, Any], size: int
     ) -> bool: ...
     def is_current_entry(self, root: LazyFieldsMixin) -> bool: ...
+
+    # Loads in progress (used by basemodel.load_from_file)
+    def claim_load(self, path: Path) -> LoadClaim: ...
+    def release_load(self, path: Path) -> None: ...
+    def wait_for_load(self, path: Path) -> bool: ...       # False after LOAD_WAIT_TIMEOUT_SECONDS
+
+class LoadClaim(Enum):
+    LOAD = "load"      # no other load of the file: parse, then release_load
+    NESTED = "nested"  # this thread already loads it, further up its stack: parse, no wait
+    WAIT = "wait"      # another thread loads it: wait_for_load, then read the cache
+
+LOAD_WAIT_TIMEOUT_SECONDS = 5.0
 
 def set_model_cache_enabled(value: bool) -> None: ...   # ModelCache.shared().set_enabled(value)
 def model_cache_enabled() -> bool: ...
@@ -199,9 +212,22 @@ log.debug(...)  # counts only
 
 There's no new dependency.
 
+### Shared loads
+
+State, guarded by one `threading.Condition` (separate from the entries' lock):
+- `_loading: dict[str, int]`: the cache key of each file a readonly load is parsing, to the id of the thread parsing it.
+- `_load_waiters: int`: the threads in `wait_for_load`. `release_load` notifies only when it's above zero.
+
+`basemodel.load_from_file` uses the registry only for readonly loads with the cache on. Cache hits, editable loads and cache-off loads never touch it. After a miss:
+- **LOAD:** parse, validate and cache, then `release_load` in a `finally`.
+- **WAIT:** `wait_for_load`, then one more `get_model`. A hit returns the record the other thread cached.
+- **Every other case parses without sharing:** NESTED, a wait that timed out, or another thread's load that cached nothing (it raised, or the record is over budget). There is no retry loop.
+
+The timeout bounds a cycle where two loads each wait on the other. No validator makes a readonly load, so none occurs today.
+
 ### Thread safety
 
-- All bookkeeping happens under one `RLock`; I/O never does.
+- The entries' bookkeeping happens under one `RLock`, and the loads in progress under their own `Condition`. I/O never happens under either.
 - Records are immutable once published. That's the core rule in `lazy_fields.md`.
 - Values stored in `large_values` are treated as immutable. Readers get the same objects, as they do today with cached records.
 - A read can race with eviction. A reader that got `large_values` before eviction keeps a valid mapping. A reader after eviction restores from disk.
@@ -237,11 +263,19 @@ In `libs/core/kiln_ai/datamodel/test_model_cache.py` (rewritten). Each test uses
 - `test_physical_memory_bytes_positive`: real call on the test machine.
 - `test_concurrent_get_set_invalidate`: 8 threads at random over 200 paths with a tiny budget. No exceptions, and the accounting invariant holds at the end.
 - `test_benchmark_get_model`: kept. A hit must still exceed 25k operations per second.
+- `test_claim_load_is_per_file_and_per_thread`: LOAD, then NESTED on the same thread, WAIT on another thread, and LOAD again after `release_load`.
 
 In `libs/core/kiln_ai/datamodel/test_basemodel.py`:
 - `test_load_from_file_stores_identity`
 - `test_cache_off_load_has_no_lazy_state`
 - `test_cache_on_load_detaches_large_values`
+- `test_concurrent_readonly_loads_of_a_file_share_one_parse`: one parse, and both threads get the same instance.
+- `test_load_waiting_on_a_failed_load_parses_the_file_itself`, `test_load_waiting_on_an_uncached_record_parses_the_file_itself`, `test_load_whose_wait_times_out_parses_the_file_itself`
+- `test_nested_load_of_a_file_being_loaded_parses_it_without_waiting`: the outer claim is still held after the nested load.
+- `test_loads_the_cache_does_not_keep_never_claim_or_wait`: editable and cache-off loads.
+
+In `libs/core/kiln_ai/datamodel/test_model_perf.py`:
+- `test_benchmark_claim_and_release_load`: about 1.5 µs per pair, against about 700 µs to parse a 50-turn run. It fails above 10 µs.
 
 Host tests:
 - `app/desktop/studio_server/test_server.py`, next to the strict-mode lifespan tests: the desktop lifespan enables the cache and restores the previous value.

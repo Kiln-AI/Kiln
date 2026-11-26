@@ -7,7 +7,7 @@ status: complete
 This doc covers the overall design, the smaller changes, and how the parts fit together. Two components have their own detailed docs:
 
 - [`components/lazy_fields.md`](components/lazy_fields.md): marking large fields, removing them from cached records, restoring them, and keeping serialization, copies and the API schema correct.
-- [`components/model_cache.md`](components/model_cache.md): the cache itself. Entries, change detection, the memory budget, eviction, the on/off switch, and thread safety.
+- [`components/model_cache.md`](components/model_cache.md): the cache itself. Entries, change detection, the memory budget, eviction, the on/off switch, shared loads, and thread safety.
 
 Read the [functional spec](functional_spec.md) first. This doc does not repeat its requirements.
 
@@ -29,7 +29,7 @@ flowchart LR
 Data path for a readonly load with the cache on:
 
 1. `load_from_file(path, readonly=True)` asks the cache. On a hit (same file identity), it returns the cached record, as today.
-2. On a miss, it reads the file and validates it **once** (change 5a), with `parent` and `path` included in the validated data.
+2. On a miss, it reads the file and validates it **once** (change 5a), with `parent` and `path` included in the validated data. If another thread is already loading the same file, it waits for that load, up to 5 s, and returns the record it cached.
 3. If the class uses `LazyFieldsMixin`, `detach_large_values` computes the summary values, removes the large values from the record, and hands them to the cache along with a size estimate.
 4. The cache stores the record (its normal part) and the large values as two separately counted, separately evicted pieces.
 5. Later, reading a large field on the record goes through `__getattr__`. It gets the value from the cache's store, or re-reads the file if the value was evicted.
@@ -41,8 +41,8 @@ When the cache is off (the library default), step 3 never runs. Every load retur
 | File | Change |
 |---|---|
 | `libs/core/kiln_ai/datamodel/lazy_fields.py` | **New.** `LargeField`, `summary_value`, `LazyFieldsMixin`, `LargeFieldUnavailableError`, `detach_large_values`, `approx_value_size`, and the internal per-record lazy state. See the component doc. |
-| `libs/core/kiln_ai/datamodel/model_cache.py` | **Rewritten.** `FileIdentity`, the LRU entries and large-value store, the budget, `set_model_cache_enabled` / `model_cache_enabled`, and RAM detection. The broken Linux check is removed. See the component doc. |
-| `libs/core/kiln_ai/datamodel/basemodel.py` | `load_from_file` validates once and calls `detach_large_values` before caching. A new `_validate_file_data` classmethod is shared by load and restore. `mutable_copy` rebuilds from disk when a lazy record's file has changed. |
+| `libs/core/kiln_ai/datamodel/model_cache.py` | **Rewritten.** `FileIdentity`, the LRU entries and large-value store, the budget, `set_model_cache_enabled` / `model_cache_enabled`, RAM detection, and the registry of readonly loads in progress. The broken Linux check is removed. See the component doc. |
+| `libs/core/kiln_ai/datamodel/basemodel.py` | `load_from_file` validates once and calls `detach_large_values` before caching. Concurrent readonly misses on one file share a parse through the cache's load registry. A new `_validate_file_data` classmethod is shared by load and restore. `mutable_copy` rebuilds from disk when a lazy record's file has changed. |
 | `libs/core/kiln_ai/datamodel/task_run.py` | `TaskRun` gains `LazyFieldsMixin`, markers, and four summary values. `has_thinking_training_data` uses the summary value. |
 | `libs/core/kiln_ai/datamodel/task_output.py` | `TaskOutput` gains `LazyFieldsMixin`, and `output` is marked. |
 | `libs/core/kiln_ai/datamodel/eval.py` | `EvalRun` gains `LazyFieldsMixin`, markers, and `judge_trace_length`. The `Eval` current-config migration switches from `self._loaded_from_file` to `self.loaded_from_file(info)` (see 5a). |
