@@ -59,7 +59,7 @@ The aim of part B, in the owner's words: no duplicate code after the port, no li
 
 ### A3. Wrong in the spec itself
 
-1. **The train rule.** Functional spec 3.1 and architecture decision 7 say that HT leaves out a train item that is val or test in another eval. It does not: such an item counts as train (`quarantine.py:26-28`, `:105`). See B1.
+1. **The train rule.** Functional spec 3.1 and architecture decision 7 say that HT leaves out a train item that is val or test in another eval, as one rule. HT has two rules. Its gateway leaves such an item out of what an agent may read (`gateway/trainset.py`). Its loop code counts the item as train (`quarantine.py:26-28`, `:105`), and its detectability code reads the stored rows of Kiln's own train split. The detectability read replaces loop code, so it follows the second rule. See B1.
 2. **Functional spec 5.8 and architecture 5.5 disagree** on the OpenAPI probes. See B4.
 3. **`MIN_SUPPORTED_HARNESS_TUNER_VERSION` starts at `0.6.0`.** Still right: it is HT's version today. The first switched HT needs a higher number, so that Kiln can tell the two apart later.
 4. The facts file `port_ht_adoption_facts.md` that `kiln_smells_skills_version.md` 7.5 cites is not in the repository. Remove the citation.
