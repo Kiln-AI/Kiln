@@ -189,6 +189,8 @@ skill/
     client_guidance/chat/*.md           for chat clients only (4.6): using_kiln_from_chat.md, the
                                         four modes, freeform_help.md and
                                         running_an_experiment_from_chat.md (section 9.3)
+    client_guidance/harness_tuner/*.md  for Kiln Harness Tuner only, behind a gate (4.6):
+                                        eval_building.md
     knowledge/*.md                      hand-written; includes memory.md, train_val_test.md,
                                         working_with_project_files.md, code_tool_authoring.md,
                                         experiment_costing.md, diagnose_an_agent.md (section 9.3)
@@ -361,6 +363,8 @@ Since Phase 22 ([decisions](../harness_tuner_alignment_decisions.md) section 17)
 **`SKILL.md`** is the short router of 4.3, for every client.
 
 **`references/client_guidance/chat/`.** Each file opens, after its front matter, with: "For chat clients working with a user. A non-interactive agent with its own instructions does not need this file."
+
+**`references/client_guidance/harness_tuner/`** ([decisions](../harness_tuner_alignment_decisions.md) section 18). Guidance for Kiln Harness Tuner only. Each file opens with a gate that names its condition and says that every other client never reads or follows it, and `SKILL.md` names it under "Who reads this skill". `eval_building.md` holds the rules of Kiln Harness Tuner's experimental eval building, which its own instructions also hold.
 
 | File | From | Change |
 |---|---|---|

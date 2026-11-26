@@ -52,6 +52,8 @@ every other client ("Other agents: …" when it follows a labelled sentence).
 | The ports of Kiln Harness Tuner's shared skills: memory, its formats, experiment costing, code tool authoring, the split rule | `references/knowledge/`. Shared, ported word for word |
 | The rules for every call of `call_kiln_api` | `references/knowledge/api_docs/calling_the_kiln_api.md`, the one hand-written file of the generated folder. It opens with its condition: "if you have the `call_kiln_api` tool" |
 | Guidance only for chat clients: working with the user, the modes, the one-off experiment guide, how to read Kiln Harness Tuner's words | `references/client_guidance/chat/`. Each file opens with the line "For chat clients working with a user. …", and `references/client_guidance/chat/using_kiln_from_chat.md` lists them |
+| Guidance only for Kiln Harness Tuner, behind a gate: its experimental eval building | `references/client_guidance/harness_tuner/`. Each file opens with a gate that names its condition and says that every other client never reads or follows it. `SKILL.md`, "Who reads this skill", names each one |
+| A UI-first case: a task the app does better than the API from a chat | Its knowledge file says so and why, and the table "UI-first cases" of `references/client_guidance/chat/using_kiln_from_chat.md` lists it. Every other task uses the API |
 | A rule only for a chat: asking the user, or a link into `references/client_guidance/chat/` | An "In a chat with a user: …" clause beside the shared sentence, which stays the main text |
 
 A shared file never needs a chat file to make sense. It names a chat file
