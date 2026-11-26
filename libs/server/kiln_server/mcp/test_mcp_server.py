@@ -3,7 +3,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from kiln_ai.datamodel.external_tool_server import ToolServerType
-from kiln_ai.datamodel.model_cache import model_cache_enabled
+from kiln_ai.datamodel.model_cache import (
+    ModelCache,
+    model_cache_enabled,
+    set_model_cache_enabled,
+)
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallResult
 from mcp.types import (
     CallToolRequest,
@@ -372,7 +376,9 @@ class TestParseToolIds:
         assert mcp._parse_tool_ids("a,b , c") == ["a", "b", "c"]
 
 
-def test_main_enables_model_cache_before_serving(tmp_path) -> None:
+def serve_and_record_model_cache_state(tmp_path) -> list[bool]:
+    """Runs `mcp.main` on an empty project with serving stubbed out, and returns
+    whether the model cache was on while it served."""
     project_path = tmp_path / "project.kiln"
     project_path.touch()
     cache_enabled_while_serving: list[bool] = []
@@ -380,11 +386,28 @@ def test_main_enables_model_cache_before_serving(tmp_path) -> None:
     async def serve(**_: Any) -> None:
         cache_enabled_while_serving.append(model_cache_enabled())
 
-    assert not model_cache_enabled()
     with (
         patch.object(mcp, "_async_main", side_effect=serve),
         patch.object(mcp.logging, "basicConfig"),
     ):
         mcp.main([str(project_path)])
+    return cache_enabled_while_serving
 
-    assert cache_enabled_while_serving == [True]
+
+def test_main_enables_model_cache_before_serving(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("KILN_DISABLE_MODEL_CACHE", raising=False)
+    assert not model_cache_enabled()
+
+    assert serve_and_record_model_cache_state(tmp_path) == [True]
+
+
+def test_main_disables_model_cache_for_good_when_setting_is_true(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("KILN_DISABLE_MODEL_CACHE", "true")
+    ModelCache.shared().set_enabled(True)
+
+    assert serve_and_record_model_cache_state(tmp_path) == [False]
+
+    set_model_cache_enabled(True)
+    assert not model_cache_enabled()

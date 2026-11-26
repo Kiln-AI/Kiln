@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 from contextlib import asynccontextmanager
 from importlib.metadata import version
@@ -7,7 +8,11 @@ from typing import AsyncIterator, Sequence
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from kiln_ai.datamodel.model_cache import model_cache_enabled, set_model_cache_enabled
+from kiln_ai.datamodel.model_cache import (
+    ModelCache,
+    model_cache_enabled,
+    set_model_cache_enabled,
+)
 from kiln_ai.utils.config import Config
 
 from .custom_errors import connect_custom_errors
@@ -21,6 +26,8 @@ from .spec_api import connect_spec_api
 from .statistics_api import connect_statistics_api
 from .task_api import connect_task_api
 from .utils.agent_checks.policy import ALLOW_AGENT
+
+logger = logging.getLogger(__name__)
 
 
 def _get_version() -> str:
@@ -140,9 +147,17 @@ tags_metadata = [
 
 @asynccontextmanager
 async def default_lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Turns the datamodel cache on while the app runs, then restores the previous setting."""
+    """Turns the datamodel cache on while the app runs, then restores the previous setting.
+
+    When the `disable_model_cache` setting (`KILN_DISABLE_MODEL_CACHE`) is true, it
+    disables the cache for the rest of the process instead.
+    """
     original_model_cache_enabled = model_cache_enabled()
-    set_model_cache_enabled(True)
+    if Config.shared().disable_model_cache:
+        ModelCache.shared().disable()
+        logger.info("Model cache disabled by the disable_model_cache setting")
+    else:
+        set_model_cache_enabled(True)
     try:
         yield
     finally:
@@ -154,7 +169,9 @@ def make_app(lifespan=None, extra_middleware: list[type] | None = None):
 
     Args:
         lifespan: Replaces `default_lifespan`. A caller that passes its own should turn
-            the datamodel cache on in it (`set_model_cache_enabled(True)`).
+            the datamodel cache on in it (`set_model_cache_enabled(True)`), or call
+            `ModelCache.shared().disable()` when the `disable_model_cache` setting is
+            true.
         extra_middleware: Middleware classes installed inside CORS.
     """
     app = FastAPI(
