@@ -7,7 +7,7 @@ import pytest
 import respx
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.model_cache import ModelCache, model_cache_enabled
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_server.server import tags_metadata
 
@@ -16,12 +16,12 @@ from app.desktop.studio_server.webhost import HTMLStaticFiles
 
 
 @pytest.fixture
-def client(monkeypatch):
+def app(monkeypatch):
     # Ensure CORS origins use the default port (5173) regardless of environment
     monkeypatch.delenv("KILN_FRONTEND_PORT", raising=False)
-    # The lifespan can't turn the shared model cache back on once a shell setting disables it.
+    # A shell's KILN_DISABLE_MODEL_CACHE would keep the lifespan from turning the cache on.
     monkeypatch.delenv("KILN_DISABLE_MODEL_CACHE", raising=False)
-    # a client based on a mock studio path (skipping remote model list loading)
+    # an app based on a mock studio path (skipping remote model list loading)
     with (
         tempfile.TemporaryDirectory() as temp_dir,
         patch(
@@ -36,9 +36,13 @@ def client(monkeypatch):
             from app.desktop.studio_server.webhost import studio_path
 
             assert studio_path() == temp_dir  # Verify the patch is working
-            app = make_app()
-            with TestClient(app) as client:
-                yield client
+            yield make_app()
+
+
+@pytest.fixture
+def client(app):
+    with TestClient(app) as client:
+        yield client
 
 
 def test_the_models_dev_cache_is_off_under_the_test_suite(client):
@@ -70,6 +74,32 @@ def test_strict_mode(client):
     assert strict_mode()
 
 
+def test_lifespan_enables_model_cache_and_restores_it(app):
+    assert not model_cache_enabled()
+
+    with TestClient(app):
+        assert model_cache_enabled()
+
+    assert not model_cache_enabled()
+
+
+@pytest.mark.parametrize("env_value, expect_enabled", [("true", False), (None, True)])
+def test_lifespan_applies_disable_model_cache(
+    app, monkeypatch, env_value, expect_enabled
+):
+    if env_value is not None:
+        monkeypatch.setenv("KILN_DISABLE_MODEL_CACHE", env_value)
+    # On before startup, so the shutdown restore would turn a cache that was only
+    # switched off back on.
+    cache = ModelCache(enabled=True)
+    monkeypatch.setattr(ModelCache, "_shared_instance", cache)
+
+    with TestClient(app):
+        assert cache.enabled is expect_enabled
+
+    assert cache.enabled is expect_enabled
+
+
 @pytest.fixture
 def ollama_server():
     with (
@@ -80,25 +110,6 @@ def ollama_server():
         respx.mock(base_url="http://ollama.test:11434") as router,
     ):
         yield router
-
-
-@pytest.mark.parametrize("env_value, expect_enabled", [("true", False), (None, True)])
-def test_lifespan_applies_disable_model_cache(monkeypatch, env_value, expect_enabled):
-    if env_value is None:
-        monkeypatch.delenv("KILN_DISABLE_MODEL_CACHE", raising=False)
-    else:
-        monkeypatch.setenv("KILN_DISABLE_MODEL_CACHE", env_value)
-    cache = ModelCache()
-    cache._enabled = True
-    monkeypatch.setattr(ModelCache, "_shared_instance", cache)
-
-    with (
-        tempfile.TemporaryDirectory() as temp_dir,
-        patch("app.desktop.desktop_server.refresh_model_list_background"),
-        patch("app.desktop.studio_server.webhost.studio_path", new=lambda: temp_dir),
-        TestClient(make_app()),
-    ):
-        assert cache.enabled is expect_enabled
 
 
 def test_connect_ollama_success(client, ollama_server):

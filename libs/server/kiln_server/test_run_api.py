@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import json
@@ -33,6 +34,7 @@ from kiln_ai.utils.config import Config
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.run_api import (
     RunSummary,
+    _position_chain_turns,
     connect_run_api,
     deep_update,
     missing_run_input_text,
@@ -839,6 +841,30 @@ async def test_get_runs_with_limit(client, task_run_setup):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("limit", "expected_positions"), [(None, [3, 1]), (1, [3])])
+async def test_get_runs_with_run_ids(client, task_run_setup, limit, expected_positions):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    runs = [
+        _make_run_with_date(task, datetime(2024, 1, i + 1, tzinfo=timezone.utc))
+        for i in range(5)
+    ]
+    params: dict[str, object] = {"run_ids": [runs[1].id, runs[3].id, "missing"]}
+    if limit is not None:
+        params["limit"] = limit
+
+    with patch("kiln_server.run_api.task_from_id", return_value=task):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs", params=params
+        )
+
+    assert response.status_code == 200
+    assert [r["id"] for r in response.json()] == [
+        runs[i].id for i in expected_positions
+    ]
+
+
+@pytest.mark.asyncio
 async def test_get_runs_without_limit_returns_all(client, task_run_setup):
     project = task_run_setup["project"]
     task = task_run_setup["task"]
@@ -1088,6 +1114,7 @@ async def test_update_run_clear_repair_fields(client, task_run_setup):
 def test_run_summary_format_preview():
     assert RunSummary.format_preview(None) is None
     assert RunSummary.format_preview("short text") == "short text"
+    assert RunSummary.format_preview("a" * 100) == "a" * 100
     assert RunSummary.format_preview("a" * 101) == "a" * 100 + "…"
 
 
@@ -1096,6 +1123,7 @@ def test_run_summary_repair_status_display_name():
     run.repair_instructions = None
     run.output = MagicMock()
     run.output.rating = None
+    run.output_preview = "Some output"
     assert RunSummary.repair_status_display_name(run) == "NA"
 
     run.output.rating = TaskOutputRating(value=5.0, type=TaskOutputRatingType.five_star)
@@ -1105,11 +1133,32 @@ def test_run_summary_repair_status_display_name():
     assert RunSummary.repair_status_display_name(run) == "Unknown"
 
     run.output.rating = TaskOutputRating(value=3.0, type=TaskOutputRatingType.five_star)
-    run.output.output = "Some output"
     assert RunSummary.repair_status_display_name(run) == "Repair needed"
+
+    run.output_preview = None
+    assert RunSummary.repair_status_display_name(run) == "No output"
 
     run.output = None
     assert RunSummary.repair_status_display_name(run) == "No output"
+
+
+def test_run_summary_reads_no_large_fields(
+    task_run_setup, model_cache_enabled, evict_large_values, large_field_restores
+):
+    task = task_run_setup["task"]
+    runs = [
+        task_run_setup["task_run"],
+        _make_task_run(task, input_text="i" * 150, output_text=""),
+    ]
+    cached = [TaskRun.load_from_file(run.path, readonly=True) for run in runs]
+    evict_large_values()
+
+    assert [RunSummary.from_run(run) for run in cached] == [
+        RunSummary.from_run(run) for run in runs
+    ]
+    assert RunSummary.from_run(cached[1]).input_preview == "i" * 100 + "…"
+    assert RunSummary.from_run(cached[1]).repair_state == "NA"
+    large_field_restores.assert_not_called()
 
 
 def test_run_summary_from_run(task_run_setup):
@@ -1222,6 +1271,54 @@ async def test_get_runs_summaries_task_not_found(client):
 
     assert response.status_code == 404
     assert response.json()["message"] == "Task not found"
+
+
+@pytest.mark.parametrize("endpoint", ["runs_summaries", "tags"])
+def test_run_scans_read_off_the_event_loop(client, task_run_setup, endpoint):
+    """The task is loaded and scanned in a worker thread, where no event loop is
+    running, so a slow first read doesn't stall other requests."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    on_loop: list[bool] = []
+
+    def fake_task_from_id(_project_id, _task_id):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return task
+
+    with patch("kiln_server.run_api.task_from_id", side_effect=fake_task_from_id):
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/{endpoint}")
+
+    assert response.status_code == 200, response.text
+    assert on_loop == [False]
+
+
+def test_get_runs_summaries_reads_again_after_a_torn_read(
+    client, task_run_setup, monkeypatch
+):
+    monkeypatch.setattr("kiln_ai.utils.torn_read.TORN_READ_RETRY_DELAY_SECONDS", 0)
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    task_run = task_run_setup["task_run"]
+    torn_reads_left = [1]
+
+    def task_from_id_torn_once(_project_id, _task_id):
+        if torn_reads_left[0] > 0:
+            torn_reads_left[0] -= 1
+            raise json.JSONDecodeError("Expecting value", "", 0)
+        return task
+
+    with patch("kiln_server.run_api.task_from_id", side_effect=task_from_id_torn_once):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs_summaries"
+        )
+
+    assert response.status_code == 200, response.text
+    assert [summary["id"] for summary in response.json()] == [task_run.id]
+    assert torn_reads_left == [0]
 
 
 def _make_child_run(task, parent_run: TaskRun, **overrides) -> TaskRun:
@@ -3480,6 +3577,120 @@ async def test_bulk_upload_single_turn_response_has_null_conversation_count(
     body = response.json()
     assert body["imported_count"] == 1
     assert body["imported_conversation_count"] is None
+
+
+def test_position_chain_turns_reads_no_large_fields(
+    multiturn_task_run_setup,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    chain = list(_build_three_turn_chain(multiturn_task_run_setup["task"]))
+    cached = [TaskRun.load_from_file(run.path, readonly=True) for run in chain]
+    evict_large_values()
+
+    _, cached_starts, cached_broken = _position_chain_turns(cached, False)
+
+    assert (cached_starts, cached_broken) == ([0, 2, 4], False)
+    assert _position_chain_turns(chain, False)[1:] == (cached_starts, cached_broken)
+    large_field_restores.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_endpoints_match_cache_off_after_eviction(
+    client,
+    task_run_setup,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    run = task_run_setup["task_run"]
+    _make_task_run(
+        task,
+        input_text="A long input. " * 20,
+        output_text="A long output. " * 20,
+        trace=[_user_turn("A long input."), _assistant_turn("A long output.")],
+    )
+    base = f"/api/projects/{project.id}/tasks/{task.id}"
+
+    def fetch(path: str) -> object:
+        with patch("kiln_server.run_api.task_from_id", return_value=task):
+            response = client.get(f"{base}{path}")
+        assert response.status_code == 200
+        return response.json()
+
+    endpoints = ["/runs", f"/runs/{run.id}", "/runs_summaries"]
+    model_cache_enabled.set_enabled(False)
+    cache_off = [fetch(path) for path in endpoints]
+    model_cache_enabled.set_enabled(True)
+    list(task.runs(readonly=True))
+    evict_large_values()
+
+    assert fetch("/runs_summaries") == cache_off[2]
+    large_field_restores.assert_not_called()
+    assert [fetch(path) for path in endpoints] == cache_off
+    assert large_field_restores.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_chain_reads_only_the_leaf_large_fields(
+    client,
+    multiturn_task_run_setup,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    _, _, leaf = _build_three_turn_chain(task)
+
+    def fetch_chain() -> object:
+        with patch("kiln_server.run_api.task_from_id", return_value=task):
+            response = client.get(
+                f"/api/projects/{project.id}/tasks/{task.id}/runs/{leaf.id}/chain"
+            )
+        assert response.status_code == 200
+        return response.json()
+
+    model_cache_enabled.set_enabled(False)
+    cache_off = fetch_chain()
+    model_cache_enabled.set_enabled(True)
+    list(task.runs(include_intermediate_runs=True, readonly=True))
+    evict_large_values()
+
+    assert fetch_chain() == cache_off
+    assert large_field_restores.call_count == 1
+    assert large_field_restores.call_args.args[0].path == leaf.path
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_reads_no_large_fields(
+    client,
+    task_run_setup,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    runs = [
+        _make_task_run(task, input_text=f"input {i}", output_text=f"output {i}")
+        for i in range(3)
+    ]
+    list(task.runs(readonly=True))
+    evict_large_values()
+
+    with patch("kiln_server.run_api.task_from_id", return_value=task):
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/delete",
+            json=[str(run.id) for run in runs],
+        )
+
+    assert response.status_code == 200
+    assert all(run.path is not None and not run.path.exists() for run in runs)
+    large_field_restores.assert_not_called()
 
 
 def test_missing_run_input_text_names_the_field_the_task_reads():
