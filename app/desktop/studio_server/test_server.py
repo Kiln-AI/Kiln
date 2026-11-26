@@ -6,7 +6,7 @@ import pytest
 import requests
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from kiln_ai.datamodel.model_cache import model_cache_enabled
+from kiln_ai.datamodel.model_cache import ModelCache, model_cache_enabled
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_server.server import tags_metadata
 
@@ -18,6 +18,8 @@ from app.desktop.studio_server.webhost import HTMLStaticFiles
 def app(monkeypatch):
     # Ensure CORS origins use the default port (5173) regardless of environment
     monkeypatch.delenv("KILN_FRONTEND_PORT", raising=False)
+    # A shell's KILN_DISABLE_MODEL_CACHE would keep the lifespan from turning the cache on.
+    monkeypatch.delenv("KILN_DISABLE_MODEL_CACHE", raising=False)
     # an app based on a mock studio path (skipping remote model list loading)
     with (
         tempfile.TemporaryDirectory() as temp_dir,
@@ -60,6 +62,23 @@ def test_lifespan_enables_model_cache_and_restores_it(app):
         assert model_cache_enabled()
 
     assert not model_cache_enabled()
+
+
+@pytest.mark.parametrize("env_value, expect_enabled", [("true", False), (None, True)])
+def test_lifespan_applies_disable_model_cache(
+    app, monkeypatch, env_value, expect_enabled
+):
+    if env_value is not None:
+        monkeypatch.setenv("KILN_DISABLE_MODEL_CACHE", env_value)
+    # On before startup, so the shutdown restore would turn a cache that was only
+    # switched off back on.
+    cache = ModelCache(enabled=True)
+    monkeypatch.setattr(ModelCache, "_shared_instance", cache)
+
+    with TestClient(app):
+        assert cache.enabled is expect_enabled
+
+    assert cache.enabled is expect_enabled
 
 
 def test_connect_ollama_success(client):

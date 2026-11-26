@@ -17,6 +17,7 @@ from kiln_ai.adapters.remote_config import (
     should_skip_remote_model_list,
 )
 from kiln_ai.datamodel.model_cache import (
+    ModelCache,
     model_cache_enabled,
     set_model_cache_enabled,
 )
@@ -116,7 +117,11 @@ async def lifespan(app: FastAPI):
     original_strict_mode = datamodel_strict_mode.strict_mode()
     datamodel_strict_mode.set_strict_mode(True)
     original_model_cache_enabled = model_cache_enabled()
-    set_model_cache_enabled(True)
+    if Config.shared().disable_model_cache:
+        ModelCache.shared().disable()
+        logger.info("Model cache disabled by the disable_model_cache setting")
+    else:
+        set_model_cache_enabled(True)
 
     try:
         await _start_background_syncs()

@@ -197,6 +197,52 @@ def test_set_model_cache_enabled_switch(test_path):
     )
 
 
+def test_disable_drops_cached_models_and_stops_caching(model_cache, test_path):
+    cache_with_model(model_cache, test_path)
+    assert model_cache.get_model(test_path, KilnModelTest) is not None
+
+    model_cache.disable()
+
+    assert model_cache.enabled is False
+    assert model_cache.get_model(test_path, KilnModelTest) is None
+    cache_with_model(model_cache, test_path)
+    assert model_cache.get_model(test_path, KilnModelTest) is None
+
+
+def test_disabled_cache_serves_nothing(model_cache, test_path):
+    def disable_then_key(path: Path) -> str:
+        model_cache.disable()
+        return _cache_key(path)
+
+    # A store that passed the enabled check before disable() and finishes after it.
+    with patch(
+        "kiln_ai.datamodel.model_cache._cache_key", side_effect=disable_then_key
+    ):
+        cache_with_model(model_cache, test_path)
+
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+    assert model_cache.get_model_id(test_path, KilnModelTest) is None
+
+
+def test_set_enabled_true_after_disable_leaves_cache_off(model_cache, test_path):
+    model_cache.disable()
+
+    model_cache.set_enabled(True)
+
+    assert model_cache.enabled is False
+    cache_with_model(model_cache, test_path)
+    assert model_cache.get_model(test_path, KilnModelTest, readonly=True) is None
+
+
+def test_set_model_cache_enabled_after_disable_leaves_shared_cache_off():
+    set_model_cache_enabled(True)
+    ModelCache.shared().disable()
+
+    set_model_cache_enabled(True)
+
+    assert model_cache_enabled() is False
+
+
 def test_hit_returns_same_instance_readonly_and_copy_mutable(model_cache, test_path):
     model = cache_with_model(model_cache, test_path)
 

@@ -3,6 +3,7 @@ A process-wide cache of parsed, validated datamodel records, keyed by file path.
 
 - Off by default. Hosts that want it (the desktop app, kiln_server, kiln_mcp) turn it on
   with `set_model_cache_enabled(True)`, and library users can do the same.
+  `ModelCache.disable()` turns a cache off for good: nothing can turn it back on.
 - Only readonly loads add to it, always straight from a disk read, so each cached record
   matches the file it was parsed from. A record built in memory is never cached.
 - Before serving a record, the cache stats its file. If the modified time, size or file id
@@ -204,6 +205,7 @@ class ModelCache:
     ) -> None:
         """`budget_bytes` defaults to `default_cache_budget_bytes()`."""
         self._enabled = enabled
+        self._disabled_for_good = False
         self._budget_bytes = (
             default_cache_budget_bytes() if budget_bytes is None else budget_bytes
         )
@@ -231,14 +233,31 @@ class ModelCache:
 
     @property
     def enabled(self) -> bool:
-        """Whether this cache stores and serves records."""
+        """Whether this cache stores and serves records. False after `disable()`."""
         return self._enabled
 
     def set_enabled(self, value: bool) -> None:
-        """Turn caching on or off. Turning it off also drops every cached record."""
+        """Turn caching on or off. Turning it off also drops every cached record.
+
+        After `disable()`, turning it on does nothing: the cache stays off.
+        """
+        if value and self._disabled_for_good:
+            logger.debug("Model cache stays off: disable() turned it off for good")
+            return
         self._enabled = value
         if not value:
             self.clear()
+
+    def disable(self) -> None:
+        """Stop caching records for the life of this cache, and drop the cached ones.
+
+        Every later load parses its file again. Use it to trade load speed for a smaller,
+        steadier memory footprint, or to rule the cache out while debugging. It can't be
+        undone: a later `set_enabled(True)`, or `set_model_cache_enabled(True)` on the
+        shared cache, leaves it off.
+        """
+        self._disabled_for_good = True
+        self.set_enabled(False)
 
     def _get_model(self, path: Path, model_type: Type[T]) -> Optional[T]:
         if not self._enabled:
@@ -526,6 +545,7 @@ def set_model_cache_enabled(value: bool) -> None:
     (`load_from_file(..., readonly=True)`, `task.runs(readonly=True)`, ...) keep each
     parsed record in memory and serve it again until its file changes, within a memory
     budget of min(2 GiB, 20% of physical RAM). Turning it off drops every cached record.
+    After `ModelCache.shared().disable()`, turning it on does nothing.
     """
     ModelCache.shared().set_enabled(value)
 
