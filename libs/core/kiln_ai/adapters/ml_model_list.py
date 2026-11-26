@@ -58,6 +58,7 @@ class ModelFamily(str, Enum):
     motif = "motif"
     kt = "kt"
     radixark = "radixark"
+    upstage = "upstage"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -393,6 +394,7 @@ class ModelName(str, Enum):
     motif_3 = "motif_3"
     midm_k_3_0_pro = "midm_k_3_0_pro"
     daisyrose_27b = "daisyrose_27b"
+    solar_mini_4_5_preview = "solar_mini_4_5_preview"
 
 
 class ModelParserID(str, Enum):
@@ -936,6 +938,17 @@ DAISYROSE_27B_OPENROUTER_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "Extra High": "xhigh",
+}
+
+# OpenRouter also lists `minimal`, but Solar Mini 4.5 Preview returns no
+# reasoning at that effort, so the entry does not offer it.
+SOLAR_MINI_4_5_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
 }
 
 NEX_N2_6_OPENROUTER_THINKING_LEVELS = {
@@ -14112,6 +14125,27 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    KilnModel(
+        family=ModelFamily.upstage,
+        name=ModelName.solar_mini_4_5_preview,
+        friendly_name="Solar Mini 4.5 Preview",
+        agent_notes=(
+            "Description: Upstage's compact model, a 35B-total, 3B-active mixture-of-experts model, released as a preview.\n"
+            "Lineup: Upstage's ladder is Solar Mini < Solar Pro. Solar Mini 4.5 follows Solar Mini 4, which Kiln does not list."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="upstage/solar-mini-4-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=SOLAR_MINI_4_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="medium",
+                openrouter_reasoning_object=True,
             ),
         ],
     ),
