@@ -270,7 +270,7 @@ def test_newlines_are_normalised_and_skill_md_ignored(tmp_path):
 def test_collision_warning_stops(tmp_path):
     command = fake_generator(
         tmp_path,
-        'print("Warning: filename collision for get_/x, using get_x_2.md", file=sys.stderr)',
+        'sys.stderr.write("Warning: filename collision for get_/x, using get_x_2.md\\n")',
     )
     with pytest.raises(ApiReferenceError, match="get the same file name"):
         run_generator(drop_blocked(make_spec()), tmp_path, command=command)
@@ -279,14 +279,14 @@ def test_collision_warning_stops(tmp_path):
 def test_tag_collision_warning_stops(tmp_path):
     command = fake_generator(
         tmp_path,
-        "print(\"Warning: tag filename collision for 'A/B', using ab_api_list_2.md\", file=sys.stderr)",
+        "sys.stderr.write(\"Warning: tag filename collision for 'A/B', using ab_api_list_2.md\\n\")",
     )
     with pytest.raises(ApiReferenceError, match="tag filename collision"):
         run_generator(drop_blocked(make_spec()), tmp_path, command=command)
 
 
 def test_generator_failure_stops(tmp_path):
-    command = fake_generator(tmp_path, 'print("boom", file=sys.stderr); sys.exit(3)')
+    command = fake_generator(tmp_path, 'sys.stderr.write("boom\\n"); sys.exit(3)')
     with pytest.raises(ApiReferenceError, match="exited with 3:\nboom"):
         run_generator(drop_blocked(make_spec()), tmp_path, command=command)
 
