@@ -695,6 +695,17 @@ Give each UI-first case that creates data an agent path as good as the app's, th
 The cases now: the Eval Builder, the Data Guide builder, synthetic data generation (and eval data).
 Not a goal for the analysis views (Compare, Experiment Lineage): their UI stays the best answer.
 
+### Remove Kiln Harness Tuner's experimental eval building
+
+- Kind: code
+- Where: kiln, knowledge
+- Depends on: None
+- Source: owner
+
+Remove `references/client_guidance/harness_tuner/eval_building.md`, and the
+`--experimental-eval-building` flag from Kiln Harness Tuner: the system is untested. Keep both until
+the shipped Kiln Harness Tuner drops the flag. Bring it back only after it is tested.
+
 ### using_harness_tuner
 
 - Kind: guide
