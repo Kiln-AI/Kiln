@@ -1,3 +1,4 @@
+import pickle
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -15,6 +16,7 @@ from kiln_ai.adapters.ml_provider_list import get_provider_info
 from kiln_ai.adapters.ollama_tools import OllamaConnection
 from kiln_ai.adapters.provider_tools import (
     LiteLlmCoreConfig,
+    ProviderNotConnectedError,
     built_in_provider_from_model_id,
     builtin_model_from,
     check_provider_warnings,
@@ -151,6 +153,25 @@ def test_check_provider_warnings_missing_key(mock_config):
     assert provider_warnings[ModelProviderName.amazon_bedrock].message in str(
         exc_info.value
     )
+
+
+def test_check_provider_warnings_missing_key_raises_provider_not_connected(
+    mock_config,
+):
+    mock_config.return_value = None
+
+    with pytest.raises(ProviderNotConnectedError) as exc_info:
+        check_provider_warnings(ModelProviderName.openai)
+
+    assert isinstance(exc_info.value, ValueError)
+    assert str(exc_info.value) == provider_warnings[ModelProviderName.openai].message
+
+
+def test_provider_not_connected_error_survives_pickling():
+    error = ProviderNotConnectedError("Attempted to use OpenAI without an API key.")
+    restored = pickle.loads(pickle.dumps(error))
+    assert isinstance(restored, ProviderNotConnectedError)
+    assert str(restored) == "Attempted to use OpenAI without an API key."
 
 
 def test_check_provider_warnings_unknown_provider():
@@ -1255,7 +1276,8 @@ def test_lite_llm_core_config_for_provider_cloudflare_missing_account(
     config_instance.cloudflare_account_id = account_id
 
     with pytest.raises(
-        ValueError, match="Attempted to use Cloudflare without an API token"
+        ProviderNotConnectedError,
+        match="Attempted to use Cloudflare without an API token",
     ):
         lite_llm_core_config_for_provider(ModelProviderName.cloudflare)
 

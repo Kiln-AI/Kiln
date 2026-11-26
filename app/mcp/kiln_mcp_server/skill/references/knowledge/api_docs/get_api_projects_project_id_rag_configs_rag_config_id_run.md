@@ -1,0 +1,43 @@
+# Run Rag Config
+
+**GET /api/projects/{project_id}/rag_configs/{rag_config_id}/run**
+
+**Tags:** Documents
+
+Build a RAG config's search index: extract, chunk, embed and index the
+documents. Streams progress.
+
+## Request
+
+### Path Parameters
+
+|Name|Type|Required|Description|
+|-|-|-|-|
+|project_id|string|Yes|The unique identifier of the project.|
+|rag_config_id|string|Yes|The unique identifier of the RAG configuration.|
+
+## Responses
+
+### 200 OK
+
+Successful Response
+
+### 422 Validation Error
+
+Validation Error
+
+|Field|Type|Description|
+|-|-|-|
+|detail|array of ValidationError||
+
+## Schemas
+
+### ValidationError
+
+|Field|Type|Required|Description|
+|-|-|-|-|
+|loc|array of one of: string, integer|Yes||
+|msg|string|Yes||
+|type|string|Yes||
+|input|any|No||
+|ctx|object|No||

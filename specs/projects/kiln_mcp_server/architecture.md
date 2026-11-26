@@ -52,7 +52,7 @@ app/mcp/                              new workspace member (no __init__.py here,
                                       harness-tuner), skill-tree check, API reference pipeline
     skill/                            the skill tree (package data)
       SKILL.md
-      references/{modes,knowledge,knowledge/api_docs,docs,levers,improving_agents}/
+      references/{client_guidance/chat,knowledge,knowledge/api_docs,docs,levers,improving_agents}/
 app/desktop/
   studio_server/kiln_mcp_mount.py     connect_kiln_mcp_server
   studio_server/model_info_api.py, api_models/..., services/model_info/...     model info endpoints
@@ -60,7 +60,7 @@ app/desktop/
   skill_api_reference.py              generates and checks the API reference
   conftest.py                         test fixture for the temp-file folder (section 9)
 app/web_ui/src/routes/(app)/settings/connect_agent/              the Connect page
-agent_install.md                      the install guide, at the repo root
+docs/agent_install.md                 the install guide
 .agents/skills/knowledge-maintenance/ the upkeep skill for coding agents
 .gitattributes                        LF line ends for the skill tree
 ```
@@ -88,10 +88,11 @@ Exact file lists are in the component docs. Files that more than one component c
 ## 3. Decisions that cut across components
 
 1. **MCP library.** The locked `mcp` 1.30. No bump in this project. SDK imports are limited to the modules that the server component doc lists (its section 1); that list is the only one.
-2. **Stateless Streamable HTTP with SSE responses.** Stateless so nothing binds a client to server memory (spec two depends on this). SSE so progress updates can reach the client during a long call.
-3. **One policy seam.** Before every REST call, `call_kiln_api` asks one policy object whether the call is allowed. Here it knows only the MCP block tag. Spec two adds a per-connection scope, read from the URL path, in the same place. The seam's signature already takes a connection context so callers do not change later.
+2. **Stateless Streamable HTTP with SSE responses.** Stateless so nothing binds a client to server memory (a later scopes project depends on this). SSE so progress updates can reach the client during a long call.
+3. **One policy seam.** Before every REST call, `call_kiln_api` asks one policy object whether the call is allowed. Here it knows only the MCP block tag. A later scopes project adds a per-connection scope, read from the URL path, in the same place. The seam's signature already takes a connection context so callers do not change later.
+   - **It covers direct MCP calls only.** A task run whose tools include Kiln's built-in `call_kiln_api` tool (`kiln_tool::call_kiln_api`) can reach every endpoint that the deny list blocks, because the core tool checks no policy. A direct call through the MCP can start such a run. The follow-up scopes project (`project_overview.md`, P2) is where that route is enforced; this project only records it.
 4. **MCP policy is a separate tag.** `x-mcp-policy` beside the existing `x-agent-policy`. Absent means allowed. The tool reads it from the app's route objects, not from the OpenAPI document, which is slow to build.
-5. **The block list** (owner-approved; 29 operations). The exact rows are in the server component doc, section 6.3. Every row is in one of these groups:
+5. **The block list** (owner-approved; 30 operations). The exact rows are in the server component doc, section 6.3. Every row is in one of these groups:
    - every route under `/api/git_sync/`: the OAuth steps (one returns a token), the setup steps, and the per-project sync config, its read included (one simple rule);
    - the native file picker;
    - the Kiln Assistant's own chat endpoints (`POST /api/chat`, `POST /api/chat/execute-tools`);
@@ -100,14 +101,15 @@ Exact file lists are in the component docs. Files that more than one component c
    - the raw settings write;
    - "open in the OS": open the logs (`open_logs`), a project folder, a document's folder, a skill's folder;
    - binary document download;
-   - provider key connect and disconnect, and adding or removing an OpenAI-compatible provider (the add takes a key, the remove deletes a stored one).
+   - provider key connect and disconnect, and adding or removing an OpenAI-compatible provider (the add takes a key, the remove deletes a stored one);
+   - granting code trust (`POST /api/projects/{project_id}/add_code_trust`): only the user grants it, on the app page `/settings/trust_code/{project_id}`, which no page of the app links to and the skill gives the agent.
 
-   Explicitly allowed: marking code tools as trusted, and connecting or editing a local MCP tool server. Reading settings is allowed: the response masks secrets. The download of an extraction output stays allowed. Spec two will block the local-MCP endpoints on fenced connections. For each blocked capability that a user might ask for, the skill tells the agent to ask the user to do it in the app, with the link to the right page (skill component doc, section 4.4).
+   Explicitly allowed: reading the code trust state (`GET .../add_code_trust`), and connecting or editing a local MCP tool server. Reading settings is allowed: the response masks secrets. The download of an extraction output stays allowed. Spec two will block the local-MCP endpoints on fenced connections. For each blocked capability that a user might ask for, the skill tells the agent to ask the user to do it in the app, with the link to the right page (skill component doc, section 4.4).
 6. **No `PUT`.** The API has a single `PUT` route (saving a task's data guide). It becomes `POST`, with the UI updated in the same change, so the tool's method list stays as it is and the Assistant can call it too.
 7. **The skill is package data.** It ships inside `kiln_mcp_server`, is bundled into the app, and is read with `importlib.resources`. The app address is the only thing the tool ever changes in a file's text.
 8. **Generated files are committed and checked.** The API reference is generated by a pinned `openapi2skill` from an in-process dump of the OpenAPI document, with MCP-blocked endpoints removed. A CI check fails when it is stale. The generator needs Python 3.13, so that check runs only there; everything else supports Python 3.10 and up.
 9. **Model info lives with the desktop API**, not in `kiln_mcp_server`. It is a normal part of the REST API that any client can use.
-10. **Nothing private lands here.** The kiln-server export stays outside the repository. Its code samples are reference only. Each ported content file is reviewed before it is committed.
+10. **Nothing private lands here.** The source of the Assistant's skill stays outside the repository. Its code samples are reference only. Each ported content file is reviewed before it is committed.
 11. **One rule for the app address.** The address that users see (links in the skill, the Connect page, the install guide) is derived in one way.
     - *`kiln_skill`.* The address comes from the host and port that Kiln is bound to, which the desktop passes in. The tool never reads the Host header of a request. A loopback or wildcard bind gives `http://localhost:<port>`. A specific non-loopback host gives `http://<host>:<port>`, with an IPv6 address in brackets.
     - *Default.* The default address is `http://localhost:8757`. The skill text is written with it. The tool replaces that string in the text it serves only when the computed address differs.
@@ -151,7 +153,7 @@ The components depend on each other in this order; the implementation plan follo
 6. The content port and edit (it needs 2 to 5: the text must match the block list, the model info endpoints, the generated API docs and the checks). Its last batch tunes the server and tool texts.
 7. The Connect page, the install guide, README, and the rename of the `kiln_mcp` help text.
 8. Probe the real API for unclear errors and missing route descriptions; fix them (section 10).
-9. Reviews by people, on the content as it stands after step 8: a security owner reads the sandbox wording in `code_tools.md` and `judge_types.md`; a person confirms the knowledge's public-source claims and approves case studies; the owner reads `SKILL.md`, `train_val_test.md` and the two glue files of the merge (`run_an_experiment.md`, `diagnose_an_agent.md`). Their changes are made before step 10.
+9. Reviews by people, on the content as it stands after step 8: a security owner reads the sandbox wording in `code_tools.md`, `judge_types.md` and `levers/new_tool.md`; a person confirms the knowledge's public-source claims and approves case studies; the owner reads `SKILL.md`, `train_val_test.md` and the two glue files of the merge (`run_an_experiment.md`, `diagnose_an_agent.md`). Their changes are made before step 10.
 10. Manual sanity check.
 11. Optional later, only if step 10 shows a need: a "load the endpoint doc first" check that keeps the server stateless.
 
@@ -159,7 +161,7 @@ The components depend on each other in this order; the implementation plan follo
 
 - **Agent tool timeouts.** The SDK sends progress only when the client asks for it. An agent with a short default timeout and no progress support can give up on a long call. The install guide sets longer timeouts for the agents known to need it; the sanity check confirms it.
 - **The progress interval is a design value.** It is 2 seconds. The real agents cannot be run in this environment, so the value is confirmed in the manual sanity phase (step 10), which also checks that each agent sends a progress token.
-- **The content edit is large.** Two sources written for other readers (a dedicated assistant, and fenced loop agents) become one skill for a general coding agent. It is its own phase, done in batches, each verified by a check. The merge of the two sources follows one rule, so that the edit does not drift into a redesign: the knowledge's method is ported unchanged (section 11, item 1).
+- **The content edit is large.** Two sources written for other readers (a dedicated assistant, and fenced loop agents) become one skill for the user's own agent, such as Claude Code or Codex. It is its own phase, done in batches, each verified by a check. The merge of the two sources follows one rule, so that the edit does not drift into a redesign: the knowledge's method is ported unchanged (section 11, item 1).
 - **Drift while two knowledge copies exist.** Harness-tuner keeps its copy until spec two is adopted. The port records the harness-tuner commit it was made from, and later fixes are ported by hand from the diff since that commit (skill component doc, section 9).
 - **Packaging.** The skill tree must be bundled explicitly, and `app/mcp/` must stay a plain folder. Both are covered by tests, but a full packaged build is only verified on a real build.
 
@@ -171,12 +173,13 @@ The components depend on each other in this order; the implementation plan follo
 - The web UI's own models.dev price fetch could use the model info endpoints.
 - A refresh of the copied help articles (8 public pages have no copy yet). It needs the docs repo.
 - Harness-tuner adopts the model info endpoints and drops its copies of the model info code and of the knowledge.
-- The harness-tuner skills with general knowledge that this port leaves out (`kiln-task-setup`, `experiment-costing`, the skill-authoring guide). Each is a separate decision.
-- The knowledge file `using_harness_tuner`: how a coding agent runs the Kiln Harness Tuner CLI in place of running experiments itself. It is the first new entry of the knowledge backlog. Until it exists, the skill recommends Harness Tuner and gives no CLI steps.
+- The harness-tuner skill-authoring guide, which this port leaves out. A separate decision. (`kiln-task-setup` and `experiment-costing` are ported in Phase 19: [skill_and_content](components/skill_and_content.md) section 9.)
+- The knowledge file `using_harness_tuner`: how the user's own agent, connected to Kiln with the skill, runs the Kiln Harness Tuner CLI in place of running experiments itself. It is the first new entry of the knowledge backlog. Until it exists, the skill recommends Harness Tuner and gives no CLI steps.
 - Tooling to read the noise of an eval. This project adds none, and no guidance of its own on noise.
 - Model info: a short cache for the availability check; a hint field for a search that finds nothing under the default filters; a person reads the models.dev terms of use for a desktop app that fetches the file.
-- Web UI: a shared `copy_button` in `lib/ui/`, and an icon of its own for the Connect callout.
-- Spec two: fencing, and everything harness-tuner needs.
+- Web UI: an icon of its own for the Connect callout.
+- Spec two ([harness_tuner_switchover](../harness_tuner_switchover/project_overview.md)): harness-tuner moves onto Kiln's skill and shared APIs.
+- Scopes for MCP connections (fencing): a later P2 project.
 
 ## 9. Shared files
 
@@ -262,5 +265,6 @@ These were open; the owner has ruled on each.
 3. **No docs link until the docs page is live.** The Connect page has no "Read the Docs" link in this project. It is added when the docs page exists (section 8).
 4. **No licence field** is set in `app/mcp/pyproject.toml`: the package is covered by the repository's licence files and is not published. The package carries the same version as the other workspace members and is bumped with them at release.
 5. **Reviews by people are a phase of their own** (build step 9).
+6. **One skill, many kinds of client** (Phase 21, [decisions](harness_tuner_alignment_decisions.md) section 15). The skill is one body of knowledge read by chat clients (interactive agents working with a user) and by non-interactive agents with their own instructions (Kiln Harness Tuner). `SKILL.md` is a short router for every client. Guidance for chat clients only moves to `references/client_guidance/chat/`: the modes, the one-off experiment guide (`run_an_experiment.md` of item 1, now `references/client_guidance/chat/running_an_experiment_from_chat.md`) and the new `using_kiln_from_chat.md`. The rules for `call_kiln_api` move to `references/knowledge/api_docs/calling_the_kiln_api.md`, the one hand-written file of the generated folder, which the API reference pipeline keeps. The detail is in the skill component doc, section 4.6.
 
 Things to verify during implementation are in the "Open items" section of each component doc.

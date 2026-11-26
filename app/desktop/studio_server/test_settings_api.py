@@ -235,7 +235,9 @@ class TestCheckEntitlements:
                 "/api/check_entitlements?feature_codes=example-feature"
             )
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
+            assert (
+                "needs Kiln Pro, which is not connected" in response.json()["message"]
+            )
 
     def test_check_entitlements_single_feature_true(self, client, mock_api_key):
         mock_response = MagicMock(

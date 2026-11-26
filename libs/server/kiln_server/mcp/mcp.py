@@ -1,4 +1,4 @@
-"""CLI entry point for the Kiln MCP server."""
+"""CLI entry point for the Kiln project tools MCP server (kiln_mcp)."""
 
 from __future__ import annotations
 
@@ -28,7 +28,12 @@ def _parse_tool_ids(raw: str | None) -> list[str] | None:
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the Kiln MCP server for a project."
+        description=(
+            "Run the Kiln project tools MCP server: it serves one project's tools"
+            " (such as search tools) to other apps. It does not connect your own"
+            " agent, such as Claude Code or Codex, to the Kiln app; for that, use"
+            " the MCP server built into the Kiln app."
+        )
     )
     parser.add_argument("project", type=Path, help="Path to the project.kiln file")
     parser.add_argument(

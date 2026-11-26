@@ -475,7 +475,7 @@ def test_get_tool_server_not_found(client, test_project):
 
         assert response.status_code == 404
         result = response.json()
-        assert result["message"] == "Tool server not found"
+        assert result["message"].startswith("Tool server not found. ID: ")
 
 
 async def test_get_tool_server_config_returns_file_data_without_connecting(
@@ -529,7 +529,7 @@ def test_get_tool_server_config_not_found(client, test_project):
         )
 
         assert response.status_code == 404
-        assert response.json()["message"] == "Tool server not found"
+        assert response.json()["message"].startswith("Tool server not found. ID: ")
 
 
 def _builtin_ai_models_set(set_result):
@@ -3312,7 +3312,7 @@ async def test_edit_local_mcp_404(client, test_project, edit_local_server_data):
             json=edit_local_server_data,
         )
         assert response.status_code == 404
-        assert response.json() == {"message": "Tool server not found"}
+        assert response.json()["message"].startswith("Tool server not found. ID: ")
 
 
 @pytest.fixture
@@ -3442,7 +3442,7 @@ async def test_edit_remote_mcp_404(client, test_project, edit_remote_server_data
             json=edit_remote_server_data,
         )
         assert response.status_code == 404
-        assert response.json() == {"message": "Tool server not found"}
+        assert response.json()["message"].startswith("Tool server not found. ID: ")
 
 
 async def test_edit_remote_mcp_wrong_type(

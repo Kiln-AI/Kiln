@@ -620,7 +620,9 @@ def test_update_project_not_found(client):
     response = client.patch("/api/projects/non-existent-id", json={})
 
     assert response.status_code == 404
-    assert response.json() == {"message": "Project not found. ID: non-existent-id"}
+    assert response.json()["message"].startswith(
+        "Project not found. ID: non-existent-id."
+    )
 
 
 @pytest.mark.filterwarnings("ignore")

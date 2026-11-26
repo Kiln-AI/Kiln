@@ -15,7 +15,7 @@ The server has exactly two tools, the same for every agent:
 
 Every capability is a REST endpoint. New capabilities are added as endpoints, not as more tools.
 
-This is spec one of two. Fencing, and everything else harness-tuner needs, is [harness_tuner_port](../harness_tuner_port/project_overview.md). This spec builds none of that, but must leave room for it (section 13).
+This is spec one of two. What harness-tuner needs is spec two, [harness_tuner_switchover](../harness_tuner_switchover/project_overview.md). Scopes for MCP connections (fencing) are a later P2 project. This spec builds none of that, but must leave room for it (section 13).
 
 ## 2. Goals and non-goals
 
@@ -29,7 +29,7 @@ Goals:
 
 Non-goals (this spec):
 
-- Fencing or scoping a connection (spec two).
+- Fencing or scoping a connection (a later project).
 - Any change to harness-tuner.
 - Replacing or changing the Kiln Assistant. It stays as it is. Sharing one skill between the Assistant and this MCP is P2.
 - More tools, typed per-feature tools, MCP prompts or MCP resources.
@@ -60,7 +60,7 @@ The user types `/kiln`. With the stub skill installed, the agent loads the stub,
 
 ### 3.4 Kiln is not running
 
-The MCP runs inside the Kiln app, so when Kiln is not running the server cannot answer and the agent's MCP client fails to connect. The MCP cannot explain this itself. Two places do:
+The MCP runs inside the Kiln app, so when Kiln is not running the server cannot answer and the agent cannot connect to it. The MCP cannot explain this itself. Two places do:
 
 - The stub skill: "If the `kiln_skill` tool is not available, Kiln is installed but offline: ask the user to start the Kiln app."
 - The install guide and docs.
@@ -118,6 +118,7 @@ When the method and path match no endpoint of the API, the tool says so and poin
 - Blocked endpoints do not appear in the skill's API reference.
 - Blocks are rare. Endpoints that return secrets (such as provider API keys) are the first category. The list is settled in the architecture step: start from the endpoints the Assistant is denied today, review each one, and get the list approved.
 - The MCP adds no approval step. A call is either allowed or blocked. The agent's own permission prompts are the user's control.
+- The block covers direct calls of the MCP tool only. A task run whose tools include Kiln's built-in `call_kiln_api` tool reaches every blocked endpoint, because that core tool checks no policy, and a direct call through the MCP can start such a run. The follow-up scopes project (P2) enforces it; this spec does not.
 
 ### 5.6 `body_limit` (MCP only)
 
@@ -132,7 +133,7 @@ A guard against a response so large that it floods the agent's context.
 
 ### 5.7 `save_to_tmpfile` (MCP only)
 
-For coding agents, which have shell tools.
+For agents that have shell tools of their own, such as Claude Code and Codex.
 
 - When `true`, the response body is written to a temporary file and the result is `status_code`, `body_path` and the size in bytes, with no `body`. The agent can then use `jq`, `grep` and so on.
 - `jq_filter` runs first; the filtered result is what is saved.
@@ -159,7 +160,7 @@ The Kiln Assistant's service refuses a `call_kiln_api` call until the model has 
 
 ## 6. `kiln_skill`
 
-Based on how coding agents expose skills natively ([research](research/skill_tool_conventions/summary.md)). No native skill tool takes a file path: they return the skill's instructions and the model reads further files with its file tool. Our tool does both jobs, because the files are not on the agent's disk.
+Based on how agents such as Claude Code, Codex and OpenCode expose skills natively ([research](research/skill_tool_conventions/summary.md)). No native skill tool takes a file path: they return the skill's instructions and the model reads further files with its file tool. Our tool does both jobs, because the files are not on the agent's disk.
 
 ### 6.1 Contract
 
@@ -177,7 +178,7 @@ Based on how coding agents expose skills natively ([research](research/skill_too
 
 ### 6.2 Description
 
-The tool description follows the shape of the native skill tools: one imperative line; what Kiln is; "call this tool first, before any other Kiln tool"; one line per argument; "users may ask for it by name (`/kiln`); that is a request to call this tool"; "only paths the instructions list are valid; do not guess".
+The tool description follows the shape of the native skill tools: one imperative line; what Kiln is; "call this tool first, before any other Kiln tool"; one line per argument; "users may ask for it by name (`/kiln`, `$kiln`); that is a request to call this tool"; "only paths the instructions list are valid; do not guess".
 
 It is short, about 100–150 words. The same trigger text is in the server instructions (section 4). The final wording is tuned in the content work.
 
@@ -188,33 +189,37 @@ It is short, about 100–150 words. The same trigger text is in the server instr
 The skill keeps the layout of the Kiln Assistant's skill, whose files link to each other by full path, and adds the harness-tuner knowledge beside it:
 
 ```
-SKILL.md                         what Kiln is, how to route a request, the rules for
-                                 using the API, and a map of the files below
+SKILL.md                         what the skill and Kiln are, how to read its files, who
+                                 reads it, and a map of its parts, for every kind of client
 references/
-  modes/                         one file per kind of request (learn about Kiln,
-                                 project operations, improve a task, ...)
+  client_guidance/chat/          for chat clients only: working with the user, the routing
+                                 table and one mode per kind of request (learn about Kiln,
+                                 project operations, improve a task, ...), the one-off
+                                 experiment guide
   knowledge/                     how to do specific things in Kiln
-  knowledge/api_docs/            generated API reference: catalogues, and one doc per endpoint
+  knowledge/api_docs/            generated API reference: catalogues, and one doc per endpoint;
+                                 plus one hand-written file, the rules for every call
   docs/                          a copy of Kiln's public help articles, with an index
   levers/                        what in Kiln an agent builder can change, and how
   improving_agents/              techniques, smells and playbooks for making an agent better
 ```
 
 - The tree is self-contained, with every path written from the skill root, so it could be served another way later without changing the content.
-- Every file is reachable: each knowledge, lever and improving-agents file is listed by a mode (or by a file a mode lists), with its full path and a line on what it holds and when to read it.
+- Every file is reachable: each knowledge, lever and improving-agents file is listed by `SKILL.md` or by a file it leads to, with its full path and a line on what it holds and when to read it.
+- **One skill, many kinds of client** (Phase 21). Two kinds read the skill today: chat clients, interactive agents working with a user (Claude Code, Claude Desktop, Codex, OpenCode), and non-interactive agents with their own instructions (Kiln Harness Tuner), which deep-link into it. Shared files serve every client and state each branch by its real condition ("In a chat with a user: …", "if you have the `call_kiln_api` tool"), never by a client's name. Guidance for chat clients only is in `references/client_guidance/chat/`; `SKILL.md` tells a chat client to read `references/client_guidance/chat/using_kiln_from_chat.md` at the start of every session, and tells a non-interactive agent that its own instructions win and that it skips that folder. The detail is in the skill component doc, section 4.6.
 - Files refer to each other by the full path from the skill root (`references/knowledge/rag.md`), never by a bare filename, and never by writing out a tool call. The description of the `path` argument says how to read a file (6.1).
 
 ### 7.2 Sources
 
-- **Kiln Assistant's skill** → `SKILL.md`, `references/modes/`, `references/knowledge/`, `references/docs/`. It comes from a private repo as a filtered export that a person has reviewed.
+- **Kiln Assistant's skill** → `SKILL.md`, `references/client_guidance/chat/` (its modes, since Phase 21), `references/knowledge/`, `references/docs/`. It comes from a private repo as a filtered export that a person has reviewed.
 - **Harness-tuner knowledge** (`kiln-harness-tuner-knowledge`) → `references/levers/` and `references/improving_agents/` (`techniques/`, `smells/`, `playbooks/`).
-  - The five role entry files (`planner.md`, `builder.md`, `analyzer.md`, `report.md`, `smells.md`) are not ported. They stay in harness-tuner; their final home is an open question in spec two.
-  - In their place, the knowledge is wired into the skill's modes, mainly "improve a task".
+  - The five role entry files (`planner.md`, `builder.md`, `analyzer.md`, `report.md`, `smells.md`) are not ported. They stay in harness-tuner, in a new home among its own skills (spec two, section 5.3).
+  - In their place, the knowledge is wired into `SKILL.md` and the chat clients' modes, mainly "improve a task".
 - **API reference** → `references/knowledge/api_docs/`, generated from Kiln's OpenAPI document with `openapi2skill`, the OSS generator that already produces the Assistant's API docs. Its file names are kept as generated.
 
 ### 7.3 Adapting the content
 
-The Assistant's skill was written for a dedicated assistant inside the Kiln app; the knowledge was written for harness-tuner's loop agents. Both are edited for a user's own coding agent. This is real content work and is its own phase in the plan.
+The Assistant's skill was written for a dedicated assistant inside the Kiln app; the knowledge was written for harness-tuner's loop agents. Both are edited for a user's own agent, such as Claude Code or Codex. This is real content work and is its own phase in the plan.
 
 - **Identity.** The skill does not take over the agent. It no longer says "you are Kiln Assistant", and its rules (always be in a mode, how to greet, what to do at session start) apply only while the agent is doing Kiln work.
 - **Loaded on demand.** The Assistant has `SKILL.md` in context at all times. Here it arrives through a tool call, and can drop out when the agent's context is compacted. Text that assumes it is always present is rewritten.
@@ -228,7 +233,7 @@ The Assistant's skill was written for a dedicated assistant inside the Kiln app;
 
 ### 7.4 New guide: working with a project's files directly
 
-A coding agent can often see the Kiln project's files on disk. The Assistant never could, so its skill says nothing about it. A new knowledge file covers it:
+The user's own agent can often see the Kiln project's files on disk. The Assistant never could, so its skill says nothing about it. A new knowledge file covers it:
 
 - **Reading files directly is fine.** If reading, grepping or listing the files is faster than the API, do that.
 - **Writes always go through the API.** The API runs the validation checks and the necessary side effects. Writing a file directly can invalidate the whole Kiln project.
@@ -278,7 +283,7 @@ The skill needs model information in many places: choosing a model, prices, find
 
 ### 9.1 `agent_install.md`
 
-One guide, written for an agent to follow. It is published at `https://kiln.tech/agent_install.md`; until then the prompt points at the file on GitHub. The file lives in this repo.
+One guide, written for an agent to follow. It is published at `https://kiln.tech/agent_install.md`; until then the prompt points at the file on GitHub. The file lives in this repo, at `docs/agent_install.md`.
 
 It tells the agent to:
 
@@ -310,7 +315,7 @@ It gives agents a `/kiln` command and the offline message. It is not kept in syn
 
 ### 9.3 README
 
-The repo README and the docs get a short "Use Kiln from your coding agent" section with the same prompt.
+The repo README and the docs get a short "Use Kiln from your own agent" section with the same prompt.
 
 ## 10. Connect page
 
@@ -348,17 +353,17 @@ The same phase adds missing descriptions to API routes. Most rows in the generat
 
 Kiln has several MCP features. The docs name each one and say what it is for:
 
-- **Kiln MCP server** (this spec): connect a coding agent to the Kiln app. Agents list it as `kiln`.
-- **Kiln project tools MCP server** (the existing `kiln_mcp` command in `libs/server/kiln_server/mcp`): serves one project's tools to other apps. It is not the way to connect a coding agent to Kiln. The command name stays; its docs and `--help` text are renamed and say what it is and is not.
+- **Kiln MCP server** (this spec): connect a user's own agent, such as Claude Code or Codex, to the Kiln app. Agents list it as `kiln`.
+- **Kiln project tools MCP server** (the existing `kiln_mcp` command in `libs/server/kiln_server/mcp`): serves one project's tools to other apps. It is not the way to connect your own agent to Kiln. The command name stays; its docs and `--help` text are renamed and say what it is and is not.
 - **Remote and local MCP tool servers:** give the agents you build in Kiln tools from an MCP server.
 - **An MCP tool as a task:** run a remote agent over MCP as a Kiln task.
 
-## 13. Room for spec two
+## 13. Room for later projects
 
-- Spec two scopes a connection by its URL path. `/mcp` in this spec is the open default and keeps that meaning.
-- Spec two adds no tools and changes no skill files. A scoped connection gets the same two tools and the same API, and clear errors when it goes outside its scope. So `call_kiln_api` has one place where a per-connection policy can be applied later. In this spec that place applies only the MCP block tag.
-- The server is stateless here, and spec two relies on that.
-- `save_to_tmpfile` will need a folder a fenced agent can read. Tracked in spec two.
+- A later project may scope a connection by its URL path. `/mcp` in this spec is the open default and keeps that meaning.
+- Scoping adds no tools and changes no skill files. A scoped connection gets the same two tools and the same API, and clear errors when it goes outside its scope. So `call_kiln_api` has one place where a per-connection policy can be applied later. In this spec that place applies only the MCP block tag.
+- The server is stateless here, and scoping relies on that.
+- `save_to_tmpfile` will need a folder a fenced agent can read.
 - Harness-tuner will use the model info endpoints (section 8) and add its own model policy on top.
 
 ## 14. Constraints

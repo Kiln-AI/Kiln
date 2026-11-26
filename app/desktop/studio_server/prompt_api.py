@@ -32,6 +32,8 @@ def connect_prompt_api(app: FastAPI):
             PromptId, Path(description="The prompt generator ID to use.")
         ],
     ) -> PromptApiResponse:
+        """Render the full prompt text that a prompt ID gives for the task, as the model
+        would see it."""
         task = task_from_id(project_id, task_id)
 
         try:
