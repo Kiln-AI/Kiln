@@ -1,6 +1,8 @@
 import gc
 import json
+import os
 import shutil
+import sys
 import tracemalloc
 import uuid
 from pathlib import Path
@@ -52,6 +54,10 @@ test_json_schema = """{
   ]
 }
 """
+
+
+def on_github_actions(sys_platform: str) -> bool:
+    return os.environ.get("GITHUB_ACTIONS") == "true" and sys.platform == sys_platform
 
 
 def synthetic_source() -> DataSource:
@@ -131,8 +137,15 @@ def test_benchmark_load_from_file(benchmark, task_run, readonly, request):
     # I get 8k ops per second on my MBP. Lower value here for CI and parallel testing.
     # Prior to optimization was 290 ops per second.
     # sys.stdout.write(f"Ops per second: {ops_per_second:.6f}")
-    if ops_per_second < 500:
-        pytest.fail(f"Ops per second: {ops_per_second:.6f}, expected more than 1k ops")
+    # GitHub's macOS runners can be CPU-starved: one CI run measured 140 ops/s there,
+    # against about 9k on a Linux dev machine. They get a floor of 80; local runs and
+    # the other CI runners check 500.
+    min_ops_per_second = 80 if on_github_actions("darwin") else 500
+    if ops_per_second < min_ops_per_second:
+        pytest.fail(
+            f"Ops per second: {ops_per_second:.6f}, "
+            f"expected more than {min_ops_per_second}"
+        )
 
 
 @pytest.mark.benchmark
@@ -149,10 +162,14 @@ def test_benchmark_claim_and_release_load(benchmark, tmp_path):
     benchmark(claim_and_release)
 
     # About 1.5 µs on a Linux dev machine, next to about 700 µs to parse a 50-turn run.
-    if benchmark.stats.stats.mean > 10e-6:
+    # GitHub's Windows runners can be CPU-starved: one CI run measured a 28 µs mean
+    # there. They get a ceiling of 40 µs; local runs and the other CI runners check
+    # 10 µs.
+    max_mean_seconds = 40e-6 if on_github_actions("win32") else 10e-6
+    if benchmark.stats.stats.mean > max_mean_seconds:
         pytest.fail(
             f"{benchmark.stats.stats.mean * 1e6:.2f} µs per claim and release, "
-            "expected under 10 µs"
+            f"expected under {max_mean_seconds * 1e6:.0f} µs"
         )
 
 
