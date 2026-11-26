@@ -163,11 +163,11 @@ Any that reads a large field only to test whether it's set switches to a summary
 
 | Host | Where | How |
 |---|---|---|
-| Desktop app and dev server | `desktop_server.lifespan` | Save `model_cache_enabled()`, call `set_model_cache_enabled(True)`, and restore the saved value in `finally`. This is the same pattern as strict mode. |
+| Desktop app and dev server | `desktop_server.lifespan` | Save `model_cache_enabled()`, call `set_model_cache_enabled(True)`, and restore the saved value in `finally`. This is the same pattern as strict mode. When `Config.shared().disable_model_cache` is true, call `ModelCache.shared().disable()` instead of turning the cache on. |
 | `kiln_server` | `kiln_server.server.make_app` | When `lifespan is None`, use a default lifespan that does the same. The desktop app passes its own lifespan, so the default never runs there. |
-| `kiln_mcp` | `kiln_server.mcp.mcp.main` | Call `set_model_cache_enabled(True)` before serving. It's a process entry point. |
+| `kiln_mcp` | `kiln_server.mcp.mcp.main` | Call `set_model_cache_enabled(True)` before serving, or `ModelCache.shared().disable()` when `disable_model_cache` is true. It's a process entry point. |
 
-Nothing turns the cache on at import. The process-wide `ModelCache.shared()` singleton stays. It is an existing global, and it follows the same documented pattern as `set_strict_mode`: off in the library, switched on by hosts. Replacing it with an injected cache would touch every datamodel load call, which is out of scope.
+`disable()` is one-way, so the restore in `finally` can't turn a disabled cache back on. Nothing turns the cache on at import. The process-wide `ModelCache.shared()` singleton stays. It is an existing global, and it follows the same documented pattern as `set_strict_mode`: off in the library, switched on by hosts. Replacing it with an injected cache would touch every datamodel load call, which is out of scope.
 
 ### CI: macOS and Windows on release
 

@@ -65,6 +65,7 @@ Cached memory is about 1.15–1.5× the file size. 25k runs of 100 turns take ab
 
 - The library exposes a public function to turn the cache on or off for the process. It follows the same pattern as `set_strict_mode`. Library users who call it get the same behavior as the app: the same budget, lazy large fields and eviction.
 - Each host turns the cache on in its own startup code. Nothing turns it on at import time.
+- Each host reads the `disable_model_cache` setting (`KILN_DISABLE_MODEL_CACHE`) at startup. When it is true, the host turns the cache off for the rest of the process instead, and nothing can turn it back on.
 - Turning the cache off clears it.
 
 **Behavior change for library users:** today the library caches by default on macOS and Windows. After this project, library scripts that load the same records repeatedly will be slower unless they turn the cache on. Lookups by id in the library will fully load each sibling on every call.

@@ -52,6 +52,7 @@ class ModelCache:
     @property
     def enabled(self) -> bool: ...
     def set_enabled(self, value: bool) -> None: ...         # turning off also clears
+    def disable(self) -> None: ...                          # off for good; later set_enabled(True) does nothing
 
     def get_model(self, path: Path, model_type: type[T], readonly: bool = False) -> T | None: ...
     def get_model_id(self, path: Path, model_type: type[KilnBaseModel]) -> str | None: ...
@@ -197,6 +198,7 @@ log.debug(...)  # counts only
 - `ModelCache.shared()` creates the instance with `enabled=False`.
 - `set_enabled(False)` clears the cache.
 - `set_enabled(True)` on an already-enabled cache changes nothing.
+- `disable()` turns the cache off and clears it for the life of the instance. A later `set_enabled(True)` does nothing apart from a debug log. Hosts call it on the shared cache when the `disable_model_cache` setting is true.
 - When disabled: `get_model` and `get_model_id` return `None`; `set_model` does nothing; `large_values_for` returns `None`; `store_restored_values` returns `False`.
 
 `basemodel.load_from_file` checks `ModelCache.shared().enabled` before calling `detach_large_values`, so a cache-off load never creates lazy state.
@@ -244,6 +246,8 @@ In `libs/core/kiln_ai/datamodel/test_model_cache.py` (rewritten). Each test uses
 - `test_disabled_by_default`: `ModelCache.shared()` starts disabled; `set_model` stores nothing and `get_model` returns `None`.
 - `test_set_enabled_false_clears`
 - `test_set_model_cache_enabled_switch`: the module functions read and write the shared instance.
+- `test_disable_drops_cached_models_and_stops_caching`, `test_disabled_cache_serves_nothing`: the second runs `disable()` inside a `set_model` call that already passed its enabled check.
+- `test_set_enabled_true_after_disable_leaves_cache_off`, `test_set_model_cache_enabled_after_disable_leaves_shared_cache_off`
 - `test_hit_returns_same_instance_readonly_and_copy_mutable`
 - `test_changed_mtime_invalidates`, `test_changed_size_invalidates`, `test_replaced_file_new_inode_invalidates`: the last replaces the file with one of the same size and resets its mtime with `os.utime`, so only the inode differs.
 - `test_deleted_file_invalidates`
@@ -283,3 +287,4 @@ Host tests:
 - `app/desktop/studio_server/test_server.py`, next to the strict-mode lifespan tests: the desktop lifespan enables the cache and restores the previous value.
 - `libs/server/kiln_server/test_server.py` (new file): the default lifespan enables the cache, and a caller-supplied lifespan replaces it.
 - `libs/server/kiln_server/mcp/test_mcp_server.py`: `main` enables the cache.
+- In each of the three: with `KILN_DISABLE_MODEL_CACHE=true`, the host disables the cache, and it stays off after the lifespan's restore (desktop, `kiln_server`) or a later `set_model_cache_enabled(True)` (`kiln_mcp`).
