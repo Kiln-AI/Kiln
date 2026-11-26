@@ -2320,6 +2320,45 @@ def test_eval_upgrade_old_reference_answer_eval_config(mock_task, tmp_path):
     assert loaded_eval.current_config_id is None  # No configs to set
 
 
+@pytest.mark.parametrize("first_load_readonly", [False, True])
+def test_eval_migration_caches_only_migrated_copies(
+    mock_task, tmp_path, model_cache_enabled, first_load_readonly
+):
+    """Neither the cached eval nor its cached configs' parent skip the migration."""
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        evaluation_data_type=EvalDataType.reference_answer,
+        eval_set_filter_id="all",
+        eval_configs_filter_id="high_rating",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        parent=eval,
+        name="Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+    )
+    config.save_to_file()
+    assert eval.path is not None
+
+    Eval.load_from_file(eval.path, readonly=first_load_readonly)
+
+    cached_eval = Eval.load_from_file(eval.path, readonly=True)
+    assert cached_eval.current_config_id == config.id
+    assert [
+        cached_config.parent_eval().current_config_id
+        for cached_config in cached_eval.configs(readonly=True)
+    ] == [config.id]
+
+
 # ── V1 Characterization Tests ──────────────────────────────────────────
 
 
@@ -3264,6 +3303,25 @@ def _make_v2_eval_config(**kwargs) -> EvalConfig:
     return EvalConfig(name="V2 Test", config_type=EvalConfigType.v2, **kwargs)
 
 
+def _save_config_with_unknown_expression_variable(**kwargs) -> EvalConfig:
+    """Save a V2 config whose `value_expression` names an unknown variable.
+
+    The check gates writes, so the file is edited after saving a valid config.
+    """
+    cfg = _make_v2_eval_config(
+        properties=ExactMatchProperties(
+            expected_value="yes", value_expression="final_message"
+        ),
+        **kwargs,
+    )
+    cfg.save_to_file()
+    assert cfg.path is not None
+    data = json.loads(cfg.path.read_text(encoding="utf-8"))
+    data["properties"]["value_expression"] = "outpt.status"
+    cfg.path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return cfg
+
+
 # One value_expression per EvalTaskInput field, keyed by the root variable it
 # reads. Checked against EvalTaskInput.model_fields so the coverage claim holds.
 _EVAL_INPUT_FIELD_EXPRESSIONS = {
@@ -3469,6 +3527,34 @@ class TestV2TemplateValidation:
         )
         assert isinstance(cfg.properties, ExactMatchProperties)
         assert cfg.properties.value_expression == "outpt.status"
+
+    def test_value_expression_unknown_variable_still_loads_with_load_from_file(
+        self, tmp_path
+    ):
+        cfg = _save_config_with_unknown_expression_variable(
+            path=tmp_path / "eval_config.kiln"
+        )
+
+        loaded = EvalConfig.load_from_file(cfg.path)
+
+        assert isinstance(loaded.properties, ExactMatchProperties)
+        assert loaded.properties.value_expression == "outpt.status"
+
+    def test_value_expression_unknown_variable_still_loads_from_cache(
+        self, mock_task, tmp_path, model_cache_enabled
+    ):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+        eval, _ = _v2_eval_and_config(mock_task)
+        eval.save_to_file()
+        _save_config_with_unknown_expression_variable(parent=eval)
+        eval.configs(readonly=True)
+
+        configs = eval.configs()
+
+        assert len(configs) == 1
+        assert isinstance(configs[0].properties, ExactMatchProperties)
+        assert configs[0].properties.value_expression == "outpt.status"
 
     def test_none_value_expression_skipped(self):
         """value_expression=None (default) should not be validated."""

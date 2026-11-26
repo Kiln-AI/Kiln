@@ -106,7 +106,7 @@
   // planner's and input generator's sense of what an input looks like.
   import {
     fetch_task_sample_candidates,
-    is_five_star_rated,
+    is_five_star_rating,
     type TaskSampleExample,
   } from "$lib/utils/task_sample_example"
   import {
@@ -1877,8 +1877,8 @@
               project_id,
               task_id,
               (run) =>
-                run.input_source?.type !== "synthetic" ||
-                is_five_star_rated(run),
+                run.input_source !== "synthetic" ||
+                is_five_star_rating(run.rating),
             )
           ).selected_example
         } catch (e) {

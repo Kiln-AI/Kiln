@@ -665,7 +665,7 @@ def _split_judge_trace(eval_run: EvalRun) -> dict[str, Any]:
     """`eval_run` with its judge_trace dropped, and whether it had a non-empty one."""
     return {
         "eval_run": eval_run.model_copy(update={"judge_trace": None}),
-        "has_judge_trace": bool(eval_run.judge_trace),
+        "has_judge_trace": eval_run.judge_trace_length > 0,
     }
 
 
@@ -3382,7 +3382,9 @@ def connect_evals_api(app: FastAPI, *, app_origin: str):
             )
 
         filter = dataset_filter_from_id(eval.eval_configs_filter_id)
-        expected_dataset_items = {run.id: run for run in task.runs() if filter(run)}
+        expected_dataset_items = {
+            run.id: run for run in task.runs(readonly=True) if filter(run)
+        }
         expected_dataset_ids = set(expected_dataset_items.keys())
         if len(expected_dataset_ids) == 0:
             return EvalConfigCompareSummary(

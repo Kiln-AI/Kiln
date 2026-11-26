@@ -333,6 +333,43 @@ async def test_iter_llama_index_nodes_filters_by_embedding_config_id(
 
 
 @pytest.mark.asyncio
+async def test_iter_llama_index_nodes_restores_only_matching_embeddings(
+    mock_project,
+    mock_chunks_factory,
+    rag_config_factory,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    rag_config = rag_config_factory(embedding_config_id="target_embedding")
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
+    matching_doc = mock_chunks_factory(
+        mock_project, rag_config, num_chunks=2, embedding_config_id="target_embedding"
+    )
+    mock_chunks_factory(
+        mock_project, rag_config, num_chunks=2, embedding_config_id="other_embedding"
+    )
+
+    async def vectors() -> list[list[float]]:
+        return [
+            node.embedding
+            async for batch in loader.iter_llama_index_nodes()
+            for node in batch
+        ]
+
+    cache_filled_vectors = await vectors()
+    evict_large_values()
+
+    assert await vectors() == cache_filled_vectors
+    assert [e.vector for e in matching_doc.chunked_embeddings.embeddings] == (
+        cache_filled_vectors
+    )
+    assert large_field_restores.call_count == 1
+    restored_root = large_field_restores.call_args.args[0]
+    assert restored_root.path == matching_doc.chunked_embeddings.path
+
+
+@pytest.mark.asyncio
 async def test_iter_llama_index_nodes_filters_by_all_config_ids(
     mock_project, mock_chunks_factory, rag_config_factory
 ):

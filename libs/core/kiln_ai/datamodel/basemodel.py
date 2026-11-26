@@ -9,7 +9,7 @@ from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path, PurePath, PureWindowsPath
-from typing import Any, Callable, Dict, List, Optional, Set, Type, TypeVar
+from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Type, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -28,7 +28,13 @@ from pydantic import (
 from pydantic_core import ErrorDetails
 from typing_extensions import Annotated, Self
 
-from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.lazy_fields import (
+    LazyFieldsMixin,
+    declares_large_field,
+    detach_large_values,
+    reload_path_for_editable_copy,
+)
+from kiln_ai.datamodel.model_cache import FileIdentity, LoadClaim, ModelCache
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
 from kiln_ai.utils.mime_type import guess_extension
@@ -353,6 +359,15 @@ class KilnBaseModel(BaseModel):
     _loaded_from_file: bool = False
     _readonly: bool = False
 
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        if not issubclass(cls, LazyFieldsMixin) and declares_large_field(cls):
+            raise TypeError(
+                f"{cls.__name__} marks a field with LargeField, so it must inherit "
+                "LazyFieldsMixin, first in its bases."
+            )
+
     @computed_field()
     def model_type(self) -> str:
         return self.type_name()
@@ -371,22 +386,47 @@ class KilnBaseModel(BaseModel):
             )
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Override setattr to prevent mutations on readonly models."""
-        # Check for error condition: attempting to mutate readonly model
-        # Allow private attributes and certain safe operations even on readonly models
-        readonly_safe_attrs = {"parent", "path"}
-        if (
-            not name.startswith("_")
-            and self._readonly
-            and name not in readonly_safe_attrs
-        ):
-            self._ensure_not_readonly(name)
+        """Override setattr to prevent mutations on readonly models.
 
-        # proceed with attribute setting
+        A readonly model still accepts `path` and `parent`. They are set without
+        validate_assignment, so model validators don't re-run.
+        """
+        if not name.startswith("_") and self._readonly:
+            if name not in ("parent", "path"):
+                self._ensure_not_readonly(name)
+            # Re-running validators would read a cached record's detached large values
+            # back from the file and write them onto the shared record.
+            if self._set_location_without_validation(name, value):
+                return
         super().__setattr__(name, value)
 
+    def _set_location_without_validation(self, name: str, value: Any) -> bool:
+        """Set `path` without running validators; False if this can't set `name` to `value`.
+
+        Values it doesn't handle go through normal assignment, which validates them.
+        """
+        if name != "path" or not (
+            value is None or isinstance(value, (str, os.PathLike))
+        ):
+            return False
+        self.__dict__["path"] = None if value is None else Path(value)
+        if "path" not in self.__pydantic_fields_set__:
+            self.__pydantic_fields_set__.add("path")
+        return True
+
     def mutable_copy(self) -> Self:
-        """Create a mutable copy of the model, resetting readonly flag."""
+        """Create a mutable copy of the model, resetting readonly flag.
+
+        A cached record whose file changed on disk since it was loaded is reloaded from
+        the file instead, so the copy never mixes old fields with new large fields.
+
+        Raises:
+            LargeFieldUnavailableError: if the record's file is gone and its large
+                fields were evicted, or were read from a newer version of the file.
+        """
+        reload_path = reload_path_for_editable_copy(self)
+        if reload_path is not None:
+            return type(self).load_from_file(reload_path)
         copy = super().model_copy(deep=True)
         # Reset readonly flag on copies so they can be mutated
         copy._readonly = False
@@ -426,44 +466,60 @@ class KilnBaseModel(BaseModel):
 
         Args:
             path (Path): Path to the model file
-            readonly (bool): If True, the model will be returned in readonly mode (cached instance, not a copy, not safe to mutate)
+            readonly (bool): If True, return a readonly model, which raises ReadOnlyMutationError on assignment. With the model cache on, it is the shared cached record rather than a copy.
             parent (KilnBaseModel | None): The already-loaded parent of this model, if the caller has it. Only for parented models. Attached before validators that read `self.parent` run, so they don't reload the parent from disk once per child.
 
         Returns:
             T: Instance of the model
 
         Raises:
-            ValueError: If the loaded model is not of the expected type or version
+            ValueError: If the loaded model is not of the expected type or version, or a parent is passed for a model that has none
             FileNotFoundError: If the file does not exist
         """
         if isinstance(path, str):
             path = Path(path)
-        cached_model = ModelCache.shared().get_model(path, cls, readonly=readonly)
+        if parent is not None and not issubclass(cls, KilnParentedModel):
+            raise ValueError(
+                f"{cls.__name__} has no parent, so it can't be loaded with one"
+            )
+        cache = ModelCache.shared()
+        cached_model = cache.get_model(path, cls, readonly=readonly)
         if cached_model is not None:
             # A readonly hit is the shared cached instance and keeps the parent it was
             # cached with. A mutable hit is a fresh copy, so it can take the caller's.
             if parent is not None and not readonly:
-                cached_model.parent = parent  # type: ignore[attr-defined]
+                cached_model._attach_parent(parent)  # type: ignore[attr-defined]
             return cached_model
+        if readonly and cache.enabled:
+            claim = cache.claim_load(path)
+            if claim is LoadClaim.LOAD:
+                try:
+                    return cls._parse_validate_and_cache(path, readonly, parent)
+                finally:
+                    cache.release_load(path)
+            if claim is LoadClaim.WAIT and cache.wait_for_load(path):
+                cached_model = cache.get_model(path, cls, readonly=readonly)
+                if cached_model is not None:
+                    return cached_model
+        # Readonly loads get here unshared after a timed-out wait, a nested load, or
+        # another thread's load that left nothing current to serve (it failed, its
+        # record was over budget, or the file changed after it was read).
+        return cls._parse_validate_and_cache(path, readonly, parent)
+
+    @classmethod
+    def _parse_validate_and_cache(
+        cls: Type[T],
+        path: Path,
+        readonly: bool,
+        parent: "KilnBaseModel | None",
+    ) -> T:
         with open(path, "r", encoding="utf-8") as file:
-            # modified time of file for cache invalidation. From file descriptor so it's atomic w read.
-            mtime_ns = os.fstat(file.fileno()).st_mtime_ns
-            file_data = file.read()
-            parsed_json = json.loads(file_data)
-            m = cls.model_validate(
-                parsed_json,
-                context={"loading_from_file": True, "source_dir": path.parent},
-            )
-            if not isinstance(m, cls):
-                raise ValueError(f"Loaded model is not of type {cls.__name__}")
-            m._loaded_from_file = True
-            file_data = None
-        # Assigning `path` re-runs model validators (validate_assignment), and some
-        # read `self.parent`. Without a parent attached, each one would load the
-        # parent file from disk and fully validate it.
-        if parent is not None:
-            m.parent = parent  # type: ignore[attr-defined]
-        m.path = path
+            # From the open descriptor, so the identity describes the bytes read below.
+            identity = FileIdentity.from_stat(os.fstat(file.fileno()))
+            parsed_json = json.loads(file.read())
+        m = cls._validate_file_data(parsed_json, path, parent)
+        if not isinstance(m, cls):
+            raise ValueError(f"Loaded model is not of type {cls.__name__}")
         if m.v > m.max_schema_version():
             raise ValueError(
                 f"Cannot load from file because the schema version is higher than the current version. Upgrade kiln to the latest version. "
@@ -479,9 +535,49 @@ class KilnBaseModel(BaseModel):
 
         if readonly:
             m.mark_as_readonly()
+            cache = ModelCache.shared()
             # Cache, but only if readonly. Mutable models should not be cached.
-            ModelCache.shared().set_model(path, m, mtime_ns)
+            if cache.enabled:
+                detached = None
+                if isinstance(m, LazyFieldsMixin):
+                    detached = detach_large_values(
+                        m,
+                        source=cache,
+                        path=path,
+                        identity=identity,
+                        revalidate=lambda raw: cls._validate_file_data(
+                            raw, path, parent
+                        ),
+                    )
+                cache.set_model(path, m, identity, detached)
 
+        return m
+
+    @classmethod
+    def _validate_file_data(
+        cls,
+        raw: Any,
+        path: Path,
+        parent: "KilnBaseModel | None",
+    ) -> Self:
+        """Validate a file's parsed JSON into a model, running each validator once.
+
+        Validators see `path`, `parent` and the loading context. A `parent`
+        instance is attached as-is, not copied or re-validated.
+        """
+        data = raw
+        # JSON that isn't an object goes to pydantic unchanged and fails validation.
+        if isinstance(raw, dict):
+            # Passed in the data, not assigned after: each assignment re-runs every
+            # model validator (validate_assignment), without the loading context.
+            data = {**raw, "path": path}
+            if parent is not None:
+                data["parent"] = parent
+        m = cls.model_validate(
+            data,
+            context={"loading_from_file": True, "source_dir": path.parent},
+        )
+        m._loaded_from_file = True
         return m
 
     def loaded_from_file(self, info: ValidationInfo | None = None) -> bool:
@@ -590,6 +686,23 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
     def cached_parent(self) -> Optional[KilnBaseModel]:
         return object.__getattribute__(self, "parent")
 
+    def _attach_parent(self, parent: KilnBaseModel) -> None:
+        """Set `parent` without validate_assignment, which re-runs every model validator.
+
+        That re-run has no loading context, so it would apply checks that loads skip.
+        A parent of the wrong type does go through it, so `check_parent_type` raises.
+        """
+        if not self._set_location_without_validation("parent", parent):
+            self.parent = parent
+
+    def _set_location_without_validation(self, name: str, value: Any) -> bool:
+        if name == "parent" and (
+            value is None or isinstance(value, self.__class__.parent_type())
+        ):
+            self.__dict__["parent"] = value
+            return True
+        return super()._set_location_without_validation(name, value)
+
     def mutable_copy(self) -> Self:
         # A cached model's parent is shared by every reader of the cache, and may be
         # readonly. The copy drops it and lazy-loads its own when `parent` is read.
@@ -619,7 +732,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         if not parent_path.exists():
             return None
         loaded_parent = self.__class__.parent_type().load_from_file(parent_path)
-        self.parent = loaded_parent
+        self._attach_parent(loaded_parent)
         return loaded_parent
 
     # Dynamically implemented by KilnParentModel method injection
@@ -702,11 +815,16 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         if parent is None:
             raise ValueError("Parent must be set to load children")
 
+        yield from cls.iterate_children_paths_in_folder(parent_folder)
+
+    @classmethod
+    def iterate_children_paths_in_folder(cls, parent_folder: Path) -> Iterator[Path]:
+        """The record files of this class in a parent's folder. Doesn't load the parent."""
         # Ignore type error: this is abstract base class, but children must implement relationship_name
         relationship_folder = parent_folder / Path(cls.relationship_name())  # type: ignore
 
         if not relationship_folder.exists() or not relationship_folder.is_dir():
-            return []
+            return
 
         # Collect all /relationship/{id}/{base_filename.kiln} files in the relationship folder
         # manual code instead of glob for performance (5x speedup over glob)
@@ -787,12 +905,17 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
     @classmethod
     def from_id_and_parent_path(
-        cls: Type[PT], id: str, parent_path: Path | None
+        cls: Type[PT], id: str, parent_path: Path | None, readonly: bool = False
     ) -> PT | None:
         """
         Fast search by ID using the cache. Avoids the model_copy overhead on all but the exact match.
 
         Uses cache so still slow on first load.
+
+        Pass readonly=True for read-only consumers. The result then raises
+        ReadOnlyMutationError on assignment. With the model cache on, it is the shared
+        cached record rather than a copy, and the siblings read to check their ids are
+        cached too, so later lookups don't read them again.
         """
         if parent_path is None:
             return None
@@ -801,9 +924,9 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
             child_id = ModelCache.shared().get_model_id(child_path, cls)
             if child_id == id:
-                return cls.load_from_file(child_path)
+                return cls.load_from_file(child_path, readonly=readonly)
             if child_id is None:
-                child = cls.load_from_file(child_path)
+                child = cls.load_from_file(child_path, readonly=readonly)
                 if child.id == id:
                     return child
         return None
