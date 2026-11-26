@@ -131,3 +131,15 @@ def test_invalid_eval_prompt_id_format(invalid_id, expected_error):
 def test_is_frozen_prompt(id, should_be_frozen):
     """Test that the is_frozen_prompt function works"""
     assert is_frozen_prompt(id) == should_be_frozen
+
+
+def test_invalid_prompt_id_lists_the_valid_forms():
+    with pytest.raises(ValidationError) as exc_info:
+        ModelTester(prompt_id="nope")
+
+    message = str(exc_info.value)
+    assert "Invalid prompt ID: nope. Use a saved prompt (id::[prompt_id])" in message
+    assert "task_run_config::[project_id]::[task_id]::[run_config_id]" in message
+    assert "fine_tune_prompt::[project_id]::[task_id]::[fine_tune_id]" in message
+    for generator in PromptGenerators:
+        assert generator.value in message

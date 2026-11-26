@@ -484,8 +484,9 @@ def test_get_finetune_hyperparameters_invalid_provider(client, mock_finetune_reg
     response = client.get("/api/finetune/hyperparameters/invalid_provider")
 
     assert response.status_code == 400
-    assert (
-        response.json()["message"] == "Fine tune provider 'invalid_provider' not found"
+    assert response.json()["message"] == (
+        "Fine-tune provider 'invalid_provider' not found. "
+        "Fine-tuning is available on: test_provider."
     )
 
 
@@ -823,8 +824,9 @@ def test_create_finetune_invalid_provider(client, mock_task_from_id_disk_backed)
     )
 
     assert response.status_code == 400
-    assert (
-        response.json()["message"] == "Fine tune provider 'invalid_provider' not found"
+    assert response.json()["message"] == (
+        "Fine-tune provider 'invalid_provider' not found. "
+        "Fine-tuning is available on: fireworks_ai, together_ai, vertex."
     )
 
 
@@ -923,9 +925,8 @@ def test_create_finetune_invalid_dataset(
     )
 
     assert response.status_code == 404
-    assert (
-        response.json()["message"]
-        == "Dataset split with ID 'invalid_split_id' not found"
+    assert response.json()["message"].startswith(
+        "Dataset split not found. ID: invalid_split_id."
     )
 
 
@@ -1216,8 +1217,8 @@ def test_download_dataset_jsonl_invalid_dataset(
     )
 
     assert response.status_code == 404
-    assert (
-        response.json()["message"] == "Dataset split with ID 'invalid_split' not found"
+    assert response.json()["message"].startswith(
+        "Dataset split not found. ID: invalid_split."
     )
 
 
@@ -1347,7 +1348,9 @@ def test_get_finetune_not_found(client, mock_task_from_id_disk_backed):
     response = client.get("/api/projects/project1/tasks/task1/finetunes/nonexistent")
 
     assert response.status_code == 404
-    assert response.json()["message"] == "Finetune with ID 'nonexistent' not found"
+    assert response.json()["message"].startswith(
+        "Fine-tune not found. ID: nonexistent."
+    )
 
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
 

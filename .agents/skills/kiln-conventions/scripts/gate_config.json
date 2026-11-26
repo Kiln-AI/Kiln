@@ -44,6 +44,7 @@
     "app/desktop/dev_app.py",
     "app/desktop/dev_env.py",
     "app/desktop/log_config.py",
+    "app/desktop/skill_api_reference.py",
     ".agents/**"
   ],
   "module_level_call_ignore": ["\\.include_router\\(", "\\.add_typer\\("],

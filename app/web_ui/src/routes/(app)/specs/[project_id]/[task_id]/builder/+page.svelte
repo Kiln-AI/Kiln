@@ -1652,7 +1652,7 @@
           reason: "request_failed",
         })
         // The request completed and the server said no — surface ITS detail
-        // (e.g. "API key not configured"), like every sibling copilot call.
+        // (e.g. that Kiln Pro is not connected), like every sibling copilot call.
         throw new KilnError(
           `Couldn't author a judge for your spec: ${createKilnError(error).getMessage()}`,
         )

@@ -13,7 +13,12 @@ from kiln_ai.tools.built_in_tools.kiln_api_call_tool import (
     ALLOWED_EXACT_PATHS,
     CONNECT_TIMEOUT_SECONDS,
     READ_TIMEOUT_SECONDS,
+    SSE_FINISHED_MESSAGE,
     KilnApiCallTool,
+    KilnApiResponse,
+    KilnApiResponseError,
+    PreparedApiRequest,
+    prepare_api_request,
 )
 
 
@@ -986,18 +991,14 @@ class TestErrorMessageShape:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("url_path", ["/ping/", "/ping//"])
-    async def test_near_miss_on_an_exact_path_is_corrected_to_that_path(
-        self, url_path, tool
-    ):
-        """A trailing slash gets '/ping', not '/api/ping/'.
-
-        Prefixing a near miss names a second wrong call rather than the fix.
-        """
-        with pytest.raises(ValueError) as exc_info:
-            await tool.run(method="GET", url_path=url_path)
-        message = str(exc_info.value)
-        assert "Did you mean '/ping'?" in message
-        assert "/api/ping" not in message
+    async def test_a_trailing_slash_on_an_exact_path_is_removed(self, url_path, tool):
+        with respx.mock:
+            route = respx.get("http://test-server:8757/ping").mock(
+                return_value=httpx.Response(200, json="pong")
+            )
+            result = await tool.run(method="GET", url_path=url_path)
+            assert route.called
+            assert json.loads(result.output) == {"status_code": 200, "body": "pong"}
 
     @pytest.mark.asyncio
     async def test_a_genuinely_unknown_path_still_gets_the_prefix_hint(self, tool):
@@ -1005,3 +1006,250 @@ class TestErrorMessageShape:
         with pytest.raises(ValueError) as exc_info:
             await tool.run(method="GET", url_path="/pings")
         assert "Did you mean '/api/pings'?" in str(exc_info.value)
+
+
+class TestTrailingSlash:
+    @pytest.mark.asyncio
+    async def test_a_trailing_slash_on_an_api_path_is_removed(self, tool):
+        with respx.mock:
+            route = respx.get("http://test-server:8757/api/projects").mock(
+                return_value=httpx.Response(200, json=[])
+            )
+            await tool.run(method="GET", url_path="/api/projects/")
+            assert route.called
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "url_path, named", [("/api/", "'/api'"), ("/", "'/'"), ("/docs/", "'/docs'")]
+    )
+    async def test_paths_outside_the_api_are_still_refused(self, url_path, named, tool):
+        with pytest.raises(ValueError, match="url_path must start with '/api/'") as e:
+            await tool.run(method="GET", url_path=url_path)
+        assert f"Got: {named}." in str(e.value)
+
+
+class TestPrepareApiRequest:
+    def test_normalises_method_path_and_body(self):
+        assert prepare_api_request(
+            "post", "/api/items/", {"name": "é"}
+        ) == PreparedApiRequest(
+            method="POST", url_path="/api/items", body_str='{"name": "é"}'
+        )
+
+    def test_a_string_body_is_kept_as_written(self):
+        assert prepare_api_request("PATCH", "/api/x", '{"a":1}').body_str == '{"a":1}'
+
+    def test_a_list_body_is_serialised(self):
+        assert prepare_api_request("POST", "/api/x", [1, 2]).body_str == "[1, 2]"
+
+    def test_no_body(self):
+        assert prepare_api_request("GET", "/ping").body_str is None
+
+    @pytest.mark.parametrize(
+        "method, url_path, body, message",
+        [
+            (
+                "PUT",
+                "/api/x",
+                None,
+                "Invalid method 'PUT'. Must be one of: DELETE, GET, PATCH, POST",
+            ),
+            ("put", "api/x", None, "Invalid method 'PUT'"),
+            ("GET", "api/x", None, "url_path must start with '/', got: api/x"),
+            ("GET", "/x?a=1", None, "url_path must start with '/api/'"),
+            ("GET", "/api/x?a=1", None, "must not contain a query string"),
+            ("GET", "/api/x#f", None, "must not contain a query string"),
+            ("GET", "/api/x?a/", "{}", "must not contain a query string"),
+            ("GET", "/api/x", "{}", "body parameter not allowed with GET method"),
+            ("DELETE", "/api/x", {}, "body parameter not allowed with DELETE method"),
+        ],
+    )
+    def test_refusals_in_check_order(self, method, url_path, body, message):
+        with pytest.raises(ValueError, match=re.escape(message)):
+            prepare_api_request(method, url_path, body)
+
+
+def _mock_transport(response: httpx.Response) -> httpx.MockTransport:
+    return httpx.MockTransport(lambda request: response)
+
+
+class TestCall:
+    @pytest.mark.asyncio
+    async def test_json_body(self):
+        tool = KilnApiCallTool(
+            "http://kiln", _mock_transport(httpx.Response(200, json={"a": 1}))
+        )
+        assert await tool.call(method="GET", url_path="/api/x") == KilnApiResponse(
+            status_code=200,
+            content_type="application/json",
+            is_sse=False,
+            body_text='{"a":1}',
+            body={"a": 1},
+            body_is_json=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_text_body(self):
+        tool = KilnApiCallTool(
+            "http://kiln",
+            _mock_transport(
+                httpx.Response(200, text="hi", headers={"Content-Type": "Text/Plain"})
+            ),
+        )
+        response = await tool.call(method="GET", url_path="/api/x")
+        assert response.content_type == "text/plain"
+        assert (response.body_text, response.body, response.body_is_json) == (
+            "hi",
+            "hi",
+            False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_content_type(self):
+        tool = KilnApiCallTool("http://kiln", _mock_transport(httpx.Response(204)))
+        response = await tool.call(method="DELETE", url_path="/api/x")
+        assert response.content_type == ""
+        assert response.body == ""
+
+    @pytest.mark.asyncio
+    async def test_sse_stream(self):
+        tool = KilnApiCallTool(
+            "http://kiln",
+            _mock_transport(
+                httpx.Response(
+                    200,
+                    content=b"data: 1\n\ndata: 2\n\ndata: complete\n\n",
+                    headers={"Content-Type": "text/event-stream"},
+                )
+            ),
+        )
+        response = await tool.call(method="POST", url_path="/api/run")
+        assert response.is_sse is True
+        assert response.body_is_json is True
+        assert response.body == {"event_count": 2, "message": SSE_FINISHED_MESSAGE}
+        assert json.loads(response.body_text) == response.body
+
+    @pytest.mark.asyncio
+    async def test_jq_with_several_outputs_is_text(self):
+        tool = KilnApiCallTool(
+            "http://kiln", _mock_transport(httpx.Response(200, json=[1, 2]))
+        )
+        response = await tool.call(method="GET", url_path="/api/x", jq_filter=".[]")
+        assert (response.body_text, response.body, response.body_is_json) == (
+            "1\n2",
+            "1\n2",
+            False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_jq_is_not_applied_to_a_non_2xx(self):
+        tool = KilnApiCallTool(
+            "http://kiln",
+            _mock_transport(httpx.Response(404, json={"detail": "Not found"})),
+        )
+        response = await tool.call(method="GET", url_path="/api/x", jq_filter=".id")
+        assert response.status_code == 404
+        assert response.body == {"detail": "Not found"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "response, jq_filter, message",
+        [
+            (httpx.Response(201, text="nope"), ".a", "Response is not valid JSON"),
+            (httpx.Response(201, json={"a": 1}), ".[0]", "jq filter error"),
+        ],
+    )
+    async def test_response_errors_carry_the_status_code(
+        self, response, jq_filter, message
+    ):
+        tool = KilnApiCallTool("http://kiln", _mock_transport(response))
+        with pytest.raises(KilnApiResponseError, match=message) as e:
+            await tool.call(method="POST", url_path="/api/x", jq_filter=jq_filter)
+        assert e.value.status_code == 201
+
+    @pytest.mark.asyncio
+    async def test_the_injected_transport_gets_the_request(self):
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json={})
+
+        tool = KilnApiCallTool("http://kiln:1", httpx.MockTransport(handler))
+        await tool.call(
+            method="PATCH",
+            url_path="/api/x/",
+            body={"a": 1},
+            query_params={"ids": ["a", "b"], "q": "z"},
+        )
+        (request,) = seen
+        assert request.method == "PATCH"
+        assert str(request.url) == "http://kiln:1/api/x?ids=a&ids=b&q=z"
+        assert request.content == b'{"a": 1}'
+
+    @pytest.mark.asyncio
+    async def test_the_client_ignores_proxy_settings(self, monkeypatch):
+        built: list[dict] = []
+        real_client = httpx.AsyncClient
+
+        def spy(**kwargs):
+            built.append(kwargs)
+            return real_client(**kwargs)
+
+        monkeypatch.setattr(httpx, "AsyncClient", spy)
+        transport = _mock_transport(httpx.Response(200, json={}))
+        await KilnApiCallTool("http://kiln", transport).call(
+            method="GET", url_path="/ping"
+        )
+        assert built == [{"transport": transport, "trust_env": False}]
+
+
+class TestAssistantContract:
+    """The Kiln Assistant sees this tool's definition; it must not change."""
+
+    @pytest.mark.asyncio
+    async def test_definition_snapshot(self, tool):
+        definition = await tool.toolcall_definition()
+        assert definition == {
+            "type": "function",
+            "function": {
+                "name": "call_kiln_api",
+                "description": """Call the Kiln REST API. Makes an HTTP request and returns JSON with status_code and body.
+
+Endpoint paths, request schemas, response fields, and jq filters are defined in per-endpoint documentation — not here. Load the endpoint doc before calling.
+
+For SSE endpoints (text/event-stream), the tool consumes the stream until it closes (or a `data: complete` sentinel) and returns body = {"event_count": N, "message": str}. The stream ending does not mean the underlying job succeeded — check the flow's status afterward. Individual event payloads are not returned.""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "method": {
+                            "type": "string",
+                            "enum": ["GET", "POST", "PATCH", "DELETE"],
+                            "description": "HTTP method for the API call",
+                        },
+                        "url_path": {
+                            "type": "string",
+                            "description": "API path with no query string — pass query args via query_params. Correct paths are in the endpoint documentation.",
+                        },
+                        "query_params": {
+                            "type": "object",
+                            "description": "Query string params. Values are strings or arrays of strings (arrays become repeated keys, e.g. ?ids=a&ids=b). Required and optional params are listed in the endpoint doc.",
+                            "additionalProperties": {
+                                "anyOf": [
+                                    {"type": "string"},
+                                    {"type": "array", "items": {"type": "string"}},
+                                ],
+                            },
+                        },
+                        "body": {
+                            "description": "Request body for POST/PATCH. JSON string, object, or array — auto-serialized. Schema is in the endpoint doc.",
+                        },
+                        "jq_filter": {
+                            "type": "string",
+                            "description": "Optional jq expression applied to successful (2xx) responses.",
+                        },
+                    },
+                    "required": ["method", "url_path"],
+                },
+            },
+        }

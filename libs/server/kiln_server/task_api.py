@@ -11,6 +11,7 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import truncate_to_words_with_agent_sentinel
 from pydantic import BaseModel, Field
 
+from kiln_server.custom_errors import not_found_error
 from kiln_server.project_api import project_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -45,10 +46,7 @@ def task_from_id(project_id: str, task_id: str) -> Task:
     if task:
         return task
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Task not found. ID: {task_id}",
-    )
+    raise not_found_error("Task", task_id, "tasks")
 
 
 class RatingOption(BaseModel):
@@ -88,6 +86,8 @@ def connect_task_api(app: FastAPI):
             Dict[str, Any], Body(description="The task data to create.")
         ],
     ) -> Task:
+        """Create a task in a project: its instruction, requirements and input and
+        output schemas."""
         if "id" in task_data:
             raise HTTPException(
                 status_code=400,
@@ -131,6 +131,8 @@ def connect_task_api(app: FastAPI):
             Dict[str, Any], Body(description="Fields to update on the task.")
         ],
     ) -> Task:
+        """Change fields of a task, such as its name, description, instruction or
+        default run config."""
         if "input_json_schema" in task_updates or "output_json_schema" in task_updates:
             raise HTTPException(
                 status_code=400,
@@ -184,6 +186,7 @@ def connect_task_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> None:
+        """Delete a task, with its runs, evals, prompts and run configs."""
         task = task_from_id(project_id, task_id)
         task.delete()
 
@@ -214,6 +217,7 @@ def connect_task_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> List[Task]:
+        """List a project's tasks."""
         parent_project = project_from_id(project_id)
         return parent_project.tasks()
 
@@ -232,6 +236,7 @@ def connect_task_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> Task:
+        """Get one task: instruction, requirements, schemas and default run config."""
         return task_from_id(project_id, task_id)
 
     @app.get(

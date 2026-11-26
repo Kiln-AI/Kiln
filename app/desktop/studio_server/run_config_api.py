@@ -222,6 +222,8 @@ def connect_run_config_api(app: FastAPI):
     async def validate_input_transform_template(
         request: ValidateInputTransformTemplateRequest,
     ) -> ValidateInputTransformTemplateResponse:
+        """Check that an input transform template is valid Jinja2, and return the error
+        when it is not."""
         try:
             compile_template_or_raise(request.template)
             return ValidateInputTransformTemplateResponse(valid=True, error=None)
@@ -241,6 +243,8 @@ def connect_run_config_api(app: FastAPI):
             str, Query(description="The unique identifier of the tool.")
         ],
     ) -> list[TaskToolCompatibility]:
+        """List the project's tasks, each marked whether its input and output fit an MCP
+        tool's schemas."""
         project = project_from_id(project_id)
 
         try:
@@ -289,6 +293,8 @@ def connect_run_config_api(app: FastAPI):
         ],
         request: CreateMcpRunConfigRequest,
     ) -> TaskRunConfig:
+        """Create a run config that runs the task by calling a tool on an MCP server, in
+        place of a model."""
         task = task_from_id(project_id, task_id)
 
         try:
@@ -338,6 +344,8 @@ def connect_run_config_api(app: FastAPI):
         ],
         request: CreateTaskFromToolRequest,
     ) -> Task:
+        """Create a task whose input and output schemas come from an MCP tool, and a run
+        config that calls it."""
         if request.provenance is not None and request.provenance.derived_from_ids:
             raise HTTPException(
                 status_code=400,

@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import threading
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -26,12 +27,14 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.ml_provider_list import built_in_providers
 from kiln_ai.adapters.remote_config import (
     KilnRemoteConfig,
+    RemoteModelListState,
     deserialize_config_at_path,
     deserialize_config_data,
     dump_builtin_config,
     load_from_url,
     refresh_model_list,
     refresh_model_list_background,
+    remote_model_list_loaded_at,
     serialize_config,
 )
 from kiln_ai.adapters.reranker_list import (
@@ -1310,12 +1313,20 @@ async def test_refresh_model_list_success(
             "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
             return_value=False,
         ),
+        patch(
+            "kiln_ai.adapters.remote_config.remote_model_list_state",
+            RemoteModelListState(),
+        ),
     ):
-        # Call the async function directly
+        before = datetime.now(timezone.utc)
+        assert remote_model_list_loaded_at() is None
         await refresh_model_list("http://example.com/models.json")
 
         # Verify the temporary lists were modified as expected
         assert temp_models == sample_models
+        loaded_at = remote_model_list_loaded_at()
+        assert loaded_at is not None
+        assert before <= loaded_at <= datetime.now(timezone.utc)
         assert temp_embedding == sample_embedding_models
         assert temp_rerankers == sample_reranker_models
 
@@ -1335,6 +1346,8 @@ async def test_refresh_model_list_failure():
     async def fake_load(url):
         raise RuntimeError("fail")
 
+    state = RemoteModelListState()
+
     # Should raise the exception, not swallow it
     with (
         pytest.raises(RuntimeError, match="fail"),
@@ -1343,6 +1356,7 @@ async def test_refresh_model_list_failure():
             return_value=False,
         ),
         patch("kiln_ai.adapters.remote_config.load_from_url", fake_load),
+        patch("kiln_ai.adapters.remote_config.remote_model_list_state", state),
         patch(
             "kiln_ai.adapters.remote_config.built_in_models",
             temp_models,
@@ -1359,6 +1373,7 @@ async def test_refresh_model_list_failure():
         await refresh_model_list("http://example.com/models.json")
 
     # Verify that the temporary lists are unchanged since the update never completed
+    assert state.loaded_at is None
     assert temp_models == []
     assert temp_embedding == []
     assert temp_rerankers == []
@@ -1428,6 +1443,10 @@ def test_refresh_model_list_concurrent(
         patch(
             "kiln_ai.adapters.remote_config.built_in_models",
             temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.remote_model_list_state",
+            RemoteModelListState(),
         ),
         patch(
             "kiln_ai.adapters.remote_config.built_in_embedding_models",
@@ -1607,6 +1626,10 @@ async def test_refresh_model_list_uses_default_url():
         patch(
             "kiln_ai.adapters.remote_config.built_in_models",
             temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.remote_model_list_state",
+            RemoteModelListState(),
         ),
         patch(
             "kiln_ai.adapters.remote_config.built_in_embedding_models",

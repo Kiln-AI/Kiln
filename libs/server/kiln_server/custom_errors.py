@@ -1,14 +1,56 @@
 import json
 import logging
+from collections.abc import Mapping
+from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.errors import ErrorWithTrace, KilnRunError
+from kiln_ai.adapters.provider_tools import ProviderNotConnectedError
 from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
+
+PROVIDER_NOT_CONNECTED_NEXT_STEP = (
+    "Connect it in the Kiln app under Settings > AI Providers, or choose a model "
+    "from a connected provider."
+)
+
+# Pydantic puts these in front of the text of a ValueError or an assert raised
+# by a validator. They say nothing to the reader of the error.
+_PYDANTIC_MESSAGE_PREFIXES = ("Value error, ", "Assertion failed, ")
+
+
+def not_found_error(kind: str, item_id: str | None, plural: str) -> HTTPException:
+    """A 404 that names the missing object and says how to find the right ID.
+
+    `kind` is the object's name as a sentence starts it ("Eval config"),
+    `plural` names the list to look in ("eval's configs").
+    """
+    return HTTPException(
+        status_code=404,
+        detail=(
+            f"{kind} not found. ID: {item_id}. "
+            f"Check the ID, or list the {plural} to find the right one."
+        ),
+    )
+
+
+def dangling_reference_error(
+    owner: str, kind: str, item_id: str | None
+) -> HTTPException:
+    """A 404 for an ID that a saved object refers to, when what it names is gone.
+
+    The caller did not send the ID, so unlike `not_found_error` this gives no
+    advice to check it. `owner` and `kind` are lower-case unless a name
+    ("RAG config").
+    """
+    return HTTPException(
+        status_code=404,
+        detail=f"The {owner} refers to {kind} {item_id}, which no longer exists.",
+    )
 
 
 def format_error_loc(loc: tuple):
@@ -30,6 +72,31 @@ def format_error_loc(loc: tuple):
     return "".join(formatted)
 
 
+def validation_error_message(error: Mapping[str, Any]) -> str:
+    """One readable line for one pydantic error: where, then what is wrong."""
+    if error.get("type") == "json_invalid":
+        loc = error.get("loc") or ()
+        position = loc[-1] if loc else "?"
+        reason = (error.get("ctx") or {}).get("error", "invalid JSON")
+        return (
+            f"Request body is not valid JSON ({reason}, at character {position}). "
+            "Send a JSON value that matches the endpoint's schema."
+        )
+
+    message = str(error.get("msg", "Unknown error"))
+    for prefix in _PYDANTIC_MESSAGE_PREFIXES:
+        if message.startswith(prefix):
+            message = message[len(prefix) :]
+            break
+    if "String should match pattern '^[A-Za-z0-9 _-]+$'" == message:
+        message = (
+            "must consist of only letters, numbers, spaces, hyphens, and underscores"
+        )
+
+    location = format_error_loc(error.get("loc") or ()) or "Request body"
+    return f"{location}: {message}"
+
+
 def connect_custom_errors(app: FastAPI):
     @app.exception_handler(ValidationError)
     @app.exception_handler(RequestValidationError)
@@ -46,17 +113,7 @@ def connect_custom_errors(app: FastAPI):
                 exc_info=exc,
             )
 
-        # Write user friendly error messages
-        error_messages = []
-        for error in exc.errors():
-            message = error.get("msg", "Unknown error")
-            loc = error.get("loc")
-
-            # Custom helpers for common errors
-            if "String should match pattern '^[A-Za-z0-9 _-]+$'" == message:
-                message = "must consist of only letters, numbers, spaces, hyphens, and underscores"
-
-            error_messages.append(f"{format_error_loc(loc)}: {message}")
+        error_messages = [validation_error_message(error) for error in exc.errors()]
 
         def serialize_error(error):
             return {
@@ -86,6 +143,16 @@ def connect_custom_errors(app: FastAPI):
             status_code=exc.status_code,
             headers={"Access-Control-Allow-Origin": "*"},
             content={"message": exc.detail},
+        )
+
+    @app.exception_handler(ProviderNotConnectedError)
+    async def provider_not_connected_handler(
+        request: Request, exc: ProviderNotConnectedError
+    ):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            headers={"Access-Control-Allow-Origin": "*"},
+            content={"message": f"{exc}\n{PROVIDER_NOT_CONNECTED_NEXT_STEP}"},
         )
 
     @app.exception_handler(KilnRunError)

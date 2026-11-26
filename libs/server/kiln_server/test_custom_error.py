@@ -5,15 +5,22 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.provider_tools import ProviderNotConnectedError
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from kiln_server.custom_errors import connect_custom_errors, format_error_loc
+from kiln_server.custom_errors import (
+    connect_custom_errors,
+    dangling_reference_error,
+    format_error_loc,
+    not_found_error,
+    validation_error_message,
+)
 from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
@@ -26,9 +33,33 @@ def app():
         name: str = Field(..., min_length=3)
         price: float = Field(..., gt=0)
 
+    class Note(BaseModel):
+        text: str
+
+        @field_validator("text")
+        @classmethod
+        def text_is_not_blank(cls, value: str) -> str:
+            if not value.strip():
+                raise ValueError("Text must not be blank")
+            return value
+
     @app.post("/items")
     async def create_item(item: Item):
         return item
+
+    @app.post("/item_ids")
+    async def delete_items(item_ids: list[str]):
+        return item_ids
+
+    @app.post("/notes")
+    async def create_note(note: Note):
+        return note
+
+    @app.get("/provider-not-connected")
+    async def raise_provider_not_connected():
+        raise ProviderNotConnectedError(
+            "Attempted to use OpenAI without an API key set."
+        )
 
     @app.get("/timeout")
     async def raise_timeout():
@@ -112,6 +143,79 @@ def test_validation_error_multiple_fields(client):
         == "Name: String should have at least 3 characters.\nPrice: Input should be greater than 0"
     )
     assert len(res["source_errors"]) == 2
+
+
+def test_invalid_json_body_message(client):
+    response = client.post(
+        "/items",
+        content="not json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    res = response.json()
+    assert res["message"] == (
+        "Request body is not valid JSON (Expecting value, at character 0). "
+        "Send a JSON value that matches the endpoint's schema."
+    )
+    assert res["source_errors"][0]["type"] == "json_invalid"
+
+
+def test_body_level_error_says_request_body(client):
+    response = client.post("/item_ids", json={"ids": ["a"]})
+    assert response.status_code == 422
+    assert response.json()["message"] == "Request body: Input should be a valid list"
+
+
+def test_value_error_prefix_is_dropped(client):
+    response = client.post("/notes", json={"text": " "})
+    assert response.status_code == 422
+    res = response.json()
+    assert res["error_messages"] == ["Text: Text must not be blank"]
+    assert res["source_errors"][0]["msg"] == "Value error, Text must not be blank"
+
+
+@pytest.mark.parametrize(
+    "msg, expected",
+    [
+        ("Value error, Bad value", "Field: Bad value"),
+        ("Assertion failed, Must hold", "Field: Must hold"),
+        ("Input should be a valid string", "Field: Input should be a valid string"),
+        (
+            "String should match pattern '^[A-Za-z0-9 _-]+$'",
+            "Field: must consist of only letters, numbers, spaces, hyphens, and underscores",
+        ),
+    ],
+)
+def test_validation_error_message(msg, expected):
+    assert validation_error_message({"msg": msg, "loc": ("body", "field")}) == expected
+
+
+def test_not_found_error():
+    error = not_found_error("Eval config", "123", "eval's configs")
+    assert error.status_code == 404
+    assert error.detail == (
+        "Eval config not found. ID: 123. "
+        "Check the ID, or list the eval's configs to find the right one."
+    )
+
+
+def test_provider_not_connected_is_400(client):
+    response = client.get("/provider-not-connected")
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": "Attempted to use OpenAI without an API key set.\n"
+        "Connect it in the Kiln app under Settings > AI Providers, or choose a "
+        "model from a connected provider."
+    }
+    assert response.headers["Access-Control-Allow-Origin"] == "*"
+
+
+def test_dangling_reference_error():
+    error = dangling_reference_error("RAG config", "extractor config", "123")
+    assert error.status_code == 404
+    assert error.detail == (
+        "The RAG config refers to extractor config 123, which no longer exists."
+    )
 
 
 def test_valid_input(client):

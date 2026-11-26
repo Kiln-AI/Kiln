@@ -1,4 +1,4 @@
-"""MCP server utilities for exposing Kiln tools."""
+"""The Kiln project tools MCP server: exposes one project's tools over MCP."""
 
 from .mcp_server_tool_utils import ToolContext, prepare_tool_contexts
 from .runtime import create_fastmcp_server, run_transport

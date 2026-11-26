@@ -10,12 +10,14 @@ from fastapi import FastAPI, HTTPException, Path, Query, Response
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.custom_errors import not_found_error
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
+    with_mcp_deny,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.desktop.studio_server.eval_api import (
     eval_config_from_id,
@@ -80,6 +82,10 @@ def _project_id_from_params(validated_params: BaseModel) -> str | None:
 
 class WaitForJobsRequest(BaseModel):
     """Request body for waiting on a set of jobs."""
+
+    # A misspelt field would otherwise leave `ids` empty, and the wait would
+    # return at once as if every job were done.
+    model_config = ConfigDict(extra="forbid")
 
     ids: list[str] = Field(
         default_factory=list,
@@ -196,7 +202,7 @@ def connect_jobs_api(app: FastAPI) -> None:
         "/api/jobs/events",
         summary="Stream Job Events",
         tags=["Jobs"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=with_mcp_deny(ALLOW_AGENT),
     )
     async def stream_job_events(
         job_id: Annotated[
@@ -238,6 +244,8 @@ def connect_jobs_api(app: FastAPI) -> None:
             int | None, Query(description="Maximum number of jobs to return.")
         ] = None,
     ) -> list[JobRecord]:
+        """List background jobs, newest first, with filters for status, type, project
+        and time."""
         return job_registry.list_jobs(
             status=status,
             type_name=type,
@@ -266,7 +274,7 @@ def connect_jobs_api(app: FastAPI) -> None:
         try:
             return await job_registry.wait_many(request.ids, timeout=request.timeout)
         except JobNotFoundError as exc:
-            raise HTTPException(status_code=404, detail=f"Job not found: {exc}")
+            raise not_found_error("Job", str(exc), "jobs")
         except asyncio.TimeoutError:
             raise HTTPException(
                 status_code=504,
@@ -357,10 +365,18 @@ def connect_jobs_api(app: FastAPI) -> None:
             ),
         ] = None,
     ) -> CreateJobResponse | JobRecord:
+        """Start a background job of a registered type. Returns at once, or with
+        wait=true when the job ends."""
         try:
             worker = job_registry.worker_for(type)
         except JobOperationError:
-            raise HTTPException(status_code=404, detail=f"Unknown job type: {type}")
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Unknown job type: {type}. Registered job types: "
+                    f"{', '.join(job_registry.type_names())}."
+                ),
+            )
         if worker.create_path is not None:
             raise HTTPException(
                 status_code=400,
@@ -401,9 +417,10 @@ def connect_jobs_api(app: FastAPI) -> None:
     async def get_job(
         id: Annotated[str, Path(description="The job id.")],
     ) -> JobRecord:
+        """Get a background job's record: status, progress and result."""
         job = await job_registry.get(id)
         if job is None:
-            raise HTTPException(status_code=404, detail=f"Job not found: {id}")
+            raise not_found_error("Job", id, "jobs")
         return job
 
     @app.get(
@@ -415,9 +432,10 @@ def connect_jobs_api(app: FastAPI) -> None:
     async def get_job_result(
         id: Annotated[str, Path(description="The job id.")],
     ) -> dict[str, Any]:
+        """Get the result of a finished background job."""
         job = await job_registry.get(id)
         if job is None:
-            raise HTTPException(status_code=404, detail=f"Job not found: {id}")
+            raise not_found_error("Job", id, "jobs")
         if not job.status.is_terminal or job.result is None:
             raise HTTPException(
                 status_code=404, detail="No result available for this job."
@@ -449,7 +467,7 @@ def connect_jobs_api(app: FastAPI) -> None:
         try:
             return await job_registry.wait(id, timeout=timeout)
         except JobNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Job not found: {id}")
+            raise not_found_error("Job", id, "jobs")
         except asyncio.TimeoutError:
             raise HTTPException(
                 status_code=504, detail="Job did not complete within the timeout."
@@ -468,6 +486,8 @@ def connect_jobs_api(app: FastAPI) -> None:
             Query(description="Read the error log for a specific past run id."),
         ] = None,
     ) -> list[dict[str, Any]]:
+        """Get the errors a background job logged for its items. Empty when the job is
+        unknown or had none."""
         # Always 200, never errors: a best-effort diagnostic read, so it looks up
         # the current run_id without reconciling job state.
         resolved_run_id = run_id or job_registry.run_id_for(id)
@@ -485,6 +505,7 @@ def connect_jobs_api(app: FastAPI) -> None:
     async def pause_job(
         id: Annotated[str, Path(description="The job id.")],
     ) -> Response:
+        """Pause a running background job. Resume it later with Resume Job."""
         await _run_lifecycle(job_registry.pause, id)
         return Response(status_code=202)
 
@@ -498,6 +519,7 @@ def connect_jobs_api(app: FastAPI) -> None:
     async def resume_job(
         id: Annotated[str, Path(description="The job id.")],
     ) -> Response:
+        """Resume a paused background job."""
         await _run_lifecycle(job_registry.resume, id)
         return Response(status_code=202)
 
@@ -511,6 +533,7 @@ def connect_jobs_api(app: FastAPI) -> None:
     async def cancel_job(
         id: Annotated[str, Path(description="The job id.")],
     ) -> Response:
+        """Cancel a background job."""
         await _run_lifecycle(job_registry.cancel, id)
         return Response(status_code=202)
 
@@ -524,6 +547,8 @@ def connect_jobs_api(app: FastAPI) -> None:
     async def delete_job(
         id: Annotated[str, Path(description="The job id.")],
     ) -> Response:
+        """Delete the record of a background job that has ended (succeeded, failed or
+        cancelled)."""
         await _run_lifecycle(job_registry.delete, id)
         return Response(status_code=204)
 
@@ -537,6 +562,6 @@ async def _run_lifecycle(operation, job_id: str) -> Any:
     try:
         return await operation(job_id)
     except JobNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        raise not_found_error("Job", job_id, "jobs")
     except JobOperationError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

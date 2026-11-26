@@ -1,0 +1,461 @@
+{
+  "openrouter": {
+    "id": "openrouter",
+    "name": "OpenRouter",
+    "models": {
+      "anthropic/claude-sonnet-5.5": {
+        "id": "anthropic/claude-sonnet-5.5",
+        "name": "Claude Sonnet 5.5",
+        "family": "claude-sonnet",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": false,
+        "knowledge": "2026-06",
+        "release_date": "2026-09-28",
+        "modalities": {
+          "input": [
+            "text",
+            "image",
+            "pdf"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": false,
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        },
+        "cost": {
+          "input": 2,
+          "output": 10,
+          "cache_read": 0.1,
+          "cache_write": 2.5
+        },
+        "canonical_model_id": "anthropic/claude-sonnet-5-5"
+      },
+      "openai/gpt-6.1-sol": {
+        "id": "openai/gpt-6.1-sol",
+        "name": "GPT-6.1 Sol",
+        "family": "gpt-sol",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": false,
+        "knowledge": "2026-04-30",
+        "release_date": "2026-09-29",
+        "modalities": {
+          "input": [
+            "text",
+            "image",
+            "pdf"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": false,
+        "limit": {
+          "context": 1050000,
+          "input": 922000,
+          "output": 128000
+        },
+        "cost": {
+          "input": 2,
+          "output": 10,
+          "cache_read": 0.1,
+          "cache_write": 2.5
+        },
+        "canonical_model_id": "openai/gpt-6.1-sol"
+      },
+      "google/gemini-3.8-flash": {
+        "id": "google/gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
+        "family": "gemini-flash",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": true,
+        "release_date": "2026-09-02",
+        "modalities": {
+          "input": [
+            "text",
+            "image",
+            "video",
+            "audio",
+            "pdf"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": false,
+        "limit": {
+          "context": 1048576,
+          "output": 65536
+        },
+        "cost": {
+          "input": 0.75,
+          "output": 3.75,
+          "reasoning": 3.75,
+          "cache_read": 0.075,
+          "cache_write": 0.041667,
+          "input_audio": 0.75
+        },
+        "canonical_model_id": "google/gemini-3.8-flash"
+      },
+      "deepseek/deepseek-v4-pro": {
+        "id": "deepseek/deepseek-v4-pro",
+        "name": "DeepSeek V4 Pro",
+        "family": "deepseek-thinking",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": true,
+        "knowledge": "2025-05",
+        "release_date": "2026-04-24",
+        "modalities": {
+          "input": [
+            "text"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": true,
+        "limit": {
+          "context": 1048576,
+          "output": 393216
+        },
+        "cost": {
+          "input": 0.9,
+          "output": 1.5,
+          "cache_read": 0.25
+        },
+        "canonical_model_id": "deepseek/deepseek-v4-pro"
+      },
+      "qwen/qwen3.8-max-0902": {
+        "id": "qwen/qwen3.8-max-0902",
+        "name": "Qwen3.8 Max 0902",
+        "family": "qwen",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": true,
+        "release_date": "2026-09-02",
+        "modalities": {
+          "input": [
+            "text",
+            "image",
+            "video"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": false,
+        "limit": {
+          "context": 1000000,
+          "output": 131072
+        },
+        "cost": {
+          "input": 2,
+          "output": 6,
+          "cache_read": -0.25
+        },
+        "canonical_model_id": "alibaba/qwen3.8-max-0902"
+      }
+    }
+  },
+  "anthropic": {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "models": {
+      "claude-sonnet-5-5": {
+        "id": "claude-sonnet-5-5",
+        "name": "Claude Sonnet 5.5",
+        "family": "claude-sonnet",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": false,
+        "knowledge": "2026-06",
+        "release_date": "2026-09-28",
+        "modalities": {
+          "input": [
+            "text",
+            "image",
+            "pdf"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": false,
+        "limit": {
+          "context": 1000000,
+          "output": "128000"
+        },
+        "cost": {
+          "input": 2,
+          "output": 10,
+          "cache_read": 0.1,
+          "cache_write": 2.5
+        },
+        "canonical_model_id": "anthropic/claude-sonnet-5-5"
+      }
+    }
+  },
+  "openai": {
+    "id": "openai",
+    "name": "OpenAI",
+    "models": {
+      "gpt-6.1-sol": {
+        "id": "gpt-6.1-sol",
+        "name": "GPT-6.1 Sol",
+        "family": "gpt-sol",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": false,
+        "knowledge": "2026-04-30",
+        "release_date": "2026-09-29",
+        "modalities": {
+          "input": [
+            "text",
+            "image",
+            "pdf"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": false,
+        "limit": {
+          "context": 1050000,
+          "input": 922000,
+          "output": 128000
+        },
+        "cost": {
+          "input": 2,
+          "output": 10,
+          "cache_read": 0.1,
+          "cache_write": 2.5
+        },
+        "canonical_model_id": "openai/gpt-6.1-sol"
+      }
+    }
+  },
+  "google": {
+    "id": "google",
+    "name": "Google",
+    "models": {
+      "gemini-3.8-flash": {
+        "id": "gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
+        "family": "gemini-flash",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": true,
+        "release_date": "2026-09-02",
+        "modalities": {
+          "input": [
+            "text",
+            "image",
+            "video",
+            "audio",
+            "pdf"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": false,
+        "limit": {
+          "context": 1048576,
+          "output": 65536
+        },
+        "cost": {
+          "input": 0.75,
+          "output": 3.75,
+          "cache_read": 0.075,
+          "input_audio": 0.75
+        },
+        "canonical_model_id": "google/gemini-3.8-flash"
+      }
+    }
+  },
+  "google-vertex": {
+    "id": "google-vertex",
+    "name": "Vertex",
+    "models": {
+      "gemini-3.8-flash": {
+        "id": "gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
+        "family": "gemini-flash",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": true,
+        "release_date": "2026-09-02",
+        "modalities": {
+          "input": [
+            "text",
+            "image",
+            "video",
+            "audio",
+            "pdf"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": false,
+        "limit": {
+          "context": 1048576,
+          "output": 65536
+        },
+        "cost": {
+          "input": 0.75,
+          "output": 3.75,
+          "cache_read": 0.075,
+          "input_audio": 0.75
+        },
+        "canonical_model_id": "google/gemini-3.8-flash"
+      }
+    }
+  },
+  "siliconflow-cn": {
+    "id": "siliconflow-cn",
+    "name": "SiliconFlow (China)",
+    "models": {
+      "deepseek-ai/DeepSeek-V4-Pro": {
+        "id": "deepseek-ai/DeepSeek-V4-Pro",
+        "name": "deepseek-ai/DeepSeek-V4-Pro",
+        "family": "deepseek-thinking",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": true,
+        "knowledge": "2025-05",
+        "release_date": "2026-04-24",
+        "modalities": {
+          "input": [
+            "text"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": true,
+        "limit": {
+          "context": 1049000,
+          "output": 393000
+        },
+        "cost": {
+          "input": 1.79336973,
+          "output": 3.58673947,
+          "cache_read": 0.14944748
+        },
+        "canonical_model_id": "deepseek/deepseek-v4-pro"
+      }
+    }
+  },
+  "cloudflare-workers-ai": {
+    "id": "cloudflare-workers-ai",
+    "name": "Cloudflare Workers AI",
+    "models": {
+      "@cf/deepseek-ai/deepseek-v4-pro-0813": {
+        "id": "@cf/deepseek-ai/deepseek-v4-pro-0813",
+        "name": "DeepSeek V4 Pro 0813",
+        "family": "deepseek-thinking",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": true,
+        "release_date": "2026-08-13",
+        "modalities": {
+          "input": [
+            "text"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": true,
+        "limit": {
+          "context": 1048576,
+          "output": 1048576
+        },
+        "cost": {
+          "input": 1.32,
+          "output": 3.96,
+          "cache_read": 0.044
+        },
+        "canonical_model_id": "deepseek/deepseek-v4-pro-0813"
+      }
+    }
+  },
+  "302ai": {
+    "id": "302ai",
+    "name": "302.AI",
+    "models": {
+      "glm-4.6": {
+        "id": "glm-4.6",
+        "name": "glm-4.6",
+        "family": "glm",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": true,
+        "knowledge": "2025-04",
+        "release_date": "2025-09-30",
+        "modalities": {
+          "input": [
+            "text"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": true,
+        "limit": {
+          "context": 204800,
+          "output": 131072
+        },
+        "cost": {
+          "input": 0.286,
+          "output": 1.142
+        },
+        "canonical_model_id": "zhipuai/glm-4.6"
+      }
+    }
+  },
+  "zhipuai": {
+    "id": "zhipuai",
+    "name": "Zhipu AI",
+    "models": {
+      "glm-4.6": {
+        "id": "glm-4.6",
+        "name": "GLM-4.6",
+        "family": "glm",
+        "reasoning": true,
+        "tool_call": true,
+        "temperature": true,
+        "knowledge": "2025-04",
+        "release_date": "2025-09-30",
+        "modalities": {
+          "input": [
+            "text"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "open_weights": true,
+        "limit": {
+          "context": 204800,
+          "output": 131072
+        },
+        "cost": {
+          "input": 0.6,
+          "output": 2.2,
+          "cache_read": 0.11,
+          "cache_write": 0
+        },
+        "canonical_model_id": "zhipuai/glm-4.6"
+      }
+    }
+  }
+}

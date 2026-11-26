@@ -43,7 +43,7 @@ showing an empty refine UI.
 - apiRequest
 
 ## Hints
-- Pre-seed a guide via PUT /api/projects/:pid/tasks/:tid/data_gen_guide so
+- Pre-seed a guide via POST /api/projects/:pid/tasks/:tid/data_gen_guide so
   the redirect target /data_guide doesn't bounce again to setup (which
   happens when the guide is empty).
 - Guard is in data_guide/refine/+page.svelte onMount: if get(handoff_store)
@@ -61,7 +61,7 @@ test("/data_guide/refine direct hit redirects to /data_guide", async ({
   void registeredUser
   const { project, task } = seededProjectWithTask
 
-  const putResp = await apiRequest.put(
+  const saveResp = await apiRequest.post(
     `/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}/data_gen_guide`,
     {
       data: {
@@ -71,8 +71,8 @@ test("/data_guide/refine direct hit redirects to /data_guide", async ({
     },
   )
   expect(
-    putResp.ok(),
-    `PUT /data_gen_guide failed: ${putResp.status()} ${await putResp.text()}`,
+    saveResp.ok(),
+    `POST /data_gen_guide failed: ${saveResp.status()} ${await saveResp.text()}`,
   ).toBeTruthy()
 
   await page.goto(`/generate/${project.id}/${task.id}/data_guide/refine`)

@@ -141,6 +141,16 @@
       >
         <div slot="icon"><ArrowUpIcon /></div>
       </Callout>
+    {:else}
+      <Callout
+        testid="connect-agent-callout"
+        title="Connect to Claude, Codex, and more"
+        description="Use Kiln from your own agent."
+        button_label="Connect"
+        button_href="/settings/connect_agent"
+      >
+        <div slot="icon"><TerminalIcon /></div>
+      </Callout>
     {/if}
 
     {#each sections as section}

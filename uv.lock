@@ -20,6 +20,7 @@ pyinstaller = "2026-09-13T00:00:00Z"
 [manifest]
 members = [
     "kiln-ai",
+    "kiln-mcp-server",
     "kiln-root",
     "kiln-server",
     "kiln-studio-desktop",
@@ -1874,6 +1875,31 @@ dev = [
 ]
 
 [[package]]
+name = "kiln-mcp-server"
+version = "1.2.1"
+source = { editable = "app/mcp" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "kiln-ai" },
+    { name = "kiln-server" },
+    { name = "mcp" },
+    { name = "pydantic" },
+    { name = "starlette" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115.4" },
+    { name = "httpx", specifier = ">=0.27.2" },
+    { name = "kiln-ai", editable = "libs/core" },
+    { name = "kiln-server", editable = "libs/server" },
+    { name = "mcp", specifier = ">=1.30.0,<2" },
+    { name = "pydantic", specifier = ">=2.9.2" },
+    { name = "starlette", specifier = ">=1.3.1" },
+]
+
+[[package]]
 name = "kiln-root"
 version = "1.2.1"
 source = { virtual = "." }
@@ -1881,6 +1907,7 @@ dependencies = [
     { name = "certifi" },
     { name = "jq" },
     { name = "kiln-ai" },
+    { name = "kiln-mcp-server" },
     { name = "kiln-server" },
     { name = "kiln-studio-desktop" },
 ]
@@ -1889,6 +1916,7 @@ dependencies = [
 dev = [
     { name = "diff-cover" },
     { name = "isort" },
+    { name = "openapi2skill", marker = "python_full_version >= '3.13'" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
@@ -1905,6 +1933,7 @@ requires-dist = [
     { name = "certifi", specifier = ">=2024.8.30" },
     { name = "jq", specifier = ">=1.11.0" },
     { name = "kiln-ai", editable = "libs/core" },
+    { name = "kiln-mcp-server", editable = "app/mcp" },
     { name = "kiln-server", editable = "libs/server" },
     { name = "kiln-studio-desktop", editable = "app/desktop" },
 ]
@@ -1913,6 +1942,7 @@ requires-dist = [
 dev = [
     { name = "diff-cover", specifier = ">=9.6.0" },
     { name = "isort", specifier = ">=5.13.2" },
+    { name = "openapi2skill", marker = "python_full_version >= '3.13'", git = "https://github.com/scosman/openapi2skill?rev=c7c2ca55e5b5300e28678ba4e47e2ad6f5bd1d28" },
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-xdist", specifier = ">=3.5" },
@@ -1979,6 +2009,7 @@ version = "1.2.1"
 source = { editable = "app/desktop" }
 dependencies = [
     { name = "jeepney", marker = "sys_platform == 'linux'" },
+    { name = "kiln-mcp-server" },
     { name = "kiln-server" },
     { name = "pillow" },
     { name = "pygit2", version = "1.18.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -1994,6 +2025,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "jeepney", marker = "sys_platform == 'linux'", specifier = ">=0.9.0" },
+    { name = "kiln-mcp-server", editable = "app/mcp" },
     { name = "kiln-server", editable = "libs/server" },
     { name = "pillow", specifier = ">=11.0.0" },
     { name = "pygit2", marker = "python_full_version < '3.11'", specifier = ">=1.17.0,<2" },
@@ -2661,6 +2693,14 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3c/a6/5815fe2e2aca74b36c650d1bd43b69827cee568073d0d2d9b6fc5aaac80c/openai-2.41.0.tar.gz", hash = "sha256:db5c362acd6604b84f076abbefa66826ea4b46ecba2954ed866e6a149a1352c0", size = 783525, upload-time = "2026-06-03T22:39:40.719Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/51/d82bb424e8aa372190c5233253a2ceb399a778747d18b42cff487411e663/openai-2.41.0-py3-none-any.whl", hash = "sha256:20cc7952e8501c7e5773dd2ef7be437bae9cb549044902e1041a83a54516e375", size = 1353378, upload-time = "2026-06-03T22:39:38.964Z" },
+]
+
+[[package]]
+name = "openapi2skill"
+version = "0.3.0"
+source = { git = "https://github.com/scosman/openapi2skill?rev=c7c2ca55e5b5300e28678ba4e47e2ad6f5bd1d28#c7c2ca55e5b5300e28678ba4e47e2ad6f5bd1d28" }
+dependencies = [
+    { name = "httpx" },
 ]
 
 [[package]]

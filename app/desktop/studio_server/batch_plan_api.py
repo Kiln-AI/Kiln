@@ -120,9 +120,11 @@ def connect_batch_plan_api(app: FastAPI):
         ],
         input: BatchPlanApiInput,
     ) -> BatchPlanApiOutput:
-        """Plan a synthetic batch: turn the user's guidance + count into one
-        tailored prompt per input (plus a user-facing summary). Requires a
-        connected Kiln Pro / Copilot key (connection only, no paid tier)."""
+        """Plan a synthetic batch: one tailored prompt per input, from the user's guidance.
+
+        Turns the guidance and a count into the prompts, plus a user-facing
+        summary. Requires a connected Kiln Pro / Copilot key (connection only,
+        no paid tier)."""
         get_copilot_api_key()
 
         task = task_from_id(project_id, task_id)

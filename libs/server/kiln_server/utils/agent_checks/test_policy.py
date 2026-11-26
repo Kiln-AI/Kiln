@@ -2,8 +2,12 @@ import pytest
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
+    DENY_MCP,
+    MCP_POLICY_KEY,
     AgentPolicy,
     agent_policy_require_approval,
+    is_mcp_denied,
+    with_mcp_deny,
 )
 from pydantic import ValidationError
 
@@ -111,3 +115,35 @@ class TestAgentPolicyRequireApproval:
     def test_whitespace_only_raises(self):
         with pytest.raises(ValueError, match="non-empty string"):
             agent_policy_require_approval("   ")
+
+
+class TestMcpPolicy:
+    def test_deny_mcp_shape(self):
+        assert MCP_POLICY_KEY == "x-mcp-policy"
+        assert DENY_MCP == {"x-mcp-policy": {"permission": "deny"}}
+
+    @pytest.mark.parametrize(
+        "agent_policy",
+        [ALLOW_AGENT, DENY_AGENT, agent_policy_require_approval("Open the logs?")],
+    )
+    def test_with_mcp_deny_keeps_the_agent_policy(self, agent_policy):
+        before = {key: dict(value) for key, value in agent_policy.items()}
+        combined = with_mcp_deny(agent_policy)
+        assert combined == {**before, **DENY_MCP}
+        assert agent_policy == before
+        assert MCP_POLICY_KEY not in agent_policy
+
+    @pytest.mark.parametrize(
+        "openapi_extra, denied",
+        [
+            (None, False),
+            ({}, False),
+            (ALLOW_AGENT, False),
+            (DENY_AGENT, False),
+            ({MCP_POLICY_KEY: {"permission": "allow"}}, False),
+            (DENY_MCP, True),
+            (with_mcp_deny(ALLOW_AGENT), True),
+        ],
+    )
+    def test_is_mcp_denied(self, openapi_extra, denied):
+        assert is_mcp_denied(openapi_extra) is denied
