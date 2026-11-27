@@ -1352,6 +1352,19 @@
   // because the task has no default set — surfaced in the UI so testers
   // know which model the eval data was generated against.
   let fallback_run_config_name: string | null = null
+  // The run config the eval check panel names: the one the last drive ran
+  // with, else the one the builder would drive with now (a reloaded draft has
+  // not driven in this page load).
+  $: panel_run_config_name =
+    drive_run_config_name ??
+    pick_target_run_config(
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, task_id)
+      ] ?? [],
+      target_run_config_id,
+      task?.default_run_config_id,
+    )?.config.name ??
+    null
 
   // The run config chosen on the entry page: the thing this eval is written
   // about. It wins over the task default everywhere the builder resolves a
@@ -6241,6 +6254,7 @@
                   spec_text={reviewed_spec_text}
                   grouping={$eval_check.grouping}
                   {judged_noun}
+                  run_config_name={panel_run_config_name}
                   on_group_failures={group_failures}
                   on_leave={eval_check.leave}
                   answers={$eval_check.answers}

@@ -27,6 +27,7 @@
     question_rows,
     rehearsal_check,
     rule_label,
+    run_config_phrase,
     type DropCount,
     type FailureGroupingState,
     type Headroom,
@@ -41,6 +42,8 @@
   export let spec_text: string
   export let grouping: FailureGroupingState
   export let judged_noun: string = "example"
+  // The run config the batch was driven with; the panel names it.
+  export let run_config_name: string | null = null
   // Starts the one paid grouping call.
   export let on_group_failures: () => void = () => {}
   // The panel left the screen: a grouping still running is dropped.
@@ -60,20 +63,26 @@
   $: rule = rule_label(spec_text, grouping)
   $: rows = question_rows(h, grouping)
 
-  $: properties = summary_properties(h, rehearsal, dropped, judged_noun)
+  $: properties = summary_properties(
+    h,
+    rehearsal,
+    dropped,
+    judged_noun,
+    run_config_name,
+  )
 
   function summary_properties(
     h: Headroom,
     rehearsal: RehearsalCheck | null,
     dropped: DropCount[],
     noun: string,
+    run_config: string | null,
   ): UiProperty[] {
     const list: UiProperty[] = [
       {
         name: "Pass Rate",
         value: `${percent(h.passed, h.total)} (${h.passed} of ${h.total} ${noun}s pass)`,
-        tooltip:
-          "How many cases the baseline run config passes. Near 100% the eval can't show an improvement; near 0% some cases may be impossible.",
+        tooltip: `How many cases ${run_config_phrase(run_config)} passes. Near 100% the eval can't show an improvement; near 0% some cases may be impossible.`,
         warn_icon: h.verdict !== "ok",
       },
     ]
@@ -111,7 +120,10 @@
   <PropertyList {properties} />
 
   {#if h.verdict !== "ok"}
-    <Warning warning_color="warning" warning_message={headroom_text(h)} />
+    <Warning
+      warning_color="warning"
+      warning_message={headroom_text(h, run_config_name)}
+    />
   {/if}
 
   {#if no_reasoning > 0}

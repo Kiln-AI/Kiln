@@ -104,12 +104,29 @@ function question_labels(container: HTMLElement): string[] {
 }
 
 describe("EvalCheckPanel", () => {
+  it("names the run config the batch was driven with", () => {
+    const { container } = show(
+      batch(10, 0),
+      { status: "idle" },
+      {
+        run_config_name: "Haiku 5p5 v2",
+      },
+    )
+    expect(text(container)).toContain(
+      'Too easy: 100% of the cases pass on run config "Haiku 5p5 v2". Keep it as a guard eval, or make it harder',
+    )
+    expect(text(container)).not.toMatch(/baseline/i)
+  })
+
   it("with zero failures, flags a too-easy eval and still asks the question", () => {
     const { container } = show(batch(10, 0), { status: "idle" })
     const all = text(container)
     expect(all).toContain("Pass Rate")
     expect(all).toContain("100% (10 of 10 conversations pass)")
-    expect(all).toContain("Too easy: 100% of the baseline's cases pass.")
+    expect(all).toContain(
+      "Too easy: 100% of the cases pass on the run config. Keep it as a guard eval, or make it harder",
+    )
+    expect(all).not.toMatch(/baseline/i)
     expect(all).toContain("No failures to sort: every conversation passed.")
     expect(container.querySelector("[data-who-failed]")).toBeNull()
     expect(all).toContain(

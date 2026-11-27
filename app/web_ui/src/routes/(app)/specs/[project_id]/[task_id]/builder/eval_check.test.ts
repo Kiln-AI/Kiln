@@ -30,6 +30,7 @@ const {
   question_rows,
   rehearsal_check,
   rule_label,
+  run_config_phrase,
   TOO_EASY_PASS_RATE,
   TOO_HARD_PASS_RATE,
   WHOLE_EVAL_KEY,
@@ -165,8 +166,36 @@ describe("headroom", () => {
       "Check for cases no agent can pass",
     )
     expect(headroom_text(headroom(batch(23, 17)))).toBe(
-      "58% of the baseline's cases pass, so the eval has room to show a change.",
+      "58% of the cases pass on the run config, so the eval has room to show a change.",
     )
+  })
+
+  it("offers a guard eval or a harder one when too easy, and names the run config", () => {
+    expect(headroom_text(headroom(batch(59, 1)), "Haiku 5p5 v2")).toBe(
+      'Too easy: 98% of the cases pass on run config "Haiku 5p5 v2". Keep it as a guard eval, or make it harder: at 85% or more, the eval can\'t show that a change made the agent better.',
+    )
+    expect(headroom_text(headroom(batch(1, 19)), "Haiku 5p5 v2")).toBe(
+      'Check for cases no agent can pass: only 5% of the cases pass on run config "Haiku 5p5 v2".',
+    )
+  })
+
+  it("never says baseline", () => {
+    for (const [p, f] of [
+      [59, 1],
+      [1, 19],
+      [23, 17],
+    ]) {
+      expect(headroom_text(headroom(batch(p, f)), "rc")).not.toMatch(
+        /baseline/i,
+      )
+      expect(headroom_text(headroom(batch(p, f)))).not.toMatch(/baseline/i)
+    }
+  })
+
+  it("falls back to 'the run config' with no name", () => {
+    expect(run_config_phrase(null)).toBe("the run config")
+    expect(run_config_phrase("  ")).toBe("the run config")
+    expect(run_config_phrase("A")).toBe('run config "A"')
   })
 })
 

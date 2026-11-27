@@ -67,14 +67,26 @@ export function percent(part: number, whole: number): string {
   return `${whole > 0 ? Math.round((part * 100) / whole) : 0}%`
 }
 
-export function headroom_text(h: Headroom): string {
+// The run config the batch was driven with, named in the panel's words; the
+// panel never calls it "the baseline". A draft reloaded before its configs
+// load has no name yet, so the text falls back to "the run config".
+export function run_config_phrase(name: string | null | undefined): string {
+  const trimmed = name?.trim()
+  return trimmed ? `run config "${trimmed}"` : "the run config"
+}
+
+export function headroom_text(
+  h: Headroom,
+  run_config_name: string | null = null,
+): string {
+  const who = run_config_phrase(run_config_name)
   if (h.verdict === "too_easy") {
-    return `Too easy: ${percent(h.passed, h.total)} of the baseline's cases pass. At ${percent(TOO_EASY_PASS_RATE, 1)} or more, the eval can't show that a change made the agent better.`
+    return `Too easy: ${percent(h.passed, h.total)} of the cases pass on ${who}. Keep it as a guard eval, or make it harder: at ${percent(TOO_EASY_PASS_RATE, 1)} or more, the eval can't show that a change made the agent better.`
   }
   if (h.verdict === "too_hard") {
-    return `Check for cases no agent can pass: only ${percent(h.passed, h.total)} of the baseline's cases pass.`
+    return `Check for cases no agent can pass: only ${percent(h.passed, h.total)} of the cases pass on ${who}.`
   }
-  return `${percent(h.passed, h.total)} of the baseline's cases pass, so the eval has room to show a change.`
+  return `${percent(h.passed, h.total)} of the cases pass on ${who}, so the eval has room to show a change.`
 }
 
 // ── Cases per starting state ──────────────────────────────────────────────
