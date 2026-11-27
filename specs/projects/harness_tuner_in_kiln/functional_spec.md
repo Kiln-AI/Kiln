@@ -188,11 +188,19 @@ Done when: each route has tests with HT's pinned values, and the skill's checks 
 - **A role says two things about a caller: which routes it may call, and which eval data it may see.**
 - **Which routes: a map.** Every route of the API is in or out of each role. A role can call a route only when the route is in. There is no third state.
 - **Which data: two settings of the role.** The splits whose per-item data is withheld, and the splits whose numbers are withheld (5.3).
-- **A request to Kiln's REST API names its role in one header.** The API enforces it. A request with no header is today's API, with no new code path. The header can only take away.
+- **A request to Kiln's REST API names its role in one header.** The API enforces it. A request with no header behaves exactly as today. The header can only take away.
 - Any REST caller may send the header. The caller that always does is Kiln's MCP server.
 - **An MCP connection has one role for all its calls.** The URL path of the connection names it. The `call_kiln_api` tool puts it in the header of each call it makes. The server keeps no memory of a connection.
 - A role adds no tool and hides no tool. Every connection has the same two tools, and gets a clear error when a call is outside its role.
 - The roles are a short, fixed list, defined in one place in Kiln. A URL cannot make a new one or change one.
+
+**How the code is shared.** This is a rule for the design, because it decides how well the roles keep over time:
+
+- **A role is data.** One definition for each role, in one file: its name, the splits whose per-item data it withholds, and the splits whose numbers it withholds.
+- **No handler names a role.** No code says "if the role is one of these". A handler that returns eval data asks one shared helper a question about the data, such as "may this caller read rows of this split?" or "may it read this item?". The helper answers from the role's settings.
+- **One guard for the route map.** One piece of code, not each handler, reads the header, finds the role, and refuses a route that is not in it.
+- **A caller with no role is the same code with a role that withholds nothing.** Its results are exactly today's.
+- **So a new role is one new definition** plus its place in the route map. No handler changes. Each test of a withholding rule runs for every role from the same list.
 
 ### 5.2 The roles
 
@@ -205,7 +213,7 @@ Done when: each route has tests with HT's pinned values, and the skill's checks 
 | Tuner: review | `/mcp/<name>` | The same reads. Nothing that writes | val, test | val, test |
 | Tuner: val | `/mcp/<name>` | A few reads of the task and its run configs, the summary routes and the paired comparison, memory reads. Nothing that writes | val, test | test |
 
-- The four tuner roles are named by the job, not by HT's own role names. **Proposed:** four lists, not one for each of HT's roles; 6.2 says which of HT's roles uses which. The architecture sets the names and the exact routes of each, starting from the gateway's lists of today.
+- The four tuner roles are named by the job, not by HT's own role names. There are four lists, not one for each of HT's roles; 6.2 says which of HT's roles uses which. The architecture sets the names and the exact routes of each, starting from the gateway's lists of today.
 - The route that today's block list refuses for every MCP connection is out of every role but "no header".
 - No tuner role has a route that deletes, a route that edits the task, an eval, a judge or an eval input, a route that changes a dataset item, or the plain run route that takes free input text.
 - A URL that names an unknown role is refused when the client connects.

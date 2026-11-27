@@ -26,7 +26,7 @@ Harness-tuner's own Python code is trusted. It calls Kiln with no role and keeps
 
 ## Principles
 
-- **The REST API does not change by default.** A request with no role takes no new code path. A caller opts in with a header, which is how the MCP server passes a connection's role.
+- **The REST API does not change by default.** A request with no role behaves exactly as today. A caller opts in with a header, which is how the MCP server passes a connection's role.
 - **Every MCP connection has a role.** The default one withholds val and test data. A user can opt out on the URL.
 - **Accidental, not adversarial.** The roles prevent accidental disclosure, accidental overfitting and accidental damage. They are not a defence against a caller that works to get around them.
 - **Safe by default, and complete.** A limited role can call a route only when the route was put in that role. Every route says which roles it is in, and a test fails the build for a route that does not.
@@ -53,6 +53,7 @@ A role says two things about a caller of Kiln's API: which routes it may call, a
 - **A map of routes.** Every route is in or out of each role. Each pull request that adds a route must decide, and the build fails for a route that does not say.
 - **Withheld data.** A role names the splits whose per-item data is withheld (items, result rows, traces) and the splits whose numbers are withheld. These rules are code in the handlers that return such data. They come from the canceled spec ([scope_decisions.md](../harness_tuner_port/scope_decisions.md)).
 - **Where.** A request names its role in one header, and the API enforces it. An MCP connection has one role, named in its URL path; the MCP tool passes it on each call. No token, and no memory on the server.
+- **A role is data, and no handler names a role.** Each role is one definition: its name and the splits it withholds. A handler asks a shared helper about the data ("may this caller read rows of this split?"), never "is the role one of these". A new role is a new definition, with no handler change.
 - **A short, fixed list of roles:**
 
   | Role | Routes | Withheld |
