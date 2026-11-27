@@ -1228,7 +1228,10 @@ describe("the stopped-drive screen", () => {
 // logic lives in grounding_flow.ts and its tests; these pin the page wiring.
 describe("grounding a build's cases in its OpenEnv server", () => {
   const drive = function_body("async function on_drive_multi_turn() {")
-  const resolve_cases = function_body("async function cases_for_plan(")
+  // cases_for_plan and its grounding half, in page order.
+  const resolve_cases =
+    function_body("async function cases_for_plan(") +
+    function_body("async function ground_plan_cases(")
 
   it("asks for a tool-calling Environment Setup Model on an OpenEnv build, apart from the judge", () => {
     const d = normalize(drive_settings_dialog)
@@ -1286,7 +1289,7 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       "reusable_cached_cases( cached_su_cases, approved_prompts, spec_text(), data_guide_in_use(), )",
     )
     expect(normalize(resolve_cases)).toContain(
-      "const cases = grounding_key && !is_multi_turn ? plan_row_cases(approved_prompts) : await generated_cases_for_plan(approved_prompts)",
+      "write: async () => grounding_key && !is_multi_turn ? plan_row_cases(approved_prompts) : await generated_cases_for_plan(approved_prompts),",
     )
   })
 
@@ -1728,5 +1731,68 @@ describe("Generation Settings: the rehearsal check", () => {
 
   it("sends the build's judge to grounding only while the box is on", () => {
     expect(mentions("check_rehearsals ? judge : null")).toBe(2)
+  })
+})
+
+describe("Generation Settings: Pilot First", () => {
+  const dialog = () =>
+    region(
+      '<Dialog bind:this={drive_settings_dialog} title="Generation Settings">',
+      "</Dialog>",
+    )
+
+  it("offers the box on a multi-turn build only, bound to the staged copy", () => {
+    expect(normalize(dialog())).toContain(
+      normalize(`{#if is_multi_turn}
+      <FormElement
+        id="pilot_first"
+        label="Pilot First"
+        inputType="checkbox"
+        bind:value={staged_pilot_first}`),
+    )
+  })
+
+  it("starts off, also on an older draft, is reseeded on open and committed on submit", () => {
+    expect(contains("let pilot_first = false")).toBe(true)
+    expect(contains("pilot_first = saved.pilot_first ?? false")).toBe(true)
+    expect(function_body("async function open_drive_settings() {")).toContain(
+      "staged_pilot_first = pilot_first",
+    )
+    expect(function_body("async function submit_drive_settings() {")).toContain(
+      "pilot_first = staged_pilot_first",
+    )
+  })
+
+  it("asks the owner only through write_review_ground, and only with the box on", () => {
+    const resolve = normalize(function_body("async function cases_for_plan("))
+    expect(resolve).toContain(
+      "return write_review_ground<SyntheticUserCaseWire, PlanCases>({ pilot_first: pilot_first && is_multi_turn,",
+    )
+    expect(resolve).toContain("review: review_first_messages,")
+    // Defined once and handed over once, imported once and called once: no
+    // other path stops a build.
+    expect(mentions("review_first_messages")).toBe(2)
+    expect(mentions("write_review_ground")).toBe(2)
+  })
+
+  it("shows the first messages inside the generate progress screen, not as a new step", () => {
+    expect(
+      contains(
+        '{#if generation_loading && generation_phase === "reviewing_first_messages" && first_messages_cases} <!--',
+      ),
+    ).toBe(true)
+    expect(
+      contains(
+        'on_continue={() => first_messages_gate.choose("continue")} on_refine={() => first_messages_gate.choose("refine")}',
+      ),
+    ).toBe(true)
+    // The wizard's steps are unchanged.
+    expect(contains('current_step === "reviewing_first_messages"')).toBe(false)
+  })
+
+  it("waits on the page's abort signal, so Back cancels the wait", () => {
+    expect(
+      normalize(function_body("async function review_first_messages(")),
+    ).toContain("await first_messages_gate.wait(new_copilot_abort_signal())")
   })
 })

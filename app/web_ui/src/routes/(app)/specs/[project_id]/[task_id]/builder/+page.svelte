@@ -111,6 +111,12 @@
     failure_grouping_request,
   } from "./eval_check"
   import DropsRefineScreen from "./drops_refine_screen.svelte"
+  import FirstMessagesReview from "./first_messages_review.svelte"
+  import {
+    owner_choice_gate,
+    write_review_ground,
+    type FirstMessagesChoice,
+  } from "./pilot_flow"
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
   // Step 4 plan approval reuses the /generate batch-plan components — one
@@ -514,6 +520,7 @@
         grounding_model: grounding_lane_model,
         grounding_thinking_level,
         check_rehearsals,
+        pilot_first,
         turns_per_case,
         target_run_config_id,
         openenv_server_lookup,
@@ -632,6 +639,8 @@
       // Older drafts lack the key and restore the box off: the check is a
       // paid call the user opts into.
       check_rehearsals = saved.check_rehearsals ?? false
+      // Older drafts lack the key and restore the box off.
+      pilot_first = saved.pilot_first ?? false
       // Conversation length: no key, no choice on record, or a stored value
       // that isn't a number restores the default; a real number is clamped to
       // the current range.
@@ -1223,6 +1232,9 @@
     | "grounding_cases"
     | "minting_inputs"
     | "running_pipeline"
+    // Pilot First only: the build waits for the owner to read the written
+    // first messages, before any grounding call.
+    | "reviewing_first_messages"
   let generation_phase: GenerationPhase = "idle"
   $: pipeline_running =
     generation_loading && generation_phase === "running_pipeline"
@@ -1620,6 +1632,33 @@
   let check_rehearsals = false
   let staged_check_rehearsals = check_rehearsals
 
+  // Whether the build stops after the case writer so the owner reads every
+  // first message before any grounding call (multi-turn). Committed and
+  // staged like the length. Off until the user turns it on; off, the build
+  // runs as it did before the box existed.
+  let pilot_first = false
+  let staged_pilot_first = pilot_first
+  // The pilot stop's pending choice and the cases on screen while it waits.
+  const first_messages_gate = owner_choice_gate<FirstMessagesChoice>()
+  let first_messages_cases: SyntheticUserCaseWire[] | null = null
+
+  // Shows the written first messages on the progress screen and waits for
+  // Continue or Refine. Refine goes back to the plan with the Refine Plan
+  // dialog open; the written cases stay cached on the draft.
+  async function review_first_messages(
+    cases: SyntheticUserCaseWire[],
+  ): Promise<FirstMessagesChoice> {
+    first_messages_cases = cases
+    generation_phase = "reviewing_first_messages"
+    try {
+      const choice = await first_messages_gate.wait(new_copilot_abort_signal())
+      if (choice === "refine") open_new_plan_dialog()
+      return choice
+    } finally {
+      first_messages_cases = null
+    }
+  }
+
   // ── Model lanes (SDG's Generation Settings pattern). The Generation
   // Settings dialog is the drive's only entrance: it shows the lanes the
   // run will spend on — the user simulator (multi-turn), the input
@@ -1909,6 +1948,7 @@
     // is seeded up front rather than after the await below.
     staged_turns_per_case = turns_per_case
     staged_check_rehearsals = check_rehearsals
+    staged_pilot_first = pilot_first
     // Await the pre-population pass (usually already in flight from the plan
     // surface, so this resolves at once) so the reseed below reads resolved
     // lanes. On failure the dialog still opens on whatever is committed.
@@ -2171,6 +2211,7 @@
     // what the request, the draft, and the stamp all read — is always one the
     // drive route accepts.
     turns_per_case = clamp_turns_per_case(staged_turns_per_case)
+    pilot_first = staged_pilot_first
     drive_settings_error = null
     drive_settings_dialog?.close()
     // Let the commit above reach the reactive graph before driving: the drive
@@ -2826,14 +2867,43 @@
         grounding_drops: grounded_cache.grounding_dropped,
       }
     }
-    // A grounded single-turn build has nothing to generate first: the
-    // grounding agent writes each input from its plan row.
-    const cases =
-      grounding_key && !is_multi_turn
-        ? plan_row_cases(approved_prompts)
-        : await generated_cases_for_plan(approved_prompts)
-    if (cases === null) return null
-    if (!grounding_key) return { cases, grounding_drops: 0 }
+    // Write, then (Pilot First only) the owner reads the first messages,
+    // then ground. With the box off the calls are write then ground.
+    return write_review_ground<SyntheticUserCaseWire, PlanCases>({
+      pilot_first: pilot_first && is_multi_turn,
+      // A grounded single-turn build has nothing to generate first: the
+      // grounding agent writes each input from its plan row.
+      write: async () =>
+        grounding_key && !is_multi_turn
+          ? plan_row_cases(approved_prompts)
+          : await generated_cases_for_plan(approved_prompts),
+      review: review_first_messages,
+      ground: (cases) =>
+        grounding_key
+          ? ground_plan_cases(
+              cases,
+              approved_prompts,
+              target_run_config_id,
+              grounding_model,
+              grounding_key,
+              rehearsal_judge,
+              judge_key,
+            )
+          : Promise.resolve({ cases, grounding_drops: 0 }),
+    })
+  }
+
+  // The grounding half of cases_for_plan: ground the written cases and cache
+  // the grounded set. Returns null after setting the page's error state.
+  async function ground_plan_cases(
+    cases: SyntheticUserCaseWire[],
+    approved_prompts: string[],
+    target_run_config_id: string,
+    grounding_model: GroundingModel,
+    grounding_key: CaseGroundingKey,
+    rehearsal_judge: JudgeConfig | null,
+    judge_key: string | null,
+  ): Promise<PlanCases | null> {
     generation_phase = "grounding_cases"
     const outcome = await ground_planned_cases(
       cases,
@@ -5738,7 +5808,15 @@
               />
             </div>
           {/if}
-          {#if generation_loading && !pipeline_running}
+          {#if generation_loading && generation_phase === "reviewing_first_messages" && first_messages_cases}
+            <!-- Pilot First: the build waits here, before any grounding call,
+                 while the owner reads the written first messages. -->
+            <FirstMessagesReview
+              cases={first_messages_cases}
+              on_continue={() => first_messages_gate.choose("continue")}
+              on_refine={() => first_messages_gate.choose("refine")}
+            />
+          {:else if generation_loading && !pipeline_running}
             <!-- Plan, SU generation, and input minting are each one long
                  request/job (minutes at a full batch) — the standard
                  animation warning line sets the expectation, matching every
@@ -6517,6 +6595,15 @@
         fancy_select_options={judge_thinking_level_options}
         info_description={THINKING_LEVEL_INFO_DESCRIPTION}
         optional={true}
+      />
+    {/if}
+    {#if is_multi_turn}
+      <FormElement
+        id="pilot_first"
+        label="Pilot First"
+        inputType="checkbox"
+        bind:value={staged_pilot_first}
+        info_description="Stop after the simulated users are written, before any case is set up or run, so you can read every first message and continue or refine the plan."
       />
     {/if}
     {#if build_openenv_server_id !== null}

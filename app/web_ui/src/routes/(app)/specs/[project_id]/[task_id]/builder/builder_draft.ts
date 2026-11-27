@@ -381,6 +381,10 @@ export type BuilderDraft = {
   // grounding asks the judge to grade each case's rehearsal. Missing on older
   // drafts, which restore it off.
   check_rehearsals?: boolean
+  // Generation Settings' Pilot First box (multi-turn): whether the build stops
+  // after the case writer for the owner to read the first messages. Missing
+  // on older drafts, which restore it off.
+  pilot_first?: boolean
   // The Generation Settings conversation length (multi-turn). Persisted for
   // the same reason as the lanes above: a reload should not silently put the
   // drive back on the default length. Null means no choice on record — drafts
