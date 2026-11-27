@@ -98,6 +98,14 @@
   // agrees/disagrees with distilled claims; the trace stays hidden in a modal.
   import ClaimEvidenceReview from "./claim_evidence_review.svelte"
   import ReviewIntro from "./review_intro.svelte"
+  import EvalCheckPanel from "./eval_check_panel.svelte"
+  import {
+    answers_summary,
+    batch_drops,
+    eval_check_key,
+    eval_check_store,
+    failure_grouping_request,
+  } from "./eval_check"
   import DropsRefineScreen from "./drops_refine_screen.svelte"
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
@@ -4072,6 +4080,37 @@
   // already read it, but one who reloads has lost the context with the page.
   let review_intro_dismissed = false
 
+  // The eval check panel under the entry screen: its grouping and the owner's
+  // answers, which outlive Start. Held per batch: a re-drive,
+  // a refine round or a rebuild clears it. An emptied batch (a drive in
+  // progress, or one that drove nothing and restored the old batch) keeps it.
+  // The grouping reads the spec text the batch was judged against.
+  const eval_check = eval_check_store()
+  $: reviewed_spec_text = reviewed_identity ?? current_spec_text
+  $: if (trace_claims.length > 0) {
+    eval_check.set_batch(
+      eval_check_key(
+        trace_claims,
+        reviewed_spec_text,
+        calibration_rounds_completed,
+      ),
+    )
+  }
+
+  function group_failures() {
+    void eval_check.group(
+      project_id,
+      task_id,
+      review_judge
+        ? failure_grouping_request(
+            trace_claims,
+            reviewed_spec_text,
+            review_judge,
+          )
+        : null,
+    )
+  }
+
   let trace_claims: TraceClaims[] = []
   let trace_reviews: TraceReview[] = []
   // Which traces the reviewer is asked to review (indices into trace_claims):
@@ -6060,7 +6099,28 @@
                 on_start={start_review}
                 on_refine_plan={refine_plan_from_notice}
               />
+              <div class="max-w-4xl mx-auto mt-12">
+                <EvalCheckPanel
+                  cases={trace_claims}
+                  drops={batch_drops(
+                    cached_grounded_cases,
+                    driven_prompts_json,
+                  )}
+                  spec_text={reviewed_spec_text}
+                  grouping={$eval_check.grouping}
+                  {judged_noun}
+                  on_group_failures={group_failures}
+                  on_leave={eval_check.leave}
+                  answers={$eval_check.answers}
+                  on_answers_change={eval_check.set_answers}
+                />
+              </div>
             {:else}
+              {#if answers_summary($eval_check.answers)}
+                <p class="text-sm text-gray-500 mb-4">
+                  {answers_summary($eval_check.answers)}
+                </p>
+              {/if}
               {#key calibration_rounds_completed}
                 <ClaimEvidenceReview
                   bind:this={review_component}

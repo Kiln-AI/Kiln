@@ -80,6 +80,15 @@ describe("Step 5 entry screen", () => {
     expect(normalized).toContain("on_start={start_review}")
   })
 
+  it("carries the eval check panel under it, which Start skips", () => {
+    // The panel sits on this screen rather than in a step of its own, and
+    // only while the entry screen shows: Start dismisses both together.
+    const normalized = normalize(page_source)
+    expect(normalized).toMatch(
+      /on_refine_plan=\{refine_plan_from_notice\} \/> <div class="max-w-4xl mx-auto mt-12"> <EvalCheckPanel cases=\{trace_claims\}/,
+    )
+  })
+
   it("does not persist the dismissal", () => {
     // Per arrival, not per user: a reviewer who reloads has lost the context
     // along with the page, so the screen earns its place again.
