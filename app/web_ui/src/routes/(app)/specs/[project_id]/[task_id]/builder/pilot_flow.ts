@@ -166,3 +166,35 @@ export function widen_pilot_batch<C, R>(args: {
     ],
   }
 }
+
+// What the next drive does with a pilot that ran, read from the state, not
+// from which button opened Generation Settings:
+// - "none": no pilot under this key, so the build runs as without one.
+// - "rest": the pilot batch is on screen with every slot built, so the drive
+//   grounds and runs the rest and keeps the pilot's results.
+// - "retry": the pilot ran under this key but some of its slots are missing
+//   (or another batch is on screen), so the drive runs the same pilot cases
+//   again; the existing top-off then drives only the missing slots.
+export type PilotNextStep = "none" | "rest" | "retry"
+
+export function pilot_next_step<C>(args: {
+  pilot_state: { key: string; pilot_cases: C[] } | null
+  key: string
+  batch_items: C[] | null
+  built_slots: readonly unknown[]
+}): PilotNextStep {
+  const { pilot_state, key, batch_items, built_slots } = args
+  if (pilot_state === null || pilot_state.key !== key) return "none"
+  const pilot_on_screen =
+    batch_items !== null &&
+    JSON.stringify(batch_items) === JSON.stringify(pilot_state.pilot_cases)
+  const all_built =
+    built_slots.length === pilot_state.pilot_cases.length &&
+    built_slots.every((slot) => slot !== null)
+  return pilot_on_screen && all_built ? "rest" : "retry"
+}
+
+// Why the pilot cannot be saved as the eval.
+export function pilot_save_blocked_text(rest: number): string {
+  return `Only the pilot ran. Continue to run the other ${rest} first.`
+}

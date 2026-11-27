@@ -1806,17 +1806,61 @@ describe("Pilot First: the pilot of 12", () => {
     expect(mentions("split_pilot(")).toBe(1)
   })
 
-  it("runs the rest only after the panel's Continue, under the same key", () => {
-    expect(resolve()).toContain(
-      "const rest_run = pilot_rest_requested && pilot_state?.key === key ? pilot_state : null pilot_rest_requested = false",
+  it("decides rest or retry from the pilot state, before the grounded cache", () => {
+    const body = resolve()
+    expect(body).toContain(
+      "const pilot_step = pilot_next_step({ pilot_state, key, batch_items: batch_cases, built_slots: built_by_case, })",
     )
-    // Only the pilot's Continue asks for the rest, through the settings
-    // dialog, which stays the drive's only entrance.
-    expect(mentions("open_drive_settings(true)")).toBe(1)
+    expect(body.indexOf("pilot_next_step(")).toBeLessThan(
+      body.indexOf("if (grounded_cache) {"),
+    )
+    expect(contains("pilot_rest_requested")).toBe(false)
+    // The panel's Continue opens the settings dialog like every other way
+    // in, which stays the drive's only entrance; a second click does nothing.
     expect(
       normalize(function_body("function continue_after_pilot() {")),
-    ).toContain("history.back() void open_drive_settings(true)")
+    ).toContain(
+      'if (current_step !== "review") return history.back() void open_drive_settings()',
+    )
     expect(mentions("on_drive_multi_turn")).toBe(2)
+  })
+
+  it("clears the pilot only once a drive that is not the pilot commits", () => {
+    const d = drive()
+    expect(d).toContain("if (!resolved.pilot) pilot_state = null")
+    expect(
+      d.indexOf("if (!resolved.pilot) pilot_state = null"),
+    ).toBeGreaterThan(d.indexOf("drive_committed = true"))
+    expect(
+      normalize(function_body("async function run_pilot_rest(")),
+    ).not.toContain("pilot_state = null")
+  })
+
+  it("reuses a rest grounded before, so its grounding is not paid twice", () => {
+    expect(
+      normalize(function_body("async function run_pilot_rest(")),
+    ).toContain(
+      "if (grounded_cache) { return { cases: cases_with_current_verdicts(grounded_cache, judge_key), grounding_drops: grounded_cache.grounding_dropped, after_pilot: state.pilot_cases, }",
+    )
+  })
+
+  it("blocks saving the pilot as the eval, and says why", () => {
+    expect(
+      contains(
+        "$: save_gate_met = // Pilot First: a pilot is not the eval; its rest runs first. !pilot_batch_pending &&",
+      ),
+    ).toBe(true)
+    expect(
+      normalize(function_body("function on_advance_to_save() {")),
+    ).toContain("if (pilot_batch_pending) return")
+    expect(
+      normalize(function_body("function save_without_refining() {")),
+    ).toContain("if (pilot_batch_pending) return")
+    expect(
+      contains(
+        "warning_message={pilot_save_blocked_text( pilot_state.rest.length, )}",
+      ),
+    ).toBe(true)
   })
 
   it("plans a pilot drive for its own cases and widens only for the rest", () => {

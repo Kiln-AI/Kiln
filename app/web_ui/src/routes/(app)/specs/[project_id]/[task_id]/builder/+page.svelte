@@ -116,6 +116,8 @@
   import {
     batch_after_pilot,
     owner_choice_gate,
+    pilot_save_blocked_text,
+    pilot_next_step,
     split_pilot,
     widen_pilot_batch,
     write_review_ground,
@@ -1647,12 +1649,11 @@
   const first_messages_gate = owner_choice_gate<FirstMessagesChoice>()
   let first_messages_cases: SyntheticUserCaseWire[] | null = null
   // The pilot that ran (Pilot First), until its rest runs or the plan
-  // changes. Not drafted: after a reload the pilot is an ordinary batch.
+  // changes. Cleared only once a drive that is not the pilot commits (the
+  // rest, or a fresh batch). Not drafted: after a reload the pilot is an
+  // ordinary batch.
   let pilot_state: PilotState<SyntheticUserCaseWire, GroundingDrop> | null =
     null
-  // Set by the eval check panel's Continue, read once by the next drive:
-  // that drive runs the pilot's rest instead of the whole plan.
-  let pilot_rest_requested = false
   // The batch on screen is the pilot, and its rest has not run.
   $: pilot_batch_pending =
     pilot_state !== null &&
@@ -1679,8 +1680,10 @@
   // Generation Settings opens for the rest (the dialog stays the drive's only
   // entrance).
   function continue_after_pilot() {
+    // A second click must not step back twice.
+    if (current_step !== "review") return
     history.back()
-    void open_drive_settings(true)
+    void open_drive_settings()
   }
 
   // The eval check panel's Refine Plan on a pilot.
@@ -1988,9 +1991,7 @@
     }
   }
 
-  async function open_drive_settings(pilot_rest: unknown = false) {
-    // Only the pilot's Continue passes true; a click handler passes its event.
-    pilot_rest_requested = pilot_rest === true
+  async function open_drive_settings() {
     drive_settings_error = null
     // Reseed the stepper from the committed length, so a cancelled nudge is
     // gone the next time it opens. Unlike the lanes it waits on nothing, so it
@@ -2913,6 +2914,38 @@
         )
       : null
     const judge_key = rehearsal_judge_key(rehearsal_judge)
+    // Pilot First: a pilot that ran under this same key decides the drive,
+    // from the state alone: every pilot slot built runs the rest, any slot
+    // missing retries the pilot. Checked before the grounded cache, which may
+    // already hold the full set of a rest drive that never committed. With
+    // the box off no pilot ever runs, so the step is always "none".
+    const key = pilot_key(approved_prompts, grounding_key, judge_key)
+    const pilot_step = pilot_next_step({
+      pilot_state,
+      key,
+      batch_items: batch_cases,
+      built_slots: built_by_case,
+    })
+    if (pilot_state && pilot_step === "retry") {
+      // The same pilot cases again, without writing, asking or grounding.
+      return {
+        cases: pilot_state.pilot_cases,
+        grounding_drops: pilot_state.pilot_drops.length,
+        pilot: true,
+      }
+    }
+    if (pilot_state && pilot_step === "rest") {
+      return run_pilot_rest(
+        pilot_state,
+        grounded_cache,
+        approved_prompts,
+        target_run_config_id,
+        grounding_model,
+        grounding_key,
+        rehearsal_judge,
+        judge_key,
+      )
+    }
     if (grounded_cache) {
       posthog.capture("eval_v2_su_cases_reused", {
         num_cases: grounded_cache.cases.length,
@@ -2922,33 +2955,6 @@
         cases: cases_with_current_verdicts(grounded_cache, judge_key),
         grounding_drops: grounded_cache.grounding_dropped,
       }
-    }
-    // Pilot First: the panel's Continue runs the rest of the pilot that ran
-    // under this same key, keeping the pilot's cases.
-    const key = pilot_key(approved_prompts, grounding_key, judge_key)
-    const rest_run =
-      pilot_rest_requested && pilot_state?.key === key ? pilot_state : null
-    pilot_rest_requested = false
-    // A retry of a pilot that ran under this key (a stop after the pilot's
-    // drive) drives the same pilot cases again, without writing, asking or
-    // grounding again.
-    if (!rest_run && pilot_first && pilot_state?.key === key) {
-      return {
-        cases: pilot_state.pilot_cases,
-        grounding_drops: pilot_state.pilot_drops.length,
-        pilot: true,
-      }
-    }
-    if (rest_run) {
-      return run_pilot_rest(
-        rest_run,
-        approved_prompts,
-        target_run_config_id,
-        grounding_model,
-        grounding_key,
-        rehearsal_judge,
-        judge_key,
-      )
     }
     // Write, then (Pilot First only) the owner reads the first messages,
     // then ground. With the box off the calls are write then ground.
@@ -3058,6 +3064,7 @@
   // the full grounded set is cached like any other.
   async function run_pilot_rest(
     state: PilotState<SyntheticUserCaseWire, GroundingDrop>,
+    grounded_cache: CachedGroundedCases | null,
     approved_prompts: string[],
     target_run_config_id: string,
     grounding_model: GroundingModel,
@@ -3065,6 +3072,15 @@
     rehearsal_judge: JudgeConfig | null,
     judge_key: string | null,
   ): Promise<PlanCases | null> {
+    // A rest grounded before (its drive stopped before it committed) is
+    // reused: the cached full set already starts with the pilot's cases.
+    if (grounded_cache) {
+      return {
+        cases: cases_with_current_verdicts(grounded_cache, judge_key),
+        grounding_drops: grounded_cache.grounding_dropped,
+        after_pilot: state.pilot_cases,
+      }
+    }
     const outcome = await ground_some_cases(
       state.rest,
       approved_prompts,
@@ -3088,7 +3104,6 @@
         drops_notice_seen: false,
       }
     }
-    pilot_state = null
     return {
       cases: full,
       grounding_drops: drops.length,
@@ -3391,6 +3406,9 @@
       // some — so the calibration loop starts over either way.
       reset_calibration_state()
       drive_committed = true
+      // Any committed drive that is not the pilot ends the pilot: the rest
+      // ran, or a fresh batch replaced it.
+      if (!resolved.pilot) pilot_state = null
 
       // 7. Remember the judge (the ONE JudgeConfig shape used by review and
       // save alike, resolved at step 2) and identity BEFORE the pipeline
@@ -4488,6 +4506,7 @@
     created_eval_href ?? `/specs/${project_id}/${task_id}`
 
   function on_advance_to_save() {
+    if (pilot_batch_pending) return
     const graded = build_graded_traces(trace_claims, trace_reviews)
     const decision = plan_save_action({
       has_disagreement: has_grade_disagreement(graded),
@@ -4586,6 +4605,8 @@
   // An empty subset has a target of zero, which would otherwise read as a met
   // gate before the reviewer has graded anything.
   $: save_gate_met =
+    // Pilot First: a pilot is not the eval; its rest runs first.
+    !pilot_batch_pending &&
     trace_claims.length > 0 &&
     reviewable_trace_indices.length > 0 &&
     reviewed_count >= review_target_count
@@ -5213,6 +5234,7 @@
   // verdicts the reviewer actually graded — the latest refined one once a
   // round has run — grades carried as-is.
   function save_without_refining() {
+    if (pilot_batch_pending) return
     posthog.capture("eval_v2_judge_calibration_opted_out", {
       is_multi_turn,
       rounds: calibration_rounds_completed,
@@ -6581,6 +6603,16 @@
                 <p class="text-sm text-gray-500 mb-4">
                   {answers_summary($eval_check.answers)}
                 </p>
+              {/if}
+              {#if pilot_batch_pending && pilot_state}
+                <div class="mb-4" data-pilot-save-blocked>
+                  <Warning
+                    warning_color="warning"
+                    warning_message={pilot_save_blocked_text(
+                      pilot_state.rest.length,
+                    )}
+                  />
+                </div>
               {/if}
               {#key calibration_rounds_completed}
                 <ClaimEvidenceReview

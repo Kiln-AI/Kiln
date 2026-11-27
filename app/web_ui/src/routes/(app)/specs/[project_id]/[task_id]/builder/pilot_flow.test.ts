@@ -4,7 +4,9 @@ import {
   first_messages,
   owner_choice_gate,
   PILOT_CASES,
+  pilot_next_step,
   pilot_positions,
+  pilot_save_blocked_text,
   split_pilot,
   widen_pilot_batch,
   write_review_ground,
@@ -225,5 +227,91 @@ describe("the pilot of 12", () => {
         full_items: [{ id: "r0" }, { id: "p0" }],
       }),
     ).toBeNull()
+  })
+})
+
+describe("pilot_next_step: the pilot is never paid for twice", () => {
+  const pilot = [{ id: "p0" }, { id: "p1" }, { id: "p2" }]
+  const rest = [{ id: "r0" }, { id: "r1" }]
+  const state = { key: "k", pilot_cases: pilot }
+
+  it("is none without a pilot under this key, so the build runs as before", () => {
+    const args = { key: "k", batch_items: pilot, built_slots: ["a", "b", "c"] }
+    expect(pilot_next_step({ ...args, pilot_state: null })).toBe("none")
+    expect(
+      pilot_next_step({ ...args, pilot_state: { ...state, key: "other" } }),
+    ).toBe("none")
+  })
+
+  it("runs the rest on any way in, when every pilot slot is built", () => {
+    // Path: the rest's grounding failed, the owner pressed Retry (or went
+    // Back and pressed Generate). The pilot state is still there.
+    const built = ["result p0", "result p1", "result p2"]
+    expect(
+      pilot_next_step({
+        pilot_state: state,
+        key: "k",
+        batch_items: pilot,
+        built_slots: built,
+      }),
+    ).toBe("rest")
+    // The rest drive then tops the pilot off: only the rest is driven.
+    const full = batch_after_pilot(pilot, rest)
+    const widened = widen_pilot_batch({
+      batch_items: pilot,
+      built_slots: built,
+      pilot_cases: pilot,
+      full_items: full,
+    })!
+    const plan = plan_drive({
+      items: full,
+      batch_items: widened.batch_items,
+      built_slots: widened.built_slots,
+      batch_tag: "pilot_batch",
+      undeleted_batch_tags: ["pilot_batch"],
+    })
+    expect(plan.top_off).toBe(true)
+    expect(plan.items.map((c) => c.id)).toEqual(["r0", "r1"])
+    expect(plan.items.some((c) => c.id.startsWith("p"))).toBe(false)
+  })
+
+  it("retries only the missing pilot slots when the pilot drive stopped short", () => {
+    const built = ["result p0", null, "result p2"]
+    expect(
+      pilot_next_step({
+        pilot_state: state,
+        key: "k",
+        batch_items: pilot,
+        built_slots: built,
+      }),
+    ).toBe("retry")
+    // A retry drives the same pilot cases: the existing top-off drives the
+    // missing slot only, so the built ones are not paid again.
+    const plan = plan_drive({
+      items: pilot,
+      batch_items: pilot,
+      built_slots: built,
+      batch_tag: "pilot_batch",
+      undeleted_batch_tags: ["pilot_batch"],
+    })
+    expect(plan.top_off).toBe(true)
+    expect(plan.items.map((c) => c.id)).toEqual(["p1"])
+  })
+
+  it("retries when another batch is on screen under the same key", () => {
+    expect(
+      pilot_next_step({
+        pilot_state: state,
+        key: "k",
+        batch_items: null,
+        built_slots: [],
+      }),
+    ).toBe("retry")
+  })
+
+  it("says why the pilot cannot be saved", () => {
+    expect(pilot_save_blocked_text(54)).toBe(
+      "Only the pilot ran. Continue to run the other 54 first.",
+    )
   })
 })
