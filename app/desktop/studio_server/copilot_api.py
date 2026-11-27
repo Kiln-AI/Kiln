@@ -1405,6 +1405,10 @@ def connect_copilot_api(app: FastAPI):
                 ),
                 reference_keys=grounded_judge_reference_keys(grounded),
                 run_config=judge_run_config(request.judge_info),
+                # A builder save keeps the review judge's written reason (one
+                # judge, two lifetimes), so eval jobs save reasoning on every
+                # verdict too. The older copilot save is left as it was.
+                reasoning_in_output=builder_save,
             ),
             provenance=request.provenance,
         )

@@ -10374,6 +10374,11 @@ export interface components {
             /** Judge Instructions */
             judge_instructions?: string[] | null;
             run_config?: components["schemas"]["LlmJudgeRunConfig"] | null;
+            /**
+             * Reasoning In Output
+             * @default false
+             */
+            reasoning_in_output: boolean;
         };
         /**
          * LlmJudgeRunConfig

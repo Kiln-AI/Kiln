@@ -26,7 +26,7 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.task import StructuredOutputMode, Task
 from kiln_ai.datamodel.task_run import Usage
 
 
@@ -1042,6 +1042,96 @@ class TestLlmJudgeE2EMessageConstruction:
         assert result.scores == {"quality": 4.0, "correctness": 1.0}
         assert result.skipped_reason is None
 
+    @pytest.mark.asyncio
+    async def test_reasoning_in_output_through_the_real_pipeline(self):
+        """The reason field reaches the model's response format, the reply passes the
+        adapter's own output validation, and only the scores are scored."""
+        model_response = ModelResponse(
+            model="gpt-4o",
+            choices=[
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "quality": 4,
+                                "correctness": "pass",
+                                "reasoning": "It halves the range each step.",
+                            }
+                        ),
+                    }
+                }
+            ],
+        )
+        captured_kwargs: list[dict] = []
+
+        async def fake_acompletion(**kwargs):
+            captured_kwargs.append(kwargs)
+            return model_response
+
+        mock_config_obj = Mock()
+        mock_config_obj.open_ai_api_key = "fake-key"
+        mock_config_obj.user_id = "test_user"
+
+        cfg = self._build_config()
+        cfg.properties = cfg.properties.model_copy(update={"reasoning_in_output": True})
+
+        with (
+            patch("litellm.acompletion", side_effect=fake_acompletion),
+            patch(
+                "kiln_ai.utils.config.Config.shared",
+                return_value=mock_config_obj,
+            ),
+        ):
+            result = await LlmJudgeEval(cfg).evaluate(self._build_input())
+
+        assert len(captured_kwargs) == 1
+        assert "reasoning" in json.dumps(captured_kwargs[0]["response_format"])
+        assert result.scores == {"quality": 4.0, "correctness": 1.0}
+        assert result.intermediate_outputs == {
+            "reasoning": "It halves the range each step."
+        }
+
+    @pytest.mark.asyncio
+    async def test_unenforced_mode_missing_reason_passes_validation(self):
+        """In json_instructions mode a reply without the reason still validates, so a
+        valid score is never lost to a missing reason."""
+        model_response = ModelResponse(
+            model="gpt-4o",
+            choices=[
+                {
+                    "message": {
+                        "content": json.dumps({"quality": 4, "correctness": "pass"}),
+                    }
+                }
+            ],
+        )
+
+        async def fake_acompletion(**kwargs):
+            return model_response
+
+        mock_config_obj = Mock()
+        mock_config_obj.open_ai_api_key = "fake-key"
+        mock_config_obj.user_id = "test_user"
+
+        cfg = self._build_config()
+        cfg.properties = cfg.properties.model_copy(update={"reasoning_in_output": True})
+
+        with (
+            patch("litellm.acompletion", side_effect=fake_acompletion),
+            patch(
+                "kiln_ai.utils.config.Config.shared",
+                return_value=mock_config_obj,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_llm_judge.default_structured_output_mode_for_model_provider",
+                return_value=StructuredOutputMode.json_instructions,
+            ),
+        ):
+            result = await LlmJudgeEval(cfg).evaluate(self._build_input())
+
+        assert result.scores == {"quality": 4.0, "correctness": 1.0}
+        assert not (result.intermediate_outputs or {}).get("reasoning")
+
 
 class TestLlmJudgeRunConfig:
     """The judge's optional run_config. Unset (or any unset field in it) must keep the
@@ -1184,3 +1274,194 @@ class TestLlmJudgeRunConfig:
     def test_materialize_rejects_unknown_level(self):
         with pytest.raises(ValueError, match="not available"):
             self._materialize(run_config=LlmJudgeRunConfig(thinking_level="ultra"))
+
+
+class TestReasoningInOutput:
+    """`reasoning_in_output` asks for a written reason after the scores, so a verdict
+    has reasoning even when the model chose not to think."""
+
+    @staticmethod
+    def _config(props: LlmJudgeProperties, score_name: str = "Meets Spec"):
+        cfg = _make_config(props)
+        cfg.parent_eval.return_value.output_scores = [
+            EvalOutputScore(
+                name=score_name,
+                instruction="Does it meet the spec?",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ]
+        return cfg
+
+    @staticmethod
+    def _adapter(mock_adapter_for_task, output, intermediate=None):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output=output, intermediate_outputs=intermediate),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+    @staticmethod
+    def _sent_schema(mock_adapter_for_task) -> dict:
+        judge_task = mock_adapter_for_task.call_args[0][0]
+        return json.loads(judge_task.output_json_schema)
+
+    def test_saved_config_without_the_field_loads_off(self):
+        props = LlmJudgeProperties.model_validate(
+            {
+                "model_name": "claude_sonnet_5_5",
+                "model_provider": "anthropic",
+                "prompt_template": "Rate this",
+                "run_config": {"thinking_level": "high"},
+            }
+        )
+        assert props.reasoning_in_output is False
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_off_sends_the_same_schema_and_keeps_outputs(
+        self, mock_adapter_for_task
+    ):
+        self._adapter(
+            mock_adapter_for_task, {"meets_spec": "fail"}, {"reasoning": "thought"}
+        )
+        cfg = self._config(_make_props())
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        expected = json.loads(
+            LlmJudgeEval.build_score_schema(cfg.parent_eval(), allow_float_scores=False)
+        )
+        assert self._sent_schema(mock_adapter_for_task) == expected
+        assert "reasoning" not in expected["properties"]
+        assert result.scores == {"meets_spec": 0.0}
+        assert result.intermediate_outputs == {"reasoning": "thought"}
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_on_asks_for_reasoning_after_the_scores(self, mock_adapter_for_task):
+        self._adapter(
+            mock_adapter_for_task,
+            {"meets_spec": "fail", "reasoning": " The agent cancelled the plan. "},
+        )
+        cfg = self._config(_make_props(reasoning_in_output=True))
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        schema = self._sent_schema(mock_adapter_for_task)
+        assert list(schema["properties"]) == ["meets_spec", "reasoning"]
+        assert schema["required"] == ["meets_spec", "reasoning"]
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]["reasoning"]["type"] == "string"
+        # Same score keys and the same pass/fail contract as with the field off.
+        assert result.scores == {"meets_spec": 0.0}
+        assert result.intermediate_outputs == {
+            "reasoning": "The agent cancelled the plan."
+        }
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_on_keeps_a_thinking_summary_under_thinking(
+        self, mock_adapter_for_task
+    ):
+        self._adapter(
+            mock_adapter_for_task,
+            {"meets_spec": "pass", "reasoning": "Balance kept."},
+            {"reasoning": "Long thinking summary."},
+        )
+        cfg = self._config(_make_props(reasoning_in_output=True))
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert result.scores == {"meets_spec": 1.0}
+        assert result.intermediate_outputs == {
+            "reasoning": "Balance kept.",
+            "thinking": "Long thinking summary.",
+        }
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_on_with_a_blank_reason_falls_back_to_thinking(
+        self, mock_adapter_for_task
+    ):
+        self._adapter(
+            mock_adapter_for_task,
+            {"meets_spec": "pass", "reasoning": "  "},
+            {"reasoning": "Thinking summary."},
+        )
+        cfg = self._config(_make_props(reasoning_in_output=True))
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert result.scores == {"meets_spec": 1.0}
+        assert result.intermediate_outputs == {"reasoning": "Thinking summary."}
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_on_with_a_blank_reason_and_no_thinking_saves_none(
+        self, mock_adapter_for_task
+    ):
+        self._adapter(mock_adapter_for_task, {"meets_spec": "pass", "reasoning": ""})
+        cfg = self._config(_make_props(reasoning_in_output=True))
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert result.scores == {"meets_spec": 1.0}
+        assert result.intermediate_outputs is None
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_a_score_named_reasoning_keeps_its_key(self, mock_adapter_for_task):
+        self._adapter(mock_adapter_for_task, {"reasoning": "pass"})
+        cfg = self._config(
+            _make_props(reasoning_in_output=True), score_name="Reasoning"
+        )
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        schema = self._sent_schema(mock_adapter_for_task)
+        assert list(schema["properties"]) == ["reasoning"]
+        assert schema["properties"]["reasoning"]["enum"] == ["pass", "fail"]
+        assert result.scores == {"reasoning": 1.0}
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score")
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_g_eval_keeps_the_bare_schema(
+        self, mock_adapter_for_task, mock_g_eval_score
+    ):
+        mock_g_eval_score.return_value = {"meets_spec": 0.9}
+        self._adapter(mock_adapter_for_task, {"meets_spec": "pass"})
+        cfg = self._config(_make_props(reasoning_in_output=True, g_eval=True))
+        await LlmJudgeEval(cfg).evaluate(_inp())
+
+        schema = self._sent_schema(mock_adapter_for_task)
+        assert list(schema["properties"]) == ["meets_spec"]
+
+    @pytest.mark.asyncio
+    @patch(
+        "kiln_ai.adapters.eval.v2_eval_llm_judge.default_structured_output_mode_for_model_provider",
+        return_value=StructuredOutputMode.json_instructions,
+    )
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_unenforced_mode_asks_but_does_not_require(
+        self, mock_adapter_for_task, _mode
+    ):
+        self._adapter(mock_adapter_for_task, {"meets_spec": "pass"})
+        cfg = self._config(_make_props(reasoning_in_output=True))
+        await LlmJudgeEval(cfg).evaluate(_inp())
+
+        schema = self._sent_schema(mock_adapter_for_task)
+        assert list(schema["properties"]) == ["meets_spec", "reasoning"]
+        assert schema["required"] == ["meets_spec"]
+        assert "type" not in schema["properties"]["reasoning"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("output_reason", ["missing", 42, ["a"], None])
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_missing_or_non_string_reason_keeps_the_score(
+        self, mock_adapter_for_task, output_reason
+    ):
+        output: dict = {"meets_spec": "fail"}
+        if output_reason != "missing":
+            output["reasoning"] = output_reason
+        self._adapter(mock_adapter_for_task, output, {"reasoning": "Thinking."})
+        cfg = self._config(_make_props(reasoning_in_output=True))
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert result.scores == {"meets_spec": 0.0}
+        assert result.intermediate_outputs == {"reasoning": "Thinking."}

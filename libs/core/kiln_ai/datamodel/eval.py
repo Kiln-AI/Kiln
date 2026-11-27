@@ -160,6 +160,12 @@ class LlmJudgeProperties(BaseModel):
     # None, or any unset field inside it, keeps the default, so older configs behave
     # as before.
     run_config: LlmJudgeRunConfig | None = None
+    # When True, the judge's structured output also asks for a short written reason,
+    # after the scores, and that reason is saved as intermediate_outputs["reasoning"].
+    # A model with adaptive thinking often skips thinking on an easy input, so without
+    # this a verdict can arrive with no reasoning at all. False (the default, and every
+    # config saved before this field) sends the same request as before.
+    reasoning_in_output: bool = False
 
 
 class ExactMatchProperties(BaseModel):

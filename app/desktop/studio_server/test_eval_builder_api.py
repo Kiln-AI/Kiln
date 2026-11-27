@@ -270,6 +270,14 @@ class TestBuildTransientJudgeEvalConfig:
         assert properties.run_config is not None
         assert properties.run_config.thinking_level == "high"
 
+    def test_review_judge_asks_for_a_written_reason(self, in_memory_task, judge_config):
+        for multi_turn in (False, True):
+            properties = build_transient_judge_eval_config(
+                in_memory_task, judge_config, multi_turn=multi_turn
+            ).properties
+            assert isinstance(properties, LlmJudgeProperties)
+            assert properties.reasoning_in_output is True
+
     def test_judge_thinking_level_must_be_one_the_model_offers(self):
         with pytest.raises(ValueError, match="not available for judge model"):
             JudgeConfig(

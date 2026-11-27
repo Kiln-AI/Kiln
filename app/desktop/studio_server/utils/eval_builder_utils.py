@@ -271,6 +271,7 @@ def build_transient_judge_eval_config(
             ),
             reference_keys=grounded_judge_reference_keys(grounded),
             run_config=judge_run_config(judge),
+            reasoning_in_output=True,
         ),
         parent=eval_obj,
     )
@@ -281,9 +282,11 @@ def _reasoning_from_intermediates(
 ) -> str:
     """Best-effort judge reasoning from the adapter's intermediate outputs.
 
-    Reasoning models surface thinking under `reasoning`, two-step COT under
-    `chain_of_thought`; non-reasoning judge models may produce neither, so
-    fall back to an honest placeholder rather than fabricating reasoning.
+    The builder's judge asks for a written reason in its output
+    (`reasoning_in_output`), which the adapter saves under `reasoning`; without
+    one, reasoning models surface thinking under `reasoning`, two-step COT under
+    `chain_of_thought`. A judge may produce none of these, so fall back to an
+    honest placeholder rather than fabricating reasoning.
     """
     outputs = intermediate_outputs or {}
     for key in ("reasoning", "chain_of_thought"):

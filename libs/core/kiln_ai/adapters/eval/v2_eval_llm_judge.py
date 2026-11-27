@@ -8,6 +8,8 @@ The prompt_template is rendered with Jinja2 using the EvalTaskInput fields
 as the template namespace.
 """
 
+import dataclasses
+import json
 from typing import TYPE_CHECKING, Any
 
 from jinja2 import UndefinedError
@@ -40,6 +42,7 @@ from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalTaskInput,
@@ -62,6 +65,74 @@ _DEFAULT_SYSTEM_PROMPT = (
     "Your job is to evaluate a model's performance on a task. "
     "Score the output according to the criteria provided."
 )
+
+REASONING_OUTPUT_KEY = "reasoning"
+"""The output field a `reasoning_in_output` judge writes its reason into. It is also
+the intermediate_outputs key that every reasoning reader looks at first."""
+
+THINKING_OUTPUT_KEY = "thinking"
+"""Where the model's own thinking summary goes when the written reason takes the
+`reasoning` key, so neither text is lost."""
+
+_REASONING_FIELD_DESCRIPTION = (
+    "Your reason for the score or scores above, in one to three sentences. Name the "
+    "requirement the verdict turns on and the evidence in the data for it."
+)
+
+
+def _with_reasoning_field(output_json_schema: str, enforced: bool) -> str:
+    """The score schema with a reasoning field added after the scores.
+
+    The field comes last, so the model writes the verdict before the reason and the
+    reason cannot change how the verdict is reached. When a score already uses the
+    key, the schema is returned unchanged: the score keeps its key.
+
+    `enforced` says the provider decodes against the schema (strict json_schema),
+    so the field is a required string and is always there. In the other modes the
+    schema is only prompt text that the reply is checked against afterwards: there
+    the field is asked for but optional and untyped, so a missing or odd reason never
+    fails a verdict whose score is valid.
+    """
+    schema = json.loads(output_json_schema)
+    if REASONING_OUTPUT_KEY in schema["properties"]:
+        return output_json_schema
+    field: dict[str, Any] = {"description": _REASONING_FIELD_DESCRIPTION}
+    if enforced:
+        field["type"] = "string"
+    schema["properties"][REASONING_OUTPUT_KEY] = field
+    if enforced:
+        schema["required"] = list(schema["properties"].keys())
+    return json.dumps(schema, ensure_ascii=False)
+
+
+def _take_reasoning_field(
+    run_output: RunOutput, score_keys: set[str]
+) -> tuple[RunOutput, dict[str, Any] | None]:
+    """Split the written reason off the judge's output, so only scores get scored.
+
+    Returns the run output to score and the intermediate outputs to save. The written
+    reason becomes `reasoning`; a thinking summary the model also returned moves to
+    `thinking`. An empty or missing reason leaves the thinking summary where it was.
+    """
+    output = run_output.output
+    if (
+        not isinstance(output, dict)
+        or REASONING_OUTPUT_KEY in score_keys
+        or REASONING_OUTPUT_KEY not in output
+    ):
+        return run_output, run_output.intermediate_outputs
+    scores_only = {k: v for k, v in output.items() if k != REASONING_OUTPUT_KEY}
+    written = output[REASONING_OUTPUT_KEY]
+    intermediate = dict(run_output.intermediate_outputs or {})
+    if isinstance(written, str) and written.strip():
+        thinking = intermediate.pop(REASONING_OUTPUT_KEY, None)
+        if thinking:
+            intermediate[THINKING_OUTPUT_KEY] = thinking
+        intermediate[REASONING_OUTPUT_KEY] = written.strip()
+    return (
+        dataclasses.replace(run_output, output=scores_only),
+        intermediate or None,
+    )
 
 
 def _judge_trace(eval_input: EvalTaskInput) -> list[dict[str, Any]] | None:
@@ -203,13 +274,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
         output_json_schema = BaseEval.build_score_schema(
             self.eval, allow_float_scores=False
         )
-
         system_prompt = props.system_prompt or _DEFAULT_SYSTEM_PROMPT
-
-        judge_task = _LlmJudgeTask(
-            system_prompt=system_prompt,
-            output_json_schema=output_json_schema,
-        )
 
         model_name = props.model_name
         provider = ModelProviderName(props.model_provider)
@@ -231,6 +296,19 @@ class LlmJudgeEval(BaseV2EvalBridge):
                 StructuredOutputMode.function_calling,
                 StructuredOutputMode.function_calling_weak,
             ],
+        )
+
+        # G-Eval reads each score from token logprobs, so it keeps the bare schema.
+        ask_for_reasoning = props.reasoning_in_output and not props.g_eval
+        if ask_for_reasoning:
+            output_json_schema = _with_reasoning_field(
+                output_json_schema,
+                enforced=structured_output_mode == StructuredOutputMode.json_schema,
+            )
+
+        judge_task = _LlmJudgeTask(
+            system_prompt=system_prompt,
+            output_json_schema=output_json_schema,
         )
 
         top_logprobs = 10 if props.g_eval else None
@@ -269,6 +347,13 @@ class LlmJudgeEval(BaseV2EvalBridge):
             rendered_prompt
         )
 
+        intermediate_outputs = run_output.intermediate_outputs
+        if ask_for_reasoning:
+            run_output, intermediate_outputs = _take_reasoning_field(
+                run_output,
+                {score.json_key() for score in self.eval.output_scores},
+            )
+
         if props.g_eval:
             scores = build_g_eval_score(
                 run_output,
@@ -284,7 +369,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
         return V2EvalResult(
             scores=scores,
-            intermediate_outputs=run_output.intermediate_outputs,
+            intermediate_outputs=intermediate_outputs,
             # `usage`, not `cumulative_usage`: it already accumulates every call this
             # judgment made, and it is the one that carries latency.
             usage=judge_run.usage,

@@ -728,6 +728,9 @@ class TestCreateSpecWithCopilot:
         assert "Test prompt" in config.properties.prompt_template
         assert "{{ task_input }}" in config.properties.prompt_template
         assert config.model_name is None and config.model_provider is None
+        # Only a builder save asks the judge for a written reason; this older
+        # path keeps the judge as it was.
+        assert config.properties.reasoning_in_output is False
 
         # Every spec eval carries the same three splits: an EvalInput-backed
         # test split (re-run per run config at eval time) beside TaskRun-backed
@@ -1926,6 +1929,8 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert isinstance(config.properties, LlmJudgeProperties)
         assert config.properties.run_config is not None
         assert config.properties.run_config.thinking_level == "high"
+        # The saved judge asks for a written reason, like the review judge.
+        assert config.properties.reasoning_in_output is True
 
     def test_ungrounded_save_keeps_todays_judge(
         self,
