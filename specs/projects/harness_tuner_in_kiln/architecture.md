@@ -4,7 +4,7 @@ status: draft
 
 # Architecture: Harness Tuner in Kiln
 
-This document fixes the technical decisions for the [functional spec](functional_spec.md). It is written from three studies of the code as it is now: Kiln at `c05ba31ba` (main, with the MCP server merged) and harness-tuner at `d6a9534`.
+This document fixes the technical decisions for the [functional spec](functional_spec.md). It is written from three studies of the code: Kiln at `c05ba31ba` (the MCP server merged) and harness-tuner at `d6a9534`. Main has moved since: it dropped Python 3.10. The work starts from current main.
 
 **HT** is Kiln Harness Tuner. **A role** is a role of section 5 of the functional spec. "HT's roles" are the jobs of its agents.
 
@@ -42,7 +42,7 @@ Three facts shape everything:
 
 ### 2.1 Where the code goes
 
-- **Proposed:** a new workspace member `app/harness_tuner/`, added the way `app/mcp/` was. The owner decides the folder (section 10, D1), because the folders of this repository carry different licence files.
+- A new workspace member in the folder `app/harness-tuner/`, added the way `app/mcp/` was. (Decided by the owner.)
 - **HT keeps its own layout inside the folder**: `src/kiln_harness_tuner/`, `tests/`, `docs/`, `examples/`, its `pyproject.toml`. This is the "minimal rewrites" rule. About 20 of its tests read these paths, and they keep working.
 - The distribution in the workspace is named `kiln-harness-tuner`. The name `harness-tuner` is kept for the launcher of phase 7, and a workspace cannot hold two packages with one name. HT reads its own version from that distribution; the version is Kiln's.
 - HT's contributor rules (Simplified Technical English, nothing measured in `agent_files/`, fences without a language) become an `AGENTS.md` in its folder. Kiln's root `AGENTS.md` applies as well.
@@ -51,9 +51,7 @@ Three facts shape everything:
 
 ### 2.2 Python version
 
-Kiln's workspace and CI support Python 3.10. HT's code needs 3.11, at six places in the source and four test files (`StrEnum`, `datetime.UTC`, `asyncio.timeout`, `logging.getLevelNamesMapping`, `tomllib`).
-
-- **Proposed:** HT's code is lowered to 3.10 at those places. It is a small mechanical change, and the workspace keeps one lock file and one floor. See D2.
+HT's code needs Python 3.11. Main requires 3.11 since it dropped 3.10, so nothing changes in HT for this.
 
 ### 2.3 Kiln's checks on HT's code
 
@@ -62,7 +60,7 @@ Kiln's workspace and CI support Python 3.10. HT's code needs 3.11, at six places
 | ruff lint | 269 findings with Kiln's rules. 165 are "ambiguous unicode character" for `×`, `−` and `–`, which HT prints on purpose | HT's own ruff section is removed, so Kiln's rules apply. The three unicode rules are turned off for HT's folder. The other 104 are fixed in this phase |
 | ruff format | Clean, if HT's agent files stay excluded | The exclude moves to Kiln's root config. Seven wrapper templates are copied by agents exactly as they are, so they are not formatted |
 | ruff import order | About 120 findings in `tests/` without a first-party setting | A `src` setting for HT's folder |
-| ty type check | 143 diagnostics in `src` at 3.11, 49 of them imports of `textual` that go away when the dependency is in the lock | **In steps.** Phase 1: HT's `src` is excluded from ty, by area, and the areas with few findings are fixed and taken out of the exclude. Each later phase that touches an area fixes it. The exclude list is empty at the end of phase 6 |
+| ty type check | 143 diagnostics in `src` at 3.11, 49 of them imports of `textual` that go away when the dependency is in the lock | **One phase of its own, directly after the move** (decided by the owner). The move excludes HT's `src` from ty. The next phase is one clear commit that fixes every diagnostic and removes the exclude. No behaviour changes in it |
 | Debug detector (`print(`) | 35 hits, which are the command line's output | HT's output goes through one small function in one file, and that file is exempt, as one Kiln file is today |
 | pytest | Not run under Kiln's set-up yet. Known differences: Kiln runs tests in parallel; HT's `conftest` module name clashes with Kiln's; HT's tests import `fcntl` and `pty` | HT's suite runs as its own pytest call, from HT's folder, in `checks.sh` and in a CI job of its own. It is skipped on Windows. Whether it runs in parallel is found in this phase |
 
@@ -99,7 +97,7 @@ Kiln's workspace and CI support Python 3.10. HT's code needs 3.11, at six places
 ### 3.2 Decisions on single routes
 
 - **The trace as text** is one task run's trace, whole. HT's files move the system prompt and the tool definitions to a shared file, to save space across many traces; the route puts them at the top of the text. The per-run-config statistics files that HT writes are not part of the route: loop code keeps writing them for the analyst (6.4).
-- **Running a train item by id** is the eval job with `judge: false`, `split: "train"` and `item_ids`. It needs a judge config of the V2 kind. The caller names the judge config, so an eval with at least one V2 config works. An eval whose configs are all of the old kind cannot be run this way. **Proposed:** this gap is not closed; the job's error already says to use a V2 config, and the role file says the same. See section 11.
+- **Running a train item by id** is the eval job with `judge: false`, `split: "train"` and `item_ids`. Today that job needs a judge config of the V2 kind, because the old kind of judge runs the task and judges it in one call. **The gap is closed in this phase, as the functional spec says:** a job with `judge: false` runs the task with the drive path that V2 uses, whatever kind the named judge config is. No judge runs in such a job, so the kind of the judge does not matter to it. The component doc gives the change in the eval runner.
 - **Skill bundle create** writes with Kiln's datamodel: build the `Skill`, write `SKILL.md` with `save_skill_md`, write the reference files, and write `skill.kiln` last. On any failure the new folder is removed.
 - **The old-model smell** reads the release date from the model info service of the MCP project. That service's connect function returns the service, so the smell check route can use it.
 
@@ -132,7 +130,7 @@ NO_ROLE: Role            # withholds nothing; used when a request names no role
 | `tuner_build`, `tuner_plan`, `tuner_review` | `/mcp/<name>` | val, test | val, test | `val`, `baseline` |
 | `tuner_val` | `/mcp/tuner_val` | val, test | test | — |
 
-- `reserved_memory_tags` is the rule of the functional spec (a record tagged with the name of a withheld split), made a setting, so that it can also cover the `baseline` record. See D5.
+- `reserved_memory_tags` is the rule of the functional spec (a record tagged with the name of a withheld split), made a setting, so that it also covers the `baseline` record, which the gateway protects today. (Decided by the owner.)
 - No code outside this package compares a role's name. A test searches the source for it.
 
 ### 4.2 The route map
@@ -218,7 +216,7 @@ class EvalAccess:
 
 ### 5.1 The order inside the phase
 
-1. **Prove the connection first.** Each of the three agent CLIs connects to an HTTP MCP server at `http://localhost:8757/mcp/<role>` with its shell's network off, calls both tools, and opens a file that `call_kiln_api` saved. None of this has been run. If one CLI cannot do it, the phase stops here and the owner decides.
+1. **Check the sandbox first.** The agent CLIs' connection to Kiln's MCP server over HTTP was verified many times in the MCP project. What is new here is HT's own sandbox settings: the shell's network is off, and the session may read only named folders. So the first step runs each of the three CLIs with those settings, calls both tools, and opens a file that `call_kiln_api` saved.
 2. Move what loop code imports out of `gateway/` (below).
 3. Port the role files into Kiln's skill.
 4. Switch the dispatch to the role URLs, and the prompts to the role files.
@@ -245,7 +243,7 @@ class EvalAccess:
 
 | What | Where | Change |
 |---|---|---|
-| Check of each run config an agent made | Where the builder's output enters the loop (`items.py`), before the review step | New. It checks the model policy and the tool lock. See D6 for what else |
+| Check of each run config an agent made | Where the builder's output enters the loop (`items.py`), before the review step | New place for two checks that exist (the model policy, the tool lock) and one new one: the run config against its parent, with the rules of HT's `rc_inherit` |
 | Allowed models in the builder's and the probe's input | `schemas.py` | New field, filled from the policy |
 | Code trust | Where a builder or probe session is dispatched | Loop code calls the trust route once, with no role. The probe's own code already does this |
 | The val table for the report writer | `ReportInput` in `schemas.py` | New field. The promoter's input has it already |
@@ -281,13 +279,16 @@ Facts that limit the design:
 - HT runs on Apple silicon macOS and on Linux (WSL included). It refuses native Windows and does not support Intel macOS.
 - Nothing of HT has been run inside a frozen build.
 
-**Proposed**, to be confirmed by a trial build before the rest of the phase is planned:
+**The mechanism is left open until this phase** (decided by the owner). It needs a trial and an investigation first. The candidates:
 
-- **A sub-command of Kiln's one executable.** `Kiln harness-tuner <options>` runs HT's command line in the app's Python, with the terminal attached. The branch is taken at the top of the entry script, before the app's imports.
-- **The launcher** (`harness-tuner` on PyPI, in `app/harness_tuner_launcher/`) finds an installed Kiln at the usual places for the platform. If there is none, or it is too old to hold HT, it downloads the release asset for the platform from Kiln's GitHub release, checks its digest, and installs it the way Kiln's own installer does. Then it runs the sub-command with the options it was given.
-- The functional spec's "each platform Kiln supports" becomes "each platform HT supports". See section 11.
+| Mechanism | For | Against, or not known |
+|---|---|---|
+| A sub-command or an option of Kiln's one executable | One executable to build, sign and ship. The Python code is shared with the app | The entry script runs in every child process, so the branch must be at its top and use only the standard library. On Windows the app is built as a windowed program, which is linked as a GUI program: a console program started from it has known problems with its console, its input and output, and its exit code. The Linux build shows a splash screen |
+| A second executable in the same bundle | Its own entry script, and it can be a console program | Needs a build file where the build is one command line today. The Linux build is one file, so there is no shared bundle there |
+| HT as a Python package beside the app | No frozen-build problem at all | The code does not ship in the app, which the owner asked for |
 
-The other mechanisms, and why not: a second executable in the bundle needs a new kind of build file and does not fit the one-file Linux build; shipping HT as a Python package beside the app is the simplest to build, but then the code does not ship with the app, which the owner asked for. See D4.
+- The launcher (`harness-tuner` on PyPI) finds an installed Kiln, or downloads the release asset for the platform, checks its digest, and installs it. Then it starts HT by the mechanism that is chosen.
+- Native Windows is a P2 for HT, in the [backlog](backlog.md). The Windows problems above still matter to the choice, because the choice should not close that door.
 
 ## 8. Build order and release points
 
@@ -304,25 +305,32 @@ The other mechanisms, and why not: a second executable in the bundle needs a new
 
 ## 9. Risks
 
-- **The agent CLIs and an HTTP MCP server on loopback** (5.1, step 1). Not verified for any of the three.
+- **HT's sandbox settings with an HTTP MCP server** (5.1, step 1). The connection itself is proven; the settings are not.
 - **The route map has 272 lines to get right.** A wrong `CHAT` on a route that returns eval data leaks to chat clients. The mark of 4.5 and its test are the guard, and the review of the phase reads every route that returns a run, an eval input or a score.
 - **HT's suite under Kiln's set-up** (2.3). Not run yet.
 - **Phase 7 inside a frozen build.** Not run yet.
 - **The size of the port of the role files.** 190,000 characters, checked by a sentence diff.
 - **A context variable added later** by someone who does not know the job trap (4.3). A test starts a job from a request with a role and checks that the job reads a withheld split.
 
-## 10. Decisions for the owner
+## 10. Decisions
 
-- **D1. The folder for HT's code.** `app/harness_tuner/` (proposed: it is an application, and the app bundles it as it bundles `app/mcp/`) or `libs/harness_tuner/`. The two folders carry different licence files today, and HT has its own. Which licence applies to HT's code in this repository is the owner's decision, and no file about it is changed without the owner.
-- **D2. Python 3.10.** Lower HT to 3.10 at about ten places (proposed), or raise the floor of the whole workspace to 3.11, which drops 3.10 for the published `kiln-ai` and `kiln-server`.
-- **D3. The type check in steps** (2.3): HT's code is excluded at first and brought in by area, with the exclude list empty at the end of phase 6.
-- **D4. How Kiln's release runs HT** (section 7): a sub-command of the one executable (proposed), a second executable, or a Python package beside the app.
-- **D5. The `baseline` memory record.** The gateway refuses an agent's write of the `baseline` tag today. The functional spec protects only `val`. Proposed: the three train-side tuner roles cannot write `baseline` or `val`, by the role's setting (4.1).
-- **D6. Rules of the gateway that the functional spec does not list** (found in this study). For each, the proposal is a check in loop code's new step (5.4), not a rule in Kiln:
-  - A new run config, or a code tool's allow list, must not add Kiln's memory tool or Kiln's own API tool, at any depth. The gateway refuses it today, and loop code has no copy of the check. Such a tool gives the tuned agent a way to read anything.
-  - When an agent makes a run config from a parent, the gateway carries the parent's properties that the agent did not name, and sets or refuses the output mode. After, the agent builds the whole body. The role file says how; loop code checks the result against the parent.
-  - The option `--lock-tool`. Loop code already checks it for run configs.
-- **D7. Judged eval jobs.** The build role has the eval job route, for the run of one train item. With it, a builder or a probe can start a judged eval job on any split, which no HT role that stays can do today. Proposed: accept; the role file says not to.
+Answered by the owner on 2026-11-27:
+
+- **The folder** is `app/harness-tuner/`.
+- **Python:** main requires 3.11. No change.
+- **The type check** is one phase of its own, one clear commit, directly after the move.
+- **How Kiln's release runs HT** is left open until phase 7 (section 7).
+- **The `baseline` memory record:** the three train-side tuner roles cannot write `baseline` or `val`.
+- **Kiln's memory tool or API tool on a new run config:** no check. Nothing gives an agent those tool ids, and this spec does not guard obscure cases. It belongs with the cases of functional spec 5.7.
+- **The parent's properties on a new run config:** the agent builds the whole body, the role file says how, and loop code checks the result against the parent.
+- **Native Windows** stays a P2, in the backlog.
+
+Still open:
+
+- **The tool lock and archives.** See the note below.
+- **Judged eval jobs.** The build role has the eval job route, for the run of one train item. With it, a builder or a probe could start a judged eval job, which no HT role that stays can do today. **Proposed:** one more setting of a role, "eval jobs without a judge only", and one call of the shared helper in the handler that starts an eval job. It is the same pattern as the other rules, and it keeps today's limit.
+
+**The tool lock.** `--lock-tool` is an option of the user: it names tools of the baseline run config that must not change. HT refuses a run config that drops such a tool, replaces it, or wraps it in a new code tool. Loop code makes this check before a run config is measured or promoted, and that stays. The gateway does two more things: it makes the check at the moment an agent creates the run config, and it refuses to archive a locked skill or code tool. After the move, the first is covered by the new check of 5.4. The second is not: the build role has the two archive routes, and Kiln does not know the lock. **Proposed:** the role file names the locked tools, and loop code's check of 5.4 also confirms that no locked tool was archived by the session.
 
 ## 11. Corrections to the functional spec
 
@@ -336,6 +344,7 @@ To be made when this document is approved:
 6. **6.1:** the entry files hold no hand-kept table. Both tables that the spec names are generated, and both go.
 7. **6.3:** "Run a train eval" is not something an HT role that stays does today; only the removed eval-building role did. The row goes. See D7.
 8. **6.4, item 6:** the memory feed reports new records only, not updates.
-9. **4.8:** an eval whose judge configs are all of the old kind cannot run one item by id. Accepted, not closed.
-10. **Section 9:** "each platform Kiln supports" becomes "each platform HT supports".
-11. **6.4:** the rules of D5 and D6 are added to the list, with the owner's decisions.
+9. *(Removed: the gap for an old-kind judge is closed, as the functional spec says.)*
+10. **Section 9:** "each platform Kiln supports" becomes "each platform HT supports". Native Windows is a P2, in the backlog.
+11. **6.4:** the `baseline` tag, the check of a run config against its parent, and the tool lock are added to the list, with the owner's decisions.
+12. **Section 3:** the type check is one phase of its own, not steps.
