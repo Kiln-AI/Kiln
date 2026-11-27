@@ -162,6 +162,7 @@ describe("ground_cases_request", () => {
       data_guide: "Shoppers asking about orders.",
       example_input: "Where is order 12?",
       max_turns: null,
+      rehearsal_judge: null,
     })
   })
 
@@ -169,6 +170,22 @@ describe("ground_cases_request", () => {
     expect(
       ground_cases_request({ ...base, data_guide: "", max_turns: 1 }).max_turns,
     ).toBe(1)
+  })
+
+  it("sends the rehearsal judge only when one is given", () => {
+    const judge = {
+      prompt: "Pass when the order is right.",
+      model_name: "claude_sonnet_5_5",
+      model_provider: "anthropic" as const,
+      thinking_level: null,
+    }
+    expect(
+      ground_cases_request({ ...base, data_guide: "", rehearsal_judge: judge })
+        .rehearsal_judge,
+    ).toEqual(judge)
+    expect(
+      ground_cases_request({ ...base, data_guide: "" }).rehearsal_judge,
+    ).toBeNull()
   })
 
   it("sends a blank guide and a missing example as null", () => {
@@ -202,7 +219,30 @@ describe("apply_grounding_frame", () => {
       scenario_index: 2,
       openenv_reset: RESET,
       judge_guidance: "## Starting point 1",
+      rehearsal_score: null,
+      rehearsal_reasoning: null,
     })
+  })
+
+  it("keeps the rehearsal verdict on a grounded case", () => {
+    const frame: GroundingFrame = {
+      ...(grounded_frame(1) as Extract<
+        GroundingFrame,
+        { type: "case_grounded" }
+      >),
+      rehearsal_score: "fail",
+      rehearsal_reasoning: "It changed the wrong order.",
+    }
+    const state = apply_grounding_frame(
+      initial_grounding_state(2),
+      frame,
+      CASES,
+      request,
+    )
+    expect(state.grounded[1]?.rehearsal_score).toBe("fail")
+    expect(state.grounded[1]?.rehearsal_reasoning).toBe(
+      "It changed the wrong order.",
+    )
   })
 
   it("keeps a single-turn case's input where the drive reads it", () => {
@@ -604,9 +644,26 @@ describe("single-turn items", () => {
             openenv_reset: RESET_A,
             judge_guidance: "facts for Restock it",
           },
+          rehearsal_score: null,
+          rehearsal_reasoning: null,
         },
       ],
     )
+  })
+
+  it("keeps a case's rehearsal verdict beside its grounding, not in it", () => {
+    const [item] = single_turn_items_from_cases([
+      {
+        ...grounded_case("Restock it"),
+        rehearsal_score: "pass",
+        rehearsal_reasoning: "Restocked the right item.",
+      },
+    ])
+    expect(item.rehearsal_score).toBe("pass")
+    expect(item.rehearsal_reasoning).toBe("Restocked the right item.")
+    expect(single_turn_pipeline_inputs([item]).groundings).toEqual([
+      { openenv_reset: RESET_A, judge_guidance: "facts for Restock it" },
+    ])
   })
 
   it("refuses a case the grounding stream didn't ground", () => {

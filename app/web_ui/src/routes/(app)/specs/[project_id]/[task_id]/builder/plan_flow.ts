@@ -655,11 +655,17 @@ export function drive_cost_warning(args: {
   is_multi_turn: boolean
   count: number
   turns_per_case: number
+  // Grounding asks the judge to grade each case's rehearsal too.
+  checks_rehearsals?: boolean
 }): string {
+  const noun = args.is_multi_turn ? "conversation" : "item"
+  const rehearsals = args.checks_rehearsals
+    ? ` Checking rehearsals adds one judge call per ${noun}.`
+    : ""
   if (!args.is_multi_turn) {
     return `This will run your task on ${args.count} item${
       args.count === 1 ? "" : "s"
-    } and may use considerable credits.`
+    } and may use considerable credits.${rehearsals}`
   }
   // Spelled out rather than "N x M": the multiplication told the reader the
   // arithmetic but not what was being multiplied. "Up to", because the turn
@@ -668,7 +674,7 @@ export function drive_cost_warning(args: {
     args.count === 1 ? "" : "s"
   } of up to ${args.turns_per_case} turn${
     args.turns_per_case === 1 ? "" : "s"
-  } each. Running multi-turn data generation and evaluation can be expensive. Calculate your costs before proceeding.`
+  } each. Running multi-turn data generation and evaluation can be expensive.${rehearsals} Calculate your costs before proceeding.`
 }
 
 // ── The preparing-review gate ────────────────────────────────────────────

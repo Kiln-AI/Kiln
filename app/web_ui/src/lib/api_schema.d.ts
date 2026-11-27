@@ -3768,17 +3768,23 @@ export interface paths {
          *     what the case needs in a fresh episode, and writes the judge guidance. On a
          *     multi-turn task it fills real specifics into the simulated user kiln_server
          *     drafted; on a single-turn task it writes the input itself, as JSON matching
-         *     the task's input schema when there is one. Cases run concurrently.
+         *     the task's input schema when there is one. Cases run concurrently. With
+         *     `rehearsal_judge`, the agent's rehearsal of each grounded case (its last
+         *     episode, as a trace, with the episode's final state) is graded by that judge
+         *     before the case's frame is sent; a failed rehearsal flags the case, it never
+         *     drops it.
          *
          *     Emits (all frames `type`-discriminated):
          *       - grounding_started  { total }
          *       - case_grounded      { case_index, scenario_index, status: "grounded",
          *                              openenv_reset, seed_prompt, synthetic_user_info
          *                              (multi-turn), input (single-turn),
-         *                              judge_guidance }
+         *                              judge_guidance, rehearsal_score,
+         *                              rehearsal_reasoning }
          *       - case_dropped       { case_index, scenario_index, drop_reason,
          *                              drop_detail }
-         *       - grounding_finished { grounded, dropped, usage, usage_complete }
+         *       - grounding_finished { grounded, dropped, usage, usage_complete,
+         *                              rehearsal_judge_usage }
          *       - grounding_failed   { code, message }  (in place of
          *                              grounding_finished: an error that is not a
          *                              case's fault, such as an unreachable server,
@@ -9475,6 +9481,8 @@ export interface components {
              * @description The cases to ground. Frames refer to each by its position here (case_index).
              */
             cases: components["schemas"]["GroundCaseApi"][];
+            /** @description The eval's judge, to grade the grounding agent's rehearsal of each grounded case: one judge call per grounded case, paid with the user's keys. Omit to skip the check. A failed rehearsal is reported on the case, which is kept. */
+            rehearsal_judge?: components["schemas"]["JudgeConfig"] | null;
         };
         /**
          * GroundingModelApi

@@ -7,7 +7,7 @@
 // deliberately NOT persisted — it depends on disk state that can change
 // under a saved draft, so restore never lands past the plan screen.
 
-import type { ModelChoice } from "$lib/eval/default_judge"
+import type { JudgeConfig, ModelChoice } from "$lib/eval/default_judge"
 import type { KilnAgentRunConfigProperties, OpenEnvReset } from "$lib/types"
 import type { SuggestedEdit } from "../spec_utils"
 import type { GroundingDrop } from "./batch_plan_guidance"
@@ -25,6 +25,10 @@ export type SyntheticUserCaseWire = {
   leaf_run_id?: string
   openenv_reset?: OpenEnvReset | null
   judge_guidance?: string | null
+  // A grounded case's rehearsal verdict from the eval's judge, when the build
+  // checked rehearsals. A fail flags the case; it is still driven.
+  rehearsal_score?: "pass" | "fail" | null
+  rehearsal_reasoning?: string | null
 }
 
 // A case the save sends: the generated case plus the run it was driven in.
@@ -88,6 +92,10 @@ export type CachedGroundedCases = {
   // otherwise, since only that limit changes what grounding is told. Missing on
   // older drafts, which keep their sets.
   max_turns?: number | null
+  // Who gave the cases' rehearsal verdicts (rehearsal_judge_key), null when
+  // none was asked for. A verdict is shown only under that same judge. Missing
+  // on older drafts, whose verdicts are then never shown.
+  rehearsal_judge_key?: string | null
   cases: SyntheticUserCaseWire[]
   // How many cases grounding dropped. The drive counts them as planned-for,
   // not failed, so the shortfall it reports is only its own.
@@ -125,6 +133,36 @@ export type CaseGroundingKey = {
 // is sent and keyed as none, and changing it reuses the grounded set.
 export function grounding_turn_limit(turns: number | null): number | null {
   return turns === 1 ? 1 : null
+}
+
+// The identity of the judge that grades rehearsals: its model, thinking level
+// and prompt. Null when no rehearsal is judged.
+export function rehearsal_judge_key(judge: JudgeConfig | null): string | null {
+  if (!judge) return null
+  return JSON.stringify([
+    judge.model_name,
+    judge.model_provider,
+    judge.thinking_level ?? null,
+    judge.prompt,
+  ])
+}
+
+// The cases of a reused grounded set, with their rehearsal verdicts kept only
+// when the same judge (rehearsal_judge_key) gave them; any other judge's
+// verdicts are cleared, so the review never shows a verdict the current judge
+// didn't give.
+export function cases_with_current_verdicts(
+  cache: CachedGroundedCases,
+  judge_key: string | null,
+): SyntheticUserCaseWire[] {
+  if (judge_key !== null && (cache.rehearsal_judge_key ?? null) === judge_key) {
+    return cache.cases
+  }
+  return cache.cases.map((c) =>
+    c.rehearsal_score == null && c.rehearsal_reasoning == null
+      ? c
+      : { ...c, rehearsal_score: null, rehearsal_reasoning: null },
+  )
 }
 
 // The cached grounded set iff it came from EXACTLY this plan and spec and was
@@ -339,6 +377,10 @@ export type BuilderDraft = {
   // starts it on the judge model.
   grounding_model?: ModelChoice | null
   grounding_thinking_level?: string | null
+  // Generation Settings' Check Rehearsals box (OpenEnv builds): whether
+  // grounding asks the judge to grade each case's rehearsal. Missing on older
+  // drafts, which restore it off.
+  check_rehearsals?: boolean
   // The Generation Settings conversation length (multi-turn). Persisted for
   // the same reason as the lanes above: a reload should not silently put the
   // drive back on the default length. Null means no choice on record — drafts

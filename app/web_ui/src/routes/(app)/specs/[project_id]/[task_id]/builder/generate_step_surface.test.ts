@@ -1267,6 +1267,15 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     )
   })
 
+  it("shows a reused set's rehearsal verdicts only under the judge that gave them", () => {
+    expect(normalize(resolve_cases)).toContain(
+      "cases: cases_with_current_verdicts(grounded_cache, judge_key),",
+    )
+    expect(normalize(resolve_cases)).toContain(
+      "...grounding_key, rehearsal_judge_key: judge_key,",
+    )
+  })
+
   it("grounds the cached generated cases rather than generating again", () => {
     // A grounding failure or a judge change misses the grounded set only:
     // the generated cases are cached on plan and spec alone.
@@ -1676,5 +1685,48 @@ describe("a task with a JSON input schema on an OpenEnv build", () => {
     expect(
       normalize(function_body("async function on_drive_single_turn() {")),
     ).not.toContain("task?.input_json_schema")
+  })
+})
+
+describe("Generation Settings: the rehearsal check", () => {
+  const dialog = () =>
+    region(
+      '<Dialog bind:this={drive_settings_dialog} title="Generation Settings">',
+      "</Dialog>",
+    )
+
+  it("offers the box only on an OpenEnv build, bound to the staged copy", () => {
+    expect(normalize(dialog())).toContain(
+      normalize(`{#if build_openenv_server_id !== null}
+      <FormElement
+        id="check_rehearsals"
+        label="Check Rehearsals"
+        inputType="checkbox"
+        bind:value={staged_check_rehearsals}`),
+    )
+  })
+
+  it("starts off, also on an older draft, is reseeded on open and committed on submit", () => {
+    expect(contains("let check_rehearsals = false")).toBe(true)
+    expect(contains("check_rehearsals = saved.check_rehearsals ?? false")).toBe(
+      true,
+    )
+    expect(function_body("async function open_drive_settings() {")).toContain(
+      "staged_check_rehearsals = check_rehearsals",
+    )
+    expect(function_body("async function submit_drive_settings() {")).toContain(
+      "check_rehearsals = staged_check_rehearsals",
+    )
+  })
+
+  it("quotes the extra judge calls in the cost warning while the box is on", () => {
+    expect(
+      contains(`checks_rehearsals:
+      build_openenv_server_id !== null && staged_check_rehearsals,`),
+    ).toBe(true)
+  })
+
+  it("sends the build's judge to grounding only while the box is on", () => {
+    expect(mentions("check_rehearsals ? judge : null")).toBe(2)
   })
 })

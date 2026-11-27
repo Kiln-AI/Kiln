@@ -88,6 +88,10 @@ export type TraceClaims = {
   // builder and the re-judge read the guidance. Absent on ungrounded cases.
   openenv_reset?: OpenEnvReset | null
   judge_guidance?: string | null
+  // The verdict of the same judge on the grounding agent's own rehearsal of
+  // the case, before it was driven. Absent when rehearsals weren't checked.
+  rehearsal_score?: JudgeScore | null
+  rehearsal_reasoning?: string | null
 }
 
 // ── Human review (UI output) ─────────────────────────────────────────────

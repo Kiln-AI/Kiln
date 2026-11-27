@@ -4,7 +4,7 @@
 // runs grounded cases as its inputs.
 
 import type { components } from "$lib/api_schema"
-import type { ModelChoice } from "$lib/eval/default_judge"
+import type { JudgeConfig, ModelChoice } from "$lib/eval/default_judge"
 import type { OpenEnvReset } from "$lib/types"
 import { KilnError } from "$lib/utils/error_handlers"
 import { sse_data_payloads } from "$lib/utils/sse"
@@ -37,6 +37,10 @@ export type GroundingFrame =
       // multi-turn.
       input: string | null
       judge_guidance: string
+      // The eval's judge's verdict on the grounding agent's rehearsal of the
+      // case, when the request sent a rehearsal judge. Null when unjudged.
+      rehearsal_score?: "pass" | "fail" | null
+      rehearsal_reasoning?: string | null
     }
   | {
       type: "case_dropped"
@@ -122,7 +126,8 @@ export type GroundingModel = ModelChoice & { thinking_level?: string | null }
 // grounding agent reads no guide rather than an empty one; so is a blank
 // example input. max_turns is grounding_turn_limit of the multi-turn drive's
 // length: 1 for a one-message conversation, else null, as on a single-turn
-// build.
+// build. A rehearsal judge asks the server to grade each grounded
+// case's rehearsal with it: one paid judge call per grounded case.
 export function ground_cases_request(args: {
   target_run_config_id: string
   grounding_model: GroundingModel
@@ -131,12 +136,14 @@ export function ground_cases_request(args: {
   data_guide: string
   example_input?: string | null
   max_turns?: number | null
+  rehearsal_judge?: JudgeConfig | null
 }): GroundCasesRequest {
   return {
     ...args,
     data_guide: args.data_guide.trim() || null,
     example_input: args.example_input?.trim() || null,
     max_turns: args.max_turns ?? null,
+    rehearsal_judge: args.rehearsal_judge ?? null,
   }
 }
 
@@ -190,6 +197,8 @@ export function apply_grounding_frame(
             synthetic_user_info: frame.synthetic_user_info ?? "",
             openenv_reset: frame.openenv_reset,
             judge_guidance: frame.judge_guidance,
+            rehearsal_score: frame.rehearsal_score ?? null,
+            rehearsal_reasoning: frame.rehearsal_reasoning ?? null,
           },
         },
       }
@@ -398,11 +407,12 @@ export type SingleTurnGrounding = {
 }
 
 // One input a single-turn drive runs: the task input, and where it runs when
-// it was grounded in the build's OpenEnv server.
+// it was grounded in the build's OpenEnv server, with the verdict on its
+// rehearsal when that was judged.
 export type SingleTurnItem = {
   input: string
   grounding: SingleTurnGrounding | null
-}
+} & Pick<SyntheticUserCaseWire, "rehearsal_score" | "rehearsal_reasoning">
 
 export function ungrounded_single_turn_items(
   inputs: string[],
@@ -427,6 +437,8 @@ export function single_turn_items_from_cases(
         openenv_reset: c.openenv_reset,
         judge_guidance: c.judge_guidance,
       },
+      rehearsal_score: c.rehearsal_score ?? null,
+      rehearsal_reasoning: c.rehearsal_reasoning ?? null,
     }
   })
 }

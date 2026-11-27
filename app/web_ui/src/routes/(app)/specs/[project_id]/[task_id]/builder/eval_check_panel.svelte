@@ -13,6 +13,7 @@
   import {
     answers_summary,
     cases_per_fixture,
+    clip,
     drops_by_reason,
     failures_without_reasoning,
     fault_counts,
@@ -24,6 +25,7 @@
     OWNER_ANSWERS,
     percent,
     question_rows,
+    rehearsal_check,
     rule_label,
     type DropCount,
     type FailureGroupingState,
@@ -31,6 +33,7 @@
     type OwnerAnswer,
     type OwnerAnswers,
     type PanelCase,
+    type RehearsalCheck,
   } from "./eval_check"
 
   export let cases: PanelCase[]
@@ -50,16 +53,18 @@
   $: h = headroom(cases)
   $: failed = h.total - h.passed
   $: no_reasoning = failures_without_reasoning(cases)
+  $: rehearsal = rehearsal_check(cases)
   $: groupable = failed - no_reasoning
   $: spread = cases_per_fixture(cases)
   $: dropped = drops_by_reason(drops)
   $: rule = rule_label(spec_text, grouping)
   $: rows = question_rows(h, grouping)
 
-  $: properties = summary_properties(h, dropped, judged_noun)
+  $: properties = summary_properties(h, rehearsal, dropped, judged_noun)
 
   function summary_properties(
     h: Headroom,
+    rehearsal: RehearsalCheck | null,
     dropped: DropCount[],
     noun: string,
   ): UiProperty[] {
@@ -72,6 +77,15 @@
         warn_icon: h.verdict !== "ok",
       },
     ]
+    if (rehearsal) {
+      list.push({
+        name: "Rehearsal Fails",
+        value: `${rehearsal.failed.length} of ${rehearsal.judged}`,
+        tooltip:
+          "Before each case ran, the environment setup model acted it out as a well-behaved agent would, and the judge graded that run when the cases were set up. Models wrote and graded the rehearsal, and it has one user message, so a fail means look at this case, not that the case is wrong. The case still ran. Counted over the rehearsals the judge graded.",
+        warn_icon: rehearsal.failed.length > 0,
+      })
+    }
     if (dropped.length > 0) {
       list.push({
         name: "Dropped in Grounding",
@@ -106,6 +120,33 @@
       warning_icon="info"
       warning_message={`${no_reasoning} of ${failed} failures have no judge reasoning, so they can't be sorted by cause. To get reasoning, choose a higher Judge Thinking Level in Generation Settings and create the eval data again.`}
     />
+  {/if}
+
+  {#if rehearsal && rehearsal.failed.length > 0}
+    <div class="flex flex-col gap-3">
+      <SettingsHeader
+        title="Rehearsal Fails"
+        subtitle="The judge failed a well-behaved run of these cases. Models wrote and graded the rehearsal, and it has one user message, so a fail means look at this case, not that the case is wrong."
+        show_divider={false}
+      />
+      <div class="rounded-lg border">
+        <table class="table" data-rehearsal-fails>
+          <thead>
+            <tr><th>Case</th><th>Judge Reasoning</th></tr>
+          </thead>
+          <tbody>
+            {#each rehearsal.failed as failure (failure.trace_id)}
+              <tr>
+                <td>{clip(failure.raw_input, 200)}</td>
+                <td class="text-gray-500">
+                  {clip(failure.rehearsal_reasoning ?? "", 600)}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
   {/if}
 
   {#if failed === 0}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -39,8 +40,13 @@ from kiln_ai.tools.base_tool import (
 )
 from kiln_ai.tools.openenv_tool import tool_call_result
 
+logger = logging.getLogger(__name__)
+
 START_EPISODE_TOOL = "start_episode"
 """The session tool that starts a fresh environment from reset arguments."""
+FINAL_STATE_TIMEOUT_S = 30.0
+"""How long `end_episode()` waits for the final state. It is only for checking the
+rehearsal, so a slow read gives up on it instead of holding the case."""
 READ_STATE_TOOL = "read_state"
 """The session tool that reads the current environment's state."""
 SUBMIT_RESULT_TOOL = "submit_result"
@@ -90,8 +96,9 @@ class GroundingSession:
     """One case's tools on an OpenEnv server: `start_episode`, `read_state`, and one per
     server tool, sharing the current episode, the limits and the call log.
 
-    Owns at most one live episode at a time; `close()` releases it. `last_reset` is the
-    reset of the last episode that started, the environment the agent worked in last."""
+    Owns at most one live episode at a time; `close()` releases it, and `end_episode()`
+    ends it with its final state. `last_reset` is the reset of the last episode that
+    started, the environment the agent worked in last; `reset_of()` gives any episode's."""
 
     def __init__(
         self,
@@ -119,6 +126,9 @@ class GroundingSession:
         self._stop_error: BaseException | None = None
         self._stopped = asyncio.Event()
         self._call_log: list[LoggedCall] = []
+        self._ended_episode: OpenEnvEpisode | None = None
+        self._episode_resets: dict[str, OpenEnvReset] = {}
+        self._server_names: dict[str, str] = {}
         self._tools = self._build_tools(server_tools)
 
     def tools(self) -> list[KilnToolInterface]:
@@ -134,6 +144,34 @@ class GroundingSession:
     def last_reset(self) -> OpenEnvReset | None:
         """The reset of the last episode that started; None before any start."""
         return self._last_reset
+
+    @property
+    def ended_episode(self) -> OpenEnvEpisode | None:
+        """The last episode, when `end_episode()` ended it and read its final state.
+        None when it was released instead, or when reading its state failed or timed
+        out."""
+        return self._ended_episode
+
+    def reset_of(self, episode_id: str) -> OpenEnvReset | None:
+        """The reset an episode of this session started from; None for an unknown id."""
+        return self._episode_resets.get(episode_id)
+
+    def rehearsal_calls(self) -> list[LoggedCall]:
+        """The calls the agent made in the ended episode, in order, as the agent under
+        test would make them: without `start_episode` and `read_state`, which it doesn't
+        have, and with each server tool under its server name. Empty when no episode
+        was ended with its state."""
+        if self._ended_episode is None:
+            return []
+        episode_id = self._ended_episode.episode_id
+        return [
+            call.model_copy(
+                update={"tool": self._server_names.get(call.tool, call.tool)}
+            )
+            for call in self._call_log
+            if call.episode_id == episode_id
+            and call.tool not in (START_EPISODE_TOOL, READ_STATE_TOOL)
+        ]
 
     @property
     def limit_reached(self) -> bool:
@@ -153,14 +191,26 @@ class GroundingSession:
         run against this to end it."""
         await self._stopped.wait()
 
-    async def close_tools(self) -> None:
+    async def close_tools(self, *, keep_episode: bool = False) -> None:
         """Release the current episode and refuse every later call, so a follow-up that
         asks only for the agent's result can't change the environment it describes.
         `last_reset` keeps the reset the agent worked in. Refusals count toward the
-        hard stop as they do after a limit."""
+        hard stop as they do after a limit. With `keep_episode` the episode stays live,
+        for a later `end_episode()` or `close()`."""
         async with self._lock:
             self._tools_closed = True
-            await self._release_current()
+            if not keep_episode:
+                await self._release_current()
+
+    async def end_episode(self, timeout_s: float | None = None) -> None:
+        """End the current episode with its final state, kept as `ended_episode`. Does
+        nothing when no episode is live. A read that fails or takes longer than
+        `timeout_s` (default `FINAL_STATE_TIMEOUT_S`) leaves `ended_episode` None; the
+        episode is closed either way."""
+        async with self._lock:
+            await self._end_current(
+                FINAL_STATE_TIMEOUT_S if timeout_s is None else timeout_s
+            )
 
     async def close(self) -> None:
         """Release the current episode, if any. Safe to call more than once."""
@@ -201,6 +251,7 @@ class GroundingSession:
             while exposed_name in taken:
                 exposed_name = f"env_{exposed_name}"
             taken.add(exposed_name)
+            self._server_names[exposed_name] = server_tool.name
             tools.append(
                 _GroundingTool(
                     exposed_name,
@@ -261,6 +312,7 @@ class GroundingSession:
             self._episode = episode
             self._episode_closed = False
             self._last_reset = episode.reset
+            self._episode_resets[episode.episode_id] = episode.reset
             output = json.dumps(
                 {
                     "reset_metadata": episode.reset_metadata,
@@ -394,6 +446,26 @@ class GroundingSession:
                 episode_id=self._episode.episode_id if self._episode else None,
             )
         )
+
+    async def _end_current(self, timeout_s: float) -> None:
+        episode, self._episode = self._episode, None
+        if episode is None:
+            return
+        try:
+            # asyncio.wait_for, not asyncio.timeout: libs/core supports Python 3.10.
+            # The manager drops the session before its first await and closes it in a
+            # finally, so a timeout leaks no session.
+            self._ended_episode = await asyncio.wait_for(
+                self._session_manager.end_episode(episode), timeout=timeout_s
+            )
+        except (OpenEnvError, asyncio.TimeoutError):
+            # The end state is only for checking the rehearsal; the case itself
+            # doesn't need it.
+            logger.warning(
+                "Couldn't read the final state of grounding episode %s",
+                episode.episode_id,
+                exc_info=True,
+            )
 
     async def _release_current(self) -> None:
         episode, self._episode = self._episode, None

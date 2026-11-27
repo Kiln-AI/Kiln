@@ -28,6 +28,7 @@ const {
   MAX_GROUPED_FAILURES,
   on_target_sentence,
   question_rows,
+  rehearsal_check,
   rule_label,
   TOO_EASY_PASS_RATE,
   TOO_HARD_PASS_RATE,
@@ -221,6 +222,36 @@ describe("cases per fixture", () => {
 
   it("is null when no case ran in an OpenEnv server", () => {
     expect(cases_per_fixture([{ openenv_reset: null }, {}])).toBeNull()
+  })
+})
+
+describe("rehearsal_check", () => {
+  const rehearsed = (
+    trace_id: string,
+    rehearsal_score: "pass" | "fail" | null | undefined,
+  ) => ({
+    trace_id,
+    raw_input: `Message ${trace_id}`,
+    rehearsal_score,
+    rehearsal_reasoning: rehearsal_score ? `Why ${trace_id}` : null,
+  })
+
+  it("is null until a case carries a rehearsal verdict", () => {
+    expect(
+      rehearsal_check([rehearsed("a", null), rehearsed("b", undefined)]),
+    ).toBeNull()
+  })
+
+  it("counts over the judged rehearsals and lists the failed cases", () => {
+    const check = rehearsal_check([
+      rehearsed("a", "pass"),
+      rehearsed("b", "fail"),
+      rehearsed("c", null),
+      rehearsed("d", "fail"),
+    ])
+    expect(check?.judged).toBe(3)
+    expect(check?.failed.map((c) => c.trace_id)).toEqual(["b", "d"])
+    expect(check?.failed[0].rehearsal_reasoning).toBe("Why b")
   })
 })
 

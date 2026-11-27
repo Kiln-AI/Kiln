@@ -252,6 +252,43 @@ describe("EvalCheckPanel", () => {
     )
   })
 
+  it("shows rehearsal fails over the judged rehearsals, with each failed case", () => {
+    const cases = batch(3, 1).map((c, i) => ({
+      ...c,
+      raw_input: `Message ${i}`,
+      rehearsal_score:
+        i === 0 ? ("fail" as const) : i < 3 ? ("pass" as const) : null,
+      rehearsal_reasoning: i === 0 ? "It changed the wrong record." : null,
+    }))
+    const { container } = show(cases, { status: "idle" })
+    const all = text(container)
+    expect(all).toContain("Rehearsal Fails")
+    expect(all).toContain("1 of 3")
+    const rows = [
+      ...container.querySelectorAll("[data-rehearsal-fails] tbody tr"),
+    ].map((tr) => text(tr as HTMLElement).trim())
+    expect(rows).toEqual(["Message 0 It changed the wrong record."])
+    // A fail is a reason to look, not a verdict on the case.
+    expect(all).toContain(
+      "so a fail means look at this case, not that the case is wrong.",
+    )
+  })
+
+  it("lists no rehearsal cases when every judged rehearsal passed", () => {
+    const cases = batch(2, 0).map((c) => ({
+      ...c,
+      rehearsal_score: "pass" as const,
+    }))
+    const { container } = show(cases, { status: "idle" })
+    expect(text(container)).toContain("0 of 2")
+    expect(container.querySelector("[data-rehearsal-fails]")).toBeNull()
+  })
+
+  it("has no rehearsal row while no rehearsal was judged", () => {
+    const { container } = show(batch(3, 1), { status: "idle" })
+    expect(text(container)).not.toContain("Rehearsal Fails")
+  })
+
   it("hands every answer so far to the callback, one pick per row", async () => {
     const on_answers_change = vi.fn()
     const { container, component } = show(

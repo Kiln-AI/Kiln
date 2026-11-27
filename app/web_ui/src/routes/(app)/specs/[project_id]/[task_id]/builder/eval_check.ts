@@ -12,7 +12,7 @@ import type { OpenEnvReset, TraceMessage } from "$lib/types"
 import { server_message } from "$lib/utils/error_handlers"
 import type { GroundingDrop } from "./batch_plan_guidance"
 import type { CachedGroundedCases } from "./builder_draft"
-import type { JudgeScore, TraceClaims } from "./claim_evidence"
+import type { TraceClaims } from "./claim_evidence"
 
 export type GroupFailuresRequest =
   components["schemas"]["GroupFailuresApiInput"]
@@ -31,10 +31,9 @@ export type PanelCase = Pick<
   | "trace"
   | "openenv_reset"
   | "judge_guidance"
-> & {
-  // Set by the later rehearsal-check task (A1); nothing sets or reads it yet.
-  rehearsal_score?: JudgeScore | null
-}
+  | "rehearsal_score"
+  | "rehearsal_reasoning"
+>
 
 // ── Headroom ──────────────────────────────────────────────────────────────
 
@@ -119,6 +118,32 @@ export function cases_per_fixture(
   const total = grounded.length
   const crowded = rows[0].count * 2 > total ? rows[0] : null
   return { rows, total, crowded }
+}
+
+// ── Rehearsal check ───────────────────────────────────────────────────────
+
+// The judged cases whose rehearsal the judge also graded, and those it
+// failed. A failed rehearsal means the case, its judge guidance or the judge
+// is wrong. Null while no case carries a rehearsal verdict.
+export type RehearsalCheck = {
+  judged: number
+  failed: Pick<PanelCase, "trace_id" | "raw_input" | "rehearsal_reasoning">[]
+}
+
+export function rehearsal_check(
+  cases: Pick<
+    PanelCase,
+    "trace_id" | "raw_input" | "rehearsal_score" | "rehearsal_reasoning"
+  >[],
+): RehearsalCheck | null {
+  const judged = cases.filter(
+    (c) => c.rehearsal_score === "pass" || c.rehearsal_score === "fail",
+  )
+  if (judged.length === 0) return null
+  return {
+    judged: judged.length,
+    failed: judged.filter((c) => c.rehearsal_score === "fail"),
+  }
 }
 
 // ── Reasoning and drops ───────────────────────────────────────────────────

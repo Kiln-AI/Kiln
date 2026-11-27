@@ -1,14 +1,15 @@
 import asyncio
 import json
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import litellm
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, TurnMode
-from kiln_ai.datamodel.openenv import OpenEnvReset, OpenEnvServer
+from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvReset, OpenEnvServer
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import build_openenv_tool_id
@@ -32,9 +33,11 @@ from kiln_server.custom_errors import connect_custom_errors
 from app.desktop.studio_server.api_models.eval_builder_models import (
     GroundCaseApi,
     GroundingModelApi,
+    JudgeConfig,
 )
 from app.desktop.studio_server.eval_builder_api import (
     _grounding_sse,
+    _rehearsal_judge,
     connect_eval_builder_api,
 )
 from app.desktop.studio_server.services.eval_grounding import (
@@ -42,6 +45,7 @@ from app.desktop.studio_server.services.eval_grounding import (
     check_grounded_servers,
     grounding_frames,
 )
+from app.desktop.studio_server.utils.eval_builder_utils import JudgeVerdict
 
 GROUND_URL = "/api/projects/p1/tasks/t1/eval_builder/ground_cases"
 API = "app.desktop.studio_server.eval_builder_api"
@@ -476,6 +480,23 @@ class TestGroundCasesRoute:
         (call,) = calls
         assert call["eval_context"].max_turns == 1
 
+    @pytest.mark.parametrize("with_judge", [False, True])
+    def test_grounding_rehearses_only_when_a_rehearsal_judge_is_asked_for(
+        self, client, project_task_server, with_judge
+    ):
+        _project, _task, server = project_task_server
+        calls: list[dict[str, Any]] = []
+        fake = _fake_ground_cases(
+            [GroundingFinished(grounded=0, dropped=0, usage=None, usage_complete=True)],
+            calls,
+        )
+        request = {"rehearsal_judge": REHEARSAL_JUDGE} if with_judge else {}
+        with patch(f"{SERVICE}.ground_cases", new=fake):
+            resp = client.post(GROUND_URL, json=_request(server, **request))
+        assert resp.status_code == 200, resp.text
+        (call,) = calls
+        assert call["eval_context"].rehearse is with_judge
+
     def test_a_turn_limit_on_a_single_turn_task_is_422(
         self, client, project_task_server
     ):
@@ -497,6 +518,209 @@ class TestGroundCasesRoute:
         )
         assert resp.status_code == 422
         assert "single-turn tasks only" in resp.text
+
+
+REHEARSAL_TRACE: list[dict[str, Any]] = [
+    {"role": "system", "content": "You help with tickets."},
+    {"role": "user", "content": "Close ticket 7 please."},
+    {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "rehearsal_call_0",
+                "type": "function",
+                "function": {"name": "close_ticket", "arguments": '{"id": 7}'},
+            }
+        ],
+    },
+    {
+        "role": "tool",
+        "tool_call_id": "rehearsal_call_0",
+        "content": "closed",
+        "is_error": None,
+    },
+    {"role": "assistant", "content": "Ticket 7 is closed."},
+]
+
+REHEARSAL_JUDGE = {
+    "prompt": "Pass when the agent closes only the ticket the user means.",
+    "model_name": "claude_opus_4_5",
+    "model_provider": "anthropic",
+}
+
+
+def _rehearsed(server: OpenEnvServer) -> GroundingOutcome:
+    grounded = _grounded(server)
+    assert grounded.openenv_reset is not None
+    return grounded.model_copy(
+        update={
+            "rehearsal_trace": REHEARSAL_TRACE,
+            "rehearsal_episode": OpenEnvEpisode(
+                reset=grounded.openenv_reset,
+                episode_id="ep1",
+                openenv_version="counter@1",
+                final_state={"closed": [7]},
+            ),
+        }
+    )
+
+
+def _hooked_ground_cases(items: list[Any]):
+    """Yields `items` in order, calling on_grounded for each grounded case first, as
+    the core batch does."""
+
+    async def fake(cases, **kwargs):
+        on_grounded = kwargs.get("on_grounded")
+        for item in items:
+            if (
+                on_grounded is not None
+                and isinstance(item, CaseGrounded)
+                and item.outcome.status == "grounded"
+            ):
+                await on_grounded(item.case_index, item.outcome)
+            yield item
+
+    return fake
+
+
+class TestRehearsalCheck:
+    def _post(self, client, server, judge, *, outcome=None, **request):
+        fake = _hooked_ground_cases(
+            [
+                CaseGrounded(0, outcome or _rehearsed(server)),
+                GroundingFinished(
+                    grounded=1,
+                    dropped=0,
+                    usage=Usage(cost=1.0),
+                    usage_complete=True,
+                ),
+            ]
+        )
+        with (
+            patch(f"{SERVICE}.ground_cases", new=fake),
+            patch(f"{API}.run_judge_for_trace", new=judge),
+        ):
+            resp = client.post(GROUND_URL, json=_request(server, **request))
+        assert resp.status_code == 200, resp.text
+        frames = _frames(resp.text)
+        return frames[1], frames[2]
+
+    @pytest.mark.parametrize("score", ["pass", "fail"])
+    def test_the_rehearsal_is_judged_and_the_case_kept(
+        self, client, project_task_server, score
+    ):
+        _project, _task, server = project_task_server
+        judge = AsyncMock(
+            return_value=JudgeVerdict(
+                score, "Only ticket 7 changed.", usage=Usage(cost=0.04)
+            )
+        )
+        grounded, finished = self._post(
+            client, server, judge, rehearsal_judge=REHEARSAL_JUDGE
+        )
+
+        assert grounded["type"] == "case_grounded"
+        assert grounded["rehearsal_score"] == score
+        assert grounded["rehearsal_reasoning"] == "Only ticket 7 changed."
+        assert finished["usage"]["cost"] == 1.0
+        assert finished["rehearsal_judge_usage"]["cost"] == 0.04
+        judge.assert_awaited_once()
+        assert judge.await_args is not None
+        args, kwargs = judge.await_args
+        assert args[:3] == ("p1", "t1", "Close ticket 7 please.")
+        assert "Ticket 7 is closed." in args[3]
+        assert args[4] == JudgeConfig.model_validate(REHEARSAL_JUDGE)
+        assert kwargs["trace"] == REHEARSAL_TRACE
+        assert kwargs["judge_guidance"] == grounded["judge_guidance"]
+        assert kwargs["openenv_episode"].final_state == {"closed": [7]}
+
+    def test_no_judge_asked_for_means_no_judge_call(self, client, project_task_server):
+        _project, _task, server = project_task_server
+        judge = AsyncMock()
+        grounded, finished = self._post(client, server, judge)
+
+        judge.assert_not_called()
+        assert grounded["rehearsal_score"] is None
+        assert grounded["rehearsal_reasoning"] is None
+        assert finished["rehearsal_judge_usage"] is None
+
+    def test_a_case_without_a_rehearsal_is_not_judged(
+        self, client, project_task_server
+    ):
+        _project, _task, server = project_task_server
+        judge = AsyncMock()
+        grounded, finished = self._post(
+            client,
+            server,
+            judge,
+            outcome=_grounded(server),
+            rehearsal_judge=REHEARSAL_JUDGE,
+        )
+
+        judge.assert_not_called()
+        assert grounded["rehearsal_score"] is None
+        assert finished["rehearsal_judge_usage"] is None
+
+    def test_a_judge_error_leaves_the_case_unjudged(self, client, project_task_server):
+        _project, _task, server = project_task_server
+        judge = AsyncMock(side_effect=ValueError("Judge returned no score."))
+        grounded, finished = self._post(
+            client, server, judge, rehearsal_judge=REHEARSAL_JUDGE
+        )
+
+        assert grounded["type"] == "case_grounded"
+        assert grounded["rehearsal_score"] is None
+        assert finished["type"] == "grounding_finished"
+        assert finished["rehearsal_judge_usage"] is None
+
+    def test_a_slow_judge_times_out_and_leaves_the_case_unjudged(
+        self, client, project_task_server
+    ):
+        _project, _task, server = project_task_server
+
+        async def slow(*_args: Any, **_kwargs: Any) -> JudgeVerdict:
+            await asyncio.sleep(5)
+            return JudgeVerdict("pass", "late")
+
+        with patch(f"{SERVICE}.REHEARSAL_JUDGE_TIMEOUT_S", 0.01):
+            grounded, finished = self._post(
+                client, server, slow, rehearsal_judge=REHEARSAL_JUDGE
+            )
+
+        assert grounded["rehearsal_score"] is None
+        assert finished["type"] == "grounding_finished"
+
+    async def test_the_judge_retries_a_transient_error(self):
+        judge = AsyncMock(
+            side_effect=[
+                litellm.RateLimitError(
+                    message="upstream rate limit",
+                    llm_provider="anthropic",
+                    model="claude_opus_4_5",
+                ),
+                JudgeVerdict("pass", "fine"),
+            ]
+        )
+        rehearsal_judge = _rehearsal_judge(
+            "p1", "t1", JudgeConfig.model_validate(REHEARSAL_JUDGE)
+        )
+        with (
+            patch(f"{API}.run_judge_for_trace", new=judge),
+            patch(f"{API}.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            verdict = await rehearsal_judge(
+                REHEARSAL_TRACE,
+                "guidance",
+                OpenEnvEpisode(
+                    reset=OpenEnvReset(openenv_server_id="s", reset_kwargs={}),
+                    episode_id="ep1",
+                    openenv_version="counter@1",
+                ),
+            )
+
+        assert verdict.judge_score == "pass"
+        assert judge.await_count == 2
 
 
 class TestCheckGroundedServers:

@@ -32,6 +32,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.openenv import OpenEnvEpisode
 from kiln_ai.datamodel.task import Task
 from kiln_ai.eval_grounding.judge_guidance import JUDGE_GUIDANCE_REFERENCE_KEY
+from kiln_ai.utils.usage import Usage
 from kiln_server.task_api import task_from_id
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -75,6 +76,8 @@ class JudgeVerdict:
 
     judge_score: JudgeScoreLiteral
     judge_reasoning: str
+    usage: Usage | None = None
+    """What the judgment cost; None when the judge model reported no usage."""
 
 
 def transcript_io_for_trace(trace: list[Any]) -> tuple[str, str]:
@@ -375,6 +378,7 @@ async def run_judge_for_trace(
         judge_reasoning=_reasoning_from_intermediates(
             result.intermediate_outputs, judge_score
         ),
+        usage=result.usage,
     )
 
 

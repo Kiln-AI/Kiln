@@ -4,6 +4,6 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": true,
-    "approval_description": "Check each planned case against the run config's OpenEnv server and fill it in with real data? Runs an agent on the judge model per case (cost) and starts episodes on the server."
+    "approval_description": "Check each planned case against the run config's OpenEnv server and fill it in with real data? Runs an agent on the judge model per case (cost), and the eval's judge once per grounded case when asked to check rehearsals, and starts episodes on the server."
   }
 }

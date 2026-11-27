@@ -26,6 +26,7 @@ from kiln_ai.eval_grounding.models import (
     EvalContext,
     GroundingCase,
 )
+from kiln_ai.eval_grounding.prompt import system_prompt
 from kiln_ai.eval_grounding.session import TOOLS_CLOSED_MESSAGE, GroundingLimits
 from kiln_ai.openenv.session_manager import OpenEnvTransientError
 
@@ -638,9 +639,11 @@ SINGLE_TURN_CONTEXT = EvalContext(
 )
 
 
-def single_turn_result(*, input: str, args: Any = '{"limit": 5}') -> dict[str, Any]:
+def single_turn_result(
+    *, input: str, args: Any = '{"limit": 5}', **overrides: Any
+) -> dict[str, Any]:
     """A grounded single-turn result as the model returns it: an input, no user."""
-    fields = result(args=args)
+    fields = result(args=args, **overrides)
     del fields["seed_prompt"], fields["synthetic_user_info"]
     return {**fields, "input": input}
 
@@ -744,5 +747,327 @@ class TestSingleTurn:
             eval_context=SINGLE_TURN_CONTEXT.model_copy(update={"input_schema": None}),
             answer_style="submit_result",
         )
+        assert outcome.status == "dropped"
+        assert outcome.drop_reason == DropReason.invalid_output
+
+
+REPLY = "I added the note 'hi'."
+
+REHEARSING = EVAL_CONTEXT.model_copy(update={"rehearse": True})
+
+
+def rehearsed(**overrides: Any) -> dict[str, Any]:
+    """A grounded result with the rehearsal reply a rehearsing prompt asks for."""
+    return result(rehearsal_reply=REPLY, **overrides)
+
+
+class TestRehearsal:
+    async def test_a_grounded_case_keeps_its_last_episode_as_a_trace(
+        self, ground, scripted_model, server_is_free
+    ):
+        scripted_model.script(
+            model_reply(None, start("a")),
+            model_reply(None, ("append_note", {"note": "exploring"})),
+            model_reply(None, start("a")),
+            model_reply(None, READ_NOTES),
+            model_reply(None, ("append_note", {"note": "hi"})),
+            model_reply(None, ("read_state", {})),
+            model_reply(json.dumps(rehearsed(), ensure_ascii=False)),
+        )
+        outcome = await ground(eval_context=REHEARSING)
+
+        assert outcome.status == "grounded"
+        episode = outcome.rehearsal_episode
+        assert episode is not None and episode.final_state is not None
+        assert episode.final_state["notes"] == ["hi"]
+        assert episode.reset == outcome.openenv_reset
+        read_notes, append_note = outcome.call_log[3], outcome.call_log[4]
+        assert outcome.rehearsal_trace == [
+            {"role": "system", "content": "Help clerks keep notes."},
+            {"role": "user", "content": "Add the note 'hi' please."},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "rehearsal_call_0",
+                        "type": "function",
+                        "function": {"name": "read_notes", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "rehearsal_call_0",
+                "content": read_notes.output,
+                "is_error": None,
+            },
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "rehearsal_call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "append_note",
+                            "arguments": '{"note": "hi"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "rehearsal_call_1",
+                "content": append_note.output,
+                "is_error": None,
+            },
+            {"role": "assistant", "content": "I added the note 'hi'."},
+        ]
+        await server_is_free()
+
+    async def test_a_submitted_result_keeps_the_final_state(
+        self, ground, scripted_model, server_is_free
+    ):
+        scripted_model.script(
+            model_reply(None, start("b")),
+            model_reply(None, ("append_note", {"note": "hi"})),
+            model_reply(None, submit(**rehearsed(args={"limit": 5}))),
+            model_reply("done"),
+        )
+        outcome = await ground(answer_style="submit_result", eval_context=REHEARSING)
+
+        assert outcome.rehearsal_episode is not None
+        assert outcome.rehearsal_episode.final_state is not None
+        assert outcome.rehearsal_episode.final_state["notes"] == ["hi"]
+        assert outcome.rehearsal_trace is not None
+        assert outcome.rehearsal_trace[-1]["content"] == "I added the note 'hi'."
+        await server_is_free()
+
+    async def test_a_single_turn_rehearsal_opens_with_the_input(
+        self, ground, scripted_model
+    ):
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(
+                json.dumps(
+                    single_turn_result(input='{"note": "hi"}', rehearsal_reply=REPLY),
+                    ensure_ascii=False,
+                )
+            ),
+        )
+        outcome = await ground(
+            SINGLE_TURN_CASE,
+            eval_context=SINGLE_TURN_CONTEXT.model_copy(update={"rehearse": True}),
+        )
+
+        assert outcome.rehearsal_trace is not None
+        assert outcome.rehearsal_trace[1] == {
+            "role": "user",
+            "content": '{"note": "hi"}',
+        }
+
+    async def test_without_a_reply_there_is_no_rehearsal(self, ground, scripted_model):
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(json.dumps(result(rehearsal_reply=" "), ensure_ascii=False)),
+        )
+        outcome = await ground(eval_context=REHEARSING)
+
+        assert outcome.status == "grounded"
+        assert outcome.rehearsal_trace is None
+        assert outcome.rehearsal_episode is None
+
+    async def test_a_dropped_case_releases_its_episode_unread(
+        self, ground, scripted_model, session_manager, server_is_free
+    ):
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(
+                json.dumps(
+                    result(
+                        status="dropped",
+                        drop_reason="no_fit",
+                        drop_detail="Nothing fits.",
+                        seed_prompt=None,
+                        synthetic_user_info=None,
+                        rehearsal_reply=None,
+                        reference=None,
+                    ),
+                    ensure_ascii=False,
+                )
+            ),
+        )
+        with patch.object(
+            session_manager, "end_episode", wraps=session_manager.end_episode
+        ) as end_episode:
+            outcome = await ground(eval_context=REHEARSING)
+
+        assert outcome.status == "dropped"
+        assert outcome.rehearsal_trace is None
+        end_episode.assert_not_called()
+        await server_is_free()
+
+    async def test_a_result_only_on_the_follow_up_has_no_rehearsal(
+        self, ground, scripted_model
+    ):
+        scripted_model.script(
+            model_reply(None, start("a")),
+            model_reply("not json at all"),
+            model_reply(json.dumps(rehearsed(), ensure_ascii=False)),
+        )
+        outcome = await ground(eval_context=REHEARSING)
+
+        assert outcome.status == "grounded"
+        assert outcome.rehearsal_trace is None
+        assert outcome.rehearsal_episode is None
+
+    async def test_a_result_only_on_the_follow_up_says_why_it_has_none(
+        self, ground, scripted_model
+    ):
+        scripted_model.script(
+            model_reply(None, start("a")),
+            model_reply("not json at all"),
+            model_reply(json.dumps(rehearsed(), ensure_ascii=False)),
+        )
+        outcome = await ground(eval_context=REHEARSING)
+
+        assert outcome.rehearsal_skipped is not None
+        assert "final state" in outcome.rehearsal_skipped
+
+    async def test_facts_read_under_other_reset_arguments_keep_no_rehearsal(
+        self, ground, scripted_model, server_is_free
+    ):
+        scripted_model.script(
+            model_reply(None, start("b")),
+            model_reply(None, READ_NOTES),
+            model_reply(None, start("a")),
+            model_reply(None, ("append_note", {"note": "hi"})),
+            model_reply(json.dumps(rehearsed(args="{}"), ensure_ascii=False)),
+        )
+        outcome = await ground(eval_context=REHEARSING)
+
+        assert outcome.status == "grounded"
+        assert outcome.openenv_reset is not None
+        assert outcome.openenv_reset.reset_kwargs == {"fixture_id": "a"}
+        assert outcome.rehearsal_trace is None
+        assert outcome.rehearsal_episode is None
+        assert outcome.rehearsal_skipped is not None
+        assert "other reset arguments" in outcome.rehearsal_skipped
+        await server_is_free()
+
+    async def test_facts_read_under_the_saved_reset_keep_the_rehearsal(
+        self, ground, scripted_model
+    ):
+        # An earlier episode on other reset arguments doesn't matter when the
+        # evidence was read under the reset the case is saved with.
+        scripted_model.script(
+            model_reply(None, start("b")),
+            model_reply(None, ("append_note", {"note": "exploring"})),
+            model_reply(None, start("a")),
+            model_reply(None, READ_NOTES),
+            model_reply(None, start("a")),
+            model_reply(None, ("append_note", {"note": "hi"})),
+            model_reply(json.dumps(rehearsed(args="{}"), ensure_ascii=False)),
+        )
+        outcome = await ground(eval_context=REHEARSING)
+
+        assert outcome.rehearsal_trace is not None
+        assert outcome.rehearsal_skipped is None
+
+    async def test_a_slow_final_state_read_keeps_the_case_without_a_rehearsal(
+        self, ground, scripted_model, session_manager, server_is_free
+    ):
+        release = session_manager.release
+
+        async def slow_end_episode(episode):
+            try:
+                await asyncio.sleep(30)
+            finally:
+                await release(episode)
+
+        scripted_model.script(
+            model_reply(None, start("a")),
+            model_reply(None, ("append_note", {"note": "hi"})),
+            model_reply(json.dumps(rehearsed(), ensure_ascii=False)),
+        )
+        with (
+            patch("kiln_ai.eval_grounding.session.FINAL_STATE_TIMEOUT_S", 0.05),
+            patch.object(session_manager, "end_episode", side_effect=slow_end_episode),
+        ):
+            outcome = await ground(eval_context=REHEARSING)
+
+        assert outcome.status == "grounded"
+        assert outcome.rehearsal_trace is None
+        assert outcome.rehearsal_skipped is not None
+        await server_is_free()
+
+
+class TestWithoutARehearsalJudge:
+    """With `rehearse` off, grounding behaves as it did before rehearsals existed."""
+
+    @pytest.mark.parametrize("answer_style", ["structured_output", "submit_result"])
+    async def test_the_episode_is_released_unread(
+        self, ground, scripted_model, session_manager, server_is_free, answer_style
+    ):
+        final = (
+            [
+                model_reply(None, submit(**result(args={"limit": 5}))),
+                model_reply("done"),
+            ]
+            if answer_style == "submit_result"
+            else [model_reply(json.dumps(result(), ensure_ascii=False))]
+        )
+        scripted_model.script(
+            model_reply(None, start("a")),
+            model_reply(None, ("append_note", {"note": "hi"})),
+            *final,
+        )
+        with (
+            patch.object(
+                session_manager, "end_episode", wraps=session_manager.end_episode
+            ) as end_episode,
+            patch.object(
+                session_manager, "release", wraps=session_manager.release
+            ) as release,
+        ):
+            outcome = await ground(answer_style=answer_style)
+
+        assert outcome.status == "grounded"
+        assert outcome.rehearsal_trace is None
+        assert outcome.rehearsal_episode is None
+        assert outcome.rehearsal_skipped is None
+        end_episode.assert_not_called()
+        release.assert_called_once()
+        await server_is_free()
+
+    async def test_the_model_gets_the_prompt_and_schema_without_a_rehearsal(
+        self, ground, scripted_model, built_adapters
+    ):
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(json.dumps(result(), ensure_ascii=False)),
+        )
+        await ground()
+
+        task = built_adapters[0].task
+        assert task.instruction == system_prompt(
+            GroundingLimits(), 30, "structured_output", "multi_turn"
+        )
+        assert "rehearsal_reply" not in (task.output_json_schema or "")
+        assert "rehearsal_reply" not in task.instruction
+
+    async def test_a_rehearsal_reply_is_refused_by_the_schema(
+        self, ground, scripted_model
+    ):
+        # The strict schema is the same as before rehearsals existed, so a reply
+        # with the extra field is off it.
+        scripted_model.script(
+            model_reply(None, start()),
+            model_reply(json.dumps(rehearsed(), ensure_ascii=False)),
+            model_reply(json.dumps(rehearsed(), ensure_ascii=False)),
+        )
+        outcome = await ground()
+
         assert outcome.status == "dropped"
         assert outcome.drop_reason == DropReason.invalid_output

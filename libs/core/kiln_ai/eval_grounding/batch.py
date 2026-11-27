@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
 from kiln_ai.adapters.retry_classification import (
@@ -61,6 +61,9 @@ class GroundingFinished:
 
 GroundingProgress = CaseGrounded | GroundingFinished
 
+OnGrounded = Callable[[int, GroundingOutcome], Awaitable[None]]
+"""Called with a grounded case's position and outcome before the case is reported."""
+
 
 class GroundingCaseError(Exception):
     """A case raised an error that is not the case's fault, which stopped the batch.
@@ -90,6 +93,7 @@ async def ground_cases(
     concurrency: int = CONCURRENCY,
     max_retries: int = CASE_MAX_RETRIES,
     retry_delay_s: float = CASE_RETRY_DELAY_S,
+    on_grounded: OnGrounded | None = None,
 ) -> AsyncGenerator[GroundingProgress, None]:
     """Ground `cases` at most `concurrency` at a time. Yields a `CaseGrounded` as each
     finishes, in finishing order, then a `GroundingFinished`.
@@ -100,7 +104,11 @@ async def ground_cases(
     since the failed attempts' model calls are not in it. Any other error from a case
     (one that is not the case's fault), or a transient one that outlasts its retries,
     cancels the rest and waits for them to release their episodes, then is raised as a
-    `GroundingCaseError`. Closing the generator early cancels the rest the same way."""
+    `GroundingCaseError`. Closing the generator early cancels the rest the same way.
+
+    `on_grounded` runs for each grounded case inside that case's concurrency slot, once
+    its retries are over, and the case is reported when it returns. An error it raises
+    stops the batch like any other error that is not the case's fault."""
     if concurrency < 1:
         raise ValueError("concurrency must be at least 1")
     reset_schema = await session_manager.reset_schema(openenv_server)
@@ -143,6 +151,8 @@ async def ground_cases(
             raise
         if case_index in retried:
             outcome = outcome.model_copy(update={"usage_complete": False})
+        if on_grounded is not None and outcome.status == "grounded":
+            await on_grounded(case_index, outcome)
         queue.put_nowait(CaseGrounded(case_index, outcome))
         return True
 

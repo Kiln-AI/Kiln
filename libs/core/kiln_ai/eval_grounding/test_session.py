@@ -399,6 +399,117 @@ class TestCloseTools:
         assert isinstance(session.stop_error, GroundingLimitReached)
 
 
+class TestEndEpisode:
+    async def test_ends_with_the_final_state_and_frees_the_server(
+        self, make_session, server_is_free
+    ):
+        session = await make_session()
+        await call(session, "start_episode", reset_kwargs={"fixture_id": "a"})
+        await call(session, "append_note", note="hi")
+        await session.end_episode()
+        await server_is_free()
+        ended = session.ended_episode
+        assert ended is not None
+        assert ended.final_state is not None
+        assert ended.final_state["notes"] == ["hi"]
+        assert ended.reset == session.last_reset
+        with pytest.raises(ToolCallError, match=NO_EPISODE_MESSAGE):
+            await call(session, "read_notes")
+
+    async def test_close_tools_can_keep_the_episode_for_its_final_state(
+        self, make_session, server_is_free
+    ):
+        session = await make_session()
+        await call(session, "start_episode", reset_kwargs={})
+        await call(session, "append_note", note="hi")
+        await session.close_tools(keep_episode=True)
+        with pytest.raises(ToolCallError, match=TOOLS_CLOSED_MESSAGE):
+            await call(session, "read_notes")
+        await session.end_episode()
+        await server_is_free()
+        assert session.ended_episode is not None
+        assert session.ended_episode.final_state is not None
+        assert session.ended_episode.final_state["notes"] == ["hi"]
+
+    async def test_a_slow_final_state_read_gives_up_and_frees_the_server(
+        self, make_session, session_manager, server_is_free
+    ):
+        session = await make_session()
+        await call(session, "start_episode", reset_kwargs={})
+        release = session_manager.release
+
+        # Like the real manager, it closes the session however the read ends.
+        async def slow_end(episode):
+            try:
+                await asyncio.sleep(0.2)
+            finally:
+                await release(episode)
+
+        with patch.object(session_manager, "end_episode", side_effect=slow_end):
+            await session.end_episode(timeout_s=0.01)
+        assert session.ended_episode is None
+        await session.close()
+        await server_is_free()
+
+    async def test_release_keeps_no_final_state(self, make_session):
+        session = await make_session()
+        await call(session, "start_episode", reset_kwargs={})
+        await session.close_tools()
+        await session.end_episode()
+        assert session.ended_episode is None
+        assert session.rehearsal_calls() == []
+
+    async def test_an_unreadable_final_state_keeps_no_episode(
+        self, make_session, session_manager, server_is_free
+    ):
+        session = await make_session()
+        await call(session, "start_episode", reset_kwargs={})
+        with patch.object(
+            session_manager,
+            "_request",
+            AsyncMock(side_effect=OpenEnvTransientError("gone")),
+        ):
+            await session.end_episode()
+        await server_is_free()
+        assert session.ended_episode is None
+
+
+class TestRehearsalCalls:
+    async def test_only_the_last_episodes_calls_without_session_tools(
+        self, make_session
+    ):
+        session = await make_session()
+        await call(session, "start_episode", reset_kwargs={"fixture_id": "a"})
+        await call(session, "append_note", note="exploring")
+        await call(session, "start_episode", reset_kwargs={"fixture_id": "a"})
+        await call(session, "read_notes")
+        await call(session, "append_note", note="rehearsed")
+        await call(session, "read_state")
+        await call(session, "explode")
+        await session.end_episode()
+        calls = session.rehearsal_calls()
+        assert [(c.tool, c.args, c.is_error) for c in calls] == [
+            ("read_notes", {}, False),
+            ("append_note", {"note": "rehearsed"}, False),
+            ("explode", {}, True),
+        ]
+
+    async def test_renamed_tools_carry_their_server_name(self, make_session):
+        session = await make_session(
+            server_tools=[OpenEnvTool(name="read_state", description="notes")]
+        )
+        await call(session, "start_episode", reset_kwargs={})
+        await call(session, "env_read_state")
+        await call(session, "read_state")
+        await session.end_episode()
+        assert [c.tool for c in session.rehearsal_calls()] == ["read_state"]
+        assert [c.tool for c in session.call_log] == [
+            "start_episode",
+            "env_read_state",
+            "read_state",
+        ]
+
+
 class TestStop:
     async def test_the_hard_stop_is_recorded(self, make_session):
         session = await make_session(

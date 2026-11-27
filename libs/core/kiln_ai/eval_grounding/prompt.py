@@ -31,7 +31,6 @@ You get:
 <data_guide> the task's Data Guide: who uses that agent, what they ask and what its inputs look like (only when the task has one)
 <case_scenario> the planned scenario
 <simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags
-<turn_limit> how many messages the simulated user can send (only when it is known)
 <reset_schema> the server's reset arguments, as JSON Schema. Its descriptions are the server owner's notes: what each starting state contains, who a session can act as, and how any setup argument works.
 <target_tools> the tools the agent under test will have
 
@@ -57,7 +56,7 @@ Steps:
 5. Fill in the simulated user. It was written from the scenario and is good apart from its specifics and the leaks listed below: change only those. If the session acts as someone, put them in the persona. Put real specifics (IDs, names, values) in seed_prompt and goal where the scenario has the user know them. Keep its wording, tone and difficulty. If the scenario is about a user who doesn't know an ID, don't give them one.
    Then remove what a real user wouldn't say and what does the agent's work for it, from seed_prompt, goal and behavior_guidance alike:
    - anything that tells the agent what makes the case hard: that items look alike, that there are several matches, that it should look something up or ask
-   - the answer, the figure or the item the agent has to find, and the item it should leave alone. The user can still name the item they mean when the agent asks. When <turn_limit> gives the user one message, the agent can't ask: keep in seed_prompt what the agent needs to identify the record the user means (its name, number or email), as the scenario has the user know it.
+   - the answer, the figure or the item the agent has to find, and the item it should leave alone. The user can still name the item they mean when the agent asks.
    - instructions that rescue the agent, such as pointing out what it missed or asking which item it changed
    - requests for something the specification expects the agent to do without being asked
    Keep how the user answers questions the agent may ask them.
@@ -100,7 +99,7 @@ _SINGLE_TURN_EDITS: tuple[tuple[str, str], ...] = (
         "The case was planned without anyone looking at the server's environment. The agent under test gets one input, a single message, and answers it. Your job is to write that input so the case is true for that environment, or to drop the case.",
     ),
     (
-        "<case_scenario> the planned scenario\n<simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags\n<turn_limit> how many messages the simulated user can send (only when it is known)\n",
+        "<case_scenario> the planned scenario\n<simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags\n",
         "<example_input> a real input from the task's dataset, for the input's format and voice (only when there is one)\n<input_schema> the JSON schema the input must match (only when the task's input is structured)\n<case_scenario> the planned scenario\n",
     ),
     (
@@ -127,7 +126,7 @@ _SINGLE_TURN_EDITS: tuple[tuple[str, str], ...] = (
         """5. Fill in the simulated user. It was written from the scenario and is good apart from its specifics and the leaks listed below: change only those. If the session acts as someone, put them in the persona. Put real specifics (IDs, names, values) in seed_prompt and goal where the scenario has the user know them. Keep its wording, tone and difficulty. If the scenario is about a user who doesn't know an ID, don't give them one.
    Then remove what a real user wouldn't say and what does the agent's work for it, from seed_prompt, goal and behavior_guidance alike:
    - anything that tells the agent what makes the case hard: that items look alike, that there are several matches, that it should look something up or ask
-   - the answer, the figure or the item the agent has to find, and the item it should leave alone. The user can still name the item they mean when the agent asks. When <turn_limit> gives the user one message, the agent can't ask: keep in seed_prompt what the agent needs to identify the record the user means (its name, number or email), as the scenario has the user know it.
+   - the answer, the figure or the item the agent has to find, and the item it should leave alone. The user can still name the item they mean when the agent asks.
    - instructions that rescue the agent, such as pointing out what it missed or asking which item it changed
    - requests for something the specification expects the agent to do without being asked
    Keep how the user answers questions the agent may ask them.
@@ -157,18 +156,68 @@ that occurs exactly once, so a change to the shared text that breaks a pair fail
 import rather than shipping a half-edited prompt."""
 
 
-def _single_turn_template() -> str:
-    template = _SYSTEM_PROMPT_TEMPLATE
-    for old, new in _SINGLE_TURN_EDITS:
-        if template.count(old) != 1:
-            raise ValueError(
-                f"Single-turn prompt edit doesn't apply once: {old[:60]!r}"
-            )
-        template = template.replace(old, new)
-    return template
+_ONE_TURN_EDITS: tuple[tuple[str, str], ...] = (
+    (
+        "<simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags\n",
+        "<simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags\n<turn_limit> how many messages the simulated user can send\n",
+    ),
+    (
+        "The user can still name the item they mean when the agent asks.\n",
+        "The user can still name the item they mean when the agent asks. When <turn_limit> gives the user one message, the agent can't ask: keep in seed_prompt what the agent needs to identify the record the user means (its name, number or email), as the scenario has the user know it.\n",
+    ),
+)
+"""How a multi-turn prompt for a one-message conversation differs from the multi-turn
+one. A conversation of more than one message gets the multi-turn prompt unchanged."""
+
+_REHEARSAL_EDITS: tuple[tuple[str, str], ...] = (
+    (
+        "4. Rehearse: do what a well-behaved agent would do for this user, then observe the result. Read it back if a tool can; if not, use the tool results and read_state. This tells you what the right outcome is.",
+        "4. Rehearse, once you have the facts. Call start_episode one last time, from the reset arguments the case will start from (with any setup you added and the same `seed`), and use that environment for the rehearsal only. In it, call only the tools a well-behaved agent would call for this user, in the order it would call them, and nothing to look around or to check your own work: the eval's judge may grade every call in it as that agent's. Then observe the result with read_state, which is not part of the rehearsal; read it back with a tool only if that agent would. This tells you what the right outcome is. Then write rehearsal_reply: the reply that agent would give the user at the end, as it would send it.",
+    ),
+    (
+        "The case is saved with the reset arguments of your last start_episode call. Make that the environment you found the facts in and rehearsed in: if you reset again after rehearsing, the saved case starts from that later reset. Keep the same `seed` value in that last reset.",
+        "The case is saved with the reset arguments of your last start_episode call, the one you rehearsed in, and Kiln keeps that environment's end state with it. Start it from the reset arguments you found the facts with, so it holds what they describe. Don't reset after rehearsing: the saved case would start from that later reset, and the rehearsal would be lost. Keep the same `seed` value in that last reset.",
+    ),
+)
+"""How the prompt differs when the eval's judge grades each case's rehearsal: the
+agent rehearses in a last, clean episode and writes the reply a well-behaved agent
+would give. Without a rehearsal judge the prompt is unchanged."""
+
+_REHEARSAL_SKELETON_EDITS: tuple[tuple[str, str], ...] = (
+    (
+        '  "synthetic_user_info": "<persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>" | null,\n',
+        '  "synthetic_user_info": "<persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>" | null,\n  "rehearsal_reply": "the reply the well-behaved agent would give the user at the end of your rehearsal" | null,\n',
+    ),
+    (
+        "A grounded case fills seed_prompt, synthetic_user_info and reference,",
+        "A grounded case fills seed_prompt, synthetic_user_info, rehearsal_reply and reference,",
+    ),
+)
+
+_SINGLE_TURN_REHEARSAL_SKELETON_EDITS: tuple[tuple[str, str], ...] = (
+    (
+        '  "input": "the input the agent under test gets" | null,\n',
+        '  "input": "the input the agent under test gets" | null,\n  "rehearsal_reply": "the reply the well-behaved agent would give at the end of your rehearsal" | null,\n',
+    ),
+    (
+        "A grounded case fills input and reference,",
+        "A grounded case fills input, rehearsal_reply and reference,",
+    ),
+)
 
 
-_SINGLE_TURN_TEMPLATE = _single_turn_template()
+def _edited(text: str, edits: tuple[tuple[str, str], ...]) -> str:
+    """`text` with each pair's old text, which must occur exactly once, replaced. A
+    change to the shared text that breaks a pair fails at import rather than shipping a
+    half-edited prompt."""
+    for old, new in edits:
+        if text.count(old) != 1:
+            raise ValueError(f"Prompt edit doesn't apply once: {old[:60]!r}")
+        text = text.replace(old, new)
+    return text
+
+
+_SINGLE_TURN_TEMPLATE = _edited(_SYSTEM_PROMPT_TEMPLATE, _SINGLE_TURN_EDITS)
 
 _SINGLE_TURN_RESULT_SKELETON = """{{
   "status": "grounded" | "dropped",
@@ -182,6 +231,26 @@ _SINGLE_TURN_RESULT_SKELETON = """{{
   }} | null
 }}
 A grounded case fills input and reference, and leaves drop_reason and drop_detail null. A dropped case fills drop_reason and drop_detail."""
+
+_TEMPLATES: dict[tuple[GroundingMode, bool, bool], tuple[str, str]] = {}
+"""The (template, result skeleton) for each (mode, one_turn, rehearse), built and
+checked at import."""
+for _rehearse in (False, True):
+    for _one_turn in (False, True):
+        _template = _edited(
+            _SYSTEM_PROMPT_TEMPLATE, _ONE_TURN_EDITS if _one_turn else ()
+        )
+        _TEMPLATES[("multi_turn", _one_turn, _rehearse)] = (
+            _edited(_template, _REHEARSAL_EDITS if _rehearse else ()),
+            _edited(_RESULT_SKELETON, _REHEARSAL_SKELETON_EDITS if _rehearse else ()),
+        )
+    _TEMPLATES[("single_turn", False, _rehearse)] = (
+        _edited(_SINGLE_TURN_TEMPLATE, _REHEARSAL_EDITS if _rehearse else ()),
+        _edited(
+            _SINGLE_TURN_RESULT_SKELETON,
+            _SINGLE_TURN_REHEARSAL_SKELETON_EDITS if _rehearse else (),
+        ),
+    )
 
 _FINAL_ANSWER: dict[AnswerStyle, str] = {
     "reply_json": "When you are done, reply with only this JSON object:\n{skeleton}",
@@ -204,18 +273,27 @@ def system_prompt(
     time_limit_s: float = DEFAULT_TIME_LIMIT_S,
     answer_style: AnswerStyle = "reply_json",
     mode: GroundingMode = "multi_turn",
+    *,
+    one_turn: bool = False,
+    rehearse: bool = False,
 ) -> str:
     """The grounding agent's instructions for `mode`, with the limits it runs under and
-    how it hands back its result."""
-    single_turn = mode == "single_turn"
-    skeleton = (
-        _SINGLE_TURN_RESULT_SKELETON if single_turn else _RESULT_SKELETON
-    ).format(args='"{\\"id\\": 7}"' if answer_style == "structured_output" else "{}")
-    return (_SINGLE_TURN_TEMPLATE if single_turn else _SYSTEM_PROMPT_TEMPLATE).format(
+    how it hands back its result. `one_turn` (multi-turn only) is a conversation of one
+    message, where the agent under test can't ask the user anything. `rehearse` asks for
+    a rehearsal in a last, clean episode and a `rehearsal_reply`, for the eval's judge
+    to grade."""
+    if one_turn and mode == "single_turn":
+        raise ValueError("one_turn is for multi-turn grounding only.")
+    template, skeleton = _TEMPLATES[(mode, one_turn, rehearse)]
+    return template.format(
         max_resets=limits.max_resets,
         max_tool_calls=limits.max_tool_calls,
         time_limit_minutes=f"{time_limit_s / 60:g}",
-        final_answer=_FINAL_ANSWER[answer_style].format(skeleton=skeleton),
+        final_answer=_FINAL_ANSWER[answer_style].format(
+            skeleton=skeleton.format(
+                args='"{\\"id\\": 7}"' if answer_style == "structured_output" else "{}"
+            )
+        ),
     )
 
 
@@ -231,6 +309,13 @@ def follow_up_message(error: str, answer_style: AnswerStyle) -> str:
         f"Your last reply could not be used: {error}\n\n"
         "Reply with only the JSON object your instructions describe, and nothing else."
     )
+
+
+ONE_TURN_LIMIT_TEXT = (
+    "1 message: seed_prompt is all the agent under test gets, and the conversation "
+    "ends after its one reply."
+)
+"""The <turn_limit> a one-message conversation's case carries."""
 
 
 def case_message(
@@ -275,10 +360,8 @@ def case_message(
                 f"{_tagged('seed_prompt', case.seed_prompt)}\n{case.synthetic_user_info.strip()}",
             ),
         ]
-        if eval_context.max_turns is not None:
-            sections.append(
-                _tagged("turn_limit", _turn_limit_text(eval_context.max_turns))
-            )
+        if eval_context.max_turns == 1:
+            sections.append(_tagged("turn_limit", ONE_TURN_LIMIT_TEXT))
     else:
         if eval_context.example_input and eval_context.example_input.strip():
             sections.append(_tagged("example_input", eval_context.example_input))
@@ -291,18 +374,6 @@ def case_message(
             _tagged("reset_schema", schema_text),
             _tagged("target_tools", tools_text),
         ]
-    )
-
-
-def _turn_limit_text(max_turns: int) -> str:
-    if max_turns == 1:
-        return (
-            "1 message: seed_prompt is all the agent under test gets, and the "
-            "conversation ends after its one reply."
-        )
-    return (
-        f"{max_turns} messages: the conversation ends once the agent under test has "
-        f"replied {max_turns} times."
     )
 
 

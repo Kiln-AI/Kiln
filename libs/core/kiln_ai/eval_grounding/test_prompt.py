@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 
@@ -101,6 +102,7 @@ def test_system_prompt_states_the_limits():
     assert "Limits: 3 resets, 12 tool calls, 5 minutes." in prompt
 
 
+@pytest.mark.parametrize("rehearse", [False, True])
 @pytest.mark.parametrize(
     "answer_style", ["reply_json", "structured_output", "submit_result"]
 )
@@ -112,9 +114,11 @@ def test_system_prompt_states_the_limits():
     ],
 )
 def test_system_prompt_names_the_tools_and_every_result_field(
-    answer_style, mode, case_fields, other_fields
+    answer_style, mode, case_fields, other_fields, rehearse
 ):
-    prompt = system_prompt(answer_style=answer_style, mode=mode)
+    prompt = system_prompt(answer_style=answer_style, mode=mode, rehearse=rehearse)
+    if not rehearse:
+        other_fields = (*other_fields, "rehearsal_reply")
     assert "Limits: 10 resets, 40 tool calls, 15 minutes." in prompt
     for tool in (START_EPISODE_TOOL, READ_STATE_TOOL):
         assert f"{tool}(" in prompt
@@ -131,43 +135,40 @@ def test_system_prompt_names_the_tools_and_every_result_field(
 def test_system_prompt_lists_every_case_message_section():
     message = case_message(
         CASE,
-        eval_context=EVAL_CONTEXT.model_copy(update={"max_turns": 3}),
+        eval_context=EVAL_CONTEXT.model_copy(update={"max_turns": 1}),
         reset_schema=None,
         target_tools=[],
     )
-    prompt = system_prompt()
+    prompt = system_prompt(one_turn=True)
     for tag in re.findall(r"^<(\w+)>$", message, flags=re.MULTILINE):
         if tag != "seed_prompt":
             assert f"\n<{tag}> " in prompt
 
 
-@pytest.mark.parametrize(
-    ("max_turns", "limit"),
-    [
-        (
-            1,
-            "1 message: seed_prompt is all the agent under test gets, and the "
-            "conversation ends after its one reply.",
-        ),
-        (
-            3,
-            "3 messages: the conversation ends once the agent under test has "
-            "replied 3 times.",
-        ),
-    ],
-)
-def test_case_message_gives_the_turn_limit_after_the_simulated_user(max_turns, limit):
+def test_case_message_gives_a_one_message_limit_after_the_simulated_user():
+    message = case_message(
+        CASE,
+        eval_context=EVAL_CONTEXT.model_copy(update={"max_turns": 1}),
+        reset_schema=None,
+        target_tools=[],
+    )
+    assert (
+        "</simulated_user>\n\n<turn_limit>\n1 message: seed_prompt is all the agent "
+        "under test gets, and the conversation ends after its one reply.\n"
+        "</turn_limit>\n\n"
+    ) in message
+
+
+@pytest.mark.parametrize("max_turns", [None, 2, 3, 20])
+def test_case_message_of_more_than_one_message_is_as_before(max_turns):
+    """Only a one-message limit changes what grounding is told."""
     message = case_message(
         CASE,
         eval_context=EVAL_CONTEXT.model_copy(update={"max_turns": max_turns}),
         reset_schema=None,
         target_tools=[],
     )
-    assert f"</simulated_user>\n\n<turn_limit>\n{limit}\n</turn_limit>\n\n" in message
-
-
-def test_case_message_without_a_turn_limit_leaves_it_out():
-    message = case_message(
+    assert message == case_message(
         CASE, eval_context=EVAL_CONTEXT, reset_schema=None, target_tools=[]
     )
     assert "<turn_limit>" not in message
@@ -176,7 +177,9 @@ def test_case_message_without_a_turn_limit_leaves_it_out():
 def test_system_prompt_keeps_the_record_in_a_one_message_seed_prompt():
     """With one message the agent can't ask which record the user means, so the rule
     that strips the item the agent has to find must not strip the record's name."""
-    prompt = system_prompt()
+    assert "turn_limit" not in system_prompt()
+    prompt = system_prompt(one_turn=True)
+    assert "\n<turn_limit> how many messages the simulated user can send\n" in prompt
     assert (
         "The user can still name the item they mean when the agent asks. When "
         "<turn_limit> gives the user one message, the agent can't ask: keep in "
@@ -187,6 +190,8 @@ def test_system_prompt_keeps_the_record_in_a_one_message_seed_prompt():
 
 def test_single_turn_prompt_has_no_turn_limit():
     assert "turn_limit" not in system_prompt(mode="single_turn")
+    with pytest.raises(ValueError, match="one_turn is for multi-turn"):
+        system_prompt(mode="single_turn", one_turn=True)
 
 
 def test_single_turn_context_refuses_a_turn_limit():
@@ -373,3 +378,64 @@ def test_follow_up_message_per_answer_style():
         "You ended early.\n\nCall submit_result with your result now. Your other "
         "tools are closed."
     )
+
+
+@pytest.mark.parametrize("mode", ["multi_turn", "single_turn"])
+def test_both_prompts_ask_for_a_clean_last_episode_and_a_reply(mode):
+    prompt = system_prompt(mode=mode, rehearse=True)
+    assert "Call start_episode one last time" in prompt
+    assert "use that environment for the rehearsal only" in prompt
+    assert "nothing to look around or to check your own work" in prompt
+    assert "observe the result with read_state, which is not part of the rehearsal" in (
+        prompt
+    )
+    assert "Then write rehearsal_reply" in prompt
+    assert "the one you rehearsed in" in prompt
+    assert "Don't reset after rehearsing" in prompt
+    assert "Make that the environment you found the facts in" not in prompt
+    assert '"rehearsal_reply": "' in prompt
+    assert "rehearsal_reply and reference" in prompt
+
+
+PROMPT_SHA256_AT_EB5647E64 = {
+    (
+        "multi_turn",
+        "reply_json",
+    ): "89e78a2189c88434d1356901418021826e200bc0198b1ceaf49f5a9b169d4860",
+    (
+        "multi_turn",
+        "structured_output",
+    ): "071913f69bc6107391e97db5b5d684108092633d12e227c5645fe5f2943b8bec",
+    (
+        "multi_turn",
+        "submit_result",
+    ): "69a67cf1309a0f560e7c56401dc72a5092a4ef400f04fac204dfa1925d1f674d",
+    (
+        "single_turn",
+        "reply_json",
+    ): "73ce265d3ddaf29cddfbc4a9323f28887a348cbf62fe4fe5aa8c0851d6565c3d",
+    (
+        "single_turn",
+        "structured_output",
+    ): "fccdc6e202029c1d34989535a3cd6f5fbd057dd3cbe6debfbdaf70e3b9d69991",
+    (
+        "single_turn",
+        "submit_result",
+    ): "4d31293c2db525c02e470b745fbdd6b5803dd9d41a04575b5afab8b5d65924f7",
+}
+"""SHA-256 of each default prompt at commit eb5647e64, before the rehearsal check and
+the turn limit."""
+
+
+@pytest.mark.parametrize(("mode", "answer_style"), PROMPT_SHA256_AT_EB5647E64)
+def test_without_a_rehearsal_or_one_turn_the_prompt_is_as_before(mode, answer_style):
+    """With no rehearsal judge and no one-message limit, grounding is told exactly
+    what it was told before either existed. Update a digest only on a deliberate
+    change to the prompt."""
+    prompt = system_prompt(answer_style=answer_style, mode=mode)
+    assert (
+        hashlib.sha256(prompt.encode()).hexdigest()
+        == PROMPT_SHA256_AT_EB5647E64[(mode, answer_style)]
+    )
+    assert "rehearsal_reply" not in prompt
+    assert "turn_limit" not in prompt

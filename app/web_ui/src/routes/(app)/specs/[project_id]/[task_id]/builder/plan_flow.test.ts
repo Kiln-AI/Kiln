@@ -1032,6 +1032,42 @@ describe("drive_cost_warning", () => {
     )
   })
 
+  it("adds the rehearsal judge calls when rehearsals are checked", () => {
+    expect(
+      drive_cost_warning({
+        is_multi_turn: true,
+        count: 40,
+        turns_per_case: 5,
+        checks_rehearsals: true,
+      }),
+    ).toBe(
+      "This will run 40 conversations of up to 5 turns each. Running multi-turn data generation and evaluation can be expensive. Checking rehearsals adds one judge call per conversation. Calculate your costs before proceeding.",
+    )
+    expect(
+      drive_cost_warning({
+        is_multi_turn: false,
+        count: 40,
+        turns_per_case: 5,
+        checks_rehearsals: true,
+      }),
+    ).toBe(
+      "This will run your task on 40 items and may use considerable credits. Checking rehearsals adds one judge call per item.",
+    )
+  })
+
+  it("names no rehearsal judge calls while the box is off", () => {
+    expect(
+      drive_cost_warning({
+        is_multi_turn: false,
+        count: 40,
+        turns_per_case: 5,
+        checks_rehearsals: false,
+      }),
+    ).toBe(
+      "This will run your task on 40 items and may use considerable credits.",
+    )
+  })
+
   it("says one item, not 1 items", () => {
     // A one-row plan is reachable: the user can delete rows down to one.
     expect(

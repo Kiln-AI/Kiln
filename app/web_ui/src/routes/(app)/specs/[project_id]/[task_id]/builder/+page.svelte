@@ -38,6 +38,7 @@
   import {
     builder_draft_key,
     builder_mock_active,
+    cases_with_current_verdicts,
     draft_after_save_keeping_stranded_tags,
     draft_has_content,
     draft_is_resumable,
@@ -50,6 +51,7 @@
     reusable_grounded_cases,
     reusable_minted_inputs,
     grounding_turn_limit,
+    rehearsal_judge_key,
     should_invalidate_refined_values,
     should_prefill_suggested_name,
     run_config_cache_key,
@@ -511,6 +513,7 @@
         judge_thinking_level,
         grounding_model: grounding_lane_model,
         grounding_thinking_level,
+        check_rehearsals,
         turns_per_case,
         target_run_config_id,
         openenv_server_lookup,
@@ -626,6 +629,9 @@
       judge_thinking_level = saved.judge_thinking_level ?? null
       grounding_lane_model = saved.grounding_model ?? null
       grounding_thinking_level = saved.grounding_thinking_level ?? null
+      // Older drafts lack the key and restore the box off: the check is a
+      // paid call the user opts into.
+      check_rehearsals = saved.check_rehearsals ?? false
       // Conversation length: no key, no choice on record, or a stored value
       // that isn't a number restores the default; a real number is clamped to
       // the current range.
@@ -1198,6 +1204,8 @@
     is_multi_turn,
     count: planned_total,
     turns_per_case: staged_drive_turns_per_case,
+    checks_rehearsals:
+      build_openenv_server_id !== null && staged_check_rehearsals,
   })
   // Which loading stage Step 4 is in — drives the progress screen only.
   // The interactive plan-approval view is DERIVED (show_plan_approval below),
@@ -1593,6 +1601,12 @@
   // the route would reject.
   $: staged_drive_turns_per_case = clamp_turns_per_case(staged_turns_per_case)
 
+  // Whether grounding asks the judge to grade each grounded case's rehearsal
+  // (one more judge call per case), committed and staged like the length.
+  // Off until the user turns it on: it is a paid call they opt into.
+  let check_rehearsals = false
+  let staged_check_rehearsals = check_rehearsals
+
   // ── Model lanes (SDG's Generation Settings pattern). The Generation
   // Settings dialog is the drive's only entrance: it shows the lanes the
   // run will spend on — the user simulator (multi-turn), the input
@@ -1881,6 +1895,7 @@
     // gone the next time it opens. Unlike the lanes it waits on nothing, so it
     // is seeded up front rather than after the await below.
     staged_turns_per_case = turns_per_case
+    staged_check_rehearsals = check_rehearsals
     // Await the pre-population pass (usually already in flight from the plan
     // surface, so this resolves at once) so the reseed below reads resolved
     // lanes. On failure the dialog still opens on whatever is committed.
@@ -2137,6 +2152,7 @@
         grounding_provider_id,
       )
       grounding_thinking_level = staged_grounding_thinking_level
+      check_rehearsals = staged_check_rehearsals
     }
     // Commit the staged length. Clamped on the way in so the committed value —
     // what the request, the draft, and the stamp all read — is always one the
@@ -2649,6 +2665,7 @@
     grounding_model: GroundingModel,
     data_guide: string,
     max_turns: number | null,
+    rehearsal_judge: JudgeConfig | null,
     signal: AbortSignal,
   ): Promise<GroundingOutcome | null> {
     const request_cases = grounding_request_cases(
@@ -2668,6 +2685,7 @@
       max_turns,
       // Single-turn: a real input from the task's dataset, for format.
       example_input: is_multi_turn ? null : grounding_sample?.input ?? null,
+      rehearsal_judge,
     })
     // Aborting (Back, leaving the page) closes the stream, and the server
     // ends every episode the cancelled cases had open.
@@ -2763,7 +2781,8 @@
   type PlanCases = { cases: SyntheticUserCaseWire[]; grounding_drops: number }
 
   // The cases a drive runs, on either arm: the cached grounded set when it was
-  // grounded from exactly this plan, spec, server and judge; else the plan's
+  // grounded from exactly this plan and spec under grounding_key, with only the
+  // rehearsal verdicts `rehearsal_judge` itself gave; else the plan's
   // generated cases, grounded in the server when the build has one. The cases
   // that fit run; the drops are kept for the review's notice. Returns null
   // after setting generation_error or grounding_all_dropped, with the previous
@@ -2773,6 +2792,7 @@
     target_run_config_id: string,
     grounding_model: GroundingModel,
     grounding_key: CaseGroundingKey | null,
+    rehearsal_judge: JudgeConfig | null,
   ): Promise<PlanCases | null> {
     const grounded_cache = grounding_key
       ? reusable_grounded_cases(
@@ -2782,13 +2802,14 @@
           grounding_key,
         )
       : null
+    const judge_key = rehearsal_judge_key(rehearsal_judge)
     if (grounded_cache) {
       posthog.capture("eval_v2_su_cases_reused", {
         num_cases: grounded_cache.cases.length,
         grounded: true,
       })
       return {
-        cases: grounded_cache.cases,
+        cases: cases_with_current_verdicts(grounded_cache, judge_key),
         grounding_drops: grounded_cache.grounding_dropped,
       }
     }
@@ -2808,6 +2829,7 @@
       grounding_model,
       grounding_key.data_guide,
       grounding_key.max_turns,
+      rehearsal_judge,
       new_copilot_abort_signal(),
     )
     if (outcome === null) return null
@@ -2825,6 +2847,7 @@
       prompts_json: JSON.stringify(approved_prompts),
       spec_text: spec_text(),
       ...grounding_key,
+      rehearsal_judge_key: judge_key,
       cases: outcome.grounded,
       grounding_dropped: outcome.drops.length,
       drops: outcome.drops,
@@ -2986,6 +3009,7 @@
         target_run_config_id,
         grounding_model,
         grounding_key,
+        check_rehearsals ? judge : null,
       )
       if (resolved === null) return
       const { cases, grounding_drops: drive_grounding_drops } = resolved
@@ -3195,6 +3219,10 @@
               openenv_reset: drive_plan.items[event.case_index]?.openenv_reset,
               judge_guidance:
                 drive_plan.items[event.case_index]?.judge_guidance,
+              rehearsal_score:
+                drive_plan.items[event.case_index]?.rehearsal_score ?? null,
+              rehearsal_reasoning:
+                drive_plan.items[event.case_index]?.rehearsal_reasoning ?? null,
             }
             judged_case_count += 1
           }
@@ -3578,6 +3606,7 @@
           target_run_config_id,
           grounding_model,
           grounding_key,
+          check_rehearsals ? judge : null,
         )
         if (resolved === null) return
         items = single_turn_items_from_cases(resolved.cases)
@@ -3790,6 +3819,10 @@
                 drive_plan.items[event.case_index]?.grounding?.openenv_reset,
               judge_guidance:
                 drive_plan.items[event.case_index]?.grounding?.judge_guidance,
+              rehearsal_score:
+                drive_plan.items[event.case_index]?.rehearsal_score ?? null,
+              rehearsal_reasoning:
+                drive_plan.items[event.case_index]?.rehearsal_reasoning ?? null,
             }
             judged_case_count += 1
           }
@@ -6470,6 +6503,15 @@
         fancy_select_options={judge_thinking_level_options}
         info_description={THINKING_LEVEL_INFO_DESCRIPTION}
         optional={true}
+      />
+    {/if}
+    {#if build_openenv_server_id !== null}
+      <FormElement
+        id="check_rehearsals"
+        label="Check Rehearsals"
+        inputType="checkbox"
+        bind:value={staged_check_rehearsals}
+        info_description="The environment setup model acts out each case as a well-behaved agent would, and the judge grades that run. A failed run is flagged on the review start screen, and the case still runs. One more judge call per case."
       />
     {/if}
     {#if reset_arguments_warning}

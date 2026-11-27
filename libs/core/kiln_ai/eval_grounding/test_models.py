@@ -18,6 +18,7 @@ from kiln_ai.eval_grounding.models import (
     GroundingResult,
     LoggedCall,
     ModelDropReason,
+    rehearsal_trace,
     result_json_schema,
 )
 from kiln_ai.synthetic_user.parser import SyntheticUserInfoParseError
@@ -55,6 +56,14 @@ def test_grounded_result_parses():
     result = GroundingResult.model_validate(_grounded_result())
     assert result.reference is not None
     assert result.reference.facts[0].evidence.args == {"status": "open", "limit": 5}
+
+
+def test_rehearsal_reply_is_kept_and_optional():
+    with_reply = GroundingResult.model_validate(
+        _grounded_result(rehearsal_reply="#804 is on hold now.")
+    )
+    assert with_reply.rehearsal_reply == "#804 is on hold now."
+    assert GroundingResult.model_validate(_grounded_result()).rehearsal_reply is None
 
 
 @pytest.mark.parametrize("missing", ["seed_prompt", "synthetic_user_info", "reference"])
@@ -332,7 +341,9 @@ class TestResultJsonSchema:
     def test_names_every_field(self, encoded):
         schema = result_json_schema(args_as_json_string=encoded)
         assert list(schema["properties"]) == [
-            field for field in GroundingResult.model_fields if field != "input"
+            field
+            for field in GroundingResult.model_fields
+            if field not in ("input", "rehearsal_reply")
         ]
         reference = schema["properties"]["reference"]["anyOf"][0]
         assert list(reference["properties"]) == list(GroundedReference.model_fields)
@@ -346,7 +357,7 @@ class TestResultJsonSchema:
         assert list(schema["properties"]) == [
             field
             for field in GroundingResult.model_fields
-            if field not in ("seed_prompt", "synthetic_user_info")
+            if field not in ("seed_prompt", "synthetic_user_info", "rehearsal_reply")
         ]
 
     def test_results_validate_under_strict_closing(self):
@@ -417,3 +428,42 @@ class TestFromModelOutput:
             DROPPED_RESULT, args_as_json_string=True
         )
         assert result.drop_reason == "no_fit"
+
+
+def test_rehearsal_trace_marks_a_failed_call():
+    trace = rehearsal_trace(
+        system_prompt="Help.",
+        user_message="Hold #804",
+        calls=[
+            LoggedCall(
+                tool="update_ticket",
+                args={"id": 804},
+                output="not allowed",
+                is_error=True,
+                episode_id="e",
+            )
+        ],
+        reply="I couldn't hold #804.",
+    )
+    assert [m["role"] for m in trace] == [
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    assert trace[2]["tool_calls"][0]["function"] == {
+        "name": "update_ticket",
+        "arguments": '{"id": 804}',
+    }
+    assert trace[3]["is_error"] is True
+
+
+@pytest.mark.parametrize("mode", ["multi_turn", "single_turn"])
+def test_the_schema_asks_for_a_rehearsal_reply_only_when_rehearsing(mode):
+    without = result_json_schema(args_as_json_string=True, mode=mode)
+    assert "rehearsal_reply" not in without["properties"]
+    assert "rehearsal_reply" not in without["required"]
+    rehearsing = result_json_schema(args_as_json_string=True, mode=mode, rehearse=True)
+    assert "rehearsal_reply" in rehearsing["properties"]
+    assert "rehearsal_reply" in rehearsing["required"]

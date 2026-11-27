@@ -124,6 +124,29 @@ async def test_yields_each_case_then_the_totals(batch, session_manager):
     assert seen_kwargs[0]["model_name"] == "gpt-4"
 
 
+async def test_on_grounded_runs_for_grounded_cases_before_each_is_reported(batch):
+    outcomes = {"scenario 0": grounded(10), "scenario 1": dropped()}
+    seen: list[tuple[int, str]] = []
+    reported: list[int] = []
+
+    async def on_grounded(case_index: int, outcome: GroundingOutcome) -> None:
+        seen.append((case_index, outcome.status))
+        assert case_index not in reported
+
+    async def fake_ground_case(grounding_case: GroundingCase, **kwargs: Any):
+        return outcomes[grounding_case.scenario]
+
+    with patch(
+        "kiln_ai.eval_grounding.batch.ground_case", side_effect=fake_ground_case
+    ):
+        async for event in batch([case(0), case(1)], on_grounded=on_grounded):
+            if isinstance(event, CaseGrounded):
+                reported.append(event.case_index)
+
+    assert seen == [(0, "grounded")]
+    assert sorted(reported) == [0, 1]
+
+
 async def test_runs_at_most_concurrency_cases_at_once(batch):
     running = 0
     most = 0

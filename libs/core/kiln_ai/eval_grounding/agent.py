@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -37,6 +38,7 @@ from kiln_ai.eval_grounding.models import (
     GroundingMode,
     GroundingOutcome,
     GroundingResult,
+    Rehearsal,
     result_json_schema,
 )
 from kiln_ai.eval_grounding.prompt import (
@@ -66,6 +68,8 @@ from kiln_ai.tools.base_tool import (
 )
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 from kiln_ai.utils.usage import Usage
+
+logger = logging.getLogger(__name__)
 
 NO_SUBMISSION_ERROR = f"You ended without calling {SUBMIT_RESULT_TOOL}."
 """Why a `submit_result` run's reply could not be used, when the tool was never called."""
@@ -103,7 +107,12 @@ async def ground_case(
     are not the case's fault (the environment failing, the model provider failing) are
     raised, unless a `submit_result` call already recorded the result, which is kept.
     An adapter error the model caused (an empty reply, too many tool rounds) drops the
-    case. The case's episode is released on every exit, cancellation included."""
+    case. The case's episode is released on every exit, cancellation included.
+
+    With `eval_context.rehearse`, a grounded case's last episode is ended with its final
+    state after the time limit's watch is over, so a slow read can't drop a finished
+    case, and kept with the calls made in it as the outcome's rehearsal (see
+    `_GroundingRun.rehearse`)."""
     message = case_message(
         case,
         eval_context=eval_context,
@@ -124,20 +133,32 @@ async def ground_case(
         thinking_level=thinking_level,
         mode=eval_context.mode,
         instruction=system_prompt_text
-        or system_prompt(limits, time_limit_s, answer_style, eval_context.mode),
+        or system_prompt(
+            limits,
+            time_limit_s,
+            answer_style,
+            eval_context.mode,
+            one_turn=eval_context.max_turns == 1,
+            rehearse=eval_context.rehearse,
+        ),
+        rehearse=eval_context.rehearse,
     )
     run = _GroundingRun(session, adapter, submit_tool, eval_context)
     try:
-        # asyncio.wait_for, not asyncio.timeout: libs/core supports Python 3.10.
-        return await asyncio.wait_for(run.ground(message), timeout=time_limit_s)
-    except asyncio.TimeoutError:
-        return GroundingOutcome.dropped(
-            DropReason.limit,
-            time_limit_detail(time_limit_s),
-            call_log=session.call_log,
-            usage=run.usage,
-            usage_complete=False,
-        )
+        try:
+            # asyncio.wait_for, not asyncio.timeout: libs/core supports Python 3.10.
+            outcome = await asyncio.wait_for(run.ground(message), timeout=time_limit_s)
+        except asyncio.TimeoutError:
+            return GroundingOutcome.dropped(
+                DropReason.limit,
+                time_limit_detail(time_limit_s),
+                call_log=session.call_log,
+                usage=run.usage,
+                usage_complete=False,
+            )
+        if eval_context.rehearse:
+            outcome = await run.rehearse(outcome)
+        return outcome
     finally:
         await session.close()
 
@@ -151,6 +172,7 @@ def _build_adapter(
     thinking_level: str | None,
     mode: GroundingMode,
     instruction: str,
+    rehearse: bool,
 ) -> BaseAdapter:
     structured = submit_tool is None
     task = Task(
@@ -158,7 +180,7 @@ def _build_adapter(
         description="In-memory grounding agent. Not persisted.",
         instruction=instruction,
         output_json_schema=json.dumps(
-            result_json_schema(args_as_json_string=True, mode=mode),
+            result_json_schema(args_as_json_string=True, mode=mode, rehearse=rehearse),
             ensure_ascii=False,
         )
         if structured
@@ -232,6 +254,7 @@ class _GroundingRun:
         self._adapter = adapter
         self._submit_tool = submit_tool
         self._eval_context = eval_context
+        self._result: GroundingResult | None = None
         self.usage: Usage | None = None
         # Kiln's adapter reports a run's usage only when the run returns, so a run that
         # is cancelled or raises leaves its calls out of `usage`.
@@ -349,14 +372,90 @@ class _GroundingRun:
         if usage is not None:
             self.usage = usage if self.usage is None else self.usage + usage
 
-    def _outcome(self, result: GroundingResult) -> GroundingOutcome:
+    def _outcome(
+        self, result: GroundingResult, rehearsal: Rehearsal | None = None
+    ) -> GroundingOutcome:
+        self._result = result
         return GroundingOutcome.from_result(
             result,
             openenv_reset=self._session.last_reset,
             call_log=self._session.call_log,
             usage=self.usage,
             usage_complete=self.usage_complete,
+            rehearsal=rehearsal,
         )
+
+    async def rehearse(self, outcome: GroundingOutcome) -> GroundingOutcome:
+        """`outcome` with its rehearsal, for a grounded case: the last episode, ended
+        with its final state, and the calls made in it. When there is none, the case is
+        kept as it is and `rehearsal_skipped` says why. Runs after the case's time
+        limit, and the final-state read has its own short limit."""
+        result = self._result
+        if outcome.status != "grounded" or result is None:
+            return outcome
+        await self._session.end_episode()
+        rehearsal, skipped = self._rehearsal(result)
+        if rehearsal is None:
+            logger.info("Grounded case has no rehearsal to judge: %s", skipped)
+            return outcome.model_copy(update={"rehearsal_skipped": skipped})
+        return self._outcome(result, rehearsal)
+
+    def _rehearsal(self, result: GroundingResult) -> tuple[Rehearsal | None, str]:
+        """The rehearsal, or None and why there is none."""
+        if not (result.rehearsal_reply and result.rehearsal_reply.strip()):
+            return None, "The agent wrote no rehearsal reply."
+        episode = self._session.ended_episode
+        if episode is None or episode.final_state is None:
+            return None, (
+                "The last episode's final state couldn't be read: it was released "
+                "before the result arrived, or the read failed or timed out."
+            )
+        mismatch = self._facts_reset_mismatch(result)
+        if mismatch is not None:
+            return None, mismatch
+        return (
+            Rehearsal(
+                episode=episode,
+                calls=self._session.rehearsal_calls(),
+                system_prompt=self._eval_context.target_task_prompt,
+            ),
+            "",
+        )
+
+    def _facts_reset_mismatch(self, result: GroundingResult) -> str | None:
+        """Why the rehearsal can't stand for the saved case, or None when it can. The
+        case is saved with the rehearsal's reset, so every episode the reference's
+        evidence was read in must have started from that same reset. When no evidence
+        call is found in the log, every episode of the case must have."""
+        saved = self._session.last_reset
+        log = self._session.call_log
+        evidence = (
+            [
+                (fact.evidence.tool, fact.evidence.args)
+                for fact in result.reference.facts
+            ]
+            if result.reference is not None
+            else []
+        )
+        evidence_episodes = {
+            call.episode_id
+            for call in log
+            if call.episode_id is not None and (call.tool, call.args) in evidence
+        }
+        episodes = evidence_episodes or {
+            call.episode_id for call in log if call.episode_id is not None
+        }
+        for episode_id in sorted(episodes):
+            if self._session.reset_of(episode_id) != saved:
+                return (
+                    f"The facts were read in episode {episode_id}, which started from "
+                    "other reset arguments than the rehearsal the case is saved with."
+                    if evidence_episodes
+                    else f"No evidence call is in the log, and episode {episode_id} "
+                    "started from other reset arguments than the rehearsal the case "
+                    "is saved with."
+                )
+        return None
 
     def _stopped_outcome(self) -> GroundingOutcome:
         if self._submit_tool is not None and self._submit_tool.result is not None:
@@ -394,7 +493,11 @@ class _SubmitResultTool(UnmanagedKilnTool):
             build_kiln_unmanaged_tool_id(f"grounding_{SUBMIT_RESULT_TOOL}"),
             SUBMIT_RESULT_TOOL,
             "Hand back your result for this case. Call it once, when you are done.",
-            result_json_schema(args_as_json_string=False, mode=eval_context.mode),
+            result_json_schema(
+                args_as_json_string=False,
+                mode=eval_context.mode,
+                rehearse=eval_context.rehearse,
+            ),
         )
         self._session = session
         self._eval_context = eval_context
@@ -426,7 +529,11 @@ class _SubmitResultTool(UnmanagedKilnTool):
         if problem is not None:
             raise await self._refuse(problem)
         self.result = result
-        await self._session.close_tools()
+        # With a rehearsal to judge, a grounded result's episode stays live (its tools
+        # closed) so ground_case can end it with its final state.
+        await self._session.close_tools(
+            keep_episode=self._eval_context.rehearse and result.status == "grounded"
+        )
         return ToolCallResult(output="Recorded. Reply with only the word done.")
 
     async def _refuse(self, error: str) -> ToolCallError:

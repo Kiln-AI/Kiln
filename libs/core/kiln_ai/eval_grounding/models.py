@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from enum import Enum
 from typing import Any, Literal, get_args
 
@@ -8,7 +9,7 @@ from pydantic import BaseModel, Field, JsonValue, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.openenv import OpenEnvReset
+from kiln_ai.datamodel.openenv import OpenEnvEpisode, OpenEnvReset
 from kiln_ai.synthetic_user.parser import parse_synthetic_user_info
 from kiln_ai.utils.usage import Usage
 
@@ -77,7 +78,14 @@ class EvalContext(BaseModel):
         ge=1,
         description="How many replies the agent under test gives before the "
         "conversation ends, so how many messages the simulated user can send. None "
-        "when it isn't known. Multi-turn only.",
+        "when it isn't known. Multi-turn only. Only a limit of 1 changes what the "
+        "agent is told: a one-message user can't answer a question.",
+    )
+    rehearse: bool = Field(
+        default=False,
+        description="Whether the eval's judge grades each grounded case's rehearsal. "
+        "Only then is the agent asked to rehearse in a last, clean episode and write a "
+        "rehearsal reply, and that episode ended with its final state.",
     )
 
     @model_validator(mode="after")
@@ -170,6 +178,12 @@ class GroundingResult(BaseModel):
     input: str | None = Field(
         default=None, description="A single-turn case's input, in place of a user."
     )
+    rehearsal_reply: str | None = Field(
+        default=None,
+        description="What a well-behaved agent would reply to the user at the end of "
+        "the rehearsal in the last episode. Optional: a grounded case without it is "
+        "kept, with no rehearsal to judge.",
+    )
     reference: GroundedReference | None = None
 
     @model_validator(mode="after")
@@ -234,11 +248,14 @@ INPUT_SCHEMA_MISMATCH = "The input didn't match the task's input schema."
 
 
 def result_json_schema(
-    *, args_as_json_string: bool, mode: GroundingMode = "multi_turn"
+    *,
+    args_as_json_string: bool,
+    mode: GroundingMode = "multi_turn",
+    rehearse: bool = False,
 ) -> dict[str, Any]:
     """The JSON schema of `GroundingResult` that the model answers in, for `mode`.
     Written out with every property required and no `$ref`, so it holds under strict
-    structured output.
+    structured output. `rehearsal_reply` is in it only with `rehearse`.
 
     Strict output closes every object to the properties it lists, which would force the
     free-form `Evidence.args` to `{}`. With `args_as_json_string` it is a string holding
@@ -317,6 +334,17 @@ def result_json_schema(
                     },
                 }
             ),
+            **(
+                {
+                    "rehearsal_reply": {
+                        "type": ["string", "null"],
+                        "description": "The reply a well-behaved agent would give the "
+                        "user at the end of your rehearsal.",
+                    }
+                }
+                if rehearse
+                else {}
+            ),
             "reference": {"anyOf": [reference, {"type": "null"}]},
         }
     )
@@ -360,6 +388,22 @@ class GroundingOutcome(BaseModel):
     input: str | None = None
     reference: GroundedReference | None = None
     call_log: list[LoggedCall] = Field(default_factory=list)
+    rehearsal_trace: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="A grounded case's rehearsal as a conversation in the shape of a "
+        "driven run's trace (see `rehearsal_trace`). None when the agent wrote no "
+        "rehearsal reply or the last episode's final state couldn't be read.",
+    )
+    rehearsal_episode: OpenEnvEpisode | None = Field(
+        default=None,
+        description="The episode the rehearsal ran in, ended with its final state. Set "
+        "exactly when `rehearsal_trace` is.",
+    )
+    rehearsal_skipped: str | None = Field(
+        default=None,
+        description="Why a grounded case that was asked for a rehearsal has none, in "
+        "one sentence. None when it has one, or when none was asked for.",
+    )
     usage: Usage | None = Field(
         default=None, description="Tokens and cost, summed over the run."
     )
@@ -415,10 +459,13 @@ class GroundingOutcome(BaseModel):
         call_log: list[LoggedCall],
         usage: Usage | None,
         usage_complete: bool = True,
+        rehearsal: Rehearsal | None = None,
     ) -> GroundingOutcome:
         """The outcome for the model's result. `openenv_reset` is the session's last reset,
         the environment the reference was observed in; a grounded result without one never
-        looked at the environment, so it is dropped as `invalid_output`."""
+        looked at the environment, so it is dropped as `invalid_output`. `rehearsal` is
+        the last episode, ended with its final state, and the calls made in it; it is
+        kept on a grounded result that has a rehearsal reply."""
         if result.status == "dropped":
             assert result.drop_reason is not None and result.drop_detail is not None
             return cls.dropped(
@@ -436,6 +483,11 @@ class GroundingOutcome(BaseModel):
                 usage=usage,
                 usage_complete=usage_complete,
             )
+        kept = (
+            rehearsal
+            if result.rehearsal_reply and result.rehearsal_reply.strip()
+            else None
+        )
         return cls(
             status="grounded",
             openenv_reset=openenv_reset,
@@ -444,9 +496,77 @@ class GroundingOutcome(BaseModel):
             input=result.input,
             reference=result.reference,
             call_log=call_log,
+            rehearsal_trace=kept.trace(result) if kept else None,
+            rehearsal_episode=kept.episode if kept else None,
             usage=usage,
             usage_complete=usage_complete,
         )
+
+
+class Rehearsal(BaseModel):
+    """The grounding agent's last episode, ended with its final state, and the calls it
+    made there as the agent under test would make them (`GroundingSession.rehearsal_calls`).
+    `system_prompt` is the agent under test's instructions, which open the trace."""
+
+    episode: OpenEnvEpisode
+    calls: list[LoggedCall]
+    system_prompt: str
+
+    def trace(self, result: GroundingResult) -> list[dict[str, Any]]:
+        """`rehearsal_trace` for `result`'s user message and reply."""
+        user_message = result.input if result.input is not None else result.seed_prompt
+        assert user_message is not None and result.rehearsal_reply is not None
+        return rehearsal_trace(
+            system_prompt=self.system_prompt,
+            user_message=user_message,
+            calls=self.calls,
+            reply=result.rehearsal_reply,
+        )
+
+
+def rehearsal_trace(
+    *,
+    system_prompt: str,
+    user_message: str,
+    calls: Sequence[LoggedCall],
+    reply: str,
+) -> list[dict[str, Any]]:
+    """A rehearsal as a conversation in the OpenAI message shape a driven run's trace
+    has, so the eval's judge reads it as it reads a driven case: the agent's
+    instructions, the user's one message, each call as an assistant tool call followed
+    by its result, and the reply last."""
+    trace: list[dict[str, Any]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+    for position, call in enumerate(calls):
+        call_id = f"rehearsal_call_{position}"
+        trace.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": call.tool,
+                            "arguments": json.dumps(call.args, ensure_ascii=False),
+                        },
+                    }
+                ],
+            }
+        )
+        trace.append(
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": call.output,
+                "is_error": call.is_error or None,
+            }
+        )
+    trace.append({"role": "assistant", "content": reply})
+    return trace
 
 
 def _check_status_fields(

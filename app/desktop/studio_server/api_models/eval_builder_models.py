@@ -562,6 +562,17 @@ class CaseGroundedEvent(BaseModel):
         description="The case's facts of the environment, as markdown: starting "
         "point, facts with the tool call that showed each, expected outcome."
     )
+    rehearsal_score: JudgeScoreLiteral | None = Field(
+        default=None,
+        description="The eval's judge's verdict on the grounding agent's rehearsal of "
+        "the case, when the request asked for it. A fail means the case, its judge "
+        "guidance or the judge is wrong; the case is kept either way. None when the "
+        "rehearsal wasn't judged: not asked for, no rehearsal, or the judge call failed.",
+    )
+    rehearsal_reasoning: str | None = Field(
+        default=None,
+        description="The judge's reasoning for rehearsal_score. None when it is None.",
+    )
 
 
 class CaseDroppedEvent(BaseModel):
@@ -585,6 +596,12 @@ class GroundingFinishedEvent(BaseModel):
     )
     usage_complete: bool = Field(
         description="False when some model calls' tokens and cost are missing from usage."
+    )
+    rehearsal_judge_usage: Usage | None = Field(
+        default=None,
+        description="Tokens and cost of judging the rehearsals, summed over the "
+        "judgments that reported any. Not in usage. None when no rehearsal was judged. "
+        "A judge attempt that failed is not counted.",
     )
 
 

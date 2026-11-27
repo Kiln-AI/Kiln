@@ -38,6 +38,7 @@ from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
 from kiln_ai.utils.async_job_runner import RETRY_BACKOFF_FACTOR
 from kiln_ai.utils.jinja_engine import _template_env
+from kiln_ai.utils.usage import Usage
 from kiln_server.custom_errors import connect_custom_errors
 from pydantic import ValidationError
 
@@ -331,6 +332,18 @@ class TestRunJudgeForTrace:
 
         assert verdict.judge_score == "pass"
         assert verdict.judge_reasoning == "The reply follows the policy."
+
+    @pytest.mark.asyncio
+    async def test_the_verdict_carries_the_judgments_usage(
+        self, in_memory_task, judge_config
+    ):
+        usage = Usage(input_tokens=900, output_tokens=40, cost=0.04)
+        adapter = _judge_adapter(V2EvalResult(scores={"meets_spec": 1.0}, usage=usage))
+        task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
+        with task_patch, registry_patch:
+            verdict = await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
+
+        assert verdict.usage == usage
 
     @pytest.mark.asyncio
     async def test_fail_verdict_falls_back_when_no_reasoning(

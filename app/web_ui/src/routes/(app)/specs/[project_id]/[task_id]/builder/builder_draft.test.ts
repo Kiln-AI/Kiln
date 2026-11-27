@@ -14,7 +14,9 @@ import {
   restore_synthetic_user_guide,
   reusable_cached_cases,
   reusable_grounded_cases,
+  cases_with_current_verdicts,
   grounding_turn_limit,
+  rehearsal_judge_key,
   reusable_minted_inputs,
   run_config_cache_key,
   should_invalidate_refined_values,
@@ -485,6 +487,63 @@ describe("grounding_turn_limit", () => {
     }
     expect(reusable_grounded_cases(cache, ["a"], "s", key(4))).toBe(cache)
     expect(reusable_grounded_cases(cache, ["a"], "s", key(1))).toBeNull()
+  })
+})
+
+describe("cases_with_current_verdicts", () => {
+  const judge = {
+    prompt: "Grade it.",
+    model_name: "gpt_5_4",
+    model_provider: "openai" as const,
+    thinking_level: "high",
+  }
+  const judged = { seed_prompt: "hi", synthetic_user_info: "x" }
+  const cache = (
+    judge_key: string | null | undefined,
+  ): CachedGroundedCases => ({
+    prompts_json: "[]",
+    spec_text: "s",
+    openenv_server_id: "srv_1",
+    grounding_model: "m",
+    data_guide: "",
+    rehearsal_judge_key: judge_key,
+    cases: [
+      { ...judged, rehearsal_score: "fail", rehearsal_reasoning: "Wrong." },
+      judged,
+    ],
+    grounding_dropped: 0,
+    drops: [],
+    drops_notice_seen: false,
+  })
+
+  it("keeps the verdicts the same judge gave", () => {
+    const key = rehearsal_judge_key(judge)
+    const c = cache(key)
+    expect(cases_with_current_verdicts(c, key)).toBe(c.cases)
+  })
+
+  it.each([
+    ["another prompt", { ...judge, prompt: "Grade it strictly." }],
+    ["another model", { ...judge, model_name: "gpt_5_4_mini" }],
+    ["another thinking level", { ...judge, thinking_level: "low" }],
+  ])("clears the verdicts under %s", (_label, other) => {
+    const cases = cases_with_current_verdicts(
+      cache(rehearsal_judge_key(judge)),
+      rehearsal_judge_key(other),
+    )
+    expect(cases.map((c) => c.rehearsal_score ?? null)).toEqual([null, null])
+    expect(cases[0].rehearsal_reasoning).toBeNull()
+    expect(cases[0].seed_prompt).toBe("hi")
+  })
+
+  it("clears them when no rehearsal is judged, or the draft is older", () => {
+    const key = rehearsal_judge_key(judge)
+    expect(
+      cases_with_current_verdicts(cache(key), null)[0].rehearsal_score,
+    ).toBeNull()
+    expect(
+      cases_with_current_verdicts(cache(undefined), key)[0].rehearsal_score,
+    ).toBeNull()
   })
 })
 

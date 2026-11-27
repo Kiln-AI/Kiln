@@ -120,6 +120,7 @@ from app.desktop.studio_server.multiturn_sdg_api import (
 from app.desktop.studio_server.services.eval_grounding import (
     GroundingFrame,
     NoGroundingServerError,
+    RehearsalJudge,
     check_grounded_servers,
     grounding_frames,
     grounding_server,
@@ -136,6 +137,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     task_capabilities_for_task,
 )
 from app.desktop.studio_server.utils.eval_builder_utils import (
+    JudgeVerdict,
     author_judge_prompt,
     build_claims_for_trace,
     refine_judge_prompt_from_grades,
@@ -437,6 +439,39 @@ class GroundCasesRequest(TargetRunConfigFields):
         description="The cases to ground. Frames refer to each by its position "
         "here (case_index).",
     )
+    rehearsal_judge: JudgeConfig | None = Field(
+        default=None,
+        description="The eval's judge, to grade the grounding agent's rehearsal of "
+        "each grounded case: one judge call per grounded case, paid with the user's "
+        "keys. Omit to skip the check. A failed rehearsal is reported on the case, "
+        "which is kept.",
+    )
+
+
+def _rehearsal_judge(
+    project_id: str, task_id: str, judge: JudgeConfig
+) -> RehearsalJudge:
+    """Grades a rehearsal as the pipelines grade a driven case: the same judge call,
+    under the same retry policy."""
+
+    async def judge_rehearsal(
+        trace: list[dict[str, Any]],
+        judge_guidance: str,
+        openenv_episode: OpenEnvEpisode,
+    ) -> JudgeVerdict:
+        raw_input, raw_output = transcript_io_for_trace(trace)
+        return await run_judge_with_retry(
+            project_id,
+            task_id,
+            raw_input,
+            raw_output,
+            judge,
+            trace=trace,
+            judge_guidance=judge_guidance,
+            openenv_episode=openenv_episode,
+        )
+
+    return judge_rehearsal
 
 
 def _check_cases_fit_turn_mode(task: Task, request: GroundCasesRequest) -> None:
@@ -1671,7 +1706,8 @@ def connect_eval_builder_api(app: FastAPI):
         openapi_extra=agent_policy_require_approval(
             "Check each planned case against the run config's OpenEnv server and "
             "fill it in with real data? Runs an agent on the judge model per case "
-            "(cost) and starts episodes on the server."
+            "(cost), and the eval's judge once per grounded case when asked to check "
+            "rehearsals, and starts episodes on the server."
         ),
     )
     @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
@@ -1688,17 +1724,23 @@ def connect_eval_builder_api(app: FastAPI):
         what the case needs in a fresh episode, and writes the judge guidance. On a
         multi-turn task it fills real specifics into the simulated user kiln_server
         drafted; on a single-turn task it writes the input itself, as JSON matching
-        the task's input schema when there is one. Cases run concurrently.
+        the task's input schema when there is one. Cases run concurrently. With
+        `rehearsal_judge`, the agent's rehearsal of each grounded case (its last
+        episode, as a trace, with the episode's final state) is graded by that judge
+        before the case's frame is sent; a failed rehearsal flags the case, it never
+        drops it.
 
         Emits (all frames `type`-discriminated):
           - grounding_started  { total }
           - case_grounded      { case_index, scenario_index, status: "grounded",
                                  openenv_reset, seed_prompt, synthetic_user_info
                                  (multi-turn), input (single-turn),
-                                 judge_guidance }
+                                 judge_guidance, rehearsal_score,
+                                 rehearsal_reasoning }
           - case_dropped       { case_index, scenario_index, drop_reason,
                                  drop_detail }
-          - grounding_finished { grounded, dropped, usage, usage_complete }
+          - grounding_finished { grounded, dropped, usage, usage_complete,
+                                 rehearsal_judge_usage }
           - grounding_failed   { code, message }  (in place of
                                  grounding_finished: an error that is not a
                                  case's fault, such as an unreachable server,
@@ -1732,6 +1774,9 @@ def connect_eval_builder_api(app: FastAPI):
             example_input=input.example_input,
             max_turns=input.max_turns,
             cases=input.cases,
+            rehearsal_judge=_rehearsal_judge(project_id, task_id, input.rehearsal_judge)
+            if input.rehearsal_judge
+            else None,
         )
         return CancellableStreamingResponse(
             content=_grounding_sse(frames),
