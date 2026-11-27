@@ -250,6 +250,94 @@ class AuthorJudgeApiOutput(BaseModel):
     judge_prompt: str
 
 
+# ── Failure grouping (the eval check panel) ───────────────────────────────
+
+FaultKind = Literal["agent", "reference", "judge", "world", "simulated_user", "unknown"]
+"""Who caused a failed verdict. Only `agent` measures the agent under test; the
+other kinds are defects in the eval. `unknown` means the evidence was too thin."""
+
+MAX_GROUPED_FAILURES = 100
+
+
+class FailedCaseApi(BaseModel):
+    """One failed case, as the grouping model reads it."""
+
+    case_id: str = Field(min_length=1, max_length=200)
+    judge_reasoning: str = Field(
+        max_length=8000, description="The judge's reasoning for the FAIL verdict."
+    )
+    case_summary: str = Field(
+        max_length=4000,
+        description="A short excerpt of the case: its first message and final reply.",
+    )
+    judge_guidance: str | None = Field(
+        default=None,
+        max_length=4000,
+        description="The expected outcome the judge graded against, on a grounded case.",
+    )
+
+
+class GroupFailuresApiInput(BaseModel):
+    """The spec and a judged batch's failed cases, to sort by cause."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spec_text: str = Field(min_length=1, max_length=20000)
+    judge: JudgeConfig = Field(
+        description="The batch's judge. The grouping runs on its model and thinking level."
+    )
+    failures: list[FailedCaseApi] = Field(min_length=1, max_length=MAX_GROUPED_FAILURES)
+
+    @model_validator(mode="after")
+    def case_ids_are_unique(self) -> "GroupFailuresApiInput":
+        case_ids = [failure.case_id for failure in self.failures]
+        if len(set(case_ids)) != len(case_ids):
+            raise ValueError("Each failed case needs its own case_id.")
+        return self
+
+
+class FailureLabelApi(BaseModel):
+    """One failed case's cause."""
+
+    case_id: str
+    fault_kind: FaultKind
+    group: str
+    about_rule: bool = Field(
+        description="Whether the case's group is about the spec's rule."
+    )
+    evidence: str = Field(
+        description="One sentence from the evidence that shows the cause."
+    )
+
+
+class FailureGroupApi(BaseModel):
+    """Failed cases that share one cause, with one of them as the example."""
+
+    name: str
+    fault_kind: FaultKind
+    about_rule: bool
+    count: int
+    example_case_id: str
+    example: str
+
+
+class GroupFailuresApiOutput(BaseModel):
+    """Every failed case's cause, the cause groups (largest first), and the
+    on-target count: agent failures whose group is about the spec's rule."""
+
+    rule_summary: str = Field(
+        description="The behaviour the spec measures, in a few words."
+    )
+    failures: list[FailureLabelApi]
+    groups: list[FailureGroupApi]
+    on_target_count: int
+    failure_count: int
+    texts_shortened: bool = Field(
+        default=False,
+        description="True when the cases' text was cut to fit one model call.",
+    )
+
+
 # ── SSE event payloads ────────────────────────────────────────────────────
 #
 # ONE frame contract across every eval_builder stream: each frame is a JSON

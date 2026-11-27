@@ -1,0 +1,9 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/eval_builder/group_failures",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Sort the batch's failed cases by cause with one call to the judge's model?"
+  }
+}

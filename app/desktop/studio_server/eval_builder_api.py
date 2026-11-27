@@ -94,6 +94,8 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiOutput,
     GroundCaseApi,
     GroundingModelApi,
+    GroupFailuresApiInput,
+    GroupFailuresApiOutput,
     JudgeConfig,
     PipelineBatchAbortedEvent,
     PipelineBatchCompletedEvent,
@@ -121,6 +123,10 @@ from app.desktop.studio_server.services.eval_grounding import (
     check_grounded_servers,
     grounding_frames,
     grounding_server,
+)
+from app.desktop.studio_server.services.failure_grouping import (
+    FailureGroupingError,
+    group_failures,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
     delete_multi_turn_batch_chains,
@@ -1884,3 +1890,35 @@ def connect_eval_builder_api(app: FastAPI):
             judge_prompt=input.judge_prompt,
             graded_traces=input.graded_traces,
         )
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/group_failures",
+        tags=["Eval Builder"],
+        openapi_extra=agent_policy_require_approval(
+            "Sort the batch's failed cases by cause with one call to the judge's model?"
+        ),
+    )
+    @no_write_lock  # writes nothing; the lock would be held through the model call
+    async def group_failures_route(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
+        input: GroupFailuresApiInput,
+    ) -> GroupFailuresApiOutput:
+        """Sort a judged batch's failed cases by cause, for the eval check panel.
+
+        One structured-output call on the judge's model, run locally with the
+        user's keys. Returns each failure's fault kind and cause group, the
+        groups with one example each, and the on-target count. A failed or
+        unusable call answers 502 `grouping_failed`; the panel shows the
+        grouping as unavailable and the review goes on.
+        """
+        task_from_id(project_id, task_id)  # 404 on a bad path; not used further
+        try:
+            return await group_failures(input)
+        except FailureGroupingError as e:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "grouping_failed", "message": str(e)},
+            ) from e

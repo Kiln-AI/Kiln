@@ -3897,6 +3897,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/group_failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Group Failures Route
+         * @description Sort a judged batch's failed cases by cause, for the eval check panel.
+         *
+         *     One structured-output call on the judge's model, run locally with the
+         *     user's keys. Returns each failure's fault kind and cause group, the
+         *     groups with one example each, and the on-target count. A failed or
+         *     unusable call answers 502 `grouping_failed`; the panel shows the
+         *     grouping as unavailable and the review goes on.
+         */
+        post: operations["group_failures_route_api_projects__project_id__tasks__task_id__eval_builder_group_failures_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases": {
         parameters: {
             query?: never;
@@ -8599,6 +8625,75 @@ export interface components {
             factually_inaccurate_examples: string;
         };
         /**
+         * FailedCaseApi
+         * @description One failed case, as the grouping model reads it.
+         */
+        FailedCaseApi: {
+            /** Case Id */
+            case_id: string;
+            /**
+             * Judge Reasoning
+             * @description The judge's reasoning for the FAIL verdict.
+             */
+            judge_reasoning: string;
+            /**
+             * Case Summary
+             * @description A short excerpt of the case: its first message and final reply.
+             */
+            case_summary: string;
+            /**
+             * Judge Guidance
+             * @description The expected outcome the judge graded against, on a grounded case.
+             */
+            judge_guidance?: string | null;
+        };
+        /**
+         * FailureGroupApi
+         * @description Failed cases that share one cause, with one of them as the example.
+         */
+        FailureGroupApi: {
+            /** Name */
+            name: string;
+            /**
+             * Fault Kind
+             * @enum {string}
+             */
+            fault_kind: "agent" | "reference" | "judge" | "world" | "simulated_user" | "unknown";
+            /** About Rule */
+            about_rule: boolean;
+            /** Count */
+            count: number;
+            /** Example Case Id */
+            example_case_id: string;
+            /** Example */
+            example: string;
+        };
+        /**
+         * FailureLabelApi
+         * @description One failed case's cause.
+         */
+        FailureLabelApi: {
+            /** Case Id */
+            case_id: string;
+            /**
+             * Fault Kind
+             * @enum {string}
+             */
+            fault_kind: "agent" | "reference" | "judge" | "world" | "simulated_user" | "unknown";
+            /** Group */
+            group: string;
+            /**
+             * About Rule
+             * @description Whether the case's group is about the spec's rule.
+             */
+            about_rule: boolean;
+            /**
+             * Evidence
+             * @description One sentence from the evidence that shows the cause.
+             */
+            evidence: string;
+        };
+        /**
          * Feedback
          * @description Feedback on a task run.
          *
@@ -9384,6 +9479,44 @@ export interface components {
              * @description The thinking level, one of the levels the model's provider offers. Unset uses the model's default.
              */
             thinking_level?: string | null;
+        };
+        /**
+         * GroupFailuresApiInput
+         * @description The spec and a judged batch's failed cases, to sort by cause.
+         */
+        GroupFailuresApiInput: {
+            /** Spec Text */
+            spec_text: string;
+            /** @description The batch's judge. The grouping runs on its model and thinking level. */
+            judge: components["schemas"]["JudgeConfig"];
+            /** Failures */
+            failures: components["schemas"]["FailedCaseApi"][];
+        };
+        /**
+         * GroupFailuresApiOutput
+         * @description Every failed case's cause, the cause groups (largest first), and the
+         *     on-target count: agent failures whose group is about the spec's rule.
+         */
+        GroupFailuresApiOutput: {
+            /**
+             * Rule Summary
+             * @description The behaviour the spec measures, in a few words.
+             */
+            rule_summary: string;
+            /** Failures */
+            failures: components["schemas"]["FailureLabelApi"][];
+            /** Groups */
+            groups: components["schemas"]["FailureGroupApi"][];
+            /** On Target Count */
+            on_target_count: number;
+            /** Failure Count */
+            failure_count: number;
+            /**
+             * Texts Shortened
+             * @description True when the cases' text was cut to fit one model call.
+             * @default false
+             */
+            texts_shortened: boolean;
         };
         /** GuidePreviewInput */
         GuidePreviewInput: {
@@ -23881,6 +24014,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RefineJudgeApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    group_failures_route_api_projects__project_id__tasks__task_id__eval_builder_group_failures_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupFailuresApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupFailuresApiOutput"];
                 };
             };
             /** @description Validation Error */
