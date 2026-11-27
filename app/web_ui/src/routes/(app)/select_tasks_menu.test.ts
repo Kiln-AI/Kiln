@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, cleanup, waitFor } from "@testing-library/svelte"
+import { render, cleanup, waitFor, fireEvent } from "@testing-library/svelte"
 
 vi.mock("$lib/stores", () => {
   const { writable } = require("svelte/store")
   return {
     projects: writable({
-      projects: [{ id: "proj_1", name: "My Project" }],
+      projects: [
+        { id: "proj_1", name: "My Project" },
+        { id: "proj_2", name: "Imported Project" },
+      ],
     }),
     current_project: writable({ id: "proj_1", name: "My Project" }),
     current_task: writable(null),
@@ -106,5 +109,70 @@ describe("SelectTasksMenu error state", () => {
 
     const link = container.querySelector('a[href="/settings/import_project"]')
     expect(link).toBeNull()
+  })
+})
+
+describe("SelectTasksMenu initial project", () => {
+  function mock_tasks() {
+    vi.mocked(client.GET).mockResolvedValue({
+      data: [],
+      error: undefined,
+      response: new Response(),
+    } as never)
+  }
+
+  it("selects the current project by default", async () => {
+    mock_tasks()
+
+    const { container } = render(SelectTasksMenu)
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("0 tasks in My Project")
+    })
+  })
+
+  it("selects initial_project_id ahead of the current project", async () => {
+    mock_tasks()
+
+    const { container } = render(SelectTasksMenu, {
+      props: { initial_project_id: "proj_2" },
+    })
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("0 tasks in Imported Project")
+    })
+    expect(vi.mocked(client.GET)).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/tasks",
+      { params: { path: { project_id: "proj_2" } } },
+    )
+  })
+
+  it("falls back to the current project when initial_project_id is unknown", async () => {
+    mock_tasks()
+
+    const { container } = render(SelectTasksMenu, {
+      props: { initial_project_id: "missing" },
+    })
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("0 tasks in My Project")
+    })
+  })
+
+  it("lets the user pick another project after an initial selection", async () => {
+    mock_tasks()
+
+    const { container, getByText } = render(SelectTasksMenu, {
+      props: { initial_project_id: "proj_2" },
+    })
+    await waitFor(() => {
+      expect(container.textContent).toContain("0 tasks in Imported Project")
+    })
+
+    await fireEvent.click(getByText("My Project"))
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("0 tasks in My Project")
+    })
   })
 })

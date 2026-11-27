@@ -1,6 +1,7 @@
 <script lang="ts">
   import SelectTasksMenu from "../../../../(app)/select_tasks_menu.svelte"
   import { agentInfo } from "$lib/agent"
+  import { page } from "$app/stores"
 
   agentInfo.set({
     name: "Setup: Select Task",
@@ -26,6 +27,7 @@
     new_project_url="/setup/create_project"
     new_task_url="/setup/create_task"
     import_project_url="/setup/import_project"
+    initial_project_id={$page.url.searchParams.get("project_id")}
   />
 </div>
 

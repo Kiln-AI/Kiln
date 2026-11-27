@@ -65,6 +65,7 @@ vi.mock("./step_branch.svelte", async () => {
 
 import ImportProject from "./import_project.svelte"
 import { client } from "$lib/api_client"
+import { load_projects } from "$lib/stores"
 import { git_import_wizard_store } from "$lib/stores/git_import_wizard_store"
 import { stepUrlProps } from "./__tests__/step_url_stub.svelte"
 import { stepCredentialsProps } from "./__tests__/step_credentials_stub.svelte"
@@ -316,6 +317,162 @@ describe("ImportProject local_file conflict handling", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const secondCallOpts = calls[1][1] as any
     expect(secondCallOpts?.params?.query?.remove_conflicting_id).toBe(true)
+  })
+
+  async function submitPathAndTrust(container: HTMLElement) {
+    const input = container.querySelector(
+      "#import_project_path",
+    ) as HTMLInputElement
+    await fireEvent.input(input, {
+      target: { value: "/path/to/project.kiln" },
+    })
+    await tick()
+
+    const submitBtn = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    await fireEvent.click(submitBtn)
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    await confirmTrustPage(container)
+  }
+
+  const alreadyImportedResponse = {
+    data: undefined,
+    error: {
+      message: {
+        code: "project_already_imported",
+        message: "This project is already imported.",
+        project_id: "proj_1",
+      },
+    },
+    response: new Response(null, { status: 409 }),
+  }
+
+  it("shows an already-imported message, not an error or a remove button, when the path is already registered", async () => {
+    vi.mocked(client.POST).mockResolvedValue(alreadyImportedResponse as never)
+
+    const { container, getByText } = await renderAtLocalStep()
+    await submitPathAndTrust(container)
+
+    await waitFor(() => {
+      expect(container.textContent).toContain(
+        "This project is already imported.",
+      )
+    })
+    expect(container.textContent).not.toContain("Unexpected error")
+    expect(container.querySelector(".text-error")).toBeNull()
+    expect(container.textContent).not.toContain("Remove existing and re-import")
+
+    const submit = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    expect(submit?.classList.contains("hidden")).toBe(true)
+
+    expect(baseProps.on_complete).not.toHaveBeenCalled()
+    // The hidden submit button has the same label, so match on the type too.
+    await fireEvent.click(
+      getByText("Continue", { selector: 'button[type="button"]' }),
+    )
+    expect(baseProps.on_complete).toHaveBeenCalledWith("proj_1")
+  })
+
+  it("reloads the project list when the path is already registered", async () => {
+    vi.mocked(load_projects).mockClear()
+    vi.mocked(client.POST).mockResolvedValue(alreadyImportedResponse as never)
+
+    const { container } = await renderAtLocalStep()
+    await submitPathAndTrust(container)
+
+    await waitFor(() => {
+      expect(container.textContent).toContain(
+        "This project is already imported.",
+      )
+    })
+    expect(load_projects).toHaveBeenCalledTimes(1)
+  })
+
+  it("ignores an already-imported response for a path the user changed during the request", async () => {
+    let resolve_post: (value: unknown) => void = () => {}
+    vi.mocked(client.POST).mockReturnValue(
+      new Promise((resolve) => {
+        resolve_post = resolve
+      }) as never,
+    )
+
+    const { container } = await renderAtLocalStep()
+    await submitPathAndTrust(container)
+
+    const input = container.querySelector(
+      "#import_project_path",
+    ) as HTMLInputElement
+    await fireEvent.input(input, {
+      target: { value: "/different/path/project.kiln" },
+    })
+    await tick()
+
+    resolve_post(alreadyImportedResponse)
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sentOpts = vi.mocked(client.POST).mock.calls[0][1] as any
+    expect(sentOpts?.params?.query?.project_path).toBe("/path/to/project.kiln")
+    expect(container.textContent).not.toContain(
+      "This project is already imported.",
+    )
+    const submit = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    expect(submit?.classList.contains("hidden")).toBe(false)
+  })
+
+  it("editing path after an already-imported response restores the submit button", async () => {
+    vi.mocked(client.POST).mockResolvedValue(alreadyImportedResponse as never)
+
+    const { container } = await renderAtLocalStep()
+    await submitPathAndTrust(container)
+
+    await waitFor(() => {
+      expect(container.textContent).toContain(
+        "This project is already imported.",
+      )
+    })
+
+    const input = container.querySelector(
+      "#import_project_path",
+    ) as HTMLInputElement
+    await fireEvent.input(input, {
+      target: { value: "/different/path/project.kiln" },
+    })
+    await tick()
+
+    await waitFor(() => {
+      expect(container.textContent).not.toContain(
+        "This project is already imported.",
+      )
+    })
+    const submit = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    expect(submit?.classList.contains("hidden")).toBe(false)
+  })
+
+  it("calls on_complete with the project ID after a successful import", async () => {
+    vi.mocked(client.POST).mockResolvedValue({
+      data: { id: "proj_1", name: "Imported" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never)
+
+    const { container } = await renderAtLocalStep()
+    await submitPathAndTrust(container)
+
+    await waitFor(() => {
+      expect(baseProps.on_complete).toHaveBeenCalledWith("proj_1")
+    })
   })
 
   it("editing path after 409 clears conflict state and restores submit button", async () => {

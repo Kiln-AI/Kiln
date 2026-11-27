@@ -41,6 +41,27 @@ def add_project_to_config(project_path: str):
         Config.shared().save_setting("projects", projects)
 
 
+PROJECT_ALREADY_IMPORTED_CODE = "project_already_imported"
+
+
+def duplicate_project_detail(
+    error: DuplicateProjectError, project_id: str
+) -> str | dict[str, str]:
+    """Build the 409 detail for an import that hits an existing project ID.
+
+    Returns a dict with `code`, `message` and `project_id` when the path is
+    already registered, and the plain message when a different path has the
+    same ID.
+    """
+    if error.same_path:
+        return {
+            "code": PROJECT_ALREADY_IMPORTED_CODE,
+            "message": str(error),
+            "project_id": project_id,
+        }
+    return str(error)
+
+
 def connect_project_api(app: FastAPI):
     @app.post(
         "/api/projects",
@@ -182,7 +203,10 @@ def connect_project_api(app: FastAPI):
                 check_duplicate_project_id(project.id, project_path)
             except DuplicateProjectError as e:
                 if not remove_conflicting_id:
-                    raise HTTPException(status_code=409, detail=str(e))
+                    raise HTTPException(
+                        status_code=409,
+                        detail=duplicate_project_detail(e, project.id),
+                    )
                 # Resolve and de-register the conflicting project before proceeding.
                 # Layering caveat: libs/server cannot call GitSyncRegistry.unregister
                 # (app layer), so if the removed project was git-synced and had a live

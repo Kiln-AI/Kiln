@@ -125,6 +125,7 @@
       import_project_path = ""
       import_error = null
       import_conflict = false
+      already_imported_project_id = null
       conflict_path = null
       select_file_unavailable = false
       import_done = false
@@ -287,13 +288,15 @@
   // Local file import logic
   let select_file_unavailable = false
   $: show_select_file = !select_file_unavailable && !import_project_path
-  $: import_submit_visible = !show_select_file && !import_conflict
+  $: import_submit_visible =
+    !show_select_file && !import_conflict && !already_imported_project_id
   let import_project_path = ""
   let import_error: KilnError | null = null
   let import_submitting = false
   let import_saved = false
   let import_done = false
   let import_conflict = false
+  let already_imported_project_id: string | null = null
   let conflict_path: string | null = null
 
   // conflict_path is set equal to import_project_path when a 409 fires, so the
@@ -302,8 +305,26 @@
   // once the user actually changes the path (via typing or the file picker).
   $: if (conflict_path !== null && import_project_path !== conflict_path) {
     import_conflict = false
+    already_imported_project_id = null
     import_error = null
     conflict_path = null
+  }
+
+  // A 409 for a path that is already registered carries this code and the ID
+  // of the registered project. Any other 409 is an ID conflict with a project
+  // at a different path.
+  function project_id_if_already_imported(error: unknown): string | null {
+    if (createKilnError(error).getCode() !== "project_already_imported") {
+      return null
+    }
+    const detail = (error as { message?: { project_id?: unknown } }).message
+    return typeof detail?.project_id === "string" ? detail.project_id : null
+  }
+
+  function continue_to_already_imported_project() {
+    if (already_imported_project_id) {
+      on_complete(already_imported_project_id)
+    }
   }
 
   async function select_project_file() {
@@ -362,11 +383,15 @@
   }
 
   const import_project = async (remove_conflicting_id = false) => {
+    // The path field stays editable during the request, so a result belongs
+    // to the path that was sent, not to the path in the field when it arrives.
+    const submitted_path = import_project_path
     try {
       import_submitting = true
       import_saved = false
       import_error = null
       import_conflict = false
+      already_imported_project_id = null
       const {
         data,
         error: post_error,
@@ -374,7 +399,7 @@
       } = await client.POST("/api/import_project", {
         params: {
           query: {
-            project_path: import_project_path,
+            project_path: submitted_path,
             trusted: true,
             ...(remove_conflicting_id && { remove_conflicting_id: true }),
           },
@@ -382,8 +407,16 @@
       })
       if (post_error) {
         if (response?.status === 409) {
+          conflict_path = submitted_path
+          already_imported_project_id =
+            project_id_if_already_imported(post_error)
+          if (already_imported_project_id) {
+            // The project can be registered from outside this page, so the
+            // list the host page shows next must be reloaded.
+            await load_projects()
+            return
+          }
           import_conflict = true
-          conflict_path = import_project_path
         }
         throw post_error
       }
@@ -493,6 +526,20 @@
             on:click={() => import_project(true)}
           >
             Remove existing and re-import
+          </button>
+        {/if}
+        {#if already_imported_project_id}
+          <Warning
+            warning_message="This project is already imported."
+            warning_color="success"
+            warning_icon="check"
+          />
+          <button
+            type="button"
+            class="btn btn-primary"
+            on:click={continue_to_already_imported_project}
+          >
+            Continue
           </button>
         {/if}
       </FormContainer>

@@ -12,8 +12,13 @@
   export let new_project_url = "/settings/create_project"
   export let new_task_url = "/settings/create_task"
   export let import_project_url = "/settings/import_project"
+  // Shown as selected ahead of the current project, until the user picks one.
+  export let initial_project_id: string | null = null
 
   $: project_list = $projects?.projects || []
+  $: initial_project = project_list.find(
+    (project) => project.id === initial_project_id,
+  )
   let manually_selected_project: Project | null | undefined = undefined
   let tasks_loading = false
   let tasks_loading_error: string | null = null
@@ -26,7 +31,7 @@
   $: selected_project =
     manually_selected_project === null
       ? null
-      : manually_selected_project || $current_project
+      : manually_selected_project || initial_project || $current_project
 
   function select_project(project: Project) {
     if (project?.id === selected_project?.id) {
