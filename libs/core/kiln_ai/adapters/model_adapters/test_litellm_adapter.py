@@ -945,6 +945,56 @@ async def test_build_completion_kwargs_custom_temperature_top_p(config, mock_tas
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "run_config_settings,expected_kwargs",
+    [
+        ({}, {}),
+        ({"max_output_tokens": 256}, {"max_tokens": 256}),
+        ({"seed": 0}, {"seed": 0}),
+        ({"frequency_penalty": 0.0}, {"frequency_penalty": 0.0}),
+        ({"presence_penalty": -1.5}, {"presence_penalty": -1.5}),
+        (
+            {
+                "max_output_tokens": 256,
+                "seed": 7,
+                "frequency_penalty": 0.5,
+                "presence_penalty": 0.25,
+            },
+            {
+                "max_tokens": 256,
+                "seed": 7,
+                "frequency_penalty": 0.5,
+                "presence_penalty": 0.25,
+            },
+        ),
+    ],
+)
+async def test_build_completion_kwargs_optional_model_settings(
+    config, mock_task, run_config_settings, expected_kwargs
+):
+    config.run_config_properties = config.run_config_properties.model_copy(
+        update=run_config_settings
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    mock_provider.litellm_allowed_openai_params = None
+
+    with (
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(
+            mock_provider, [{"role": "user", "content": "Hello"}], None
+        )
+
+    setting_params = {"max_tokens", "seed", "frequency_penalty", "presence_penalty"}
+    sent = {name: kwargs[name] for name in setting_params if name in kwargs}
+    assert sent == expected_kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     "top_logprobs,response_format,extra_body",
     [
         (None, {}, {}),  # Basic case

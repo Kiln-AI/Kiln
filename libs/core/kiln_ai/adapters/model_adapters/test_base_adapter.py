@@ -273,6 +273,26 @@ async def test_input_formatting(
             mock_formatter.format_input.assert_called_once_with(original_input)
 
 
+# The key that _properties_for_task_output saves each run config field under.
+# None: the field is saved only in the run's run_config, not in these properties.
+RUN_CONFIG_FIELD_TO_SAVED_PROPERTY = {
+    "model_name": "model_name",
+    "model_provider_name": "model_provider",
+    "prompt_id": "prompt_id",
+    "temperature": "temperature",
+    "top_p": "top_p",
+    "structured_output_mode": "structured_output_mode",
+    "thinking_level": None,
+    "type": None,
+    "tools_config": None,
+    "input_transform": None,
+    "max_output_tokens": None,
+    "seed": None,
+    "frequency_penalty": None,
+    "presence_penalty": None,
+}
+
+
 async def test_properties_for_task_output_includes_all_run_config_properties(adapter):
     """Test that all properties from KilnAgentRunConfigProperties are saved in task output properties"""
     # Get all field names from KilnAgentRunConfigProperties
@@ -282,24 +302,9 @@ async def test_properties_for_task_output_includes_all_run_config_properties(ada
     saved_properties = adapter._properties_for_task_output()
     saved_property_keys = set(saved_properties.keys())
 
-    # Check which KilnAgentRunConfigProperties fields are missing from saved properties
-    # Note: model_provider_name becomes model_provider in saved properties
-    expected_mappings = {
-        "model_name": "model_name",
-        "model_provider_name": "model_provider",
-        "prompt_id": "prompt_id",
-        "temperature": "temperature",
-        "top_p": "top_p",
-        "structured_output_mode": "structured_output_mode",
-        "thinking_level": None,
-        "type": None,
-        "tools_config": None,
-        "input_transform": None,
-    }
-
     missing_properties = []
     for field_name in run_config_properties_fields:
-        expected_key = expected_mappings.get(field_name, field_name)
+        expected_key = RUN_CONFIG_FIELD_TO_SAVED_PROPERTY.get(field_name, field_name)
         if expected_key is not None and expected_key not in saved_property_keys:
             missing_properties.append(
                 f"KilnAgentRunConfigProperties.{field_name} -> {expected_key}"
@@ -334,23 +339,11 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
         saved_properties = adapter._properties_for_task_output()
         saved_property_keys = set(saved_properties.keys())
 
-        # The mappings don't include our fake property
-        expected_mappings = {
-            "model_name": "model_name",
-            "model_provider_name": "model_provider",
-            "prompt_id": "prompt_id",
-            "temperature": "temperature",
-            "top_p": "top_p",
-            "structured_output_mode": "structured_output_mode",
-            "thinking_level": None,
-            "type": None,
-            "tools_config": None,
-            "input_transform": None,
-        }
-
         missing_properties = []
         for field_name in run_config_properties_fields:
-            expected_key = expected_mappings.get(field_name, field_name)
+            expected_key = RUN_CONFIG_FIELD_TO_SAVED_PROPERTY.get(
+                field_name, field_name
+            )
             if expected_key is not None and expected_key not in saved_property_keys:
                 missing_properties.append(
                     f"KilnAgentRunConfigProperties.{field_name} -> {expected_key}"

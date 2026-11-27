@@ -186,6 +186,42 @@ class TestKilnAgentRunConfigProperties:
                 temperature=3.0,
             )
 
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("max_output_tokens", 1),
+            ("max_output_tokens", 64000),
+            ("seed", 0),
+            ("seed", 2**31 - 1),
+            ("frequency_penalty", -2),
+            ("frequency_penalty", 2),
+            ("presence_penalty", -2),
+            ("presence_penalty", 2),
+        ],
+    )
+    def test_optional_model_setting_accepts_value_in_range(self, field, value):
+        config = run_config_adapter.validate_python({**KILN_AGENT_JSON, field: value})
+        assert getattr(config, field) == value
+        reloaded = run_config_adapter.validate_json(config.model_dump_json())
+        assert getattr(reloaded, field) == value
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("max_output_tokens", 0),
+            ("max_output_tokens", 1.5),
+            ("seed", -1),
+            ("seed", 2**31),
+            ("frequency_penalty", -2.1),
+            ("frequency_penalty", 2.1),
+            ("presence_penalty", -2.1),
+            ("presence_penalty", 2.1),
+        ],
+    )
+    def test_optional_model_setting_rejects_value_out_of_range(self, field, value):
+        with pytest.raises(ValidationError, match=field):
+            run_config_adapter.validate_python({**KILN_AGENT_JSON, field: value})
+
     def test_with_tools_config(self):
         config = KilnAgentRunConfigProperties(
             model_name="gpt-4",
@@ -260,6 +296,15 @@ class TestBackwardCompatibility:
         assert config.type == "kiln_agent"
         assert config.model_name == "gpt-4"
         assert config.model_provider_name == ModelProviderName.openai
+
+    @pytest.mark.parametrize("stored", [LEGACY_KILN_AGENT_JSON, KILN_AGENT_JSON])
+    def test_json_without_optional_model_settings_leaves_them_unset(self, stored):
+        config = run_config_adapter.validate_python(stored)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.max_output_tokens is None
+        assert config.seed is None
+        assert config.frequency_penalty is None
+        assert config.presence_penalty is None
 
     def test_legacy_json_via_wrapper_model(self):
         wrapper = RunConfigWrapper(run_config_properties=LEGACY_KILN_AGENT_JSON)

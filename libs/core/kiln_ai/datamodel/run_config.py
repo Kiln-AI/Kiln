@@ -68,6 +68,29 @@ class KilnAgentRunConfigProperties(BaseModel):
         default=1.0,
         description="The temperature to use for this run config. Defaults to 1.0.",
     )
+    max_output_tokens: int | None = Field(
+        default=None,
+        ge=1,
+        description="The most tokens the model may generate in one model call, reasoning tokens included. A run can make several model calls. If None, nothing is sent and the provider's default applies. A reply cut off at the limit can fail a structured output task.",
+    )
+    seed: int | None = Field(
+        default=None,
+        ge=0,
+        le=2**31 - 1,
+        description="A seed for the model's sampling, between 0 and 2147483647. Providers that take one make a best effort to repeat the same output for the same request. If None, nothing is sent. Dropped for models that do not accept it.",
+    )
+    frequency_penalty: float | None = Field(
+        default=None,
+        ge=-2,
+        le=2,
+        description="Between -2 and 2. A positive value lowers the chance of a token the more often it already appears in the reply. If None, nothing is sent. Dropped for models that do not accept it.",
+    )
+    presence_penalty: float | None = Field(
+        default=None,
+        ge=-2,
+        le=2,
+        description="Between -2 and 2. A positive value lowers the chance of any token that already appears in the reply. If None, nothing is sent. Dropped for models that do not accept it.",
+    )
     structured_output_mode: StructuredOutputMode = Field(
         description="The structured output mode to use for this run config.",
     )
