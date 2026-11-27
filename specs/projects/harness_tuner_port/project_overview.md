@@ -17,6 +17,8 @@ status: canceled
 >
 > Scopes for MCP callers are still wanted, as a later P2 project. The decisions reached here are its starting point: this overview, and [scope_decisions.md](scope_decisions.md).
 >
+> **Update, 2026-11-27:** the scopes plan is taken up again in [harness_tuner_in_kiln](../harness_tuner_in_kiln/project_overview.md), with one change: the raw API withholds nothing by default. The simpler spec named above was replaced by it too.
+>
 > Only this overview and the decisions file were written. There is no functional spec.
 
 # Harness-Tuner Port: Fencing, Tools and Adoption

@@ -6,17 +6,17 @@ status: complete
 
 Build an MCP server into the Kiln app, so anyone running Kiln can use it from any agent (Claude Code, Codex, etc). Think "local Kiln assistant": add the MCP to your agent, and your agent knows what Kiln is and how to drive it.
 
-This started as "move the harness-tuner MCP into Kiln". After looking at the code, the plan changed: this project is a clean, general Kiln MCP. What harness-tuner needs is a second spec: [harness_tuner_switchover](../harness_tuner_switchover/project_overview.md).
+This started as "move the harness-tuner MCP into Kiln". After looking at the code, the plan changed: this project is a clean, general Kiln MCP. What harness-tuner needs is a second spec: [harness_tuner_in_kiln](../harness_tuner_in_kiln/project_overview.md).
 
 ## Roadmap
 
 1. **This spec:** the MCP server running in the desktop app, with knowledge and APIs. Gets us to a smart agent fast.
-2. **Spec two ([harness_tuner_switchover](../harness_tuner_switchover/project_overview.md)):** harness-tuner moves onto Kiln's skill and shared APIs, and keeps its gateway.
+2. **Spec two ([harness_tuner_in_kiln](../harness_tuner_in_kiln/project_overview.md)):** harness-tuner moves into the Kiln repository, MCP connections get scopes, and harness-tuner's agents move onto Kiln's MCP server and skill.
 
-Not specced now:
+Two earlier specs for spec two were written and dropped. Their decisions are input to the new one:
 
-- Scopes for MCP connections, such as withholding val and test data (P2). An earlier spec for this, [harness_tuner_port](../harness_tuner_port/project_overview.md), was canceled as too large and risky; its decisions are kept as a starting point.
-- Moving the tuner code into the Kiln repo, bundled into the app (P2, nice to have).
+- [harness_tuner_port](../harness_tuner_port/project_overview.md): the first scopes plan, canceled as too large and risky in its first form.
+- [harness_tuner_switchover](../harness_tuner_switchover/project_overview.md): harness-tuner in its own repository, with its gateway kept. Replaced when the owner decided on one repository.
 
 ## MCP Server
 
