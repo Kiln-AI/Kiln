@@ -2509,8 +2509,8 @@
   }
 
   // The plan's simulated-user cases: the cached ones when they were generated
-  // from exactly this plan and spec, else one kiln_server batch call, cached.
-  // Their generation depends only on the plan and the spec — never the run
+  // from exactly this plan, spec and Data Guide, else one kiln_server batch
+  // call, cached. Their generation depends only on those — never the run
   // config — so a re-drive with both byte-unchanged (the
   // fix-config-then-drive-again recovery loop) reuses them instead of
   // re-paying the multi-minute copilot call. Any plan edit or Refine Plan
@@ -2522,6 +2522,7 @@
       cached_su_cases,
       approved_prompts,
       spec_text(),
+      grounding_guide_text,
     )
     if (cached) {
       posthog.capture("eval_v2_su_cases_reused", {
@@ -2538,6 +2539,7 @@
     cached_su_cases = {
       prompts_json: JSON.stringify(approved_prompts),
       spec_text: spec_text(),
+      data_guide: grounding_guide_text,
       cases,
     }
     return cases
@@ -2559,6 +2561,7 @@
         body: {
           target_specification: spec_text(),
           case_prompts,
+          data_guide: grounding_guide_text || null,
         },
         signal,
       },

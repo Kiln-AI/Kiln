@@ -1274,11 +1274,29 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       function_body("async function generated_cases_for_plan("),
     )
     expect(generated).toContain(
-      "reusable_cached_cases( cached_su_cases, approved_prompts, spec_text(), )",
+      "reusable_cached_cases( cached_su_cases, approved_prompts, spec_text(), grounding_guide_text, )",
     )
     expect(normalize(resolve_cases)).toContain(
       "const cases = grounding_key && !is_multi_turn ? plan_row_cases(approved_prompts) : await generated_cases_for_plan(approved_prompts)",
     )
+  })
+
+  it("gives the case writer the Data Guide the drive uses", () => {
+    // The writer of each simulated user's first message and persona reads the
+    // guide only through generate_cases, so a first-message rule in it (a
+    // ticket id, say) would otherwise never reach the cases.
+    expect(
+      normalize(function_body("async function request_generated_cases(")),
+    ).toContain(
+      "target_specification: spec_text(), case_prompts, data_guide: grounding_guide_text || null,",
+    )
+    // The guide goes as its own field and the spec stays plain, so the judge
+    // author, which reads the spec, never gets the guide.
+    const judge_author = function_body(
+      "async function author_judge_prompt_for_spec(",
+    )
+    expect(judge_author).toContain("const spec = spec_text()")
+    expect(judge_author).not.toContain("data_guide")
   })
 
   it("never looks a build up without an OpenEnv tool", () => {

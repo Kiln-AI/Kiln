@@ -33,27 +33,33 @@ export type SyntheticUserCaseWire = {
 export type DrivenCaseWire = SyntheticUserCaseWire & { leaf_run_id: string }
 
 // The generate_cases output, cached against exactly the inputs it depends
-// on (the approved prompts + the spec text — the run config plays no part
-// in persona generation). A re-drive with both unchanged reuses the cases
+// on (the approved prompts, the spec text and the Data Guide — the run config
+// plays no part in persona generation). A re-drive with all three unchanged
+// reuses the cases
 // instead of re-paying the multi-minute copilot generation, which makes the
 // fix-config-then-drive-again recovery loop fast.
 export type CachedSuCases = {
   prompts_json: string
   spec_text: string
+  // The trimmed Data Guide the case writer read, "" for none. Older drafts
+  // lack it: their cases were written without a guide.
+  data_guide?: string
   cases: SyntheticUserCaseWire[]
 }
 
-// The cached cases iff they were generated from EXACTLY this plan and spec
-// (byte-compare); anything else means regenerate. Fresh variation on the
+// The cached cases iff they were generated from EXACTLY this plan, spec and
+// Data Guide (byte-compare); anything else means regenerate. Fresh variation on the
 // same scenarios is deliberately not offered — that's what Refine Plan
 // is for.
 export function reusable_cached_cases(
   cache: CachedSuCases | null,
   approved_prompts: string[],
   spec: string,
+  data_guide: string,
 ): SyntheticUserCaseWire[] | null {
   if (!cache || cache.cases.length === 0) return null
   if (cache.spec_text !== spec) return null
+  if ((cache.data_guide ?? "") !== data_guide) return null
   if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
   return cache.cases
 }

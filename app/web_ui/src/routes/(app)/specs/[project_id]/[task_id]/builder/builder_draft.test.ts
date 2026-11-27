@@ -391,37 +391,67 @@ describe("reusable_cached_cases — SU-case reuse", () => {
 
   it("reuses when plan and spec are byte-unchanged", () => {
     expect(
-      reusable_cached_cases(cache, ["scenario a", "scenario b"], spec),
+      reusable_cached_cases(cache, ["scenario a", "scenario b"], spec, ""),
     ).toBe(cache.cases)
   })
 
   it("misses with no cache", () => {
-    expect(reusable_cached_cases(null, prompts, spec)).toBeNull()
+    expect(reusable_cached_cases(null, prompts, spec, "")).toBeNull()
   })
 
   it("misses when a prompt was edited", () => {
     expect(
-      reusable_cached_cases(cache, ["scenario a EDITED", "scenario b"], spec),
+      reusable_cached_cases(
+        cache,
+        ["scenario a EDITED", "scenario b"],
+        spec,
+        "",
+      ),
     ).toBeNull()
   })
 
   it("misses when a prompt was deleted", () => {
-    expect(reusable_cached_cases(cache, ["scenario a"], spec)).toBeNull()
+    expect(reusable_cached_cases(cache, ["scenario a"], spec, "")).toBeNull()
   })
 
   it("misses when the spec text changed", () => {
-    expect(reusable_cached_cases(cache, prompts, "different spec")).toBeNull()
+    expect(
+      reusable_cached_cases(cache, prompts, "different spec", ""),
+    ).toBeNull()
+  })
+
+  it("misses when the Data Guide changed", () => {
+    const guided = {
+      ...cache,
+      data_guide: "Every request carries a ticket id.",
+    }
+    expect(reusable_cached_cases(guided, prompts, spec, "")).toBeNull()
+    expect(
+      reusable_cached_cases(guided, prompts, spec, "A new rule."),
+    ).toBeNull()
+    expect(
+      reusable_cached_cases(
+        guided,
+        prompts,
+        spec,
+        "Every request carries a ticket id.",
+      ),
+    ).toBe(guided.cases)
+  })
+
+  it("misses on an older draft's cases once a Data Guide is in use", () => {
+    expect(reusable_cached_cases(cache, prompts, spec, "A rule.")).toBeNull()
   })
 
   it("misses on an empty cached case list", () => {
     expect(
-      reusable_cached_cases({ ...cache, cases: [] }, prompts, spec),
+      reusable_cached_cases({ ...cache, cases: [] }, prompts, spec, ""),
     ).toBeNull()
   })
 
   it("prompt order matters (case i maps to prompt i)", () => {
     expect(
-      reusable_cached_cases(cache, ["scenario b", "scenario a"], spec),
+      reusable_cached_cases(cache, ["scenario b", "scenario a"], spec, ""),
     ).toBeNull()
   })
 })

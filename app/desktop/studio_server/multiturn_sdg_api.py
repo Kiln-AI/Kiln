@@ -124,6 +124,14 @@ class GenerateCasesApiInput(BaseModel):
             "its prompt."
         ),
     )
+    data_guide: str | None = Field(
+        default=None,
+        description=(
+            "The task's Data Guide: who talks to the agent under test, how they "
+            "write and what their first message carries. Each case's persona and "
+            "opening message follow it. Omit when the task has none."
+        ),
+    )
 
     @model_validator(mode="after")
     def _case_prompts_non_empty(self) -> "GenerateCasesApiInput":
@@ -385,6 +393,27 @@ def _to_http_exception(
     )
 
 
+def _writer_specification(specification: str, data_guide: str | None) -> str:
+    """The specification the case writer reads, with the task's Data Guide after it.
+    kiln_server's writer takes no guide of its own, so the guide rides in the one
+    field it reads as a brief for every case.
+
+    Built fresh for each request and sent only to the case writer: the spec the
+    client holds, and the judge, claim and plan steps that read it, never carry the
+    guide, and a spec that already has a guide block is sent as it is."""
+    # Stopgap: remove once kiln_server's synthetic-user writer takes data_guide as a
+    # field of its own; then forward GenerateCasesApiInput.data_guide as is.
+    if not data_guide or not data_guide.strip() or "<data_guide>" in specification:
+        return specification
+    return (
+        f"{specification}\n\n<data_guide>\n"
+        "The task's Data Guide: who talks to the agent under test, how they write "
+        "and what their first message carries. Write every persona and seed_prompt "
+        "to follow it.\n\n"
+        f"{data_guide.strip()}\n</data_guide>"
+    )
+
+
 def _case_chunks(case_prompts: list[str]) -> list[tuple[int, list[str]]]:
     """Split the plan into `(plan offset, scenarios)` chunks of at most
     SU_CASES_PER_CALL, in plan order. The offset turns the chunk-relative
@@ -445,6 +474,9 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         # wire is plan-relative. Plan prompts ride as case_scenarios (case i ←
         # prompt i, salvage drops a flaky case instead of failing the chunk).
         in_flight = asyncio.Semaphore(SU_CALLS_IN_FLIGHT)
+        specification = _writer_specification(
+            input.target_specification, input.data_guide
+        )
 
         async def generate_chunk(
             start: int, scenarios: list[str]
@@ -452,7 +484,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
             async with in_flight:
                 chunk_cases = await client.generate(
                     target_task_prompt=task.instruction,
-                    target_specification=input.target_specification,
+                    target_specification=specification,
                     case_scenarios=scenarios,
                 )
             return [_case_dict_at_plan_offset(c, start) for c in chunk_cases]

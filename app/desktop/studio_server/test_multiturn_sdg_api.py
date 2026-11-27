@@ -366,6 +366,101 @@ def test_generate_cases_with_case_prompts_under_chunk_size_makes_one_call(
     assert call.kwargs["target_specification"] == "agent waives policy under pressure"
 
 
+@pytest.mark.parametrize("data_guide", [None, "", "   "])
+def test_generate_cases_without_a_data_guide_sends_the_spec_alone(
+    client: TestClient, patch_task_from_id, patch_api_key, data_guide
+) -> None:
+    patch_task_from_id.return_value = _multiturn_task()
+    with patch(
+        "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
+    ) as MockClient:
+        instance = MockClient.return_value
+        instance.generate = _chunked_generate()
+        body = _generate_cases_body(num=2)
+        body["data_guide"] = data_guide
+        resp = client.post(
+            "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
+            json=body,
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert (
+        instance.generate.await_args.kwargs["target_specification"]
+        == "agent waives policy under pressure"
+    )
+
+
+def test_generate_cases_gives_the_case_writer_the_data_guide(
+    client: TestClient, patch_task_from_id, patch_api_key
+) -> None:
+    """kiln_server's case writer reads no guide of its own, so a first-message rule
+    in the guide (here, a ticket id) only reaches it inside the specification, on
+    every chunk."""
+    patch_task_from_id.return_value = _multiturn_task()
+    guide = "## All roles\nEvery request starts with an identity block: ticket id."
+    with patch(
+        "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
+    ) as MockClient:
+        instance = MockClient.return_value
+        instance.generate = _chunked_generate()
+        body = _generate_cases_body(num=SU_CASES_PER_CALL + 1)
+        body["data_guide"] = f"\n{guide}\n"
+        resp = client.post(
+            "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
+            json=body,
+        )
+
+    assert resp.status_code == 200, resp.text
+    specs = [
+        c.kwargs["target_specification"] for c in instance.generate.await_args_list
+    ]
+    assert len(specs) == 2
+    for spec in specs:
+        assert spec.startswith("agent waives policy under pressure\n\n<data_guide>\n")
+        assert spec.endswith(f"{guide}\n</data_guide>")
+
+
+def test_generate_cases_adds_the_data_guide_once_per_request(
+    client: TestClient, patch_task_from_id, patch_api_key
+) -> None:
+    """A second request (a refine or a re-plan) sends the guide once again, not
+    twice, and a spec that already carries a guide block is not given another."""
+    patch_task_from_id.return_value = _multiturn_task()
+    guide = "Every request starts with a ticket id."
+    with patch(
+        "app.desktop.studio_server.multiturn_sdg_api.SyntheticUserClient"
+    ) as MockClient:
+        instance = MockClient.return_value
+        instance.generate = _chunked_generate()
+        for _ in range(2):
+            body = _generate_cases_body(num=1)
+            body["data_guide"] = guide
+            resp = client.post(
+                "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
+                json=body,
+            )
+            assert resp.status_code == 200, resp.text
+        sent = [
+            c.kwargs["target_specification"] for c in instance.generate.await_args_list
+        ]
+        assert len(sent) == 2
+        assert all(spec.count("<data_guide>") == 1 for spec in sent)
+        assert sent[0] == sent[1]
+
+        body = _generate_cases_body(num=1)
+        body["target_specification"] = sent[0]
+        body["data_guide"] = guide
+        resp = client.post(
+            "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
+            json=body,
+        )
+        assert resp.status_code == 200, resp.text
+        assert (
+            instance.generate.await_args_list[-1].kwargs["target_specification"]
+            == sent[0]
+        )
+
+
 def test_generate_cases_salvaged_batch_keeps_scenario_index(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:

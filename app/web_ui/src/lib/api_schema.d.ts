@@ -9199,6 +9199,11 @@ export interface components {
              * @description One scenario prompt per case (e.g. from an approved batch plan). A case that fails to generate is dropped, so the response can hold fewer cases than prompts; scenario_index maps each case to its prompt.
              */
             case_prompts: string[];
+            /**
+             * Data Guide
+             * @description The task's Data Guide: who talks to the agent under test, how they write and what their first message carries. Each case's persona and opening message follow it. Omit when the task has none.
+             */
+            data_guide?: string | null;
         };
         /** GenerateCasesApiOutput */
         GenerateCasesApiOutput: {
