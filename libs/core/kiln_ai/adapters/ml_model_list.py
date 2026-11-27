@@ -230,6 +230,7 @@ class ModelName(str, Enum):
     qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
     deepseek_4_1_flash_1017 = "deepseek_4_1_flash_1017"
+    deepseek_4_1_flash_1017_fast = "deepseek_4_1_flash_1017_fast"
     deepseek_4_1_flash = "deepseek_4_1_flash"
     deepseek_4_pro_0813 = "deepseek_4_pro_0813"
     deepseek_4_pro = "deepseek_4_pro"
@@ -387,6 +388,7 @@ class ModelName(str, Enum):
     glimpse = "glimpse"
     xing_4_0_29b_a4b = "xing_4_0_29b_a4b"
     ling_3_1_flash = "ling_3_1_flash"
+    lingsante_3_1_air_vl = "lingsante_3_1_air_vl"
     mercury_3 = "mercury_3"
     ternary_bonsai_2_9b = "ternary_bonsai_2_9b"
     ultramarine_1_flash = "ultramarine_1_flash"
@@ -7647,6 +7649,7 @@ built_in_models: List[KilnModel] = [
         agent_notes=(
             "Description: October 2026 snapshot of DeepSeek V4.1 Flash with updated weights.\n"
             "Lineup: DeepSeek's ladder is Flash < Pro. The 1017 snapshot is newer than the plain V4.1 Flash.\n"
+            "Same weights: DeepSeek V4.1 Flash 1017 Fast is a faster hosted version on Together AI.\n"
             "Strengths: Strong open-weight coding-agent model."
         ),
         tags=["current", "recommended", "top_value", "top_open"],
@@ -7725,6 +7728,38 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
                 ],
+            ),
+        ],
+    ),
+    # DeepSeek V4.1 Flash 1017 Fast — Together AI's faster serving of the 1017 snapshot
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_4_1_flash_1017_fast,
+        friendly_name="DeepSeek V4.1 Flash 1017 Fast",
+        editorial_notes="Faster hosted version of DeepSeek V4.1 Flash 1017 on Together AI, at a higher price. Same 1M context and image input.",
+        agent_notes=(
+            "Description: Speed-optimized serving of DeepSeek V4.1 Flash 1017.\n"
+            "Lineup: DeepSeek's ladder is Flash < Pro. 1017 Fast is a throughput variant of the V4.1 Flash 1017 snapshot.\n"
+            "Same weights: DeepSeek V4.1 Flash 1017 is the standard version; DeepSeek V4.1 Flash 1017 Fast is a faster hosted version."
+        ),
+        tags=["top_fast"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-V4.1-Flash-1017-fast",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
@@ -13998,6 +14033,37 @@ built_in_models: List[KilnModel] = [
                 model_id="inclusionai/ling-3.1-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    # LingSante 3.1 Air VL
+    KilnModel(
+        family=ModelFamily.ling,
+        name=ModelName.lingsante_3_1_air_vl,
+        friendly_name="LingSante 3.1 Air VL",
+        editorial_notes="inclusionAI's medical vision-language MoE model (124B total, 5.5B active). Text and image input, 128K context.",
+        agent_notes=(
+            "Description: InclusionAI's medical vision-language model in the 3.1 generation.\n"
+            "Lineup: LingSante is InclusionAI's medical line, separate from the general-purpose Ling models such as Ling 3.1 Flash."
+        ),
+        tags=["current"],
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="inclusionai/lingsante-3.1-air-vl",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
