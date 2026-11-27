@@ -256,7 +256,17 @@ HT's connections are in 6.2.
 - **Kept over time.** Kiln's code review guidance gains a check for val and test leaks: a new or changed route that returns eval items, their results or their numbers has a scope classification and a test, and a reviewer looks for a new way that such data can leave. The guidance for coding agents that write API code says the same.
 - **Documented.** A README in `app/mcp` describes the scopes: what each one does, the URL forms, the defaults, the header, and how to classify a new route.
 
-### 5.6 What the scopes do not do
+### 5.6 Files that `call_kiln_api` saves
+
+`call_kiln_api` can save a large answer to a file (`save_to_tmpfile`). Today every connection saves into one folder, so an agent that may read that folder can read a file that a connection with a weaker scope saved there.
+
+- **A folder for each scope.** A connection saves into a sub-folder of Kiln's temp folder. The name of the sub-folder is worked out from the connection's scope, and from nothing else, so the server keeps no memory of a connection. A connection with no scope has a sub-folder too.
+- Connections with the same scope share a sub-folder. They may read the same data, so nothing is disclosed.
+- The clean-up of old files covers every sub-folder, as it covers the one folder today.
+- The tool's answer gives the full path of the saved file, as today.
+- Kiln gives a caller a way to learn the folder of a scope before any file is saved, so that a sandbox can be set up first. The architecture sets how.
+
+### 5.7 What the scopes do not do
 
 Stated so that nobody assumes more:
 
@@ -265,7 +275,7 @@ Stated so that nobody assumes more:
 - Not mitigated, by decision: a task that uses Kiln's own API tool, a tool server at Kiln's own address, code that a code tool or a code judge runs, and the job error log read by run id.
 - The prompt generators that copy stored runs into a prompt can copy a held-out item. The cleanup and robustness project fixes the generators. See question 5.
 
-### 5.7 What users see
+### 5.8 What users see
 
 - **The MCP server is live.** After this phase a chat client on `/mcp` can no longer read val or test rows, or test numbers. The release notes say so.
 - **The skill** explains the default and its reason: the rule in `references/knowledge/train_val_test.md`, and one line in the root `SKILL.md`. The val numbers come from the routes of 4.4 and 4.5, which is why phase 2 comes first.
@@ -298,6 +308,9 @@ Each agent session connects to Kiln's MCP server on the URL for its role. It has
 | Promote, report (the val readers) | val, test | test | yes | yes |
 | Integrity review, generality review | no connection, as today | | | |
 
+- **Each agent can read the saved files of its own scope, and no others.** HT gives the agent's sandbox read access to the folder of the agent's scope (5.6), for each agent CLI it supports: Claude Code, Codex and OpenCode. It gives no access to Kiln's temp folder as a whole. Without this an agent cannot open a trace or a long answer that it saved.
+  - To verify on each platform: that HT and the Kiln app resolve the same temp folder. They run as the same user.
+  - The proof of phase 6 tests both sides: an agent opens a file it saved, and it cannot open a file in another scope's folder.
 - There is no list of tools or routes for a role. A planner can call the route that creates a run config, which the gateway did not give it. Its role file says what its role does. This was decided with the scopes.
 - **The val readers** read val by numbers: the summary routes with `split=val` and the paired comparison. They cannot read a val row. They write nothing.
 - **The experimental eval-building role** creates evals, which `block_eval_changes` refuses. **Proposed:** that role's connection does not have `block_eval_changes`, and its role file tells it to change only the evals it created. The option that starts it stays experimental. See question 3.
@@ -320,7 +333,7 @@ Each agent session connects to Kiln's MCP server on the URL for its role. It has
 | The val summary | Loop code puts it in the val readers' input. No call |
 | Paging of a long answer | `body_limit`, `jq_filter` and `save_to_tmpfile` of `call_kiln_api` |
 
-A file that `call_kiln_api` saves must be readable inside the agent's sandbox. Today every connection saves into one shared folder. A scoped agent that can read that folder can read a file that an open connection saved there, with val or test rows in it. **Proposed:** a scoped connection saves into a folder of its own.
+A file that `call_kiln_api` saves must be readable inside the agent's sandbox. Sections 5.6 and 6.2 say how: a folder for each scope, and read access to that folder only.
 
 ### 6.4 Rules of the gateway that are not scopes
 
@@ -367,7 +380,7 @@ Phase 4 changes many things at once. This phase builds nothing. It checks that e
 
 - **No name of a removed thing is left.** A search of both the code and every text for: each gateway tool name, each removed skill, each removed command and option, the paths of HT's old knowledge copy, and the words "gateway" and "skill installer" where they describe how things work now.
 - **Every pointer resolves.** Each path that a role file, a role prompt or HT's code names in Kiln's skill is a file that exists. Each endpoint doc that a role file names exists, and the route is one the role's connection may call.
-- **Each role, end to end.** For each role: its prompt names its role file; the role file names only calls that its scope allows; the calls it needs for its job are all named.
+- **Each role, end to end.** For each role: its prompt names its role file; the role file names only calls that its scope allows; the calls it needs for its job are all named; and its sandbox can read the folder of its scope's saved files.
 - **Kiln's skill reads right for both readers.** The files that changed for this project are read once as a chat client and once as a loop agent.
 - **The docs match.** HT's docs (install, command line, architecture, agents, limitations, the contributor guide), the README of `app/mcp`, Kiln's help articles on the MCP server, and the command line's own help text.
 - **The tests match.** No test is skipped or deleted without a reason written beside it. No fake of a route differs from the real route.
@@ -377,7 +390,7 @@ Done when: the list is worked through, each finding is fixed or recorded with a 
 
 ## 8. Phase 6: Proof, then the gateway goes
 
-1. **Scope tests.** Each of the gateway's fence tests has a test of the same intent on a scoped connection: a held-out row cannot be read, a val number cannot be read by a train-side role, an eval cannot be changed, a val reader cannot write. A gateway test with no scope test is listed, with the reason (6.4).
+1. **Scope tests.** Each of the gateway's fence tests has a test of the same intent on a scoped connection: a held-out row cannot be read, a val number cannot be read by a train-side role, an eval cannot be changed, a val reader cannot write. Also: an agent opens a file that it saved, and it cannot open a file in the folder of another scope (6.2). A gateway test with no scope test is listed, with the reason (6.4).
 2. **The audit.** A read of the moved HT against the checklist of its core concepts. Each item is checked in the place that now carries it: a scope, a role file, Kiln's skill or HT's code. The checklist is the switchover's (its functional spec, section 7): tune on train, confirm on val, never read test; val by numbers only; the promotion rule; one change for each experiment; new objects only; provenance; no train item value or judge text in a prompt, skill or tool; hard limits; only allowed models; cost from recorded usage; the memory conventions; val readers write nothing; one attempt for each idea; the task's default run config is never changed; the verdict words; the loop never asks a person.
 3. **Runs on the demo project.** Full runs with default options. A run passes when it finishes without an error from a missing file, a refused call that the role needed, or a wrong call that the agent could not correct, and its report is written. **Proposed:** the owner reads the runs and decides whether agent sessions on the generic API work well enough, by the number of failed calls and the cost of each session against a run from phase 1.
 4. **Then:** the gateway, its tests and its console script are deleted, and the searches of phase 5 are run again.
@@ -412,7 +425,7 @@ Risks:
 - **A weaker fence in known places** (6.4). Each is accepted under "accidental, not adversarial". HT's public promise says the test set is never read; its docs must say what enforces that after the move.
 - **A route that is missed.** A route with the wrong classification leaks under a scope, in silence. The test of 5.5 covers a new route. It does not check that a classification is right; the scope tests of phase 6 do that for the gateway's cases.
 - **A scope that leaks into background work.** An eval job that a scoped request starts must run unscoped, or it filters its own reads. The architecture keeps the scope on the request.
-- **A live default changes** (5.7).
+- **A live default changes** (5.8).
 - **Size of the move.** About 57,000 lines and 4,000 tests come under Kiln's checks and CI.
 
 ## 11. Questions for the owner
