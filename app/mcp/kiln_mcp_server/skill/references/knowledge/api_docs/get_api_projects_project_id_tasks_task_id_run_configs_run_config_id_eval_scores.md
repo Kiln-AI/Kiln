@@ -72,6 +72,8 @@ Average token usage across eval runs.
 |mean_output_tokens|one of: number or null|No|Average output tokens per run.|
 |mean_total_tokens|one of: number or null|No|Average total tokens per run.|
 |mean_cost|one of: number or null|No|Average cost per run in USD.|
+|mean_cached_tokens|one of: number or null|No|Average input tokens per run served from the prompt cache.|
+|mean_cache_write_tokens|one of: number or null|No|Average input tokens per run written to the prompt cache, which providers bill above the normal input price. A high value next to a low mean_cached_tokens means most runs started with a cold cache.|
 |mean_total_llm_latency_ms|one of: number or null|No|Average total LLM latency per run in milliseconds.|
 
 ### ValidationError
