@@ -4,6 +4,8 @@ status: complete
 
 # Harness Tuner Switchover
 
+> **On hold: to be re-planned.** On 2026-11-27 the owner decided that harness-tuner moves into the Kiln repository, on Kiln's release schedule. How it moves is not decided yet. Much of this spec exists because the two are in separate repositories: the version checks, the contract test, and reading Kiln's skill through an MCP client call. Do not implement this spec as written. The new Kiln APIs and the decisions in [review_fixes.md](review_fixes.md) are still valid input for the re-plan.
+
 Move harness-tuner onto Kiln's skill and shared APIs. Harness-tuner keeps its gateway.
 
 This is spec two of two. Spec one, [kiln_mcp_server](../kiln_mcp_server/project_overview.md), is the MCP server itself: built into the Kiln app, with two tools (`call_kiln_api` and `kiln_skill`), knowledge and APIs.
