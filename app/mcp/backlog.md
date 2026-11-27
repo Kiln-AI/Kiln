@@ -748,15 +748,16 @@ type. Pass the provider's message through, so the agent can fix the request.
 `references/knowledge/memory.md` is about 24k characters, read whole. Split it into an index and a
 small doc for each memory type in a subfolder, so an agent reads only the type it needs.
 
-### Partial reads and search in kiln_skill
+### Partial reads and search of the skill
 
 - Kind: code
 - Where: kiln
 - Depends on: None
 - Source: Bug bash, 2026-11
 
-`kiln_skill` returns whole files only, and a first build read about 165k characters of skill for
-10 API calls. Let it read part of a file, and search the skill.
+`kiln_skill` returns whole files only: a first build read about 165k characters of skill for 10
+API calls. Open: give `kiln_skill` partial reads and search, or give the agent the skill's path on
+disk to use its own file tools. The latter may be easier and more powerful.
 
 ### Split the code tool authoring doc
 
