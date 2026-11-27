@@ -78,3 +78,91 @@ export function first_messages(
     }
   })
 }
+
+// ── The pilot of 12 ───────────────────────────────────────────────────────
+//
+// With Pilot First on, Continue on the first messages grounds, drives and
+// judges only a pilot of PILOT_CASES cases, spread over the plan. The eval
+// check panel then shows for those cases, and its Continue grounds, drives
+// and judges the rest into the same batch, keeping the pilot's results.
+
+export const PILOT_CASES = 12
+
+// The positions of the pilot in a list of n cases in plan order: spread
+// evenly from the first row on, the same every time. Empty when the whole
+// list is no bigger than a pilot, so a small build runs as one batch.
+export function pilot_positions(
+  n: number,
+  size: number = PILOT_CASES,
+): number[] {
+  if (n <= size) return []
+  return Array.from({ length: size }, (_, k) => Math.floor((k * n) / size))
+}
+
+// Splits the written cases into the pilot and the rest. Each case is stamped
+// with its plan row first, so grounding reads the right row for a case that
+// is no longer at its plan position.
+export function split_pilot<C extends { scenario_index?: number | null }>(
+  cases: C[],
+  size: number = PILOT_CASES,
+): { pilot: C[]; rest: C[] } | null {
+  const positions = pilot_positions(cases.length, size)
+  if (positions.length === 0) return null
+  const stamped = cases.map((c, i) => ({
+    ...c,
+    scenario_index: c.scenario_index ?? i,
+  }))
+  const chosen = new Set(positions)
+  return {
+    pilot: stamped.filter((_, i) => chosen.has(i)),
+    rest: stamped.filter((_, i) => !chosen.has(i)),
+  }
+}
+
+// The pilot that ran, kept until its rest runs or the plan changes. `key`
+// holds everything the pilot's cases depend on (plan, spec, grounding
+// settings); a rest run with another key starts over.
+export type PilotState<C, D> = {
+  key: string
+  // The pilot's cases as driven (grounded on an OpenEnv build).
+  pilot_cases: C[]
+  pilot_drops: D[]
+  // The written cases not yet grounded or driven.
+  rest: C[]
+}
+
+// The whole batch for the rest run: the pilot's cases first, in the order
+// they ran, then the rest. Kept in that order so the pilot's results keep
+// their slots (and their trace ids) when the rest tops the batch off.
+export function batch_after_pilot<C>(pilot_cases: C[], rest_cases: C[]): C[] {
+  return [...pilot_cases, ...rest_cases]
+}
+
+// The current batch, widened to the full batch so the rest run tops it off:
+// the pilot's slots keep their results, the rest's slots are empty. Null
+// when the current batch is not the pilot (another drive ran since), so the
+// caller drives fresh as before.
+export function widen_pilot_batch<C, R>(args: {
+  batch_items: C[] | null
+  built_slots: readonly (R | null)[]
+  pilot_cases: C[]
+  full_items: C[]
+}): { batch_items: C[]; built_slots: (R | null)[] } | null {
+  const { batch_items, built_slots, pilot_cases, full_items } = args
+  if (batch_items === null) return null
+  if (JSON.stringify(batch_items) !== JSON.stringify(pilot_cases)) return null
+  if (built_slots.length !== batch_items.length) return null
+  if (
+    JSON.stringify(full_items.slice(0, pilot_cases.length)) !==
+    JSON.stringify(pilot_cases)
+  ) {
+    return null
+  }
+  return {
+    batch_items: full_items,
+    built_slots: [
+      ...built_slots,
+      ...new Array(full_items.length - built_slots.length).fill(null),
+    ],
+  }
+}

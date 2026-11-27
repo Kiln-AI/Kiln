@@ -112,10 +112,15 @@
   } from "./eval_check"
   import DropsRefineScreen from "./drops_refine_screen.svelte"
   import FirstMessagesReview from "./first_messages_review.svelte"
+  import PilotStop from "./pilot_stop.svelte"
   import {
+    batch_after_pilot,
     owner_choice_gate,
+    split_pilot,
+    widen_pilot_batch,
     write_review_ground,
     type FirstMessagesChoice,
+    type PilotState,
   } from "./pilot_flow"
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
@@ -1641,6 +1646,48 @@
   // The pilot stop's pending choice and the cases on screen while it waits.
   const first_messages_gate = owner_choice_gate<FirstMessagesChoice>()
   let first_messages_cases: SyntheticUserCaseWire[] | null = null
+  // The pilot that ran (Pilot First), until its rest runs or the plan
+  // changes. Not drafted: after a reload the pilot is an ordinary batch.
+  let pilot_state: PilotState<SyntheticUserCaseWire, GroundingDrop> | null =
+    null
+  // Set by the eval check panel's Continue, read once by the next drive:
+  // that drive runs the pilot's rest instead of the whole plan.
+  let pilot_rest_requested = false
+  // The batch on screen is the pilot, and its rest has not run.
+  $: pilot_batch_pending =
+    pilot_state !== null &&
+    batch_cases !== null &&
+    JSON.stringify(batch_cases) === JSON.stringify(pilot_state.pilot_cases)
+
+  // Everything a pilot's cases depend on; a rest run under another key
+  // starts the build over.
+  function pilot_key(
+    approved_prompts: string[],
+    grounding_key: CaseGroundingKey | null,
+    judge_key: string | null,
+  ): string {
+    return JSON.stringify({
+      approved_prompts,
+      spec: spec_text(),
+      guide: data_guide_in_use(),
+      grounding_key,
+      judge_key,
+    })
+  }
+
+  // The eval check panel's Continue on a pilot: back to the plan, and
+  // Generation Settings opens for the rest (the dialog stays the drive's only
+  // entrance).
+  function continue_after_pilot() {
+    history.back()
+    void open_drive_settings(true)
+  }
+
+  // The eval check panel's Refine Plan on a pilot.
+  function refine_after_pilot() {
+    history.back()
+    open_new_plan_dialog()
+  }
 
   // Shows the written first messages on the progress screen and waits for
   // Continue or Refine. Refine goes back to the plan with the Refine Plan
@@ -1941,7 +1988,9 @@
     }
   }
 
-  async function open_drive_settings() {
+  async function open_drive_settings(pilot_rest: unknown = false) {
+    // Only the pilot's Continue passes true; a click handler passes its event.
+    pilot_rest_requested = pilot_rest === true
     drive_settings_error = null
     // Reseed the stepper from the committed length, so a cancelled nudge is
     // gone the next time it opens. Unlike the lanes it waits on nothing, so it
@@ -2832,7 +2881,14 @@
     open_refine_plan_after_drops(drops)
   }
 
-  type PlanCases = { cases: SyntheticUserCaseWire[]; grounding_drops: number }
+  type PlanCases = {
+    cases: SyntheticUserCaseWire[]
+    grounding_drops: number
+    // Pilot First: these cases are the pilot only.
+    pilot?: boolean
+    // Pilot First: the rest run's full batch starts with these pilot cases.
+    after_pilot?: SyntheticUserCaseWire[]
+  }
 
   // The cases a drive runs, on either arm: the cached grounded set when it was
   // grounded from exactly this plan and spec under grounding_key, with only the
@@ -2867,6 +2923,33 @@
         grounding_drops: grounded_cache.grounding_dropped,
       }
     }
+    // Pilot First: the panel's Continue runs the rest of the pilot that ran
+    // under this same key, keeping the pilot's cases.
+    const key = pilot_key(approved_prompts, grounding_key, judge_key)
+    const rest_run =
+      pilot_rest_requested && pilot_state?.key === key ? pilot_state : null
+    pilot_rest_requested = false
+    // A retry of a pilot that ran under this key (a stop after the pilot's
+    // drive) drives the same pilot cases again, without writing, asking or
+    // grounding again.
+    if (!rest_run && pilot_first && pilot_state?.key === key) {
+      return {
+        cases: pilot_state.pilot_cases,
+        grounding_drops: pilot_state.pilot_drops.length,
+        pilot: true,
+      }
+    }
+    if (rest_run) {
+      return run_pilot_rest(
+        rest_run,
+        approved_prompts,
+        target_run_config_id,
+        grounding_model,
+        grounding_key,
+        rehearsal_judge,
+        judge_key,
+      )
+    }
     // Write, then (Pilot First only) the owner reads the first messages,
     // then ground. With the box off the calls are write then ground.
     return write_review_ground<SyntheticUserCaseWire, PlanCases>({
@@ -2878,8 +2961,21 @@
           ? plan_row_cases(approved_prompts)
           : await generated_cases_for_plan(approved_prompts),
       review: review_first_messages,
-      ground: (cases) =>
-        grounding_key
+      ground: (cases) => {
+        // Pilot First on a batch bigger than a pilot: only the pilot runs now.
+        const split = pilot_first && is_multi_turn ? split_pilot(cases) : null
+        if (split) {
+          return run_pilot(
+            split,
+            key,
+            approved_prompts,
+            target_run_config_id,
+            grounding_model,
+            grounding_key,
+            rehearsal_judge,
+          )
+        }
+        return grounding_key
           ? ground_plan_cases(
               cases,
               approved_prompts,
@@ -2889,8 +2985,115 @@
               rehearsal_judge,
               judge_key,
             )
-          : Promise.resolve({ cases, grounding_drops: 0 }),
+          : Promise.resolve({ cases, grounding_drops: 0 })
+      },
     })
+  }
+
+  // Grounds some written cases without caching them; on a build without an
+  // OpenEnv server they pass through. Null after setting generation_error.
+  async function ground_some_cases(
+    cases: SyntheticUserCaseWire[],
+    approved_prompts: string[],
+    target_run_config_id: string,
+    grounding_model: GroundingModel,
+    grounding_key: CaseGroundingKey | null,
+    rehearsal_judge: JudgeConfig | null,
+  ): Promise<GroundingOutcome | null> {
+    if (!grounding_key || cases.length === 0) {
+      return { grounded: cases, drops: [] }
+    }
+    generation_phase = "grounding_cases"
+    return ground_planned_cases(
+      cases,
+      approved_prompts,
+      target_run_config_id,
+      grounding_model,
+      grounding_key.data_guide,
+      grounding_key.max_turns,
+      rehearsal_judge,
+      new_copilot_abort_signal(),
+    )
+  }
+
+  // Pilot First: ground and keep only the pilot. The rest waits, written,
+  // until the eval check panel's Continue.
+  async function run_pilot(
+    split: { pilot: SyntheticUserCaseWire[]; rest: SyntheticUserCaseWire[] },
+    key: string,
+    approved_prompts: string[],
+    target_run_config_id: string,
+    grounding_model: GroundingModel,
+    grounding_key: CaseGroundingKey | null,
+    rehearsal_judge: JudgeConfig | null,
+  ): Promise<PlanCases | null> {
+    const outcome = await ground_some_cases(
+      split.pilot,
+      approved_prompts,
+      target_run_config_id,
+      grounding_model,
+      grounding_key,
+      rehearsal_judge,
+    )
+    if (outcome === null) return null
+    if (outcome.grounded.length === 0) {
+      grounding_all_dropped = outcome.drops
+      return null
+    }
+    pilot_state = {
+      key,
+      pilot_cases: outcome.grounded,
+      pilot_drops: outcome.drops,
+      rest: split.rest,
+    }
+    return {
+      cases: outcome.grounded,
+      grounding_drops: outcome.drops.length,
+      pilot: true,
+    }
+  }
+
+  // Pilot First, after the panel's Continue: ground the rest, and the full
+  // batch is the pilot's cases first, then the rest's. On an OpenEnv build
+  // the full grounded set is cached like any other.
+  async function run_pilot_rest(
+    state: PilotState<SyntheticUserCaseWire, GroundingDrop>,
+    approved_prompts: string[],
+    target_run_config_id: string,
+    grounding_model: GroundingModel,
+    grounding_key: CaseGroundingKey | null,
+    rehearsal_judge: JudgeConfig | null,
+    judge_key: string | null,
+  ): Promise<PlanCases | null> {
+    const outcome = await ground_some_cases(
+      state.rest,
+      approved_prompts,
+      target_run_config_id,
+      grounding_model,
+      grounding_key,
+      rehearsal_judge,
+    )
+    if (outcome === null) return null
+    const full = batch_after_pilot(state.pilot_cases, outcome.grounded)
+    const drops = [...state.pilot_drops, ...outcome.drops]
+    if (grounding_key) {
+      cached_grounded_cases = {
+        prompts_json: JSON.stringify(approved_prompts),
+        spec_text: spec_text(),
+        ...grounding_key,
+        rehearsal_judge_key: judge_key,
+        cases: full,
+        grounding_dropped: drops.length,
+        drops,
+        drops_notice_seen: false,
+      }
+    }
+    pilot_state = null
+    return {
+      cases: full,
+      grounding_drops: drops.length,
+      after_pilot: state.pilot_cases,
+    }
   }
 
   // The grounding half of cases_for_plan: ground the written cases and cache
@@ -3096,7 +3299,10 @@
       )
       if (resolved === null) return
       const { cases, grounding_drops: drive_grounding_drops } = resolved
-      planned_cases = approved_prompts.length - drive_grounding_drops
+      // A pilot sets out to drive only its own cases.
+      planned_cases = resolved.pilot
+        ? cases.length
+        : approved_prompts.length - drive_grounding_drops
 
       // 5. The drive plan: TOP OFF the current batch — drive only the
       // missing slots, into the same batch tag, keeping the paid
@@ -3111,10 +3317,23 @@
         turns: chosen_turns,
         batch_turns: driven_turns_per_case,
       })
+      // The pilot's rest: the pilot batch widened to the full batch, so the
+      // drive tops it off and keeps the pilot's results. Null on every other
+      // drive, which plans exactly as before.
+      const widened = resolved.after_pilot
+        ? widen_pilot_batch({
+            batch_items: batch_cases,
+            built_slots: built_by_case,
+            pilot_cases: resolved.after_pilot,
+            full_items: cases,
+          })
+        : null
       const drive_plan = plan_drive({
         items: cases,
-        batch_items: lanes_unchanged ? batch_cases : null,
-        built_slots: built_by_case,
+        batch_items: lanes_unchanged
+          ? widened?.batch_items ?? batch_cases
+          : null,
+        built_slots: widened?.built_slots ?? built_by_case,
         batch_tag: multi_turn_batch_tag,
         undeleted_batch_tags,
       })
@@ -3146,6 +3365,13 @@
       const previous_reviewed_identity = reviewed_identity
       driven_su_driver = chosen_su
       driven_turns_per_case = chosen_turns
+      if (drive_plan.top_off && widened) {
+        // The rest tops off the pilot: the batch is the full batch from here,
+        // and a nothing-driven drive restores the pilot above.
+        batch_cases = widened.batch_items
+        built_by_case = widened.built_slots
+        batch_grounding_drops = drive_grounding_drops
+      }
       if (!drive_plan.top_off) {
         trace_claims = []
         trace_reviews = []
@@ -6323,6 +6549,17 @@
                 on_refine_plan={refine_plan_from_notice}
               />
               <div class="max-w-4xl mx-auto mt-12">
+                {#if pilot_batch_pending && pilot_state}
+                  <div class="mb-6">
+                    <PilotStop
+                      ran={trace_claims.length}
+                      rest={pilot_state.rest.length}
+                      noun={judged_noun}
+                      on_continue={continue_after_pilot}
+                      on_refine_plan={refine_after_pilot}
+                    />
+                  </div>
+                {/if}
                 <EvalCheckPanel
                   cases={trace_claims}
                   drops={batch_drops(

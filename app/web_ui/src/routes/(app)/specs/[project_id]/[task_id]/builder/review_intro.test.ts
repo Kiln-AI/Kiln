@@ -85,7 +85,7 @@ describe("Step 5 entry screen", () => {
     // only while the entry screen shows: Start dismisses both together.
     const normalized = normalize(page_source)
     expect(normalized).toMatch(
-      /on_refine_plan=\{refine_plan_from_notice\} \/> <div class="max-w-4xl mx-auto mt-12"> <EvalCheckPanel cases=\{trace_claims\}/,
+      /on_refine_plan=\{refine_plan_from_notice\} \/> <div class="max-w-4xl mx-auto mt-12"> \{#if pilot_batch_pending && pilot_state\}[\s\S]*?\{\/if\} <EvalCheckPanel cases=\{trace_claims\}/,
     )
   })
 

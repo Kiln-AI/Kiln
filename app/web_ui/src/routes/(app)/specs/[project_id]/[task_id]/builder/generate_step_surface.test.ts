@@ -366,7 +366,7 @@ describe("the turns knob", () => {
     // reseeds the staged copy from it. Without this reseed a cancelled nudge
     // would survive into the next drive — and silently disqualify a top-off,
     // which refuses to mix conversation lengths.
-    const open = function_body("async function open_drive_settings() {")
+    const open = function_body("async function open_drive_settings(")
     expect(open).toContain("staged_turns_per_case = turns_per_case")
   })
 
@@ -534,9 +534,7 @@ describe("Generation Settings dialog", () => {
     expect(input_gen_lane()).toContain(
       "initial_run_config_properties={input_gen_run_config}",
     )
-    const open = normalize(
-      function_body("async function open_drive_settings() {"),
-    )
+    const open = normalize(function_body("async function open_drive_settings("))
     expect(open).toContain(
       "input_gen_config_component?.apply_run_config_properties( input_gen_run_config, )",
     )
@@ -619,7 +617,7 @@ describe("Generation Settings dialog", () => {
     // Order is the whole fix: showing first let the user pick a model while
     // the defaults were still resolving, and the reseed then overwrote it.
     // Pinned by index, because only the sequence is wrong in the old version.
-    const open = function_body("async function open_drive_settings() {")
+    const open = function_body("async function open_drive_settings(")
     const awaited = open.indexOf("await prepopulate_lanes()")
     const reseed = open.indexOf("judge_model_combined = judge_model")
     const show = open.indexOf("drive_settings_dialog?.show()")
@@ -1434,9 +1432,7 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       d.indexOf("drive_committed = true"),
     )
     // The drops count as planned-for, not failed, so no stop screen follows.
-    expect(d).toContain(
-      "planned_cases = approved_prompts.length - drive_grounding_drops",
-    )
+    expect(d).toContain(": approved_prompts.length - drive_grounding_drops")
   })
 
   it("shows the checking progress with the dropped count", () => {
@@ -1714,7 +1710,7 @@ describe("Generation Settings: the rehearsal check", () => {
     expect(contains("check_rehearsals = saved.check_rehearsals ?? false")).toBe(
       true,
     )
-    expect(function_body("async function open_drive_settings() {")).toContain(
+    expect(function_body("async function open_drive_settings(")).toContain(
       "staged_check_rehearsals = check_rehearsals",
     )
     expect(function_body("async function submit_drive_settings() {")).toContain(
@@ -1755,7 +1751,7 @@ describe("Generation Settings: Pilot First", () => {
   it("starts off, also on an older draft, is reseeded on open and committed on submit", () => {
     expect(contains("let pilot_first = false")).toBe(true)
     expect(contains("pilot_first = saved.pilot_first ?? false")).toBe(true)
-    expect(function_body("async function open_drive_settings() {")).toContain(
+    expect(function_body("async function open_drive_settings(")).toContain(
       "staged_pilot_first = pilot_first",
     )
     expect(function_body("async function submit_drive_settings() {")).toContain(
@@ -1794,5 +1790,61 @@ describe("Generation Settings: Pilot First", () => {
     expect(
       normalize(function_body("async function review_first_messages(")),
     ).toContain("await first_messages_gate.wait(new_copilot_abort_signal())")
+  })
+})
+
+describe("Pilot First: the pilot of 12", () => {
+  const resolve = () =>
+    normalize(function_body("async function cases_for_plan("))
+  const drive = () =>
+    normalize(function_body("async function on_drive_multi_turn() {"))
+
+  it("splits off a pilot only with the box on, on a multi-turn build", () => {
+    expect(resolve()).toContain(
+      "const split = pilot_first && is_multi_turn ? split_pilot(cases) : null",
+    )
+    expect(mentions("split_pilot(")).toBe(1)
+  })
+
+  it("runs the rest only after the panel's Continue, under the same key", () => {
+    expect(resolve()).toContain(
+      "const rest_run = pilot_rest_requested && pilot_state?.key === key ? pilot_state : null pilot_rest_requested = false",
+    )
+    // Only the pilot's Continue asks for the rest, through the settings
+    // dialog, which stays the drive's only entrance.
+    expect(mentions("open_drive_settings(true)")).toBe(1)
+    expect(
+      normalize(function_body("function continue_after_pilot() {")),
+    ).toContain("history.back() void open_drive_settings(true)")
+    expect(mentions("on_drive_multi_turn")).toBe(2)
+  })
+
+  it("plans a pilot drive for its own cases and widens only for the rest", () => {
+    expect(drive()).toContain(
+      "planned_cases = resolved.pilot ? cases.length : approved_prompts.length - drive_grounding_drops",
+    )
+    expect(drive()).toContain(
+      "batch_items: lanes_unchanged ? widened?.batch_items ?? batch_cases : null, built_slots: widened?.built_slots ?? built_by_case,",
+    )
+    expect(drive()).toContain("const widened = resolved.after_pilot ?")
+  })
+
+  it("never caches a pilot as the plan's grounded set", () => {
+    const pilot = normalize(function_body("async function run_pilot("))
+    expect(pilot).not.toContain("cached_grounded_cases =")
+    expect(
+      normalize(function_body("async function run_pilot_rest(")),
+    ).toContain("cached_grounded_cases = {")
+  })
+
+  it("shows the pilot stop above the eval check panel on the review start screen", () => {
+    expect(
+      contains(`{#if pilot_batch_pending && pilot_state}
+                  <div class="mb-6">
+                    <PilotStop`),
+    ).toBe(true)
+    expect(page_source.indexOf("<PilotStop")).toBeLessThan(
+      page_source.indexOf("<EvalCheckPanel"),
+    )
   })
 })
