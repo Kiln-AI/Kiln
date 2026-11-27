@@ -1325,9 +1325,8 @@ def test_the_maintenance_skill_names_the_commands():
         "uv run python -m pytest app/mcp\n",
         "uv run ruff check",
         "uv run ruff format --check",
-        "app/mcp/knowledge_backlog.md",
-        "uv run python -m pytest"
-        " app/mcp/kiln_mcp_server/skill_checks/test_knowledge_backlog.py",
+        "app/mcp/backlog.md",
+        "uv run python -m pytest app/mcp/kiln_mcp_server/skill_checks/test_backlog.py",
     ):
         assert command in text, command
 

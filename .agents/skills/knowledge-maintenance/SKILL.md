@@ -1,6 +1,6 @@
 ---
 name: knowledge-maintenance
-description: Add to, change, organise and audit the Kiln skill (app/mcp/kiln_mcp_server/skill/) - its SKILL.md, knowledge files, client guidance and API rules, and its knowledge of levers, techniques, playbooks and smells under references/levers/ and references/improving_agents/ - and add entries to the knowledge backlog in app/mcp/knowledge_backlog.md. Use it for every change to those files - a new approach from a post, a lesson to record, a new document, an idea for later, a technique that went out of fashion, a fix ported from Kiln Harness Tuner - and for an audit. It gives the templates, the placement rules, the content rules and the commands that end each change.
+description: Add to, change, organise and audit the Kiln skill (app/mcp/kiln_mcp_server/skill/) - its SKILL.md, knowledge files, client guidance and API rules, and its knowledge of levers, techniques, playbooks and smells under references/levers/ and references/improving_agents/ - and add entries to the Kiln MCP backlog in app/mcp/backlog.md. Use it for every change to those files - a new approach from a post, a lesson to record, a new document, an idea for later, a technique that went out of fashion, a fix ported from Kiln Harness Tuner - and for an audit. It gives the templates, the placement rules, the content rules and the commands that end each change.
 ---
 
 # knowledge-maintenance
@@ -30,9 +30,9 @@ The file name without `.md` is the id. The two index files,
 generated blocks. Code writes those blocks. A person or an agent never edits
 them. The text around the blocks is hand-written.
 
-The knowledge backlog, [`app/mcp/knowledge_backlog.md`](../../../app/mcp/knowledge_backlog.md),
-lists the known gaps and the ideas that are not written yet. It is outside the
-package, so no agent on the MCP reads it.
+The Kiln MCP backlog, [`app/mcp/backlog.md`](../../../app/mcp/backlog.md),
+lists the known gaps, the bugs found in use and the ideas that are not written
+yet. It is outside the package, so no agent on the MCP reads it.
 
 You, a coding agent that works on this repository, read this skill. Agents on
 the MCP never read it: it is outside the package.
@@ -166,10 +166,10 @@ fail on a missing heading. A test holds each template to the schema.
 
 ### 4.4 Add an idea or a gap for later
 
-Add an entry to [`app/mcp/knowledge_backlog.md`](../../../app/mcp/knowledge_backlog.md),
+Add an entry to [`app/mcp/backlog.md`](../../../app/mcp/backlog.md),
 at the end of `Unranked`, in the fixed format that the top of that file
 gives. Do not rank it. Run
-`uv run python -m pytest app/mcp/kiln_mcp_server/skill_checks/test_knowledge_backlog.py`.
+`uv run python -m pytest app/mcp/kiln_mcp_server/skill_checks/test_backlog.py`.
 
 Reason: an entry needs no debate to be added. Its rank does, and the owners
 decide the rank.
