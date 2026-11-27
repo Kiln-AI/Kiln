@@ -200,7 +200,7 @@ Done when: each route has tests with HT's pinned values, and the skill's checks 
 
   The architecture sets the exact syntax. A URL that names an unknown setting is refused when the client connects.
 
-### 5.2 The four scopes
+### 5.2 The five scopes
 
 **`fence_eval_data=<splits>`** withholds the per-item data of the named splits.
 
@@ -231,13 +231,15 @@ This is also what stops a withheld item from being made readable.
 
 **`readonly`** Only GET requests that do not stream. No exception for a route or a caller.
 
+**`block_deletes`** Every `DELETE` request is refused. A simple check of the method, and nothing else.
+
 ### 5.3 Defaults
 
-| Connection | `fence_eval_data` | `fence_eval_results` | `block_eval_changes` | `readonly` |
-|---|---|---|---|---|
-| REST with no scope | — | — | — | — |
-| `/mcp` (every MCP client by default) | val, test | test | — | — |
-| `/mcp/open` | — | — | — | — |
+| Connection | `fence_eval_data` | `fence_eval_results` | `block_eval_changes` | `readonly` | `block_deletes` |
+|---|---|---|---|---|---|
+| REST with no scope | — | — | — | — | — |
+| `/mcp` (every MCP client by default) | val, test | test | — | — | — |
+| `/mcp/open` | — | — | — | — | — |
 
 HT's connections are in 6.2.
 
@@ -301,12 +303,12 @@ Done when: the tests of 5.5 pass, and a chat client on `/mcp` can do a one-off e
 
 Each agent session connects to Kiln's MCP server on the URL for its role. It has no other route to Kiln: as today, its shell has no network and it cannot read the project folder.
 
-| Roles | `fence_eval_data` | `fence_eval_results` | `block_eval_changes` | `readonly` |
-|---|---|---|---|---|
-| Planner, builder, probe, analyst | val, test | val, test | yes | — |
-| Baseline review, describe eval | val, test | val, test | yes | yes |
-| Promote, report (the val readers) | val, test | test | yes | yes |
-| Integrity review, generality review | no connection, as today | | | |
+| Roles | `fence_eval_data` | `fence_eval_results` | `block_eval_changes` | `readonly` | `block_deletes` |
+|---|---|---|---|---|---|
+| Planner, builder, probe, analyst | val, test | val, test | yes | — | yes |
+| Baseline review, describe eval | val, test | val, test | yes | yes | yes |
+| Promote, report (the val readers) | val, test | test | yes | yes | yes |
+| Integrity review, generality review | no connection, as today | | | | |
 
 - **Each agent can read the saved files of its own scope, and no others.** HT gives the agent's sandbox read access to the folder of the agent's scope (5.6), for each agent CLI it supports: Claude Code, Codex and OpenCode. It gives no access to Kiln's temp folder as a whole. Without this an agent cannot open a trace or a long answer that it saved.
   - To verify on each platform: that HT and the Kiln app resolve the same temp folder. They run as the same user.
@@ -337,7 +339,9 @@ A file that `call_kiln_api` saves must be readable inside the agent's sandbox. S
 
 ### 6.4 What the gateway does that the scopes do not
 
-**Not approved.** The owner reviews this list item by item. Nothing here is settled, except where an item says "decided".
+**Reviewed by the owner on 2026-11-27.** Each item carries the decision. One item waits: item 4, for an explanation.
+
+**Note:** the owner is weighing another design for how connections are limited: a few roles, each an allow list of routes, in place of the write-side scopes. If that is chosen, items 2, 8 and 9 change. This section is not restructured until that is decided.
 
 The gateway does more than keep val and test away. Each item below is something it does today that no scope does. For each: what it does today, what happens after phase 4, and a proposal.
 
@@ -349,56 +353,56 @@ The gateway does more than keep val and test away. Each item below is something 
 2. **No deletes, and no edits of what exists.**
    - Today: the gateway has no tool that deletes a record, edits the task, changes a setting or a provider, or changes an existing run config or prompt (it can rename a run config). "New objects only, and the parent is never changed" is true because the tools do not exist.
    - After: a train-side agent can call any route that is not blocked for MCP. That includes the routes that delete a task, a run, a run config's prompt or a memory record, and the route that edits the task and its default run config. `block_eval_changes` covers evals, eval inputs and dataset items in a split, and nothing else. A `readonly` role is safe.
-   - Proposal: one more scope, `block_deletes`, which refuses every delete. It is general, small, and useful to a careful user of any MCP client. HT's train-side roles set it. Edits of the task stay a rule of the role files, checked in the audit.
+   - Decided: one more scope, `block_deletes`. It is a simple check of the method: it refuses every `DELETE` request. HT's connections set it. Two routes delete with a `POST` (many runs, many documents); the simple check does not cover them, and the role files say not to call them. Edits of the task stay a rule of the role files, checked in the audit.
 
 3. **Code trust.**
    - Today: the builder and the probe call a gateway tool that tells Kiln to trust the project's code tools.
    - After: that route is blocked for every MCP connection, on purpose: only the user grants trust. So an agent cannot call it.
-   - Proposal: loop code grants trust, once in a run, at the point where an agent does it today. HT's docs already tell the user that a run trusts the code its agents write.
+   - Decided: loop code grants trust, from code, at the point where an agent does it today.
 
 4. **An answer holds only named fields.**
    - Today: the gateway copies named fields from Kiln's answer. A field that Kiln adds later cannot reach an agent.
    - After: the agent gets Kiln's whole answer.
    - What is lost: a guard against a future field that carries held-out content, for example a new field of a result row. The scope rules work on items, not on fields.
-   - Proposal: accept. The code review check of 5.5 covers a new field on a route that returns eval data.
+   - Proposal: accept. The code review check of 5.5 covers a new field on a route that returns eval data. *Waits for the owner, after an explanation.*
 
 5. **Tags that are named like a held-out split.**
    - Today: an item with a tag named `val`, `test`, `val_*`, `test_*`, `holdout*` or `heldout*` is kept from agents, also when no eval uses that tag. The reason: the test items of a deleted eval are still test items.
    - After: held-out status comes from eval definitions only (5.2). Such an item is readable.
-   - Proposal: accept, as decided for the scopes. HT's start-up check still finds such tags and warns the user before a run.
+   - Decided: accept the loss. HT's start-up check still finds such tags and warns the user before a run.
 
 6. **An item that is train in one eval and held out in another.**
    - Today: the gateway keeps such an item from agents in every read.
    - After: the item is returned in the train rows of the first eval (5.2). A direct read of the item is still refused.
-   - Proposal: accept, as decided for the scopes. HT's start-up check still reports each overlap, so the user can fix the split design.
+   - Decided: accept. HT's start-up check still reports each overlap, so the user can fix the split design.
 
 7. **One project and one task.**
    - Today: every gateway call is built for the run's project and task. An agent cannot name another.
    - After: the agent names both ids on each call, from its input. It can read another task or project.
-   - Proposal: accept, as decided for the scopes. Nothing of the measurement depends on it.
+   - Decided: accept, and it is wanted: a sub-agent is another task, and an agent must be able to read it.
 
 8. **The input of a run comes from the item.**
    - Today: to run a run config, an agent names a train item. The gateway reads the item's input itself. The agent cannot run free text.
    - After: the eval job of 4.8 does the same, by item id. But the plain run route is open too, and it takes any input text.
-   - Proposal: accept. The role files name the eval job as the way.
+   - Decided: accept. The role files name the eval job as the way.
 
 9. **Who may start what, and how much at once.**
    - Today: the planner and the analyst cannot create a run config, run an item or start an eval job. Only the builder exports a skill. The runs that agents start are limited to four at once in each session.
    - After: no tool lists (decided with the scopes). Every train-side role can start a run or an eval job, with a concurrency it chooses, up to Kiln's limit of 100.
    - What is lost: a limit on spend that an agent starts by mistake.
-   - Proposal: the role files say what each role starts and with what concurrency. To verify in the architecture: how HT books the cost of runs that agents start, with no gateway to mark them.
+   - Decided: guidance is enough. The role files say which roles do not start runs or eval jobs, and with what concurrency the others do. HT does not track the cost of what agents start.
 
 10. **Memory.**
     - Today: the gateway limits memory calls to the project scope and the task's scope, and it lets only some roles update a record. It writes one line for each memory write to a file, from which HT shows the write in its log and its screen.
     - After: Kiln's memory routes, by the rules of `references/knowledge/memory.md`. Which role writes which record is a rule of the role files. The `val` tag stays protected (5.2).
-    - Proposal: accept the first two. For the third, loop code reads the memory list after each session and reports what is new, so the log and the screen keep their lines.
+    - Decided: accept the first two. For the third, loop code reads the memory list after each session and reports what is new, so the log and the screen keep their lines.
 
 11. **Val readers write nothing, on disk too.**
     - Today: the promote and report roles have no write tool, and their sandbox cannot write a file.
     - After: `readonly` on the connection. The file rule is HT's own, unchanged.
-    - Proposal: no loss.
+    - Decided: no loss.
 
-12. **Small things that go.** The gateway repairs a name that Kiln would refuse, checks a request before it reaches Kiln, and limits an answer to 40,000 characters. After: Kiln refuses a bad name or a bad request with its own error, and `call_kiln_api` limits a body with `body_limit`. Proposal: accept.
+12. **Small things that go.** The gateway repairs a name that Kiln would refuse, checks a request before it reaches Kiln, and limits an answer to 40,000 characters. After: Kiln refuses a bad name or a bad request with its own error, and `call_kiln_api` limits a body with `body_limit`. Decided: accept.
 
 ### 6.5 Loop code
 
