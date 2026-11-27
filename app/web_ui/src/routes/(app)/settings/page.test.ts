@@ -105,6 +105,48 @@ describe("Settings +page.svelte — Update Available callout", () => {
   })
 })
 
+describe("Settings +page.svelte — Connect callout", () => {
+  it("renders the Connect callout in place of the update callout when no update is available", () => {
+    const { getByTestId, queryByTestId } = render(Page)
+    expect(queryByTestId("update-available-callout")).toBeNull()
+    const callout = getByTestId("connect-agent-callout")
+    expect(callout.textContent).toContain("Connect to Claude, Codex, and more")
+    expect(callout.textContent).toContain("Use Kiln from your own agent.")
+    const link = callout.querySelector("a")
+    expect(link?.getAttribute("href")).toBe("/settings/connect_agent")
+    expect(link?.textContent?.trim()).toBe("Connect")
+  })
+
+  it("hides the Connect callout when an update is available", () => {
+    update_info.set({
+      update_result: {
+        has_update: true,
+        latest_version: "1.0.0",
+        link: "https://example.com",
+      },
+      update_loading: false,
+      update_error: null,
+    })
+    const { queryByTestId } = render(Page)
+    expect(queryByTestId("connect-agent-callout")).toBeNull()
+    expect(queryByTestId("update-available-callout")).not.toBeNull()
+  })
+
+  it("renders the Connect callout before the first section heading while the update check is loading", () => {
+    update_info.set({
+      update_result: null,
+      update_loading: true,
+      update_error: null,
+    })
+    const { getByTestId, container } = render(Page)
+    const callout = getByTestId("connect-agent-callout")
+    const firstH2 = container.querySelector("h2")
+    expect(firstH2).not.toBeNull()
+    const position = callout.compareDocumentPosition(firstH2 as Node)
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
 describe("Settings +page.svelte — section structure", () => {
   it("renders the four sections in the expected order", () => {
     const { container } = render(Page)

@@ -1,7 +1,6 @@
 import json
 import math
 from enum import Enum
-from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
 
 from pydantic import (
@@ -41,6 +40,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.lazy_fields import LargeField, LazyFieldsMixin, summary_value
 from kiln_ai.datamodel.openenv import (
     OpenEnvEpisode,
     OpenEnvReset,
@@ -60,11 +60,6 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.task_run import TaskRun
 
 EvalScores = Dict[str, float]
-
-# Module-level set to track evals currently being migrated (to prevent recursion)
-# Protected by _migration_lock to ensure thread-safe access
-_migration_lock = Lock()
-_currently_migrating_eval_ids: set[ID_TYPE] = set()
 
 # Fixed name of the sibling file that holds a code judge's Python source, stored
 # beside its eval_config.kiln. Fixed so authored tests can `from scorer import score`.
@@ -984,7 +979,7 @@ def validate_unique_display_names(output_scores: List[EvalOutputScore]) -> None:
         )
 
 
-class EvalRun(KilnParentedModel):
+class EvalRun(LazyFieldsMixin, KilnParentedModel):
     """
     The scores an eval produced for a single dataset item.
 
@@ -1027,26 +1022,26 @@ class EvalRun(KilnParentedModel):
         description="Whether this eval run to evaluate the parent eval config (evaluating the config using an existing dataset item). If true, task_run_config_id must be None, as we're not running the task.",
         default=False,
     )
-    input: str | None = Field(
+    input: Annotated[str | None, LargeField()] = Field(
         default=None,
         json_schema_extra={"deprecated": True},
         description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.input instead. The input to the task. JSON formatted for structured input, plaintext for unstructured input. Required on legacy records (those with neither a scored_run_id nor a skipped_reason), never set on new ones.",
     )
-    output: str | None = Field(
+    output: Annotated[str | None, LargeField()] = Field(
         default=None,
         json_schema_extra={"deprecated": True},
         description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.output.output instead. The output of the task. None for skipped-before-execution runs.",
     )
-    reference_answer: str | None = Field(
+    reference_answer: Annotated[str | None, LargeField()] = Field(
         default=None,
         json_schema_extra={"deprecated": True},
         description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id. The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.",
     )
-    intermediate_outputs: Dict[str, str] | None = Field(
+    intermediate_outputs: Annotated[Dict[str, str] | None, LargeField()] = Field(
         default=None,
         description="The intermediate outputs of the task (example, eval thinking).",
     )
-    task_run_trace: str | None = Field(
+    task_run_trace: Annotated[str | None, LargeField()] = Field(
         default=None,
         json_schema_extra={"deprecated": True},
         description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.trace instead. The JSON formatted trace of the task run that produced the output.",
@@ -1064,9 +1059,11 @@ class EvalRun(KilnParentedModel):
         default=None,
         description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
     )
-    judge_trace: list[ChatCompletionMessageParam] | None = Field(
-        default=None,
-        description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. Structured messages, unlike the deprecated JSON-string task_run_trace. None for V1 evals, for evals that call no model (e.g. code evals), and for records that predate this field. Distinct from the evaluated task run's trace.",
+    judge_trace: Annotated[list[ChatCompletionMessageParam] | None, LargeField()] = (
+        Field(
+            default=None,
+            description="The judge's full conversation in OpenAI format: the system prompt, the rendered judge prompt, and every reply. Structured messages, unlike the deprecated JSON-string task_run_trace. None for V1 evals, for evals that call no model (e.g. code evals), and for records that predate this field. Distinct from the evaluated task run's trace.",
+        )
     )
 
     eval_input_id: ID_TYPE | None = Field(
@@ -1086,6 +1083,11 @@ class EvalRun(KilnParentedModel):
         if self.parent is not None and self.parent.__class__.__name__ != "EvalConfig":
             raise ValueError("parent must be an EvalConfig")
         return self.parent  # type: ignore
+
+    @summary_value
+    def judge_trace_length(self) -> int:
+        """The number of messages in `judge_trace`; 0 when there is no judge trace."""
+        return len(self.judge_trace) if self.judge_trace else 0
 
     @model_validator(mode="after")
     def validate_input_source(self) -> Self:
@@ -1682,18 +1684,18 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         return result
 
     @model_validator(mode="after")
-    def upgrade_old_reference_answer_eval_config(self) -> Self:
+    def upgrade_old_reference_answer_eval_config(self, info: ValidationInfo) -> Self:
         """
         Migration: Set the first judge config as the default for existing reference answer evals that don't have a current_config_id set.
 
         For reference_answer evals that don't have a current_config_id set, this migration
         will set the first config (by created_at) as the default.
         """
-        if self.id is None:
+        if self.path is None:
             return self
 
         # Only run during file loading
-        if not self._loaded_from_file:
+        if not self.loaded_from_file(info):
             return self
 
         # Skip if already migrated (has a current_config_id set)
@@ -1704,24 +1706,19 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         if self.evaluation_data_type != EvalDataType.reference_answer:
             return self
 
-        # Prevent recursion: self.configs() loads child files, which re-loads this parent
-        # (see basemodel.py where we iterate_children_paths_of_parent_path calls load_from_file)
-        # This causes the validator to run again, creating an infinite loop without this guard.
-        with _migration_lock:
-            if self.id in _currently_migrating_eval_ids:
-                return self
-            _currently_migrating_eval_ids.add(self.id)
-
-        try:
-            # Get the configs - these are loaded from child files
-            configs_list = self.configs(readonly=True)
-            if configs_list and len(configs_list) > 0:
-                # Sort by created_at to get the oldest (first created) config
-                sorted_configs = sorted(configs_list, key=lambda c: c.created_at)
-                self.current_config_id = sorted_configs[0].id
-        finally:
-            with _migration_lock:
-                _currently_migrating_eval_ids.discard(self.id)
+        # Not self.configs(): it loads this eval's file again as a readonly copy, which
+        # would re-enter this migration and could be cached. With this eval as their
+        # parent, the configs never load it.
+        configs_list = [
+            EvalConfig.load_from_file(config_path, parent=self)
+            for config_path in EvalConfig.iterate_children_paths_in_folder(
+                self.path.parent
+            )
+        ]
+        if configs_list:
+            # Sort by created_at to get the oldest (first created) config
+            sorted_configs = sorted(configs_list, key=lambda c: c.created_at)
+            self.current_config_id = sorted_configs[0].id
 
         return self
 

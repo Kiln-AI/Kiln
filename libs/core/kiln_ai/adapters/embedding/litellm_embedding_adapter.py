@@ -15,6 +15,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     built_in_embedding_models_from_provider,
     transform_slug_for_litellm,
 )
+from kiln_ai.adapters.ollama_tools import ensure_ollama_tags_fresh
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
@@ -97,6 +98,8 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         self.litellm_core_config = litellm_core_config
 
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
+        await ensure_ollama_tags_fresh(self.model_provider.name)
+
         # batch the requests
         batches: List[List[str]] = []
         for i in range(0, len(input_texts), MAX_BATCH_SIZE):

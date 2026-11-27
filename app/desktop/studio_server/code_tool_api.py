@@ -16,6 +16,7 @@ from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_ai.tools.tool_registry import validate_unique_allowlist_tool_names
+from kiln_server.custom_errors import not_found_error
 from kiln_server.project_api import project_from_id
 from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
@@ -30,6 +31,11 @@ from pydantic import (
 )
 from pydantic import (
     ValidationError as PydanticValidationError,
+)
+
+from app.desktop.studio_server.services.code_trust import (
+    CODE_TRUST_CHECK,
+    CODE_TRUST_PAGE_DOC,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,6 +82,15 @@ class CodeToolResponse(BaseModel):
     provenance: KilnArtifactProvenance | None = None
 
 
+NOT_TRUSTED_DESCRIPTION = (
+    "True when the project's code is not trusted, so nothing ran and nothing was "
+    f"saved. Only the user can grant code trust, in the Kiln app at {CODE_TRUST_PAGE_DOC}. "
+    "Explain what the code will run and that it runs with no sandbox, give the "
+    "user that link, and ask them to tell you when they have approved. Then "
+    f"confirm with {CODE_TRUST_CHECK} and call again."
+)
+
+
 class CodeToolCreateResponse(BaseModel):
     id: str | None = None
     name: str | None = None
@@ -90,7 +105,7 @@ class CodeToolCreateResponse(BaseModel):
     created_at: datetime | None = None
     created_by: str | None = None
     provenance: KilnArtifactProvenance | None = None
-    not_trusted: bool = False
+    not_trusted: bool = Field(default=False, description=NOT_TRUSTED_DESCRIPTION)
 
 
 class CodeToolUpdateRequest(BaseModel):
@@ -117,7 +132,8 @@ class TestCodeToolRequest(BaseModel):
 
 
 class ToolCallLogEntryResponse(BaseModel):
-    """One nested tool call a sandboxed run made, as reported to a test pane."""
+    """One nested tool call that a code tool or code eval made during a test run,
+    as reported to a test pane."""
 
     tool_name: str
     arguments: dict[str, Any]
@@ -146,7 +162,7 @@ class TestCodeToolResponse(BaseModel):
     result: str | None = None
     error: str | None = None
     traceback: str | None = None
-    not_trusted: bool = False
+    not_trusted: bool = Field(default=False, description=NOT_TRUSTED_DESCRIPTION)
     stdout: str = ""
     stderr: str = ""
     tool_call_log: list[ToolCallLogEntryResponse] = Field(default_factory=list)
@@ -157,7 +173,7 @@ def _code_tool_from_id(project_id: str, code_tool_id: str) -> CodeTool:
     project = project_from_id(project_id)
     code_tool = CodeTool.from_id_and_parent_path(code_tool_id, project.path)
     if code_tool is None:
-        raise HTTPException(status_code=404, detail="Code tool not found")
+        raise not_found_error("Code tool", code_tool_id, "project's code tools")
     return code_tool
 
 
@@ -225,6 +241,13 @@ def connect_code_tool_api(app: FastAPI):
         ],
         request: CodeToolCreateRequest,
     ) -> CodeToolCreateResponse:
+        """Create a code tool: Python code the project's agents can call as a tool.
+        While the project's code is not trusted, it saves nothing and returns
+        `not_trusted: true`. Only the user can grant code trust: explain what the
+        code will run and that it runs with no sandbox, give them the link
+        http://localhost:8757/settings/trust_code/{project_id}, and ask them to
+        tell you when they have approved. Then confirm with
+        GET /api/projects/{project_id}/add_code_trust and create the tool."""
         project = project_from_id(project_id)
 
         if not has_add_code_trust(str(project.path)):
@@ -271,6 +294,14 @@ def connect_code_tool_api(app: FastAPI):
         ],
         request: TestCodeToolRequest,
     ) -> TestCodeToolResponse:
+        """Run a code tool's code once on test arguments without saving it, and
+        return its output or error. While the project's code is not trusted,
+        it runs nothing and returns `not_trusted: true`. Only the user can grant
+        code trust: explain what the code will run and that it runs with no
+        sandbox, give them the link
+        http://localhost:8757/settings/trust_code/{project_id}, and ask them to
+        tell you when they have approved. Then confirm with
+        GET /api/projects/{project_id}/add_code_trust and run the test."""
         project = project_from_id(project_id)
 
         try:
@@ -324,6 +355,7 @@ def connect_code_tool_api(app: FastAPI):
             str, Path(description="The unique identifier of the project.")
         ],
     ) -> list[CodeToolResponse]:
+        """List the project's code tools, archived ones last."""
         project = project_from_id(project_id)
         tools = project.code_tools(readonly=True)
         tools.sort(key=lambda ct: (ct.is_archived, ct.created_at or datetime.min))
@@ -343,6 +375,7 @@ def connect_code_tool_api(app: FastAPI):
             str, Path(description="The unique identifier of the code tool.")
         ],
     ) -> CodeToolResponse:
+        """Get one code tool, with its code and parameter schema."""
         ct = _code_tool_from_id(project_id, code_tool_id)
         return _code_tool_to_response(ct)
 
@@ -361,6 +394,8 @@ def connect_code_tool_api(app: FastAPI):
         ],
         updates: CodeToolUpdateRequest,
     ) -> CodeToolResponse:
+        """Change a code tool's name or description. Its code and tool interface can't
+        be edited: create a new code tool instead."""
         ct = _code_tool_from_id(project_id, code_tool_id)
 
         update_fields = updates.model_dump(exclude_unset=True)
@@ -394,6 +429,7 @@ def connect_code_tool_api(app: FastAPI):
         ],
         request: CodeToolArchiveRequest,
     ) -> CodeToolResponse:
+        """Archive or unarchive a code tool."""
         ct = _code_tool_from_id(project_id, code_tool_id)
         ct.is_archived = request.archived
         ct.save_to_file()
@@ -413,6 +449,7 @@ def connect_code_tool_api(app: FastAPI):
             str, Path(description="The unique identifier of the code tool.")
         ],
     ) -> dict[str, str]:
+        """Delete a code tool from the project."""
         ct = _code_tool_from_id(project_id, code_tool_id)
         ct.delete()
         return {"status": "deleted"}

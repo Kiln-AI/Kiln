@@ -754,6 +754,8 @@ def connect_copilot_api(app: FastAPI):
         openapi_extra=agent_policy_require_approval("Run Copilot spec clarification?"),
     )
     async def clarify_spec(input: ClarifySpecApiInput) -> ClarifySpecApiOutput:
+        """Generate example inputs and outputs that test a draft spec, for the user to
+        judge (needs Kiln Pro). Their judgements feed Refine Spec."""
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
@@ -786,6 +788,8 @@ def connect_copilot_api(app: FastAPI):
         openapi_extra=agent_policy_require_approval("Run Copilot spec refinement?"),
     )
     async def refine_spec(input: RefineSpecApiInput) -> RefineSpecApiOutput:
+        """Propose edits to a spec's fields from the user's feedback on examples (needs
+        Kiln Pro). Saves nothing."""
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
@@ -818,6 +822,8 @@ def connect_copilot_api(app: FastAPI):
         openapi_extra=agent_policy_require_approval("Run Copilot batch generation?"),
     )
     async def generate_batch(input: GenerateBatchApiInput) -> GenerateBatchApiOutput:
+        """Generate a batch of synthetic inputs for a spec, grouped by topic (needs Kiln
+        Pro). Saves nothing."""
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
@@ -850,6 +856,8 @@ def connect_copilot_api(app: FastAPI):
     async def question_spec(
         input: SpecQuestionerApiInput,
     ) -> QuestionSet:
+        """Generate clarifying questions about a draft spec for the user to answer
+        (needs Kiln Pro)."""
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
@@ -886,6 +894,8 @@ def connect_copilot_api(app: FastAPI):
     async def submit_question_answers(
         request: SubmitAnswersRequest,
     ) -> RefineSpecApiOutput:
+        """Propose spec edits and an eval name from the user's answers to Question Spec
+        (needs Kiln Pro). Saves nothing."""
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 

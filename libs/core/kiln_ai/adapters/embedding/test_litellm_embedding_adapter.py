@@ -944,6 +944,49 @@ def test_litellm_model_id_custom_provider_ollama_with_base_url():
         assert model_id == "openai/test-model"
 
 
+@pytest.mark.parametrize(
+    "installed,expected_model",
+    [
+        (["embeddinggemma:300m"], "openai/embeddinggemma:300m"),
+        ([], "openai/embeddinggemma"),
+    ],
+)
+async def test_generate_embeddings_uses_installed_ollama_variant(
+    ollama_installed, installed, expected_model
+):
+    ollama_installed(*installed)
+    config = EmbeddingConfig(
+        name="test",
+        model_provider_name=ModelProviderName.ollama,
+        model_name="embeddinggemma",
+        properties={},
+    )
+    adapter = LitellmEmbeddingAdapter(
+        config, litellm_core_config=LiteLlmCoreConfig(base_url="http://ollama.test")
+    )
+    mock_response = AsyncMock(spec=EmbeddingResponse)
+    mock_response.data = [{"object": "embedding", "index": 0, "embedding": [0.1]}]
+    mock_response.usage = Usage(prompt_tokens=1, total_tokens=1)
+
+    with (
+        patch(
+            "kiln_ai.adapters.embedding.litellm_embedding_adapter.built_in_embedding_models_from_provider",
+            return_value=KilnEmbeddingModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="embeddinggemma",
+                n_dimensions=768,
+                ollama_model_aliases=["embeddinggemma:300m"],
+            ),
+        ),
+        patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding,
+    ):
+        await adapter._generate_embeddings(["test text"])
+
+    assert mock_aembedding.call_args.kwargs["model"] == expected_model
+
+
 def test_litellm_model_id_custom_provider_ollama_without_base_url():
     """Test that ollama provider without base_url raises an error."""
     from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider

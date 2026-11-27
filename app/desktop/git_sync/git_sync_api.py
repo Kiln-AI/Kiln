@@ -22,7 +22,7 @@ from kiln_server.project_api import (
     default_project_path,
     project_from_id,
 )
-from kiln_server.utils.agent_checks import DENY_AGENT
+from kiln_server.utils.agent_checks import DENY_AGENT, with_mcp_deny
 from pydantic import BaseModel, Field, field_validator
 
 from app.desktop.git_sync.clone import (
@@ -450,7 +450,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/test_access",
         summary="Test Git Remote Access",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_test_access(request: TestAccessRequest) -> TestAccessResponse:
         success, message, detected_mode = await asyncio.to_thread(
@@ -472,7 +472,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/list_branches",
         summary="List Remote Branches",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_list_branches(
         request: ListBranchesRequest,
@@ -496,7 +496,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/clone",
         summary="Clone Repository",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_clone(request: CloneRequest) -> CloneResponse:
         clone_path = compute_temp_clone_path(Path(default_project_path()))
@@ -531,7 +531,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/test_write_access",
         summary="Test Write Access",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_test_write_access(
         request: TestWriteAccessRequest,
@@ -556,7 +556,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/scan_projects",
         summary="Scan for Kiln Projects",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_scan_projects(
         request: ScanProjectsRequest,
@@ -574,7 +574,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/rename_clone",
         summary="Rename Clone to Final Path",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_rename_clone(request: RenameCloneRequest) -> RenameCloneResponse:
         base_dir = Path(default_project_path())
@@ -618,7 +618,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/save_config",
         summary="Save Git Sync Config",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_save_config(request: SaveConfigRequest) -> GitSyncConfigResponse:
         if not request.trusted:
@@ -678,7 +678,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/config/{project_id}",
         summary="Get Git Sync Config",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_get_config(
         project_id: Annotated[
@@ -709,7 +709,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/config/{project_id}",
         summary="Update Git Sync Config",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_update_config(
         request: UpdateConfigRequest,
@@ -766,7 +766,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/oauth/start",
         summary="Start GitHub OAuth Flow",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_oauth_start(request: OAuthStartRequest) -> OAuthStartResponse:
         parsed = parse_github_owner_repo(request.git_url)
@@ -801,7 +801,7 @@ def connect_git_sync_api(app: FastAPI):
         summary="OAuth Callback",
         tags=["Git Sync"],
         response_model=None,
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_oauth_callback(
         state: Annotated[
@@ -864,7 +864,7 @@ def connect_git_sync_api(app: FastAPI):
         summary="GitHub App Install Complete",
         tags=["Git Sync"],
         response_model=None,
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_oauth_installed() -> HTMLResponse:
         return HTMLResponse(INSTALL_COMPLETE_HTML)
@@ -873,7 +873,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/oauth/status/{state}",
         summary="OAuth Flow Status",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_oauth_status(
         state: Annotated[
@@ -924,7 +924,7 @@ def connect_git_sync_api(app: FastAPI):
         "/api/git_sync/config/{project_id}",
         summary="Delete Git Sync Config",
         tags=["Git Sync"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def api_delete_config(
         project_id: Annotated[

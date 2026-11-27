@@ -3,8 +3,8 @@ import shutil
 import sys
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
-from unittest.mock import patch
+from typing import TYPE_CHECKING, Callable, Iterator
+from unittest.mock import MagicMock, patch
 
 import pytest
 from dotenv import load_dotenv
@@ -14,6 +14,7 @@ from kiln_ai.utils.config import Config
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.basemodel import KilnAttachmentModel
+    from kiln_ai.datamodel.model_cache import ModelCache
 
 
 @pytest.fixture(autouse=True)
@@ -59,6 +60,12 @@ def skip_remote_model_list():
         del os.environ["KILN_SKIP_REMOTE_MODEL_LIST"]
 
 
+@pytest.fixture(autouse=True)
+def skip_models_dev(monkeypatch):
+    """Turn off the models.dev load of every desktop app built in a test."""
+    monkeypatch.setenv("KILN_SKIP_MODELS_DEV", "true")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def load_env():
     load_dotenv()
@@ -70,6 +77,75 @@ def reset_config():
     Config._shared_instance = None
     yield
     Config._shared_instance = None
+
+
+# Give each test an empty Ollama tag cache, so tags one test stored never resolve
+# another test's model IDs.
+@pytest.fixture(autouse=True)
+def fresh_ollama_tag_cache():
+    ollama_tools = sys.modules.get("kiln_ai.adapters.ollama_tools")
+    if ollama_tools is None:
+        yield
+        return
+    with patch.object(ollama_tools, "_ollama_tag_cache", ollama_tools.OllamaTagCache()):
+        yield
+
+
+def _drop_shared_model_cache() -> None:
+    # Importing kiln_ai.datamodel takes over a second, and some test runs never do.
+    # Until something imports it, there is no shared cache to drop.
+    model_cache_module = sys.modules.get("kiln_ai.datamodel.model_cache")
+    if model_cache_module is not None:
+        model_cache_module.ModelCache._shared_instance = None
+
+
+@pytest.fixture(autouse=True)
+def reset_model_cache() -> Iterator[None]:
+    """Each test starts with the library default: a fresh shared cache, turned off."""
+    _drop_shared_model_cache()
+    yield
+    _drop_shared_model_cache()
+
+
+@pytest.fixture
+def model_cache_enabled() -> Iterator["ModelCache"]:
+    """Installs a fresh shared cache, turned on as the app hosts run it, for one test.
+
+    Its budget is a fixed 1 GiB rather than a share of the machine's RAM, so whether a
+    test sees evictions doesn't depend on where it runs.
+    """
+    from kiln_ai.datamodel.model_cache import ModelCache
+
+    previous = ModelCache._shared_instance
+    cache = ModelCache(enabled=True, budget_bytes=1024**3)
+    ModelCache._shared_instance = cache
+    yield cache
+    ModelCache._shared_instance = previous
+
+
+@pytest.fixture
+def evict_large_values(model_cache_enabled: "ModelCache") -> Callable[[], None]:
+    """Drops the large values of every record in the test's cache, keeping the records.
+
+    That is what memory pressure does first. Reading a large field afterwards re-reads
+    the record's file.
+    """
+
+    def evict() -> None:
+        with model_cache_enabled._lock:
+            for key in list(model_cache_enabled._loaded):
+                model_cache_enabled._drop_large_values(key)
+
+    return evict
+
+
+@pytest.fixture
+def large_field_restores() -> Iterator[MagicMock]:
+    """Counts the times a cached record re-reads its file to get its large fields back."""
+    from kiln_ai.datamodel import lazy_fields
+
+    with patch.object(lazy_fields, "_restore", wraps=lazy_fields._restore) as spy:
+        yield spy
 
 
 # mock out the settings path so we don't clobber the user's actual settings during tests

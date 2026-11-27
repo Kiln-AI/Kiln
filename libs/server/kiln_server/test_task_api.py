@@ -82,7 +82,9 @@ def test_create_task_project_not_found(client, tmp_path):
     response = client.post("/api/projects/FAKEPROJECTID/tasks", json=task_data)
 
     assert response.status_code == 404
-    assert response.json()["message"] == "Project not found. ID: FAKEPROJECTID"
+    assert response.json()["message"].startswith(
+        "Project not found. ID: FAKEPROJECTID."
+    )
 
 
 def test_create_task_project_load_error(client, tmp_path):
@@ -185,7 +187,9 @@ def test_get_task_not_found(client, project_and_task):
         response = client.get("/api/projects/project1-id/tasks/non_existent_task_id")
 
     assert response.status_code == 404
-    assert response.json()["message"] == "Task not found. ID: non_existent_task_id"
+    assert response.json()["message"].startswith(
+        "Task not found. ID: non_existent_task_id."
+    )
 
 
 def test_get_task_project_not_found(client):
@@ -221,7 +225,7 @@ def test_task_from_id_not_found(project_and_task):
             task_from_id("project1-id", "non_existent_task_id")
 
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Task not found. ID: non_existent_task_id"
+    assert exc_info.value.detail.startswith("Task not found. ID: non_existent_task_id.")
 
 
 def test_update_task_input_schema_error(client, project_and_task):
@@ -646,7 +650,7 @@ def test_delete_task_success(client, project_and_task):
         # Verify the task was deleted
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}")
         assert response.status_code == 404
-        assert response.json()["message"] == f"Task not found. ID: {task.id}"
+        assert response.json()["message"].startswith(f"Task not found. ID: {task.id}.")
 
 
 def test_delete_task_archives_kiln_task_tools(client, project_and_task):

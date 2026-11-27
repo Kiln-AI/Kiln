@@ -283,3 +283,22 @@ def test_main_entrypoint_unannotated(tmp_path: Path, unannotated_spec: dict) -> 
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 2
+
+
+def test_the_mcp_policy_key_does_not_change_the_annotations(
+    tmp_path: Path, annotated_spec: dict
+) -> None:
+    plain_path = tmp_path / "plain.json"
+    plain_path.write_text(json.dumps(annotated_spec))
+    annotated_spec["paths"]["/api/health"]["get"]["x-mcp-policy"] = {
+        "permission": "deny"
+    }
+    tagged_path = tmp_path / "tagged.json"
+    tagged_path.write_text(json.dumps(annotated_spec))
+
+    assert dump_annotations(str(plain_path), str(tmp_path / "plain")) == 0
+    assert dump_annotations(str(tagged_path), str(tmp_path / "tagged")) == 0
+    plain = {p.name: p.read_text() for p in (tmp_path / "plain").iterdir()}
+    tagged = {p.name: p.read_text() for p in (tmp_path / "tagged").iterdir()}
+    assert plain == tagged
+    assert len(plain) == 2

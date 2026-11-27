@@ -3,12 +3,13 @@ name = "kiln-root"
 version = "1.2.1"
 description = "uv workspace project for Kiln AI. See kiln-ai package on pypi for our library (libs/core)"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 dependencies = [
     "certifi>=2024.8.30",
     "jq>=1.11.0",
     "kiln-ai==0.5.3",
+    "kiln-mcp-server",
     "kiln-server",
     "kiln-studio-desktop",
 ]
@@ -26,6 +27,7 @@ dev = [
     "watchfiles>=1.1.0",
     "scalar-fastapi>=1.4.3",
     "ty==0.0.8",
+    "openapi2skill ; python_full_version >= '3.13'",
 ]
 
 [tool.uv]
@@ -37,12 +39,14 @@ exclude-newer-package = { pyinstaller = "2026-09-13T00:00:00Z" }
 override-dependencies = []
 
 [tool.uv.workspace]
-members = ["libs/core", "libs/server", "app/desktop"]
+members = ["libs/core", "libs/server", "app/mcp", "app/desktop"]
 
 [tool.uv.sources]
+kiln-mcp-server = { workspace = true }
 kiln-server = { workspace = true }
 kiln-studio-desktop = { workspace = true }
 kiln-ai = { workspace = true }
+openapi2skill = { git = "https://github.com/scosman/openapi2skill", rev = "c7c2ca55e5b5300e28678ba4e47e2ad6f5bd1d28" }
 
 [tool.ruff]
 exclude = [
@@ -83,9 +87,7 @@ markers = [
 ]
 # pydantic deprecation warnings come from dependencies (not our code).
 # The benchmark fixture "not used at all" warning is a false-positive from pytest-benchmark.
-# File system timestamp warning is an intentional Kiln warning.
 filterwarnings = [
-    "ignore:File system does not support fine-grained timestamps",
     "ignore::pydantic.PydanticDeprecatedSince20",
     "ignore:Benchmark fixture was not used at all in this test",
     "ignore::DeprecationWarning:websockets.legacy",

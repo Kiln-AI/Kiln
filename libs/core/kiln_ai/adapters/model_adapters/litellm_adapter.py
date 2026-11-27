@@ -48,6 +48,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.ollama_tools import ensure_ollama_tags_fresh
 from kiln_ai.adapters.retry_classification import is_run_ending_tool_error
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import (
@@ -888,6 +889,7 @@ class LiteLlmAdapter(BaseAdapter):
     ) -> dict[str, Any]:
         run_config = as_kiln_agent_run_config(self.run_config)
         extra_body = self.build_extra_body(provider)
+        await ensure_ollama_tags_fresh(provider.name)
 
         # Merge all parameters into a single kwargs dict for litellm
         completion_kwargs = {

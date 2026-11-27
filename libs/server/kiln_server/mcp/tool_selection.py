@@ -1,4 +1,4 @@
-"""Utilities for selecting Kiln tools to expose via the MCP server."""
+"""Select the Kiln tools that the Kiln project tools MCP server exposes."""
 
 from __future__ import annotations
 

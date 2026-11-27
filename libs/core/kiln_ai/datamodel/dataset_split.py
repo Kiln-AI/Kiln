@@ -143,7 +143,7 @@ class DatasetSplit(KilnParentedModel):
         filter: DatasetFilter,
     ) -> dict[str, list[str]]:
         # Datasets must not include intermediate multiturn turns — only leaves.
-        runs = list(task.runs())
+        runs = list(task.runs(readonly=True))
         valid_ids = []
         for task_run in runs:
             if filter(task_run):

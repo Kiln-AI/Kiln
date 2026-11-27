@@ -1,10 +1,11 @@
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, Annotated, List, Union
 
 from pydantic import BaseModel, Field, PositiveInt
 from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.lazy_fields import LargeField, LazyFieldsMixin
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance, provenance_field
 
 if TYPE_CHECKING:
@@ -50,13 +51,13 @@ class Embedding(BaseModel):
     vector: List[float] = Field(description="The vector of the embedding.")
 
 
-class ChunkEmbeddings(KilnParentedModel):
+class ChunkEmbeddings(LazyFieldsMixin, KilnParentedModel):
     """Embeddings for the chunks of a chunked document."""
 
     embedding_config_id: ID_TYPE = Field(
         description="The ID of the embedding config used to generate the embeddings.",
     )
-    embeddings: List[Embedding] = Field(
+    embeddings: Annotated[List[Embedding], LargeField()] = Field(
         description="The embeddings of the chunks. The embedding at index i corresponds to the chunk at index i in the parent chunked document."
     )
 

@@ -1,6 +1,7 @@
 from functools import cached_property
 
 import litellm
+from kiln_ai.adapters.ollama_tools import ensure_ollama_tags_fresh
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.adapters.reranker_list import (
     KilnRerankerModelProvider,
@@ -31,6 +32,8 @@ class LitellmRerankerAdapter(BaseReranker):
     ) -> RerankResponse:
         if len(documents) == 0:
             return RerankResponse(results=[])
+
+        await ensure_ollama_tags_fresh(self.model_provider.name)
 
         rerank_kwargs = {
             "model": self.litellm_model_slug,

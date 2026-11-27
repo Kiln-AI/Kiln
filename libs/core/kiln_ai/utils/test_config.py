@@ -7,7 +7,13 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from kiln_ai.utils.config import MCP_SECRETS_KEY, Config, ConfigProperty, _get_user_id
+from kiln_ai.utils.config import (
+    MCP_SECRETS_KEY,
+    Config,
+    ConfigProperty,
+    _get_user_id,
+    local_api_base_url,
+)
 
 
 @pytest.fixture
@@ -772,6 +778,13 @@ def test_oauth_token_hidden_in_git_sync_projects():
     assert project1_visible["pat_token"] == "ghp_secret_pat_value"
 
 
+def test_skip_models_dev_is_in_memory_and_off_by_default(monkeypatch):
+    monkeypatch.delenv("KILN_SKIP_MODELS_DEV", raising=False)
+    config = Config()
+    assert config._properties["skip_models_dev"].in_memory is True
+    assert config.skip_models_dev is False
+
+
 def test_typesafe_api_key_property():
     prop = Config()._properties["typesafe_api_key"]
     assert prop.env_var == "TYPESAFE_API_KEY"
@@ -780,7 +793,9 @@ def test_typesafe_api_key_property():
 
 ENV_BACKED_BOOL_PROPERTIES = [
     ("autosave_runs", "KILN_AUTOSAVE_RUNS"),
+    ("disable_model_cache", "KILN_DISABLE_MODEL_CACHE"),
     ("enable_demo_tools", "ENABLE_DEMO_TOOLS"),
+    ("skip_models_dev", "KILN_SKIP_MODELS_DEV"),
 ]
 
 
@@ -840,6 +855,14 @@ def test_env_backed_bool_property_empty_value_is_unset(
             value = getattr(default_config, name)
     assert value is default_config._properties[name].default
     assert caplog.text == ""
+
+
+def test_model_cache_size_bytes_reads_kiln_cache_size(default_config, monkeypatch):
+    monkeypatch.delenv("KILN_CACHE_SIZE", raising=False)
+    assert default_config.model_cache_size_bytes is None
+
+    monkeypatch.setenv("KILN_CACHE_SIZE", "1048576")
+    assert default_config.model_cache_size_bytes == 1048576
 
 
 @pytest.mark.parametrize("in_memory", [True, False])
@@ -930,3 +953,26 @@ def test_open_ai_reasoning_summaries_defaults_to_false(default_config):
     reloaded = Config(properties=default_config._properties)
     assert reloaded.open_ai_reasoning_summaries is True
     assert default_config._properties["open_ai_reasoning_summaries"].sensitive is False
+
+
+@pytest.mark.parametrize(
+    "host,expected",
+    [
+        ("127.0.0.1", "http://127.0.0.1:8757"),
+        ("localhost", "http://localhost:8757"),
+        ("0.0.0.0", "http://127.0.0.1:8757"),
+        ("", "http://127.0.0.1:8757"),
+        ("::", "http://[::1]:8757"),
+        ("::1", "http://[::1]:8757"),
+        ("[::1]", "http://[::1]:8757"),
+        ("192.168.1.5", "http://192.168.1.5:8757"),
+    ],
+)
+def test_local_api_base_url(host, expected):
+    assert local_api_base_url(host, 8757) == expected
+
+
+def test_kiln_local_api_base_url_reaches_a_wildcard_bind_on_loopback(monkeypatch):
+    monkeypatch.setenv("KILN_LOCAL_API_HOST", "::")
+    monkeypatch.setenv("KILN_LOCAL_API_PORT", "9000")
+    assert Config.shared().kiln_local_api_base_url() == "http://[::1]:9000"

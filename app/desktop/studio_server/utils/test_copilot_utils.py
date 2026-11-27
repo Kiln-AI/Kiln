@@ -66,6 +66,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     deal_pool,
     delete_multi_turn_batch_chains,
     delete_single_turn_batch_runs,
+    find_multi_turn_chain_leaves,
     find_single_turn_batch_runs,
     get_copilot_api_key,
     persist_eval_slice,
@@ -97,7 +98,10 @@ class TestGetCopilotApiKey:
             with pytest.raises(HTTPException) as exc_info:
                 get_copilot_api_key()
             assert exc_info.value.status_code == 401
-            assert "API key not configured" in exc_info.value.detail
+            assert exc_info.value.detail == (
+                "This needs Kiln Pro, which is not connected. Connect it in the "
+                "Kiln app under Settings > AI Providers > Kiln Pro."
+            )
 
     def test_raises_401_when_empty_string(self):
         with patch(
@@ -1126,6 +1130,21 @@ class TestDeleteMultiTurnBatchChains:
         assert deleted == 2
         assert multiturn_task.runs(include_intermediate_runs=True) == []
 
+    def test_reads_no_large_fields(
+        self,
+        multiturn_task,
+        model_cache_enabled,
+        evict_large_values,
+        large_field_restores,
+    ):
+        chain = _build_chain(multiturn_task, "old-batch", turns=3)
+        list(multiturn_task.runs(include_intermediate_runs=True, readonly=True))
+        evict_large_values()
+
+        assert delete_multi_turn_batch_chains(multiturn_task, "old-batch") == 3
+        assert all(run.path is not None and not run.path.exists() for run in chain)
+        large_field_restores.assert_not_called()
+
 
 # ───────────── single-turn drive tags + delete_single_turn_batch_runs ───────
 
@@ -1178,6 +1197,53 @@ class TestSingleTurnDriveTags:
         assert [str(r.id) for r in found] == [str(run_a.id)]
 
 
+@pytest.mark.parametrize(
+    ("task_fixture", "build_batch_run", "find"),
+    [
+        pytest.param(
+            "multiturn_task",
+            lambda task: _build_chain(task, "batch-a", turns=2)[-1],
+            find_multi_turn_chain_leaves,
+            id="multi_turn",
+        ),
+        pytest.param(
+            "singleturn_task",
+            lambda task: _build_single_turn_run(task, "batch-a"),
+            find_single_turn_batch_runs,
+            id="single_turn",
+        ),
+    ],
+)
+def test_find_batch_runs_copies_only_the_batch(
+    request,
+    task_fixture,
+    build_batch_run,
+    find,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    """The spec save tags and rates the batch's runs, so they come back editable,
+    while the task's other runs are scanned without reading their files."""
+    task = request.getfixturevalue(task_fixture)
+    batch_run = build_batch_run(task)
+    for i in range(3):
+        _build_single_turn_run(task, "batch-b", i)
+    list(task.runs(include_intermediate_runs=True, readonly=True))
+    evict_large_values()
+
+    [found] = find(task, "batch-a")
+
+    assert found.id == batch_run.id
+    assert large_field_restores.call_count == 1
+    found.tags = sorted({*(found.tags or []), "golden"})
+    found.save_to_file()
+    assert found.path is not None
+    saved = TaskRun.load_from_file(found.path)
+    assert "golden" in (saved.tags or [])
+    assert saved.input == batch_run.input
+
+
 class TestDeleteSingleTurnBatchRuns:
     def test_deletes_the_batch(self, singleturn_task):
         run_a = _build_single_turn_run(singleturn_task, "old-batch", 0)
@@ -1189,6 +1255,23 @@ class TestDeleteSingleTurnBatchRuns:
         assert singleturn_task.runs() == []
         for run in (run_a, run_b):
             assert run.path is not None and not run.path.exists()
+
+    def test_reads_no_large_fields(
+        self,
+        singleturn_task,
+        model_cache_enabled,
+        evict_large_values,
+        large_field_restores,
+    ):
+        runs = [
+            _build_single_turn_run(singleturn_task, "old-batch", i) for i in range(2)
+        ]
+        list(singleturn_task.runs(readonly=True))
+        evict_large_values()
+
+        assert delete_single_turn_batch_runs(singleturn_task, "old-batch") == 2
+        assert all(run.path is not None and not run.path.exists() for run in runs)
+        large_field_restores.assert_not_called()
 
     def test_other_batches_survive(self, singleturn_task):
         _build_single_turn_run(singleturn_task, "old-batch", 0)
@@ -1621,7 +1704,9 @@ class TestTaskCapabilitiesForANamedRunConfig:
             await task_capabilities_for_task(task, run_config_id)
 
         assert exc.value.status_code == 404
-        assert exc.value.detail == f"Task run config not found. ID: {run_config_id}"
+        assert exc.value.detail.startswith(
+            f"Task run config not found. ID: {run_config_id}."
+        )
 
     async def test_a_missing_finetune_is_404(self, project_and_task):
         """A fine-tune id whose fine-tune is gone is a bad id, not an
@@ -1635,7 +1720,9 @@ class TestTaskCapabilitiesForANamedRunConfig:
             await task_capabilities_for_task(task, run_config_id)
 
         assert exc.value.status_code == 404
-        assert exc.value.detail == f"Task run config not found. ID: {run_config_id}"
+        assert exc.value.detail.startswith(
+            f"Task run config not found. ID: {run_config_id}."
+        )
 
     async def test_unreadable_storage_fails_a_named_config(
         self, task_with_a_second_run_config

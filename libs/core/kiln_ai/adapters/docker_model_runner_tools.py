@@ -99,17 +99,17 @@ async def get_docker_model_runner_connection(
     try:
         base_url = custom_url or docker_model_runner_base_url()
         # Use OpenAI client to get models list
-        client = openai.OpenAI(
+        async with openai.AsyncOpenAI(
             api_key="dummy",  # Docker Model Runner doesn't require API key
             base_url=f"{base_url}/v1",
             max_retries=0,
-        )
-        models_response = client.models.list()
+        ) as client:
+            models = [model async for model in client.models.list()]
 
     except (openai.APIConnectionError, openai.APIError, httpx.RequestError):
         return None
 
-    return parse_docker_model_runner_models(list(models_response))
+    return parse_docker_model_runner_models(models)
 
 
 def docker_model_runner_model_installed(

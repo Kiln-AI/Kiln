@@ -70,9 +70,13 @@ from app.desktop.studio_server.eval_api import (
     CreateEvaluatorRequest,
     UpdateRunConfigRequest,
     _cached_test_split,
+    _split_judge_trace,
+    build_score_key_to_task_requirement_id,
     compute_score_summary,
     connect_evals_api,
+    count_human_evals,
     eval_config_from_id,
+    eval_input_references,
     eval_item_input_text,
     eval_run_task_usage,
     get_all_run_configs,
@@ -178,11 +182,15 @@ class _FakeLlmTool:
         return ToolCallResult(output="a judgement")
 
 
+# A non-default address, so a link built from the default one fails a test.
+APP_ORIGIN = "http://kiln.lan:9000"
+
+
 @pytest.fixture
 def app():
     app = FastAPI()
     connect_custom_errors(app)
-    connect_evals_api(app)
+    connect_evals_api(app, app_origin=APP_ORIGIN)
     return app
 
 
@@ -399,7 +407,7 @@ def test_get_eval_not_found(client, mock_task, mock_task_from_id):
     response = client.get("/api/projects/project1/tasks/task1/evals/non_existent")
 
     assert response.status_code == 404
-    assert response.json()["message"] == "Eval not found. ID: non_existent"
+    assert response.json()["message"].startswith("Eval not found. ID: non_existent.")
 
 
 @pytest.fixture
@@ -1163,7 +1171,11 @@ async def test_create_eval_config_code_eval_untrusted_403(
         )
 
     assert response.status_code == 403
-    assert "not trusted" in response.json()["message"].lower()
+    assert response.json()["message"] == (
+        "Project not trusted to add code evals. Only the user can grant code "
+        "trust, at http://kiln.lan:9000/settings/trust_code/project1 in the Kiln "
+        "app. Confirm with GET /api/projects/project1/add_code_trust, then retry."
+    )
     # Nothing should have been persisted.
     assert len(mock_v2_eval.configs()) == 0
 
@@ -2278,6 +2290,7 @@ async def test_get_eval_run_results_content_part_trace_after_readonly_scan(
     mock_eval_config,
     mock_run_config,
     data_source,
+    model_cache_enabled,
 ):
     """List-valued message content is validated into a lazy iterator by pydantic. A
     readonly runs scan caches that instance, and the results endpoint's bulk trace load
@@ -2357,6 +2370,35 @@ def test_get_eval_run_results_flags_the_judge_trace_without_embedding_it(
     (result,) = response.json()["results"]
     assert result["has_judge_trace"] is has_judge_trace
     assert result["eval_run"]["judge_trace"] is None
+
+
+@pytest.mark.parametrize(
+    ("judge_trace", "has_judge_trace"),
+    [(JUDGE_TRACE, True), ([], False), (None, False)],
+)
+def test_split_judge_trace_reads_no_large_fields(
+    mock_task,
+    mock_eval_config,
+    data_source,
+    judge_trace,
+    has_judge_trace,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    item = _tagged_task_run(mock_task, data_source, "eval_set")
+    saved = _scored(mock_eval_config, dataset_id=item.id, judge_trace=judge_trace)
+    eval_run = EvalRun.load_from_file(saved.path, readonly=True)
+    evict_large_values()
+
+    split = _split_judge_trace(eval_run)
+
+    assert split["has_judge_trace"] is has_judge_trace
+    large_field_restores.assert_not_called()
+    assert split["eval_run"].model_dump() == {
+        **saved.model_dump(),
+        "judge_trace": None,
+    }
 
 
 class TestGetEvalRunJudgeTrace:
@@ -7112,7 +7154,12 @@ class TestTestV2Eval:
         body = response.json()
         assert body["scores"] == {}
         assert body["skipped_reason"] == "code_eval_not_trusted"
-        assert body["skipped_detail"] == "Project not trusted for code eval execution."
+        assert body["skipped_detail"] == (
+            "Project not trusted for code eval execution. Only the user can grant "
+            "code trust, at http://kiln.lan:9000/settings/trust_code/project1 in "
+            "the Kiln app. Confirm with GET /api/projects/project1/add_code_trust, "
+            "then retry."
+        )
 
     def test_code_eval_trusted_execution(self, client, mock_v2_eval):
         payload = {
@@ -9753,3 +9800,124 @@ def test_run_config_eval_scores_counts_a_run_missing_a_score_as_incomplete(
     assert result.results["score1"] is not None
     assert result.results["score1"].mean_score == 4.0
     assert result.results["overall_rating"] is None
+
+
+def test_score_summaries_read_no_large_fields(
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    data_source,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    """Score pages aggregate every eval run and scored trace of a task, so none of them
+    may re-read an evicted record's file."""
+    run_configs, item_ids = _two_run_configs_with_scores(
+        mock_task, mock_eval, mock_eval_config, data_source
+    )
+    pointer_item = _tagged_task_run(mock_task, data_source, "golden")
+    trace = TaskRun(
+        parent=mock_task,
+        input="trace input " * 20,
+        input_source=data_source,
+        output=TaskOutput(output="trace output " * 20),
+        trace=[
+            {"role": "user", "content": "trace input"},
+            {"role": "assistant", "content": "trace output"},
+        ],
+        usage=Usage(input_tokens=30, cost=0.03),
+        eval_source=EvalItemSource(source_type="task_run", source_id=pointer_item.id),
+    )
+    trace.save_to_file()
+    EvalRun(
+        task_run_config_id="rc_a",
+        scores={"score1": 5.0, "overall_rating": 5.0},
+        dataset_id=pointer_item.id,
+        scored_run_id=trace.id,
+        judge_trace=JUDGE_TRACE,
+        parent=mock_eval_config,
+    ).save_to_file()
+    split = stub_split(item_ids | {pointer_item.id})
+
+    def summaries() -> list[object]:
+        with patch_resolve_split(test=split):
+            return [
+                compute_score_summary(mock_eval, mock_eval_config, run_configs, split),
+                run_config_eval_scores(mock_task, ["rc_a", "rc_b"]),
+                eval_input_references(mock_task, "eval_input_1"),
+                count_human_evals(
+                    list(mock_task.runs(readonly=True)),
+                    mock_eval,
+                    build_score_key_to_task_requirement_id(mock_task),
+                ),
+            ]
+
+    model_cache_enabled.set_enabled(False)
+    cache_off = summaries()
+    model_cache_enabled.set_enabled(True)
+    list(mock_eval_config.runs(readonly=True))
+    list(mock_task.runs(readonly=True, include_eval_generated=True))
+    evict_large_values()
+
+    assert summaries() == cache_off
+    large_field_restores.assert_not_called()
+    legacy = next(
+        run for run in mock_eval_config.runs(readonly=True) if run.input is not None
+    )
+    assert legacy.input.startswith("input ")
+    assert large_field_restores.call_count == 1
+
+
+def test_eval_configs_score_summary_reads_no_large_fields(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    data_source,
+    model_cache_enabled,
+    evict_large_values,
+    large_field_restores,
+):
+    """The judge comparison page aggregates every golden item and eval run of a task,
+    so it must not re-read an evicted record's file."""
+    for human_rating in [2.0, 5.0]:
+        item = TaskRun(
+            parent=mock_task,
+            input="golden input " * 20,
+            input_source=data_source,
+            output=TaskOutput(
+                output="golden output " * 20,
+                rating=TaskOutputRating(value=human_rating),
+            ),
+            tags=["golden"],
+        )
+        item.save_to_file()
+        EvalRun(
+            eval_config_eval=True,
+            task_run_config_id=None,
+            scores={"score1": 3.0, "overall_rating": 4.0},
+            input="scored input " * 20,
+            output="scored output " * 20,
+            dataset_id=item.id,
+            parent=mock_eval_config,
+        ).save_to_file()
+
+    def fetch() -> dict:
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs_score_summary"
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    model_cache_enabled.set_enabled(False)
+    cache_off = fetch()
+    model_cache_enabled.set_enabled(True)
+    list(mock_task.runs(readonly=True))
+    list(mock_eval_config.runs(readonly=True))
+    evict_large_values()
+
+    assert cache_off["dataset_size"] == 2
+    assert fetch() == cache_off
+    large_field_restores.assert_not_called()

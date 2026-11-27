@@ -41,3 +41,21 @@ def agent_policy_require_approval(description: str) -> dict:
         approval_description=description,
     )
     return {"x-agent-policy": policy.model_dump(exclude_none=True)}
+
+
+MCP_POLICY_KEY = "x-mcp-policy"
+# Blocks a route for agents that call the API over Kiln's MCP server. Routes
+# without the key are allowed. Independent of `x-agent-policy`.
+DENY_MCP: dict = {MCP_POLICY_KEY: {"permission": "deny"}}
+
+
+def with_mcp_deny(agent_policy: dict) -> dict:
+    """`agent_policy` (one of the agent-policy helpers) plus the MCP block, for
+    a route's `openapi_extra`. The input is not changed."""
+    return {**agent_policy, **DENY_MCP}
+
+
+def is_mcp_denied(openapi_extra: dict | None) -> bool:
+    if not openapi_extra:
+        return False
+    return openapi_extra.get(MCP_POLICY_KEY) == DENY_MCP[MCP_POLICY_KEY]

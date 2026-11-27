@@ -29,14 +29,13 @@
     judge_type_from_config,
   } from "$lib/utils/eval_types/eval_type_display"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
-  import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
-  import { available_tools, load_available_tools } from "$lib/stores"
+  import { linkFromFilterId } from "../../spec_utils"
   import {
     eval_split,
     eval_split_filter_id,
     task_run_split_filter_id,
   } from "$lib/utils/eval_splits"
-  import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
+  import { eval_add_data_link } from "$lib/utils/eval_add_data"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -77,9 +76,6 @@
     await tick()
     load_model_info()
     load_available_models()
-    // Used to map a tool_call_check judge's tool names to a tool id when
-    // launching the add-data flow.
-    load_available_tools(req_project_id)
     await Promise.all([
       get_spec(req_project_id, req_task_id, req_spec_id),
       get_eval(req_project_id, req_task_id, req_eval_id),
@@ -611,112 +607,8 @@
   }
 
   function add_eval_data() {
-    if (!evaluator) {
-      alert("Unable to add eval data. Please try again later.")
-      return
-    }
-    // Adding eval data writes TaskRuns, so only a TaskRun-backed test split has a tag
-    // it can add under. An EvalInput-backed one gets its own message: "use a tag filter
-    // instead" is not advice that helps when the store, not the filter's form, is what
-    // this flow can't reach. The message diagnoses and stops there — nothing in this app
-    // creates eval inputs, so there is no action to point at.
-    if (eval_split(evaluator, "test")?.source === "eval_input") {
-      alert(
-        "This eval uses our new eval dataset format, which can't be generated from this UI.",
-      )
-      return
-    }
-    const test_filter_id = task_run_split_filter_id(evaluator, "test")
-    const test_tag = test_filter_id
-      ? tagFromFilterId(test_filter_id)
-      : undefined
-    let golden_tag: string | undefined = undefined
-    if (evaluator?.eval_configs_filter_id) {
-      golden_tag = tagFromFilterId(evaluator.eval_configs_filter_id)
-    }
-    if (!test_tag || (evaluator.template !== "rag" && !golden_tag)) {
-      alert(
-        "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
-      )
-      return
-    }
-
-    const params = new URLSearchParams()
-    if (evaluator.template === "rag") {
-      params.set("reason", "qna")
-    } else {
-      params.set("reason", "eval")
-    }
-    if (evaluator.template) {
-      params.set("template_id", evaluator.template)
-    }
-    params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
-    params.set("eval_link", window.location.pathname)
-
-    // Every entry into this flow allocates generated data the same way, so the eval's
-    // splits decide the allocation rather than which button reached here.
-    const splits_param = build_eval_generation_splits_param(evaluator)
-    if (splits_param) {
-      params.set("splits", splits_param)
-    }
-
-    // Add tool_id for tool call evals so generation can enable the tool.
-    // Each era keeps it somewhere different: appropriate_tool_use specs store
-    // tool_id, legacy tool_call-template evals store it in
-    // template_properties, and new-style tool evals (template-less, scored by
-    // the tool_call_check judge) list tool function names on the judge.
-    let tool_id: string | undefined = undefined
-    if (evaluator.template === "tool_call") {
-      const spec_properties = spec?.properties
-      if (spec_properties?.spec_type === "appropriate_tool_use") {
-        tool_id = spec_properties?.tool_id
-      } else {
-        tool_id = evaluator.template_properties?.tool_id as string | undefined
-      }
-    } else {
-      tool_id = tool_id_from_judge()
-    }
-    if (tool_id) {
-      params.set("tool_id", String(tool_id))
-    }
-
-    const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     show_progress_ui("When you're done adding data, ", 2)
-    goto(url)
-  }
-
-  // The tool id for the first expected tool of a tool_call_check default
-  // judge, resolved by function name from the project's available tools.
-  // Undefined for other judge types, unknown tools, or before tools load —
-  // the add-data flow works without it, the tool just isn't pre-enabled.
-  function tool_id_from_judge(): string | undefined {
-    const judge_properties = eval_progress?.current_eval_method?.properties as
-      | Record<string, unknown>
-      | null
-      | undefined
-    if (judge_properties?.["type"] !== "tool_call_check") {
-      return undefined
-    }
-    const expected_tools = judge_properties["expected_tools"]
-    if (!Array.isArray(expected_tools) || expected_tools.length === 0) {
-      return undefined
-    }
-    const first = expected_tools[0]
-    const function_name =
-      first && typeof first === "object"
-        ? (first as { tool_name?: unknown }).tool_name
-        : undefined
-    if (typeof function_name !== "string" || !function_name) {
-      return undefined
-    }
-    for (const tool_set of $available_tools[project_id] ?? []) {
-      for (const tool of tool_set.tools) {
-        if ((tool.function_name ?? tool.name) === function_name) {
-          return tool.id
-        }
-      }
-    }
-    return undefined
+    goto(eval_add_data_link(project_id, task_id, eval_id))
   }
 
   function show_progress_ui(body: string, step: number) {

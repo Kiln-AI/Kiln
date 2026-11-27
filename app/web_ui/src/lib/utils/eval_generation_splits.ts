@@ -17,7 +17,7 @@ export const GOLDEN_SPLIT_WEIGHT = 10
 
 // The tag a filter selects, or undefined if the filter isn't a tag filter. An empty tag
 // ("tag::") counts as not tag-shaped: there is no tag there to write onto a run.
-function tag_from_filter_id(
+export function tag_from_filter_id(
   filter_id: string | null | undefined,
 ): string | undefined {
   if (!filter_id?.startsWith("tag::")) {
