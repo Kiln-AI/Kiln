@@ -218,7 +218,7 @@ Done when: each route has tests with HT's pinned values, and the skill's checks 
 - The four summary routes of 4.4 and the paired comparison of 4.5 are refused for a named split. A call to a summary route with no `split` means `test`, so it is refused when `test` is named.
 - The existing routes that run a comparison or a calibration over the test split are refused when `test` is named.
 - **An eval job on a named split is allowed.** The connection cannot read what the job produces, but it can run the job and give the user the link to the page of the UI that shows the result. This is a common case, for example the test result at the end of the work. The docstring of the eval job route names this case as allowed: run, then link. The skill's text on the test split is updated for it, and that wording gets the owner's sign-off, because it touches a rule of the method.
-- **Proposed, not decided:** a memory record that carries a tag with the name of a named split, for example `val`, is hidden, and the connection cannot write that tag. HT's code stores the val numbers of each promotion in such a record. The gateway does this today for HT's agents; in Kiln's API it would be new. See question 2.
+- **A memory record that carries a tag with the name of a named split, for example `val`, is hidden,** and the connection cannot write that tag. HT's code stores the val numbers of each promotion in such a record. This is the gateway's rule of today, kept with the same logic and applied to a scoped connection. (Decided by the owner, 2026-11-27.)
 
 **`block_eval_changes`** The connection cannot:
 
@@ -418,7 +418,7 @@ Risks:
 ## 11. Questions for the owner
 
 1. **The model policy.** The gateway refuses a run config with a model the policy does not allow, when an agent creates one or runs one. Without the gateway, an agent can create and run such a run config before loop code sees it, and the task's data goes to a provider the user did not allow. Loop code re-checks only before its own eval jobs. Options: (a) a fifth setting on the connection that names the allowed models; (b) role files state the allowed models, and loop code checks each run config an agent made before anything else uses it, which leaves the agent's own quick runs unchecked; (c) Kiln gets a project-level list of allowed models, which every caller obeys. **Proposed:** (a).
-2. **The `val` memory record.** HT's code stores the val numbers of each promotion in a memory record tagged `val`. Train-side roles must not read it, and a chat client may. The proposal in 5.2 makes `fence_eval_results` hide a record that carries a named split's name as a tag. That puts a tag convention into Kiln's API. The other choice: HT stops storing val numbers in memory, and chat clients read them from the summary routes.
+2. *(Decided: the `val` memory record is hidden by `fence_eval_results`, as the gateway hides it today. See 5.2.)*
 3. **The experimental eval-building role** (6.2): leave it without `block_eval_changes`, as proposed, or remove the option until scopes can say "only evals this connection created".
 4. **The paired comparison and the test split** (4.5): the route allows `test` for an unscoped caller, as proposed, so that the UI's compare view can use it.
 5. **The cleanup and robustness project.** The prompt generators copy stored runs into a prompt by rating, not by split, so a held-out item can reach an agent. Does phase 3 wait for that project's fix, or does a scope with `fence_eval_data` refuse those generators until it lands?
