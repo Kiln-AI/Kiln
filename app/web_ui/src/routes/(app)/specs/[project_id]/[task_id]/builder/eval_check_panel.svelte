@@ -266,7 +266,19 @@
           <tbody>
             {#each spread.rows as row (row.fixture)}
               <tr>
-                <td>{row.fixture}</td>
+                <td>
+                  {row.fixture}
+                  {#if row.variants.length > 0}
+                    <ul
+                      class="text-xs text-gray-500 mt-1"
+                      data-fixture-variants
+                    >
+                      {#each row.variants as variant (variant.label)}
+                        <li>{variant.label}: {variant.count}</li>
+                      {/each}
+                    </ul>
+                  {/if}
+                </td>
                 <td class="text-right">{row.count}</td>
               </tr>
             {/each}

@@ -19,6 +19,7 @@ const {
   failures_without_reasoning,
   fault_counts,
   fixture_label,
+  fixture_row,
   grouping_offer_text,
   grouping_scope_text,
   has_judge_reasoning,
@@ -245,9 +246,9 @@ describe("cases per fixture", () => {
     ]
     expect(cases_per_fixture(cases)).toEqual({
       rows: [
-        { fixture: "b", count: 2 },
-        { fixture: "a", count: 1 },
-        { fixture: "c", count: 1 },
+        { fixture: "b", count: 2, variants: [] },
+        { fixture: "a", count: 1, variants: [] },
+        { fixture: "c", count: 1, variants: [] },
       ],
       total: 4,
       crowded: null,
@@ -263,11 +264,83 @@ describe("cases per fixture", () => {
     expect(cases_per_fixture(cases)?.crowded).toEqual({
       fixture: "default",
       count: 2,
+      variants: [],
     })
   })
 
   it("is null when no case ran in an OpenEnv server", () => {
     expect(cases_per_fixture([{ openenv_reset: null }, {}])).toBeNull()
+  })
+
+  it("shows one row per fixture when grounding added other arguments", () => {
+    // The shape of a real 66-case build: one fixture, four argument sets.
+    const cases = [
+      ...Array.from({ length: 30 }, () =>
+        reset({ fixture: "big_co", now: "2026-09-01T14:00:00Z", seed: 7 }),
+      ),
+      ...Array.from({ length: 26 }, (_, i) =>
+        reset({ fixture: "big_co", seed: i }),
+      ),
+      ...Array.from({ length: 7 }, () =>
+        reset({
+          fixture: "big_co",
+          now: "2026-09-01T14:00:00Z",
+          clock_mode: "fixed",
+        }),
+      ),
+      ...Array.from({ length: 3 }, () =>
+        reset({ fixture: "big_co", now: "2026-09-01T15:00:00Z" }),
+      ),
+    ]
+    const spread = cases_per_fixture(cases)
+    expect(spread?.rows).toEqual([
+      {
+        fixture: "big_co",
+        count: 66,
+        variants: [
+          { label: "now=2026-09-01T14:00:00Z", count: 30 },
+          { label: "no other arguments", count: 26 },
+          { label: "clock_mode=fixed, now=2026-09-01T14:00:00Z", count: 7 },
+          { label: "now=2026-09-01T15:00:00Z", count: 3 },
+        ],
+      },
+    ])
+    expect(spread?.total).toBe(66)
+  })
+
+  it("groups two fixtures apart, each with its own detail", () => {
+    const spread = cases_per_fixture([
+      reset({ fixture: "a", now: "t1" }),
+      reset({ fixture: "a" }),
+      reset({ fixture: "b", user: "ana" }),
+    ])
+    expect(spread?.rows).toEqual([
+      {
+        fixture: "a",
+        count: 2,
+        variants: [
+          { label: "no other arguments", count: 1 },
+          { label: "now=t1", count: 1 },
+        ],
+      },
+      { fixture: "b", count: 1, variants: [{ label: "user=ana", count: 1 }] },
+    ])
+  })
+
+  it("keeps the old rows on a server with no fixture argument", () => {
+    const spread = cases_per_fixture([
+      reset({ user: "ana", world: "x" }),
+      reset({ user: "ana", world: "x", seed: 3 }),
+      reset({ user: "bo", world: "x" }),
+    ])
+    expect(spread?.rows).toEqual([
+      { fixture: "user=ana, world=x", count: 2, variants: [] },
+      { fixture: "user=bo, world=x", count: 1, variants: [] },
+    ])
+    expect(fixture_row(reset({ seed: 1 }).openenv_reset)).toEqual({
+      fixture: "Default reset",
+      variant: null,
+    })
   })
 })
 

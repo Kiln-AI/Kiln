@@ -258,6 +258,28 @@ describe("EvalCheckPanel", () => {
     )
   })
 
+  it("shows one row per fixture, with the other reset arguments under it", () => {
+    const with_kwargs = (
+      id: string,
+      reset_kwargs: Record<string, unknown>,
+    ) => ({
+      ...judged(id, "pass"),
+      openenv_reset: { openenv_server_id: "s1", reset_kwargs },
+    })
+    const cases = [
+      with_kwargs("a", { fixture: "big_co", now: "t14" }),
+      with_kwargs("b", { fixture: "big_co", now: "t14" }),
+      with_kwargs("c", { fixture: "big_co" }),
+    ]
+    const { container } = show(cases, { status: "idle" })
+    const rows = container.querySelectorAll("[data-fixtures] tbody tr")
+    expect(rows.length).toBe(1)
+    const details = [
+      ...container.querySelectorAll("[data-fixture-variants] li"),
+    ].map((li) => (li.textContent ?? "").trim())
+    expect(details).toEqual(["now=t14: 2", "no other arguments: 1"])
+  })
+
   it("shows drops by reason", () => {
     const cases = batch(3, 1)
     const drop = (drop_reason: string) => ({

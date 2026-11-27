@@ -96,7 +96,15 @@ export function headroom_text(
 
 // ── Cases per starting state ──────────────────────────────────────────────
 
-export type FixtureCount = { fixture: string; count: number }
+// One starting state, and under it the other reset arguments its cases
+// were set up with (a clock, a mode), each with its count. Empty when every
+// case of the row has no other argument.
+export type FixtureVariant = { label: string; count: number }
+export type FixtureCount = {
+  fixture: string
+  count: number
+  variants: FixtureVariant[]
+}
 
 export type FixtureSpread = {
   rows: FixtureCount[]
@@ -105,6 +113,14 @@ export type FixtureSpread = {
   crowded: FixtureCount | null
 }
 
+// The reset argument that names the fixture, on servers that have one.
+// Grounding adds other arguments per case (a clock, a mode); those do not
+// make another starting state.
+export const FIXTURE_ARGUMENT = "fixture"
+
+const shown_value = (value: unknown) =>
+  typeof value === "string" ? value : JSON.stringify(value)
+
 // A case's starting state, read from its reset arguments without the seed.
 // Each OpenEnv server names its arguments its own way, so a single argument
 // shows as its value and several show as name=value pairs.
@@ -112,11 +128,38 @@ export function fixture_label(reset: OpenEnvReset | null | undefined): string {
   const { seed: _seed, ...rest } = reset?.reset_kwargs ?? {}
   const keys = Object.keys(rest).sort()
   if (keys.length === 0) return "Default reset"
-  const shown = (value: unknown) =>
-    typeof value === "string" ? value : JSON.stringify(value)
-  if (keys.length === 1) return shown(rest[keys[0]])
-  return keys.map((key) => `${key}=${shown(rest[key])}`).join(", ")
+  if (keys.length === 1) return shown_value(rest[keys[0]])
+  return keys.map((key) => `${key}=${shown_value(rest[key])}`).join(", ")
 }
+
+// The row a case counts in and the detail under it. With a fixture argument
+// the row is the fixture and the other arguments (without the seed) are the
+// detail; without one, the row is fixture_label and there is no detail.
+export function fixture_row(reset: OpenEnvReset | null | undefined): {
+  fixture: string
+  variant: string | null
+} {
+  const kwargs = reset?.reset_kwargs ?? {}
+  if (!(FIXTURE_ARGUMENT in kwargs)) {
+    return { fixture: fixture_label(reset), variant: null }
+  }
+  const {
+    seed: _seed,
+    [FIXTURE_ARGUMENT]: fixture,
+    ...rest
+  } = kwargs as Record<string, unknown>
+  const keys = Object.keys(rest).sort()
+  return {
+    fixture: shown_value(fixture),
+    variant:
+      keys.length === 0
+        ? null
+        : keys.map((key) => `${key}=${shown_value(rest[key])}`).join(", "),
+  }
+}
+
+// The detail word for the cases of a row that have no other argument.
+export const NO_OTHER_ARGUMENTS = "no other arguments"
 
 // Null when no case ran in an OpenEnv server.
 export function cases_per_fixture(
@@ -124,13 +167,32 @@ export function cases_per_fixture(
 ): FixtureSpread | null {
   const grounded = cases.filter((c) => c.openenv_reset)
   if (grounded.length === 0) return null
-  const counts = new Map<string, number>()
+  const counts = new Map<
+    string,
+    { count: number; variants: Map<string, number> }
+  >()
   for (const c of grounded) {
-    const label = fixture_label(c.openenv_reset)
-    counts.set(label, (counts.get(label) ?? 0) + 1)
+    const { fixture, variant } = fixture_row(c.openenv_reset)
+    const row = counts.get(fixture) ?? { count: 0, variants: new Map() }
+    row.count += 1
+    const key = variant ?? NO_OTHER_ARGUMENTS
+    row.variants.set(key, (row.variants.get(key) ?? 0) + 1)
+    counts.set(fixture, row)
   }
   const rows = [...counts.entries()]
-    .map(([fixture, count]) => ({ fixture, count }))
+    .map(([fixture, { count, variants }]) => ({
+      fixture,
+      count,
+      // A row whose cases all lack other arguments has no detail.
+      variants:
+        variants.size === 1 && variants.has(NO_OTHER_ARGUMENTS)
+          ? []
+          : [...variants.entries()]
+              .map(([label, n]) => ({ label, count: n }))
+              .sort(
+                (a, b) => b.count - a.count || a.label.localeCompare(b.label),
+              ),
+    }))
     .sort((a, b) => b.count - a.count || a.fixture.localeCompare(b.fixture))
   const total = grounded.length
   const crowded = rows[0].count * 2 > total ? rows[0] : null
