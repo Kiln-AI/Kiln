@@ -3407,6 +3407,22 @@ class TestGroundedJudge:
         assert "use the order of the agent's calls and messages" in template
         assert "Check each figure, record or claim the agent states" in template
         assert "find the tool result it came from" in template
+        # A contradicted fact fails only on a requirement the spec names; a
+        # made-up change or hand-off on the spec's own subject still fails.
+        assert (
+            "counts against the case only when it bears on a requirement the "
+            "specification names" in template
+        )
+        assert (
+            "A wrong statement about something the specification does not check "
+            "does not fail the case" in template
+        )
+        assert (
+            "A claim that the agent made a change or a hand-off that the tool calls "
+            "do not show still fails when it is about what the specification checks"
+            in template
+        )
+        assert "counts against whatever requirement" not in template
         assert "not a ruling on what the user meant" in template
         assert "Must not happen" not in template
         # The guidance comes before the conversation it grades.
