@@ -51,6 +51,7 @@ Kiln is a workbench for the full AI development loop: evals, optimization, promp
 - 🖥️ [**Intuitive app**](https://kiln.tech/download) - Easy-to-use apps for Mac, Windows, and Linux. One-click install.
 - 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) - Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes.
 - 💬 [**AI Assistant**](https://docs.kiln.tech) - Your AI data-science partner. Kiln Assistant proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
+- 🔌 [**Use Kiln from your own agent**](#use-kiln-from-your-own-agent) - Connect Claude Code, Codex or OpenCode to Kiln over MCP.
 - 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) - The app syncs to Git automatically — even for teammates who don't know what Git is.
 
 ### Build & ship agents
@@ -71,6 +72,18 @@ Download Kiln Desktop for macOS, Windows, or Linux, then follow the [5-minute qu
 [![MacOS](https://img.shields.io/badge/MacOS-black?logo=apple)](https://kiln.tech/download) [![Windows](https://img.shields.io/badge/Windows-0067b8.svg?logo=data:image/svg%2bxml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPHN2ZyBmaWxsPSIjZmZmIiB2aWV3Qm94PSIwIDAgMzIgMzIiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE2Ljc0MiAxNi43NDJ2MTQuMjUzaDE0LjI1M3YtMTQuMjUzek0xLjAwNCAxNi43NDJ2MTQuMjUzaDE0LjI1NnYtMTQuMjUzek0xNi43NDIgMS4wMDR2MTQuMjU2aDE0LjI1M3YtMTQuMjU2ek0xLjAwNCAxLjAwNHYxNC4yNTZoMTQuMjU2di0xNC4yNTZ6Ij48L3BhdGg+Cjwvc3ZnPg==)](https://kiln.tech/download) [![Linux](https://img.shields.io/badge/Linux-444444?logo=linux&logoColor=ffffff)](https://kiln.tech/download)
 
 Prefer to start in code? See the [Python library quickstart](https://docs.kiln.tech/developers/python-library-quickstart).
+
+## Use Kiln from your own agent
+
+Kiln has a built-in MCP server. Connect Claude Code, Codex, OpenCode or another agent you already use, and it can work in Kiln for you: create tasks, run evals, compare models and improve the agents you build in Kiln. It is free, and it starts with the Kiln app.
+
+Paste this into your agent:
+
+```
+Install Kiln's app, skill, and MCP following the guide here: https://raw.githubusercontent.com/Kiln-AI/Kiln/main/docs/agent_install.md
+```
+
+Then ask your agent to work with Kiln, or type `/kiln` (`$kiln` in Codex). The same prompt is in the app under Settings, Connect Your Agent. To set up an agent by hand, see [docs/agent_install.md](docs/agent_install.md).
 
 ## Demo
 

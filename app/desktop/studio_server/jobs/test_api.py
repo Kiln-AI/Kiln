@@ -211,7 +211,10 @@ async def test_create_returns_201_and_status(client):
 async def test_create_unknown_type_404(client):
     resp = await client.post("/api/jobs/does_not_exist", json={"params": {}})
     assert resp.status_code == 404
-    assert "Unknown job type" in resp.json()["detail"]
+    assert resp.json()["detail"] == (
+        "Unknown job type: does_not_exist. Registered job types: eval, "
+        "nonpausable, noop, project_scoped, reconcile_complete."
+    )
 
 
 @pytest.mark.asyncio
@@ -1514,6 +1517,13 @@ async def test_wait_many_endpoint_empty_ids_returns_empty(client):
     got = await client.post("/api/jobs/wait", json={})
     assert got.status_code == 200
     assert got.json() == []
+
+
+@pytest.mark.asyncio
+async def test_wait_many_endpoint_rejects_an_unknown_field(client):
+    got = await client.post("/api/jobs/wait", json={"job_ids": ["j_1"]})
+    assert got.status_code == 422
+    assert got.json()["detail"][0]["loc"] == ["body", "job_ids"]
 
 
 @pytest.mark.asyncio

@@ -15,6 +15,7 @@ from kiln_ai.adapters.extractors.litellm_extractor import (
     encode_file_litellm_format,
 )
 from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
     ModelName,
     built_in_models,
     built_in_models_from_provider,
@@ -399,6 +400,59 @@ async def test_extract_failure_unsupported_mime_type(mock_litellm_extractor):
                     mime_type="unsupported/mimetype",
                 )
             )
+
+
+@pytest.mark.parametrize(
+    "installed,expected_model",
+    [
+        (["qwen2.5vl:7b"], "openai/qwen2.5vl:7b"),
+        ([], "openai/qwen2.5vl"),
+    ],
+)
+async def test_extract_uses_installed_ollama_variant(
+    mock_file_factory, ollama_installed, installed, expected_model
+):
+    ollama_installed(*installed)
+    extractor = LitellmExtractor(
+        ExtractorConfig(
+            name="ollama",
+            extractor_type=ExtractorType.LITELLM,
+            model_name="qwen_2p5_vl_7b",
+            model_provider_name="ollama",
+            properties={
+                "extractor_type": ExtractorType.LITELLM,
+                "prompt_document": PROMPTS_FOR_KIND["document"],
+                "prompt_image": PROMPTS_FOR_KIND["image"],
+                "prompt_video": PROMPTS_FOR_KIND["video"],
+                "prompt_audio": PROMPTS_FOR_KIND["audio"],
+            },
+        ),
+        litellm_core_config=LiteLlmCoreConfig(base_url="http://ollama.test"),
+    )
+    mock_response = AsyncMock(spec=ModelResponse)
+    mock_choice = AsyncMock(spec=Choices)
+    mock_choice.message = AsyncMock(content="extracted")
+    mock_response.choices = [mock_choice]
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.built_in_models_from_provider",
+            return_value=KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5vl",
+                ollama_model_aliases=["qwen2.5vl:7b"],
+            ),
+        ),
+        patch("litellm.acompletion", return_value=mock_response) as mock_acompletion,
+    ):
+        await extractor.extract(
+            ExtractionInput(
+                path=str(mock_file_factory(MockFileFactoryMimeType.TXT)),
+                mime_type=MockFileFactoryMimeType.TXT.value,
+            )
+        )
+
+    assert mock_acompletion.call_args.kwargs["model"] == expected_model
 
 
 def test_litellm_model_slug_success(mock_litellm_extractor):

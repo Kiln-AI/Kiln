@@ -1,11 +1,13 @@
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
-import requests
+import respx
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel.model_cache import ModelCache, model_cache_enabled
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_server.server import tags_metadata
 
@@ -14,10 +16,12 @@ from app.desktop.studio_server.webhost import HTMLStaticFiles
 
 
 @pytest.fixture
-def client(monkeypatch):
+def app(monkeypatch):
     # Ensure CORS origins use the default port (5173) regardless of environment
     monkeypatch.delenv("KILN_FRONTEND_PORT", raising=False)
-    # a client based on a mock studio path (skipping remote model list loading)
+    # A shell's KILN_DISABLE_MODEL_CACHE would keep the lifespan from turning the cache on.
+    monkeypatch.delenv("KILN_DISABLE_MODEL_CACHE", raising=False)
+    # an app based on a mock studio path (skipping remote model list loading)
     with (
         tempfile.TemporaryDirectory() as temp_dir,
         patch(
@@ -32,9 +36,31 @@ def client(monkeypatch):
             from app.desktop.studio_server.webhost import studio_path
 
             assert studio_path() == temp_dir  # Verify the patch is working
-            app = make_app()
-            with TestClient(app) as client:
-                yield client
+            yield make_app()
+
+
+@pytest.fixture
+def client(app):
+    with TestClient(app) as client:
+        yield client
+
+
+def test_the_models_dev_cache_is_off_under_the_test_suite(client):
+    assert client.app.state.models_dev_cache.enabled is False
+
+
+def test_lifespan_closes_the_models_dev_cache():
+    with (
+        tempfile.TemporaryDirectory() as temp_dir,
+        patch("app.desktop.studio_server.webhost.studio_path", new=lambda: temp_dir),
+    ):
+        app = make_app()
+        cache = MagicMock()
+        cache.aclose = AsyncMock()
+        app.state.models_dev_cache = cache
+        with TestClient(app):
+            cache.aclose.assert_not_awaited()
+        cache.aclose.assert_awaited_once()
 
 
 def test_ping(client):
@@ -48,56 +74,92 @@ def test_strict_mode(client):
     assert strict_mode()
 
 
-def test_connect_ollama_success(client):
-    with patch("requests.get") as mock_get:
-        # Set up mock to return different values on consecutive calls
-        mock_get.return_value.json.side_effect = [
-            {"models": [{"model": "phi3.5:latest"}]},
-            {"version": "0.5.0"},
-        ]
-        response = client.post("/api/provider/ollama/connect")
-        assert response.status_code == 200
-        assert response.json() == {
-            "message": "Ollama connected",
-            "supported_models": ["phi3.5:latest"],
-            "supported_embedding_models": [],
-            "untested_models": [],
-            "version": "0.5.0",
-        }
+def test_lifespan_enables_model_cache_and_restores_it(app):
+    assert not model_cache_enabled()
+
+    with TestClient(app):
+        assert model_cache_enabled()
+
+    assert not model_cache_enabled()
 
 
-def test_connect_ollama_connection_error(client):
-    with patch("requests.get") as mock_get:
-        mock_get.side_effect = requests.exceptions.ConnectionError
-        response = client.post("/api/provider/ollama/connect")
-        assert response.status_code == 417
-        assert response.json() == {
-            "message": "Failed to connect. Ensure Ollama app is running."
-        }
+@pytest.mark.parametrize("env_value, expect_enabled", [("true", False), (None, True)])
+def test_lifespan_applies_disable_model_cache(
+    app, monkeypatch, env_value, expect_enabled
+):
+    if env_value is not None:
+        monkeypatch.setenv("KILN_DISABLE_MODEL_CACHE", env_value)
+    # On before startup, so the shutdown restore would turn a cache that was only
+    # switched off back on.
+    cache = ModelCache(enabled=True)
+    monkeypatch.setattr(ModelCache, "_shared_instance", cache)
+
+    with TestClient(app):
+        assert cache.enabled is expect_enabled
+
+    assert cache.enabled is expect_enabled
 
 
-def test_connect_ollama_general_exception(client):
-    with patch("requests.get") as mock_get:
-        mock_get.side_effect = Exception("Test exception")
-        response = client.post("/api/provider/ollama/connect")
-        assert response.status_code == 500
-        assert response.json() == {
-            "message": "Failed to connect to Ollama: Test exception"
-        }
+@pytest.fixture
+def ollama_server():
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.ollama_base_url",
+            return_value="http://ollama.test:11434",
+        ),
+        respx.mock(base_url="http://ollama.test:11434") as router,
+    ):
+        yield router
 
 
-def test_connect_ollama_no_models(client):
-    with patch("requests.get") as mock_get:
-        mock_get.return_value.json.return_value = {"models": []}
-        response = client.post("/api/provider/ollama/connect")
-        assert response.status_code == 200
-        r = response.json()
-        assert (
-            r["message"]
-            == "Ollama is running, but no supported models are installed. Install one or more supported model, like 'ollama pull phi3.5'."
-        )
-        assert r["supported_models"] == []
-        assert r["untested_models"] == []
+def test_connect_ollama_success(client, ollama_server):
+    ollama_server.get("/api/tags").mock(
+        return_value=httpx.Response(200, json={"models": [{"model": "phi3.5:latest"}]})
+    )
+    ollama_server.get("/api/version").mock(
+        return_value=httpx.Response(200, json={"version": "0.5.0"})
+    )
+    response = client.post("/api/provider/ollama/connect")
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "Ollama connected",
+        "supported_models": ["phi3.5:latest"],
+        "supported_embedding_models": [],
+        "untested_models": [],
+        "version": "0.5.0",
+    }
+
+
+def test_connect_ollama_connection_error(client, ollama_server):
+    ollama_server.get("/api/tags").mock(side_effect=httpx.ConnectError("refused"))
+    response = client.post("/api/provider/ollama/connect")
+    assert response.status_code == 417
+    assert response.json() == {
+        "message": "Failed to connect. Ensure Ollama app is running."
+    }
+
+
+def test_connect_ollama_general_exception(client, ollama_server):
+    ollama_server.get("/api/tags").mock(side_effect=Exception("Test exception"))
+    response = client.post("/api/provider/ollama/connect")
+    assert response.status_code == 500
+    assert response.json() == {"message": "Failed to connect to Ollama: Test exception"}
+
+
+def test_connect_ollama_no_models(client, ollama_server):
+    ollama_server.get("/api/tags").mock(
+        return_value=httpx.Response(200, json={"models": []})
+    )
+    ollama_server.get("/api/version").mock(return_value=httpx.Response(404))
+    response = client.post("/api/provider/ollama/connect")
+    assert response.status_code == 200
+    r = response.json()
+    assert (
+        r["message"]
+        == "Ollama is running, but no supported models are installed. Install one or more supported model, like 'ollama pull phi3.5'."
+    )
+    assert r["supported_models"] == []
+    assert r["untested_models"] == []
 
 
 @pytest.mark.parametrize(

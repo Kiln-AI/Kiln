@@ -153,6 +153,7 @@ fi
 
 # OpenAPI schema check
 start_check "openapi schema" bash -c 'app/web_ui/src/lib/check_schema.sh'
+start_check "api reference" uv run python -m app.desktop.skill_api_reference check
 
 # Web UI checks
 if [ "$staged_only" = false ] || [[ "$changed_files" == *"app/web_ui/"* ]]; then
@@ -166,6 +167,9 @@ fi
 # Python tests
 if [ "$staged_only" = false ] || echo "$changed_files" | grep -q "\.py$"; then
     start_check "python tests" python3 -m pytest --benchmark-quiet -q -n auto .
+elif echo "$changed_files" | grep -q "^app/mcp/"; then
+    # The Kiln skill is Markdown, and its tests check it.
+    start_check "kiln skill tests" python3 -m pytest --benchmark-quiet -q -n auto app/mcp
 fi
 
 # ── Wait and summarize ────────────────────────────────────────────────

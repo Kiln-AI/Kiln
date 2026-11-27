@@ -1,6 +1,8 @@
 """Kiln API Call Tool - makes HTTP requests to the Kiln API server."""
 
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote
 
@@ -31,13 +33,97 @@ API_PATH_PREFIX = "/api/"
 ALLOWED_EXACT_PATHS = frozenset({"/ping"})
 # Paths that a "did you mean /api<path>?" hint would only mislead on.
 _NON_API_PATHS = frozenset({"/", "/docs", "/redoc", "/scalar"})
+ALLOWED_METHODS = frozenset({"GET", "POST", "PATCH", "DELETE"})
+
+SSE_FINISHED_MESSAGE = "Stream finished. This does not guarantee the job completed successfully—check the status of the flow you triggered. For Eval or RAG runs, call this again if errors occur; transient failures may be retried. If errors keep happening, we advise running the flow through the web UI instead."
+
+
+@dataclass(frozen=True)
+class PreparedApiRequest:
+    """A validated request: upper-case method, the path to send, and the body
+    serialised to a string."""
+
+    method: str
+    url_path: str
+    body_str: str | None
+
+
+@dataclass(frozen=True)
+class KilnApiResponse:
+    """The response of one API call.
+
+    `body_text` is the jq output when a filter ran on a 2xx response, the raw
+    response text otherwise, and the summary JSON for an event stream. `body`
+    is `body_text` parsed as JSON when it parses, else `body_text` itself.
+    """
+
+    status_code: int
+    content_type: str
+    is_sse: bool
+    body_text: str
+    body: Any
+    body_is_json: bool
+
+
+class KilnApiResponseError(ValueError):
+    """The request completed, but its response could not be processed."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def prepare_api_request(
+    method: str, url_path: str, body: str | dict | list | None = None
+) -> PreparedApiRequest:
+    """Validate a call and normalise it. Raises ValueError with a message for
+    the caller when the call is refused."""
+    body_str: str | None = None
+    if isinstance(body, (dict, list)):
+        body_str = json.dumps(body, ensure_ascii=False)
+    elif isinstance(body, str):
+        body_str = body
+
+    method = method.upper()
+    if method not in ALLOWED_METHODS:
+        raise ValueError(
+            f"Invalid method '{method}'. Must be one of: {', '.join(sorted(ALLOWED_METHODS))}"
+        )
+
+    if not url_path.startswith("/"):
+        raise ValueError(f"url_path must start with '/', got: {url_path}")
+
+    # Models often add a trailing slash, and no Kiln route has one.
+    url_path = url_path.rstrip("/") or url_path
+
+    if not _is_allowed_path(url_path):
+        raise ValueError(_disallowed_path_message(url_path))
+
+    if "?" in url_path or "#" in url_path:
+        raise ValueError(
+            "url_path must not contain a query string or fragment ('?' or '#'). "
+            "Pass query args via query_params."
+        )
+
+    if body_str is not None and method in {"GET", "DELETE"}:
+        raise ValueError(f"body parameter not allowed with {method} method")
+
+    return PreparedApiRequest(method=method, url_path=url_path, body_str=body_str)
 
 
 class KilnApiCallTool(KilnTool):
-    """Tool for making HTTP requests to the Kiln API server."""
+    """Tool for making HTTP requests to the Kiln API server.
 
-    def __init__(self, api_base_url: str):
+    `api_base_url` is the server root, such as `http://127.0.0.1:8757`.
+    `transport`, when given, replaces the HTTP client's network transport,
+    for example `httpx.ASGITransport` to call an app in process.
+    """
+
+    def __init__(
+        self, api_base_url: str, transport: httpx.AsyncBaseTransport | None = None
+    ):
         self._api_base_url = api_base_url
+        self._transport = transport
         super().__init__(
             tool_id=KilnBuiltInToolId.CALL_KILN_API,
             name="call_kiln_api",
@@ -88,55 +174,30 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
             "required": ["method", "url_path"],
         }
 
-    async def run(  # type: ignore[override]
+    async def call(
         self,
-        context: ToolCallContext | None = None,
         *,
         method: str,
         url_path: str,
         body: str | dict | list | None = None,
-        query_params: dict[str, str | list[str]] | None = None,
+        query_params: Mapping[str, str | list[str]] | None = None,
         jq_filter: str | None = None,
-    ) -> ToolCallResult:
-        body_str: str | None = None
-        if isinstance(body, (dict, list)):
-            body_str = json.dumps(body, ensure_ascii=False)
-        elif isinstance(body, str):
-            body_str = body
+    ) -> KilnApiResponse:
+        """Make one API call.
 
-        # 1. Validate inputs
-        method = method.upper()
-        allowed_methods = {"GET", "POST", "PATCH", "DELETE"}
-        if method not in allowed_methods:
-            raise ValueError(
-                f"Invalid method '{method}'. Must be one of: {', '.join(sorted(allowed_methods))}"
-            )
-
-        if not url_path.startswith("/"):
-            raise ValueError(f"url_path must start with '/', got: {url_path}")
-
-        if not _is_allowed_path(url_path):
-            raise ValueError(_disallowed_path_message(url_path))
-
-        if "?" in url_path or "#" in url_path:
-            raise ValueError(
-                "url_path must not contain a query string or fragment ('?' or '#'). "
-                "Pass query args via query_params."
-            )
-
-        if body_str is not None and method in {"GET", "DELETE"}:
-            raise ValueError(f"body parameter not allowed with {method} method")
-
-        # 2. Build full URL
+        Raises ValueError when the call is refused before it is sent,
+        TimeoutError or ConnectionError when it fails in transit, and
+        KilnApiResponseError when the response arrived but is not JSON or the
+        jq filter failed on it. A non-2xx response is returned, not raised.
+        """
+        request = prepare_api_request(method, url_path, body)
+        method, url_path = request.method, request.url_path
         full_url = f"{self._api_base_url}{url_path}"
 
-        # 3. Make HTTP request — use stream() so we can detect SSE responses
-        # from the content-type header and drain the event stream. The same
-        # timeout applies to SSE and non-SSE responses: read is per-read (idle),
-        # so it bounds silence on the channel rather than total duration.
+        # stream() lets an SSE response be detected from its content type and
+        # drained. Read is per-read (idle), so it bounds silence on the channel
+        # rather than total duration, for SSE and non-SSE alike.
         headers = {"Content-Type": "application/json"}
-        # Per-request client: tool instances are short-lived (created per call
-        # via tool_from_id), so a shared client wouldn't persist across calls anyway.
         timeout = httpx.Timeout(
             connect=CONNECT_TIMEOUT_SECONDS,
             read=READ_TIMEOUT_SECONDS,
@@ -150,9 +211,14 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
             "timeout": timeout,
         }
         if method in {"POST", "PATCH"}:
-            stream_kwargs["content"] = body_str
+            stream_kwargs["content"] = request.body_str
 
-        async with httpx.AsyncClient() as client:
+        # Per-request client: tool instances are short-lived (created per
+        # call). The call is to the local server, so proxy settings from the
+        # environment must not apply.
+        async with httpx.AsyncClient(
+            transport=self._transport, trust_env=False
+        ) as client:
             try:
                 async with client.stream(method, full_url, **stream_kwargs) as response:
                     status_code = response.status_code
@@ -164,7 +230,7 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
                         response_text = json.dumps(
                             {
                                 "event_count": event_count,
-                                "message": "Stream finished. This does not guarantee the job completed successfully—check the status of the flow you triggered. For Eval or RAG runs, call this again if errors occur; transient failures may be retried. If errors keep happening, we advise running the flow through the web UI instead.",
+                                "message": SSE_FINISHED_MESSAGE,
                             },
                             ensure_ascii=False,
                         )
@@ -184,32 +250,58 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
             except httpx.ConnectError:
                 raise ConnectionError(f"Could not connect to server for {url_path}")
 
-        # 4. Build response
+        body_text = response_text
         if jq_filter and 200 <= status_code < 300:
-            # Apply jq filter on successful responses
-            try:
-                parsed_json = json.loads(response_text)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Response is not valid JSON: {e}")
+            body_text = _apply_jq(response_text, jq_filter, status_code)
 
-            try:
-                compiled = jq.compile(jq_filter)
-                filtered = compiled.input_value(parsed_json).text()
-                response_body = filtered if filtered is not None else ""
-            except Exception as e:
-                raise ValueError(f"jq filter error: {e}")
-        else:
-            # Return raw body for non-2xx or when no filter
-            response_body = response_text
+        try:
+            parsed: Any = json.loads(body_text)
+            body_is_json = True
+        except json.JSONDecodeError:
+            parsed = body_text
+            body_is_json = False
 
-        if isinstance(response_body, str):
-            try:
-                response_body = json.loads(response_body)
-            except json.JSONDecodeError:
-                pass
+        return KilnApiResponse(
+            status_code=status_code,
+            content_type=content_type,
+            is_sse=is_sse,
+            body_text=body_text,
+            body=parsed,
+            body_is_json=body_is_json,
+        )
 
-        result = {"status_code": status_code, "body": response_body}
+    async def run(  # type: ignore[override]
+        self,
+        context: ToolCallContext | None = None,
+        *,
+        method: str,
+        url_path: str,
+        body: str | dict | list | None = None,
+        query_params: dict[str, str | list[str]] | None = None,
+        jq_filter: str | None = None,
+    ) -> ToolCallResult:
+        response = await self.call(
+            method=method,
+            url_path=url_path,
+            body=body,
+            query_params=query_params,
+            jq_filter=jq_filter,
+        )
+        result = {"status_code": response.status_code, "body": response.body}
         return ToolCallResult(output=json.dumps(result, ensure_ascii=False))
+
+
+def _apply_jq(response_text: str, jq_filter: str, status_code: int) -> str:
+    try:
+        parsed_json = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise KilnApiResponseError(f"Response is not valid JSON: {e}", status_code)
+
+    try:
+        filtered = jq.compile(jq_filter).input_value(parsed_json).text()
+    except Exception as e:
+        raise KilnApiResponseError(f"jq filter error: {e}", status_code)
+    return filtered if filtered is not None else ""
 
 
 def _path_without_query(url_path: str) -> str:
@@ -265,23 +357,16 @@ def _disallowed_path_message(url_path: str) -> str:
             "endpoint documentation."
         )
 
-    # A near miss on an exact allowed path — a trailing slash, say — is
-    # corrected to that path. Prefixing it instead would name a second wrong
-    # call: '/api/ping/' is no more a route than '/ping/' is.
-    near_miss = path_only.rstrip("/")
-    if near_miss in ALLOWED_EXACT_PATHS:
-        hint = f" Did you mean '{near_miss}'?"
-    else:
-        # Suggest the prefixed form only where it could plausibly be the fix.
-        # A dot in the final segment means a filename, not an endpoint, and
-        # "/api/openapi.json" is no more callable than "/openapi.json".
-        looks_like_a_file = "." in path_only.rsplit("/", 1)[-1]
-        suggest = (
-            not path_only.startswith("/api")
-            and path_only not in _NON_API_PATHS
-            and not looks_like_a_file
-        )
-        hint = f" Did you mean '/api{path_only}'?" if suggest else ""
+    # Suggest the prefixed form only where it could plausibly be the fix.
+    # A dot in the final segment means a filename, not an endpoint, and
+    # "/api/openapi.json" is no more callable than "/openapi.json".
+    looks_like_a_file = "." in path_only.rsplit("/", 1)[-1]
+    suggest = (
+        not path_only.startswith("/api")
+        and path_only not in _NON_API_PATHS
+        and not looks_like_a_file
+    )
+    hint = f" Did you mean '/api{path_only}'?" if suggest else ""
     # Name the exceptions. The rule alone reads as "/ping is impossible",
     # which would stop a caller retrying the one path that does work.
     exceptions = ", ".join(f"'{path}'" for path in sorted(ALLOWED_EXACT_PATHS))

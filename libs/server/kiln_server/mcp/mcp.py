@@ -1,4 +1,4 @@
-"""CLI entry point for the Kiln MCP server."""
+"""CLI entry point for the Kiln project tools MCP server (kiln_mcp)."""
 
 from __future__ import annotations
 
@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Sequence
 
 from kiln_ai.datamodel.external_tool_server import ToolServerType
+from kiln_ai.datamodel.model_cache import apply_model_cache_setting
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.tool_id import build_kiln_task_tool_id, build_rag_tool_id
+from kiln_ai.utils.config import Config
 
 from .mcp_server_tool_utils import prepare_tool_contexts
 from .runtime import Transport, create_fastmcp_server, run_transport
@@ -28,7 +30,12 @@ def _parse_tool_ids(raw: str | None) -> list[str] | None:
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the Kiln MCP server for a project."
+        description=(
+            "Run the Kiln project tools MCP server: it serves one project's tools"
+            " (such as search tools) to other apps. It does not connect your own"
+            " agent, such as Claude Code or Codex, to the Kiln app; for that, use"
+            " the MCP server built into the Kiln app."
+        )
     )
     parser.add_argument("project", type=Path, help="Path to the project.kiln file")
     parser.add_argument(
@@ -155,6 +162,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
+    apply_model_cache_setting(disable=Config.shared().disable_model_cache)
 
     asyncio.run(
         _async_main(

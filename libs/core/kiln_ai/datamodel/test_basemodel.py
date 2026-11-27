@@ -1,18 +1,26 @@
 import datetime
 import json
 import logging
+import shutil
+import threading
 import time
 import uuid
+from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pydantic import ValidationError
+from pydantic import PrivateAttr, ValidationError, ValidationInfo, model_validator
+from typing_extensions import Self
 
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import Project, Task, TaskOutput, TaskRun
+from kiln_ai.datamodel import model_cache as model_cache_module
 from kiln_ai.datamodel.basemodel import (
     MAX_FILENAME_LENGTH,
     KilnBaseModel,
@@ -21,8 +29,20 @@ from kiln_ai.datamodel.basemodel import (
     name_validator,
     string_to_valid_name,
 )
-from kiln_ai.datamodel.datamodel_enums import TurnMode
-from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType, TurnMode
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalDataType,
+    EvalOutputScore,
+)
+from kiln_ai.datamodel.model_cache import (
+    MIN_RECORD_BYTES,
+    FileIdentity,
+    ModelCache,
+    _cache_key,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
@@ -57,17 +77,6 @@ def test_newer_file(tmp_path) -> Path:
         json.dump(data, file, indent=4)
 
     return test_file_path
-
-
-@pytest.fixture
-def tmp_model_cache():
-    temp_cache = ModelCache()
-    # We're testing integration, not cache functions, in this file
-    temp_cache._enabled = True
-    with (
-        patch("kiln_ai.datamodel.basemodel.ModelCache.shared", return_value=temp_cache),
-    ):
-        yield temp_cache
 
 
 def test_load_from_file(test_base_file):
@@ -493,18 +502,18 @@ def test_name_validator_error_conditions(name, min_length, max_length, should_pa
             validator(name)
 
 
-def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
-    tmp_model_cache.get_model = MagicMock(return_value=None)
-    tmp_model_cache.set_model = MagicMock()
+def test_load_from_file_with_cache(test_base_file, model_cache_enabled):
+    model_cache_enabled.get_model = MagicMock(return_value=None)
+    model_cache_enabled.set_model = MagicMock()
 
     # Load the model with readonly=True to enable caching
     model = KilnBaseModel.load_from_file(test_base_file, readonly=True)
 
     # Check that the cache was checked and set
-    tmp_model_cache.get_model.assert_called_once_with(
+    model_cache_enabled.get_model.assert_called_once_with(
         test_base_file, KilnBaseModel, readonly=True
     )
-    tmp_model_cache.set_model.assert_called_once()
+    model_cache_enabled.set_model.assert_called_once()
 
     # Ensure the model is correctly loaded
     assert model.v == 1
@@ -512,19 +521,320 @@ def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
     assert model._readonly is True
 
 
-def test_save_to_file_invalidates_cache(test_base_file, tmp_model_cache):
+def test_load_from_file_stores_identity(test_base_file, model_cache_enabled):
+    model_cache_enabled.set_model = MagicMock()
+
+    model = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    model_cache_enabled.set_model.assert_called_once_with(
+        test_base_file, model, FileIdentity.from_path(test_base_file), None
+    )
+
+
+def test_readonly_loads_are_not_cached_by_default(test_base_file):
+    first = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+    second = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    assert not ModelCache.shared().enabled
+    assert first is not second
+
+
+def test_readonly_loads_are_cached_when_enabled(test_base_file, model_cache_enabled):
+    first = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+    assert KilnBaseModel.load_from_file(test_base_file, readonly=True) is first
+
+    test_base_file.write_text(test_base_file.read_text() + "\n")
+
+    assert KilnBaseModel.load_from_file(test_base_file, readonly=True) is not first
+
+
+def write_base_model_files(folder: Path, count: int) -> list[Path]:
+    """Files of equal size, so each cached record counts the same bytes."""
+    paths = [folder / f"model_{i}.kiln" for i in range(count)]
+    for path in paths:
+        path.write_text(
+            json.dumps({"v": 1, "model_type": "kiln_base_model"}, ensure_ascii=False)
+        )
+    return paths
+
+
+def install_shared_cache(
+    monkeypatch, budget_bytes: int, enabled: bool = True
+) -> ModelCache:
+    cache = ModelCache(enabled=enabled, budget_bytes=budget_bytes)
+    monkeypatch.setattr(ModelCache, "_shared_instance", cache)
+    return cache
+
+
+def test_readonly_load_evicts_least_recently_used(tmp_path, monkeypatch):
+    paths = write_base_model_files(tmp_path, 3)
+    # Each small record counts MIN_RECORD_BYTES: room for two, so the third load evicts the first.
+    install_shared_cache(monkeypatch, int(2.5 * MIN_RECORD_BYTES))
+
+    first, second, third = [
+        KilnBaseModel.load_from_file(path, readonly=True) for path in paths
+    ]
+
+    assert KilnBaseModel.load_from_file(paths[1], readonly=True) is second
+    assert KilnBaseModel.load_from_file(paths[2], readonly=True) is third
+    assert KilnBaseModel.load_from_file(paths[0], readonly=True) is not first
+
+
+def test_readonly_load_larger_than_budget_is_served_not_cached(tmp_path, monkeypatch):
+    [path] = write_base_model_files(tmp_path, 1)
+    install_shared_cache(monkeypatch, path.stat().st_size)
+
+    first = KilnBaseModel.load_from_file(path, readonly=True)
+
+    assert first.path == path
+    assert KilnBaseModel.load_from_file(path, readonly=True) is not first
+    assert ModelCache.shared().stats().records == 0
+
+
+class Gate:
+    """Holds the threads that reach `hold()` until the test calls `open()`."""
+
+    def __init__(self) -> None:
+        self.reached = threading.Event()
+        self._opened = threading.Event()
+
+    def hold(self) -> None:
+        self.reached.set()
+        assert self._opened.wait(5)
+
+    def open(self) -> None:
+        self._opened.set()
+
+
+@dataclass
+class ParseSpy:
+    """Counts file parses; the first one calls `during_first_parse` before validating."""
+
+    during_first_parse: Callable[[], None] = lambda: None
+    parses: int = 0
+
+
+@pytest.fixture
+def parse_spy(monkeypatch) -> ParseSpy:
+    spy = ParseSpy()
+    validate = KilnBaseModel.__dict__["_validate_file_data"].__func__
+
+    def counting_validate(cls, raw, path, parent):
+        spy.parses += 1
+        if spy.parses == 1:
+            spy.during_first_parse()
+        return validate(cls, raw, path, parent)
+
+    monkeypatch.setattr(
+        KilnBaseModel, "_validate_file_data", classmethod(counting_validate)
+    )
+    return spy
+
+
+def watch_waits(cache: ModelCache, monkeypatch) -> threading.Event:
+    """Set when a load starts waiting for another thread's load of the same file."""
+    waiting = threading.Event()
+    wait_for_load = cache.wait_for_load
+
+    def signalling_wait(path: Path) -> bool:
+        waiting.set()
+        return wait_for_load(path)
+
+    monkeypatch.setattr(cache, "wait_for_load", signalling_wait)
+    return waiting
+
+
+def race_two_loads(
+    path: Path, cache: ModelCache, parse_spy: ParseSpy, monkeypatch
+) -> tuple[Future, Future]:
+    """Loads `path` readonly in two threads; the second blocks in `wait_for_load`
+    while the first is parsing the file, and must be woken by its release."""
+    gate = Gate()
+    parse_spy.during_first_parse = gate.hold
+    # Far longer than the checks below allow, so a release that doesn't wake the
+    # waiter fails the test instead of passing once the wait times out.
+    monkeypatch.setattr(model_cache_module, "LOAD_WAIT_TIMEOUT_SECONDS", 30.0)
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(KilnBaseModel.load_from_file, path, readonly=True)
+        assert gate.reached.wait(5)
+        second = pool.submit(KilnBaseModel.load_from_file, path, readonly=True)
+        # The waiter counts itself under the registry's lock and holds it until it
+        # blocks, so once it's counted, the first load's release must notify it.
+        deadline = time.monotonic() + 5
+        while cache._load_waiters == 0:
+            assert time.monotonic() < deadline
+            time.sleep(0.001)
+        gate.open()
+        first.exception(timeout=5)
+        second.exception(timeout=5)
+    return first, second
+
+
+def test_concurrent_readonly_loads_of_a_file_share_one_parse(
+    test_base_file, model_cache_enabled, parse_spy, monkeypatch
+):
+    first, second = race_two_loads(
+        test_base_file, model_cache_enabled, parse_spy, monkeypatch
+    )
+
+    assert first.result() is second.result()
+    assert parse_spy.parses == 1
+    assert model_cache_enabled._loading == {}
+
+
+def test_load_waiting_on_a_failed_load_parses_the_file_itself(
+    tmp_path, model_cache_enabled, parse_spy, monkeypatch
+):
+    path = tmp_path / "wrong_type.kiln"
+    path.write_text(json.dumps({"v": 1, "model_type": "not_a_kiln_base_model"}))
+
+    first, second = race_two_loads(path, model_cache_enabled, parse_spy, monkeypatch)
+
+    for load in (first, second):
+        with pytest.raises(ValueError, match="model type is incorrect"):
+            load.result()
+    assert parse_spy.parses == 2
+    assert model_cache_enabled._loading == {}
+
+
+def test_load_waiting_on_an_uncached_record_parses_the_file_itself(
+    tmp_path, parse_spy, monkeypatch
+):
+    [path] = write_base_model_files(tmp_path, 1)
+    cache = install_shared_cache(monkeypatch, budget_bytes=path.stat().st_size)
+
+    first, second = race_two_loads(path, cache, parse_spy, monkeypatch)
+
+    assert first.result() is not second.result()
+    assert second.result().path == path
+    assert parse_spy.parses == 2
+    assert cache._loading == {}
+
+
+def test_load_waiting_on_a_load_of_an_older_version_reads_the_file_again(
+    test_base_file, model_cache_enabled, parse_spy, monkeypatch
+):
+    wait_for_load = model_cache_enabled.wait_for_load
+
+    def rewrite_then_wait(path: Path) -> bool:
+        # The first load has read the old version and is held in validation.
+        path.write_text(
+            json.dumps(
+                {"v": 1, "model_type": "kiln_base_model", "id": "v2"},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return wait_for_load(path)
+
+    gate = Gate()
+    parse_spy.during_first_parse = gate.hold
+    monkeypatch.setattr(model_cache_enabled, "wait_for_load", rewrite_then_wait)
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(KilnBaseModel.load_from_file, test_base_file, readonly=True)
+        assert gate.reached.wait(5)
+        second = pool.submit(
+            KilnBaseModel.load_from_file, test_base_file, readonly=True
+        )
+        deadline = time.monotonic() + 5
+        while model_cache_enabled._load_waiters == 0:
+            assert time.monotonic() < deadline
+            time.sleep(0.001)
+        gate.open()
+
+    assert first.result().id != "v2"
+    assert second.result().id == "v2"
+    assert parse_spy.parses == 2
+    assert model_cache_enabled._loading == {}
+
+
+def test_load_whose_wait_times_out_parses_the_file_itself(
+    test_base_file, model_cache_enabled, parse_spy, monkeypatch
+):
+    monkeypatch.setattr(model_cache_module, "LOAD_WAIT_TIMEOUT_SECONDS", 0.01)
+    wait_for_load = MagicMock(wraps=model_cache_enabled.wait_for_load)
+    monkeypatch.setattr(model_cache_enabled, "wait_for_load", wait_for_load)
+    gate = Gate()
+    parse_spy.during_first_parse = gate.hold
+
+    with ThreadPoolExecutor(1) as pool:
+        first = pool.submit(KilnBaseModel.load_from_file, test_base_file, readonly=True)
+        assert gate.reached.wait(5)
+        second = KilnBaseModel.load_from_file(test_base_file, readonly=True)
+        assert parse_spy.parses == 2
+        gate.open()
+
+    assert first.result() is not second
+    wait_for_load.assert_called_once_with(test_base_file)
+    assert model_cache_enabled._loading == {}
+
+
+def test_nested_load_of_a_file_being_loaded_parses_it_without_waiting(
+    test_base_file, model_cache_enabled, parse_spy, monkeypatch
+):
+    waiting = watch_waits(model_cache_enabled, monkeypatch)
+    claims_after_nested_load: list[dict[str, int]] = []
+
+    def load_again() -> None:
+        KilnBaseModel.load_from_file(test_base_file, readonly=True)
+        claims_after_nested_load.append(dict(model_cache_enabled._loading))
+
+    parse_spy.during_first_parse = load_again
+    KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    assert not waiting.is_set()
+    assert claims_after_nested_load == [
+        {_cache_key(test_base_file): threading.get_ident()}
+    ]
+    assert parse_spy.parses == 2
+    assert model_cache_enabled._loading == {}
+
+
+@pytest.mark.parametrize(
+    "cache_on, readonly",
+    [(True, False), (False, True), (False, False)],
+    ids=["editable", "readonly_cache_off", "editable_cache_off"],
+)
+def test_loads_the_cache_does_not_keep_never_claim_or_wait(
+    test_base_file, monkeypatch, cache_on, readonly
+):
+    cache = install_shared_cache(monkeypatch, budget_bytes=1024**3, enabled=cache_on)
+    claim_load = MagicMock(wraps=cache.claim_load)
+    wait_for_load = MagicMock(wraps=cache.wait_for_load)
+    monkeypatch.setattr(cache, "claim_load", claim_load)
+    monkeypatch.setattr(cache, "wait_for_load", wait_for_load)
+
+    KilnBaseModel.load_from_file(test_base_file, readonly=readonly)
+
+    claim_load.assert_not_called()
+    wait_for_load.assert_not_called()
+
+
+def test_readonly_hit_never_claims_or_waits(
+    test_base_file, model_cache_enabled, monkeypatch
+):
+    KilnBaseModel.load_from_file(test_base_file, readonly=True)
+    claim_load = MagicMock(wraps=model_cache_enabled.claim_load)
+    monkeypatch.setattr(model_cache_enabled, "claim_load", claim_load)
+
+    KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    claim_load.assert_not_called()
+
+
+def test_save_to_file_invalidates_cache(test_base_file, model_cache_enabled):
     # Create and save the model
     model = KilnBaseModel(path=test_base_file)
 
     # Set mock after to ignore any previous calls, we want to see save calls it
-    tmp_model_cache.invalidate = MagicMock()
+    model_cache_enabled.invalidate = MagicMock()
     model.save_to_file()
 
     # Check that the cache was invalidated. Might be called multiple times for setting props like path. but must be called at least once.
-    tmp_model_cache.invalidate.assert_called_with(test_base_file)
+    model_cache_enabled.invalidate.assert_called_with(test_base_file)
 
 
-def test_delete_invalidates_cache(tmp_path, tmp_model_cache):
+def test_delete_invalidates_cache(tmp_path, model_cache_enabled):
     # Create and save the model
     file_path = tmp_path / "test.kiln"
     model = KilnBaseModel(path=file_path)
@@ -532,32 +842,34 @@ def test_delete_invalidates_cache(tmp_path, tmp_model_cache):
 
     # populate and check cache with readonly=True
     model = KilnBaseModel.load_from_file(file_path, readonly=True)
-    cached_model = tmp_model_cache.get_model(file_path, KilnBaseModel, readonly=True)
+    cached_model = model_cache_enabled.get_model(
+        file_path, KilnBaseModel, readonly=True
+    )
     assert cached_model.id == model.id
 
-    tmp_model_cache.invalidate = MagicMock()
+    model_cache_enabled.invalidate = MagicMock()
 
     # Delete the model
     model.delete()
 
     # Check that the cache was invalidated
-    tmp_model_cache.invalidate.assert_called_with(file_path)
-    assert tmp_model_cache.get_model(file_path, KilnBaseModel) is None
+    model_cache_enabled.invalidate.assert_called_with(file_path)
+    assert model_cache_enabled.get_model(file_path, KilnBaseModel) is None
 
 
-def test_no_cache_when_readonly_false(test_base_file, tmp_model_cache):
+def test_no_cache_when_readonly_false(test_base_file, model_cache_enabled):
     """Test that models are not cached when loaded with readonly=False."""
-    tmp_model_cache.get_model = MagicMock(return_value=None)
-    tmp_model_cache.set_model = MagicMock()
+    model_cache_enabled.get_model = MagicMock(return_value=None)
+    model_cache_enabled.set_model = MagicMock()
 
     # Load the model with readonly=False (default)
     model = KilnBaseModel.load_from_file(test_base_file, readonly=False)
 
     # Check that the cache was checked but NOT set
-    tmp_model_cache.get_model.assert_called_once_with(
+    model_cache_enabled.get_model.assert_called_once_with(
         test_base_file, KilnBaseModel, readonly=False
     )
-    tmp_model_cache.set_model.assert_not_called()
+    model_cache_enabled.set_model.assert_not_called()
 
     # Ensure the model is correctly loaded but not readonly
     assert model.v == 1
@@ -565,17 +877,17 @@ def test_no_cache_when_readonly_false(test_base_file, tmp_model_cache):
     assert model._readonly is False
 
 
-def test_load_from_file_with_cached_model(test_base_file, tmp_model_cache):
+def test_load_from_file_with_cached_model(test_base_file, model_cache_enabled):
     # Set up the mock to return a cached model
     cached_model = KilnBaseModel(v=1, path=test_base_file)
-    tmp_model_cache.get_model = MagicMock(return_value=cached_model)
+    model_cache_enabled.get_model = MagicMock(return_value=cached_model)
 
     with patch("builtins.open", create=True) as mock_open:
         # Load the model
         model = KilnBaseModel.load_from_file(test_base_file)
 
         # Check that the cache was checked and the cached model was returned
-        tmp_model_cache.get_model.assert_called_once_with(
+        model_cache_enabled.get_model.assert_called_once_with(
             test_base_file, KilnBaseModel, readonly=False
         )
         assert model is cached_model
@@ -584,7 +896,7 @@ def test_load_from_file_with_cached_model(test_base_file, tmp_model_cache):
         mock_open.assert_not_called()
 
 
-def test_from_id_and_parent_path(test_base_parented_file, tmp_model_cache):
+def test_from_id_and_parent_path(test_base_parented_file, model_cache_enabled):
     # Set up parent and children models
     parent = BaseParentExample.load_from_file(test_base_parented_file)
 
@@ -614,27 +926,27 @@ def test_from_id_and_parent_path(test_base_parented_file, tmp_model_cache):
     assert not_found is None
 
 
-def test_from_id_and_parent_path_with_cache(test_base_parented_file, tmp_model_cache):
-    # Set up parent and child
+def test_from_id_and_parent_path_with_cache(
+    test_base_parented_file, model_cache_enabled, monkeypatch
+):
     parent = BaseParentExample.load_from_file(test_base_parented_file)
     child = DefaultParentedModel(parent=parent, name="Child")
     child.save_to_file()
+    assert child.id is not None and child.path is not None
+    DefaultParentedModel.load_from_file(child.path, readonly=True)
+    get_model_id = MagicMock(wraps=model_cache_enabled.get_model_id)
+    model_cache_enabled.get_model_id = get_model_id
+    parse_child = MagicMock(wraps=DefaultParentedModel._parse_validate_and_cache)
+    monkeypatch.setattr(DefaultParentedModel, "_parse_validate_and_cache", parse_child)
 
-    # First load to populate cache
-    assert child.id is not None  # Type safety
-    _ = DefaultParentedModel.from_id_and_parent_path(child.id, test_base_parented_file)
-
-    # Mock cache to verify it's used
-    tmp_model_cache.get_model_id = MagicMock(return_value=child.id)
-
-    # Load again - should use cache
     found_child = DefaultParentedModel.from_id_and_parent_path(
         child.id, test_base_parented_file
     )
 
     assert found_child is not None
     assert found_child.id == child.id
-    tmp_model_cache.get_model_id.assert_called()
+    get_model_id.assert_called_once_with(child.path, DefaultParentedModel)
+    parse_child.assert_not_called()
 
 
 def test_from_id_and_parent_path_without_parent():
@@ -643,7 +955,52 @@ def test_from_id_and_parent_path_without_parent():
     assert not_found is None
 
 
-def test_from_ids_and_parent_path_basic(test_base_parented_file, tmp_model_cache):
+def test_from_id_and_parent_path_readonly(test_base_parented_file, model_cache_enabled):
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+    child = DefaultParentedModel(parent=parent, name="Child")
+    child.save_to_file()
+    assert child.id is not None and child.path is not None
+
+    found = DefaultParentedModel.from_id_and_parent_path(
+        child.id, test_base_parented_file, readonly=True
+    )
+
+    assert found is DefaultParentedModel.load_from_file(child.path, readonly=True)
+    with pytest.raises(ReadOnlyMutationError):
+        found.name = "Renamed"
+    editable = DefaultParentedModel.from_id_and_parent_path(
+        child.id, test_base_parented_file
+    )
+    assert editable is not None and editable is not found
+    editable.name = "Renamed"
+
+
+@pytest.mark.parametrize("readonly", [True, False])
+def test_from_id_and_parent_path_caches_scanned_siblings_only_when_readonly(
+    test_base_parented_file, model_cache_enabled, readonly
+):
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+    children = [DefaultParentedModel(parent=parent, name=f"Child{i}") for i in range(3)]
+    for child in children:
+        child.save_to_file()
+
+    assert (
+        DefaultParentedModel.from_id_and_parent_path(
+            "missing", test_base_parented_file, readonly=readonly
+        )
+        is None
+    )
+
+    cached_ids = [
+        model_cache_enabled.get_model_id(child.path, DefaultParentedModel)
+        for child in children
+        if child.path is not None
+    ]
+    expected = [child.id for child in children] if readonly else [None] * 3
+    assert cached_ids == expected
+
+
+def test_from_ids_and_parent_path_basic(test_base_parented_file, model_cache_enabled):
     """Test basic functionality of from_ids_and_parent_path method"""
     # Set up parent and children models
     parent = BaseParentExample.load_from_file(test_base_parented_file)
@@ -693,7 +1050,9 @@ def test_from_ids_and_parent_path_none_parent():
     assert found_children == {}
 
 
-def test_from_ids_and_parent_path_no_matches(test_base_parented_file, tmp_model_cache):
+def test_from_ids_and_parent_path_no_matches(
+    test_base_parented_file, model_cache_enabled
+):
     """Test from_ids_and_parent_path when no IDs match existing children"""
     # Set up parent and children models
     parent = BaseParentExample.load_from_file(test_base_parented_file)
@@ -709,7 +1068,7 @@ def test_from_ids_and_parent_path_no_matches(test_base_parented_file, tmp_model_
 
 
 def test_from_ids_and_parent_path_partial_matches(
-    test_base_parented_file, tmp_model_cache
+    test_base_parented_file, model_cache_enabled
 ):
     """Test from_ids_and_parent_path when only some IDs match"""
     # Set up parent and children models
@@ -738,7 +1097,7 @@ def test_from_ids_and_parent_path_partial_matches(
 
 
 def test_from_ids_and_parent_path_with_cache_fallback(
-    test_base_parented_file, tmp_model_cache
+    test_base_parented_file, model_cache_enabled
 ):
     """Test from_ids_and_parent_path when cache returns None and needs to load file"""
     # Set up parent and child
@@ -747,7 +1106,7 @@ def test_from_ids_and_parent_path_with_cache_fallback(
     child.save_to_file()
 
     # Mock cache to return None for get_model_id, forcing file load
-    tmp_model_cache.get_model_id = MagicMock(return_value=None)
+    model_cache_enabled.get_model_id = MagicMock(return_value=None)
 
     # Test should still work by loading the file
     assert child.id is not None  # Type safety
@@ -760,11 +1119,11 @@ def test_from_ids_and_parent_path_with_cache_fallback(
     assert found_children[child.id].name == "Child"
 
     # Verify cache was checked
-    tmp_model_cache.get_model_id.assert_called()
+    model_cache_enabled.get_model_id.assert_called()
 
 
 def test_from_ids_and_parent_path_equivalent_to_individual_lookups(
-    test_base_parented_file, tmp_model_cache
+    test_base_parented_file, model_cache_enabled
 ):
     """Test that from_ids_and_parent_path returns the same results as individual lookups"""
     # Set up parent and multiple children
@@ -816,7 +1175,7 @@ def test_from_ids_and_parent_path_equivalent_to_individual_lookups(
 @pytest.mark.paid
 @pytest.mark.parametrize("num_children", [100, 1000, 2500, 5000])
 def test_from_ids_and_parent_path_benchmark(
-    test_base_parented_file, tmp_model_cache, num_children
+    test_base_parented_file, model_cache_enabled, num_children
 ):
     """Benchmark test for from_ids_and_parent_path method performance at scale"""
     # Set up parent and many children
@@ -1176,7 +1535,7 @@ def test_mutable_copy():
     assert model._readonly is True
 
 
-def test_readonly_cache_integration(tmp_model_cache, tmp_path):
+def test_readonly_cache_integration(model_cache_enabled, tmp_path):
     """Test that cache integration properly marks models as readonly."""
     # Create a test model file
     test_file = tmp_path / "test_readonly.kiln"
@@ -1255,6 +1614,22 @@ def test_valid_parent_type_single_parent(tmp_path):
     )
     assert len(children) == 1
     assert children[0] == child.path
+
+
+def test_iterate_children_paths_in_folder_does_not_load_parent(tmp_path):
+    parent = BaseParentExample(path=tmp_path / BaseParentExample.base_filename())
+    parent.save_to_file()
+    child = DefaultParentedModel(parent=parent, name="Test Child")
+    child.save_to_file()
+    parent.path.unlink()
+
+    assert list(DefaultParentedModel.iterate_children_paths_in_folder(tmp_path)) == [
+        child.path
+    ]
+    assert (
+        list(DefaultParentedModel.iterate_children_paths_in_folder(tmp_path / "none"))
+        == []
+    )
 
 
 def test_task_run_children_only_under_task_path_with_parent_task_run_id(tmp_path):
@@ -1544,13 +1919,6 @@ def project_with_tasks(tmp_path) -> Project:
     return _project_with_tasks(tmp_path)
 
 
-@pytest.fixture
-def model_cache_enabled(monkeypatch):
-    """The cache turns itself off on file systems with coarse timestamps (CI
-    runners among them). Tests of warm-cache behaviour turn it on regardless."""
-    monkeypatch.setattr(ModelCache.shared(), "_enabled", True)
-
-
 def test_child_method_attaches_a_mutable_parent_to_mutable_children(
     project_with_tasks,
 ):
@@ -1616,3 +1984,405 @@ def test_mutable_listing_after_a_readonly_listing_attaches_the_callers_parent(
     tasks = parent.tasks()
 
     assert all(task.cached_parent() is parent for task in tasks)
+
+
+# Characterization of the single-pass load: `load_from_file` must give the same
+# result as validating first and assigning `parent` and `path` afterwards.
+
+PLAYWRIGHT_PROJECT = Path(__file__).parents[4] / ".agents" / "playwright_project"
+
+
+def _validate_then_assign_load(
+    cls: type[KilnBaseModel],
+    path: Path | str,
+    readonly: bool = False,
+    parent: KilnBaseModel | None = None,
+) -> KilnBaseModel:
+    """Reference loader: validate, then assign `parent` and `path`.
+
+    Each assignment re-runs every model validator without the load context.
+    """
+    path = Path(path)
+    with open(path, "r", encoding="utf-8") as file:
+        parsed_json = json.loads(file.read())
+    m = cls.model_validate(
+        parsed_json, context={"loading_from_file": True, "source_dir": path.parent}
+    )
+    if not isinstance(m, cls):
+        raise ValueError(f"Loaded model is not of type {cls.__name__}")
+    m._loaded_from_file = True
+    if parent is not None:
+        m.parent = parent  # type: ignore[attr-defined]
+    m.path = path
+    if m.v > m.max_schema_version():
+        raise ValueError("schema version is higher than the current version")
+    if parsed_json["model_type"] != cls.type_name():
+        raise ValueError("model type is incorrect")
+    if readonly:
+        m.mark_as_readonly()
+    return m
+
+
+def _validated_assign_load_parent(self: KilnParentedModel) -> KilnBaseModel | None:
+    """Reference `load_parent`: attaches the parent with a validated assignment."""
+    cached_parent = self.cached_parent()
+    if cached_parent is not None:
+        return cached_parent
+    if self.path is None:
+        return None
+    parent_path = (
+        self.path.parent.parent.parent / self.__class__.parent_type().base_filename()
+    )
+    if not parent_path.exists():
+        return None
+    loaded_parent = self.__class__.parent_type().load_from_file(parent_path)
+    self.parent = loaded_parent
+    return loaded_parent
+
+
+@contextmanager
+def _validate_then_assign_loading() -> Iterator[None]:
+    with (
+        patch.object(
+            KilnBaseModel, "load_from_file", classmethod(_validate_then_assign_load)
+        ),
+        patch.object(KilnParentedModel, "load_parent", _validated_assign_load_parent),
+    ):
+        yield
+
+
+def _load_outcome(load: Callable[[], KilnBaseModel]) -> tuple[str, Any]:
+    try:
+        return "loaded", load().model_dump()
+    except Exception as e:
+        return "raised", type(e)
+
+
+def _reference_and_single_pass_outcomes(
+    cls: type[KilnBaseModel],
+    path: Path,
+    load_parent: Callable[[], KilnBaseModel] | None = None,
+) -> tuple[tuple[str, Any], tuple[str, Any]]:
+    """Load `path` with the reference loader, then with `load_from_file`.
+
+    `load_parent` runs under the same loader as the child it is passed to.
+    """
+
+    def load() -> KilnBaseModel:
+        parent = load_parent() if load_parent is not None else None
+        return cls.load_from_file(path, parent=parent)
+
+    with _validate_then_assign_loading():
+        reference = _load_outcome(load)
+    return reference, _load_outcome(load)
+
+
+def _datamodel_classes_by_type_name() -> dict[str, type[KilnBaseModel]]:
+    classes: dict[str, type[KilnBaseModel]] = {}
+    pending: list[type[KilnBaseModel]] = [KilnBaseModel]
+    while pending:
+        for subclass in pending.pop().__subclasses__():
+            pending.append(subclass)
+            module = subclass.__module__
+            if module.startswith("kiln_ai.datamodel.") and ".test_" not in module:
+                classes[subclass.type_name()] = subclass
+    return classes
+
+
+def _parent_loaders(
+    cls: type[KilnBaseModel], path: Path
+) -> list[Callable[[], KilnBaseModel] | None]:
+    """No parent, plus a loader for the record's parent file when it has one."""
+    loaders: list[Callable[[], KilnBaseModel] | None] = [None]
+    if issubclass(cls, KilnParentedModel):
+        parent_cls = cls.parent_type()
+        parent_path = path.parent.parent.parent / parent_cls.base_filename()
+        if parent_path.exists():
+            loaders.append(lambda: parent_cls.load_from_file(parent_path))
+    return loaders
+
+
+def _first_file_of_type(root: Path, model_type: str, under: str = "") -> Path:
+    for path in sorted(root.rglob("*.kiln")):
+        in_scope = under in path.as_posix()
+        if (
+            in_scope
+            and json.loads(path.read_text(encoding="utf-8"))["model_type"] == model_type
+        ):
+            return path
+    raise AssertionError(f"No {model_type} file under {root} matching {under!r}")
+
+
+@pytest.fixture
+def playwright_project_copy(tmp_path) -> Path:
+    assert PLAYWRIGHT_PROJECT.is_dir(), f"Missing fixture project {PLAYWRIGHT_PROJECT}"
+    return Path(shutil.copytree(PLAYWRIGHT_PROJECT, tmp_path / "project"))
+
+
+def test_single_pass_load_matches_validate_then_assign(playwright_project_copy):
+    classes = _datamodel_classes_by_type_name()
+    mismatches: list[str] = []
+    not_loaded: list[str] = []
+    loaded_types: set[str] = set()
+
+    for path in sorted(playwright_project_copy.rglob("*.kiln")):
+        cls = classes[json.loads(path.read_text(encoding="utf-8"))["model_type"]]
+        for load_parent in _parent_loaders(cls, path):
+            relative_path = path.relative_to(playwright_project_copy)
+            case = f"{relative_path} (parent passed: {load_parent is not None})"
+            reference, single_pass = _reference_and_single_pass_outcomes(
+                cls, path, load_parent
+            )
+            if reference != single_pass:
+                mismatches.append(case)
+            if single_pass[0] == "loaded":
+                loaded_types.add(cls.type_name())
+            else:
+                not_loaded.append(f"{case}: {single_pass[1].__name__}")
+
+    assert mismatches == []
+    assert not_loaded == []
+    assert {
+        "project",
+        "task",
+        "task_run",
+        "eval",
+        "eval_config",
+        "eval_run",
+        "document",
+        "chunk_embeddings",
+    } <= loaded_types
+
+
+def _set_field(key: str, value: Any) -> Callable[[dict[str, Any]], None]:
+    def mutate(data: dict[str, Any]) -> None:
+        data[key] = value
+
+    return mutate
+
+
+def _break_repaired_output(data: dict[str, Any]) -> None:
+    data["repair_instructions"] = "Fix it"
+    data["repaired_output"] = {"output": "not json", "model_type": "task_output"}
+
+
+@pytest.mark.parametrize(
+    "model_type,under,mutate,parent_type,expected_error",
+    [
+        ("project", "", _set_field("model_type", "task"), None, ValueError),
+        ("project", "", _set_field("v", 99), None, ValueError),
+        ("task_run", "", _set_field("tags", ["has space"]), None, ValidationError),
+        # Only the parent task's output schema rejects this repaired output.
+        (
+            "task_run",
+            "Triage Ticket",
+            _break_repaired_output,
+            None,
+            ValidationError,
+        ),
+        ("task_run", "", None, Project, ValidationError),
+    ],
+    ids=[
+        "wrong_model_type",
+        "newer_schema_version",
+        "invalid_field",
+        "fails_parent_schema",
+        "parent_of_wrong_type",
+    ],
+)
+def test_single_pass_load_matches_on_invalid_files(
+    playwright_project_copy, model_type, under, mutate, parent_type, expected_error
+):
+    path = _first_file_of_type(playwright_project_copy, model_type, under)
+    if mutate is not None:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        mutate(data)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    cls = _datamodel_classes_by_type_name()[model_type]
+    project_path = playwright_project_copy / Project.base_filename()
+    load_parent = (
+        (lambda: parent_type.load_from_file(project_path)) if parent_type else None
+    )
+
+    reference, single_pass = _reference_and_single_pass_outcomes(cls, path, load_parent)
+
+    assert single_pass == ("raised", expected_error)
+    assert reference == single_pass
+
+
+def test_single_pass_load_runs_eval_current_config_migration(tmp_path):
+    task = _project_with_tasks(tmp_path, task_count=1).tasks()[0]
+    eval = Eval(
+        name="Reference eval",
+        parent=task,
+        evaluation_data_type=EvalDataType.reference_answer,
+        eval_set_filter_id="all",
+        eval_configs_filter_id="high_rating",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+    first_created = datetime.datetime.now().astimezone()
+    configs = [
+        EvalConfig(
+            parent=eval,
+            name=f"Config {i}",
+            model_name="gpt-4",
+            model_provider="openai",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1"]},
+            created_at=first_created + datetime.timedelta(seconds=i),
+        )
+        for i in (1, 0)
+    ]
+    for config in configs:
+        config.save_to_file()
+    assert eval.path is not None and eval.current_config_id is None
+
+    reference, single_pass = _reference_and_single_pass_outcomes(Eval, eval.path)
+
+    assert single_pass[0] == "loaded"
+    assert single_pass[1]["current_config_id"] == configs[1].id
+    assert reference == single_pass
+
+
+class ValidationRecord(KilnParentedModel):
+    """Records the state its validator sees, once per validator run."""
+
+    name: Optional[str] = None
+    _seen: list[tuple[bool, Path | None, KilnBaseModel | None]] = PrivateAttr(
+        default_factory=list
+    )
+
+    @classmethod
+    def relationship_name(cls) -> str:
+        return "records"
+
+    @classmethod
+    def parent_type(cls):
+        return BaseParentExample
+
+    @model_validator(mode="after")
+    def record_validation(self, info: ValidationInfo) -> Self:
+        self._seen.append((self.loaded_from_file(info), self.path, self.parent))
+        return self
+
+
+@pytest.fixture
+def saved_validation_record(tmp_path) -> tuple[Path, Path]:
+    """Paths of a saved `BaseParentExample` and of its `ValidationRecord` child."""
+    parent = BaseParentExample(
+        name="Parent", path=tmp_path / BaseParentExample.base_filename()
+    )
+    parent.save_to_file()
+    record = ValidationRecord(parent=parent, name="Child")
+    record.save_to_file()
+    assert parent.path is not None and record.path is not None
+    return parent.path, record.path
+
+
+@pytest.mark.parametrize("pass_parent", [True, False])
+def test_load_from_file_runs_model_validators_once(
+    saved_validation_record, pass_parent
+):
+    parent_path, record_path = saved_validation_record
+    loaded_parent = BaseParentExample.load_from_file(parent_path)
+
+    loaded = ValidationRecord.load_from_file(
+        record_path, parent=loaded_parent if pass_parent else None
+    )
+
+    assert len(loaded._seen) == 1
+    seen_loaded_from_file, seen_path, seen_parent = loaded._seen[0]
+    assert seen_loaded_from_file
+    assert seen_path == record_path
+    assert isinstance(seen_parent, BaseParentExample)
+    assert seen_parent.path == parent_path
+    assert (seen_parent is loaded_parent) == pass_parent
+    assert loaded.cached_parent() is seen_parent
+
+
+def test_mutable_cache_hit_attaches_parent_without_revalidating(
+    saved_validation_record, model_cache_enabled
+):
+    parent_path, record_path = saved_validation_record
+    ValidationRecord.load_from_file(record_path, readonly=True)
+    caller_parent = BaseParentExample.load_from_file(parent_path)
+
+    loaded = ValidationRecord.load_from_file(record_path, parent=caller_parent)
+
+    assert len(loaded._seen) == 1
+    assert loaded.cached_parent() is caller_parent
+
+
+def test_readonly_path_and_parent_assignment_skip_validators(
+    saved_validation_record, tmp_path
+):
+    parent_path, record_path = saved_validation_record
+    record = ValidationRecord.load_from_file(record_path, readonly=True)
+    other_parent = BaseParentExample.load_from_file(parent_path)
+
+    record.path = str(tmp_path / "moved.kiln")
+    record.parent = other_parent
+
+    assert len(record._seen) == 1
+    assert record.path == tmp_path / "moved.kiln"
+    assert record.cached_parent() is other_parent
+    with pytest.raises(ValidationError, match="Parent must be of type"):
+        record.parent = KilnBaseModel()
+    with pytest.raises(ReadOnlyMutationError):
+        record.name = "renamed"
+
+
+def test_mutable_path_assignment_still_validates(saved_validation_record, tmp_path):
+    _, record_path = saved_validation_record
+    record = ValidationRecord.load_from_file(record_path)
+
+    record.path = tmp_path / "moved.kiln"
+
+    assert len(record._seen) == 2
+
+
+@pytest.mark.parametrize("warm_cache", [False, True])
+def test_load_from_file_rejects_parent_of_wrong_type(
+    saved_validation_record, model_cache_enabled, warm_cache
+):
+    _, record_path = saved_validation_record
+    if warm_cache:
+        ValidationRecord.load_from_file(record_path, readonly=True)
+
+    with pytest.raises(ValidationError, match="Parent must be of type"):
+        ValidationRecord.load_from_file(record_path, parent=KilnBaseModel())
+
+
+@pytest.mark.parametrize("warm_cache", [False, True])
+def test_load_from_file_rejects_parent_for_unparented_model(
+    test_base_file, model_cache_enabled, warm_cache
+):
+    if warm_cache:
+        KilnBaseModel.load_from_file(test_base_file, readonly=True)
+
+    with pytest.raises(ValueError, match="has no parent"):
+        KilnBaseModel.load_from_file(test_base_file, parent=KilnBaseModel())
+
+
+@pytest.mark.parametrize("body", ["null", "[]", '"text"', "3"])
+@pytest.mark.parametrize("cls", [Project, TaskRun, EvalConfig])
+def test_single_pass_load_matches_on_non_object_json(tmp_path, cls, body):
+    path = tmp_path / cls.base_filename()
+    path.write_text(body)
+
+    reference, single_pass = _reference_and_single_pass_outcomes(cls, path)
+
+    assert single_pass[0] == "raised"
+    assert reference == single_pass
+
+
+@pytest.mark.parametrize("body", ["null", "[]", '"text"', "3"])
+def test_load_from_file_rejects_non_object_json(tmp_path, body):
+    path = tmp_path / Project.base_filename()
+    path.write_text(body)
+
+    with pytest.raises(ValidationError):
+        Project.load_from_file(path)

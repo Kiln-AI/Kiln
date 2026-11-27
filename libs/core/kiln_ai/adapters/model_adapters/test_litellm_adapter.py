@@ -2,6 +2,7 @@ import copy
 import json
 from unittest.mock import ANY, AsyncMock, Mock, patch
 
+import httpx
 import litellm
 import pytest
 from litellm.types.utils import (
@@ -1007,6 +1008,60 @@ async def test_build_completion_kwargs(
     # Verify extra body is included
     for key, value in extra_body.items():
         assert kwargs[key] == value
+
+
+@pytest.mark.parametrize(
+    "installed,expected_model",
+    [
+        (["nemotron-3-nano:30b"], "openai/nemotron-3-nano:30b"),
+        (["nemotron-3-nano:latest"], "openai/nemotron-3-nano"),
+        ([], "openai/nemotron-3-nano"),
+    ],
+)
+async def test_build_completion_kwargs_uses_installed_ollama_variant(
+    config, mock_task, ollama_installed, installed, expected_model
+):
+    ollama_installed(*installed)
+    provider = KilnModelProvider(
+        name=ModelProviderName.ollama,
+        model_id="nemotron-3-nano",
+        ollama_model_aliases=["nemotron-3-nano:30b"],
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    with (
+        patch.object(adapter, "model_provider", return_value=provider),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(
+            provider, [{"role": "user", "content": "Hello"}], None
+        )
+
+    assert kwargs["model"] == expected_model
+
+
+async def test_build_completion_kwargs_falls_back_to_ollama_model_id_when_down(
+    config, mock_task, ollama_api
+):
+    tags = ollama_api.get("/api/tags").mock(side_effect=httpx.ConnectError("refused"))
+    provider = KilnModelProvider(
+        name=ModelProviderName.ollama,
+        model_id="nemotron-3-nano",
+        ollama_model_aliases=["nemotron-3-nano:30b"],
+    )
+
+    for _ in range(2):
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+        with (
+            patch.object(adapter, "model_provider", return_value=provider),
+            patch.object(adapter, "response_format_options", return_value={}),
+        ):
+            kwargs = await adapter.build_completion_kwargs(
+                provider, [{"role": "user", "content": "Hello"}], None
+            )
+        assert kwargs["model"] == "openai/nemotron-3-nano"
+
+    assert tags.call_count == 1
 
 
 @pytest.mark.asyncio

@@ -103,3 +103,6 @@ jobs:
           sleep 2
           # Force kill if still running
           kill -9 $DEV_SERVER_PID 2>/dev/null || true
+
+      - name: Check the Kiln skill's API reference
+        run: uv run python -m app.desktop.skill_api_reference check

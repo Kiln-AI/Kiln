@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import { tick } from "svelte"
-import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
 
 // ---------------------------------------------------------------------------
 // Module-level mocks — must come before the dynamic page import
@@ -477,7 +476,23 @@ describe("eval detail page — add eval data", () => {
     setProgressResponse(null)
   })
 
-  async function splits_param_from_add_eval_data(): Promise<string | null> {
+  it("sends the user to the add-data page with only the eval id", async () => {
+    // The add-data page works out the splits, the template and the tool from the eval
+    // (lib/utils/eval_add_data.ts), so this page passes nothing else.
+    setEvalResponse({
+      id: "eval1",
+      name: "Test Eval",
+      eval_set_filter_id: null,
+      eval_configs_filter_id: "tag::golden_x",
+      splits: {
+        test: { source: "task_run", filter_id: "tag::test_x" },
+        train: { source: "task_run", filter_id: "tag::train_x" },
+        val: { source: "task_run", filter_id: "tag::val_x" },
+      },
+      eval_configs: [],
+      output_scores: [{ name: "accuracy", type: "five_star" }],
+    })
+
     const container = await render_page()
     const button = Array.from(container.querySelectorAll("button")).find(
       (b) => b.textContent?.trim() === "Add Eval Data",
@@ -488,71 +503,12 @@ describe("eval detail page — add eval data", () => {
 
     expect(mockGoto).toHaveBeenCalledTimes(1)
     const url = new URL(mockGoto.mock.calls[0][0], "http://localhost")
-    return url.searchParams.get("splits")
-  }
-
-  it("allocates across every dataset the eval has, via the shared helper", async () => {
-    const evaluator = {
-      id: "eval1",
-      name: "Test Eval",
-      eval_set_filter_id: null,
-      train_set_filter_id: null,
-      eval_configs_filter_id: "tag::golden_x",
-      splits: {
-        test: { source: "task_run", filter_id: "tag::test_x" },
-        train: { source: "task_run", filter_id: "tag::train_x" },
-        val: { source: "task_run", filter_id: "tag::val_x" },
-      },
-      eval_configs: [],
-      output_scores: [{ name: "accuracy", type: "five_star" }],
-    }
-    setEvalResponse(evaluator)
-
-    const splits_param = await splits_param_from_add_eval_data()
-
-    // Same allocation the synthetic data generation intro and the compare page produce:
-    // all three ask this helper rather than hardcoding one.
-    expect(splits_param).toBe(
-      build_eval_generation_splits_param(evaluator as never),
-    )
-    expect(splits_param).toBe("train_x:0.4,val_x:0.25,test_x:0.25,golden_x:0.1")
-  })
-
-  it("sends a rag eval's whole allocation to test, skipping its golden tag", async () => {
-    // Rag evals are minted with a golden tag like every other eval, but the rag flow has no
-    // human-ratings step to read it. This page's old hardcoded param skipped golden for rag,
-    // and the shared helper has to keep doing so — otherwise the share it allocates lands in
-    // a tag the user has no way to consume.
-    setEvalResponse({
-      id: "eval1",
-      name: "Test Eval",
-      template: "rag",
-      eval_set_filter_id: "tag::test_x",
-      eval_configs_filter_id: "tag::golden_x",
-      splits: {},
-      eval_configs: [],
-      output_scores: [{ name: "accuracy", type: "five_star" }],
+    expect(url.pathname).toMatch(/\/add_data$/)
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      reason: "eval",
+      eval_id: "eval1",
     })
-
-    expect(await splits_param_from_add_eval_data()).toBe("test_x:1")
   })
-
-  async function alert_from_add_eval_data(): Promise<string[]> {
-    const alerts: string[] = []
-    vi.stubGlobal("alert", (message: string) => alerts.push(message))
-    try {
-      const container = await render_page()
-      const button = Array.from(container.querySelectorAll("button")).find(
-        (b) => b.textContent?.trim() === "Add Eval Data",
-      )
-      expect(button).toBeDefined()
-      await fireEvent.click(button!)
-      await tick()
-    } finally {
-      vi.unstubAllGlobals()
-    }
-    return alerts
-  }
 
   it("hides the add-data button for an eval-input-backed test split and says why", async () => {
     // This flow adds TaskRuns, so an EvalInput-backed test split has nothing it can
@@ -576,23 +532,6 @@ describe("eval detail page — add eval data", () => {
     expect(container.textContent?.replace(/\s+/g, " ")).toContain(
       "created by the eval builder and can't be extended here",
     )
-    expect(mockGoto).not.toHaveBeenCalled()
-  })
-
-  it("refuses a test split whose filter isn't a tag", async () => {
-    setEvalResponse({
-      id: "eval1",
-      name: "Test Eval",
-      eval_set_filter_id: null,
-      eval_configs_filter_id: "tag::golden_x",
-      splits: { test: { source: "task_run", filter_id: "high_rating" } },
-      eval_configs: [],
-      output_scores: [{ name: "accuracy", type: "five_star" }],
-    })
-
-    expect(await alert_from_add_eval_data()).toEqual([
-      "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
-    ])
     expect(mockGoto).not.toHaveBeenCalled()
   })
 })

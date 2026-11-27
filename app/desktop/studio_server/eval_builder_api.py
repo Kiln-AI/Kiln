@@ -847,7 +847,7 @@ class JudgeTracesRun(JudgeStreamBase):
         # classmethod's TypeVar bound to TaskRun through to_thread.
         leaves: dict[str, TaskRun] = await asyncio.to_thread(
             lambda: TaskRun.from_ids_and_parent_path(
-                set(self._leaf_run_ids), self._task.path
+                set(self._leaf_run_ids), self._task.path, readonly=True
             )
         )
         for case_index, leaf_run_id in enumerate(self._leaf_run_ids):
@@ -1276,7 +1276,9 @@ def connect_eval_builder_api(app: FastAPI):
         task_id: Annotated[str, Path(description="The unique identifier of the task.")],
         input: MultiTurnPipelineRequest,
     ) -> CancellableStreamingResponse:
-        """The merged multi-turn stream: [drive → judge] per case.
+        """Drive each multi-turn case against the task, then judge it, as one event stream.
+
+        The merged multi-turn stream: [drive → judge] per case.
 
         Emits (all frames `type`-discriminated; errors carry {code, message}):
           - batch_started   { batch_tag, total_cases }
@@ -1347,7 +1349,9 @@ def connect_eval_builder_api(app: FastAPI):
         task_id: Annotated[str, Path(description="The unique identifier of the task.")],
         input: SingleTurnPipelineRequest,
     ) -> CancellableStreamingResponse:
-        """The single-turn stream: [run → judge] per generated input.
+        """Run the task once on each generated input, then judge each run, as one stream.
+
+        The single-turn stream: [run → judge] per generated input.
 
         The one-turn sibling of multi_turn_pipeline: the task runs ONCE per
         input on the target run config — tools live, the user's keys — and
@@ -1414,7 +1418,9 @@ def connect_eval_builder_api(app: FastAPI):
         task_id: Annotated[str, Path(description="The unique identifier of the task.")],
         input: JudgeTracesRequest,
     ) -> CancellableStreamingResponse:
-        """Re-judge previously driven results: [reload → judge] per case.
+        """Re-judge saved eval builder results with a new judge prompt, as an event stream.
+
+        [reload → judge] per case.
 
         The judge calibration loop's re-score stream, both arms: after a
         refine produces a new judge prompt, this scores the SAME saved
@@ -1477,7 +1483,7 @@ def connect_eval_builder_api(app: FastAPI):
         task_id: Annotated[str, Path(description="The unique identifier of the task.")],
         input: BuildClaimsApiInput,
     ) -> BuildClaimsApiOutput:
-        """Claims-only primitive: build claims for one trace given a known verdict.
+        """Build the review claims for one judged trace, given its known verdict.
 
         The multi-turn review's claims path: the pipeline stream stops at the
         judge, and the client calls this per trace the reviewer opens (under
@@ -1514,7 +1520,9 @@ def connect_eval_builder_api(app: FastAPI):
         task_id: Annotated[str, Path(description="The unique identifier of the task.")],
         input: PreflightModelApiInput,
     ) -> PreflightModelApiOutput:
-        """One cheap completion through the SAME adapter model/provider
+        """Check that a model runs on the user's keys with one cheap completion.
+
+        The completion goes through the SAME adapter model/provider
         resolution a real run uses (that resolution is where a dead model
         surfaces), on the user's same keys. Catches key/billing/deprecation/
         unreachable failures for a lane BEFORE the drive commits the

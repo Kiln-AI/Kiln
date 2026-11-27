@@ -152,10 +152,7 @@ class SwallowCancelWorker(JobWorker[_EmptyParams, _EmptyResult]):
             await type(self).gate.wait()
         except asyncio.CancelledError:
             task = asyncio.current_task()
-            # task.uncancel() was added in Python 3.11; on 3.10 simply
-            # swallowing the CancelledError exercises the same worst-case
-            # "swallows cancel and returns normally" path.
-            if task is not None and hasattr(task, "uncancel"):
+            if task is not None:
                 task.uncancel()
         return _EmptyResult()
 
@@ -183,10 +180,7 @@ class TotalThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
             await type(self).gate.wait()
         except asyncio.CancelledError:
             task = asyncio.current_task()
-            # task.uncancel() was added in Python 3.11; on 3.10 simply
-            # swallowing the CancelledError exercises the same worst-case
-            # "swallows cancel and returns normally" path.
-            if task is not None and hasattr(task, "uncancel"):
+            if task is not None:
                 task.uncancel()
         return _EmptyResult()
 
@@ -214,7 +208,7 @@ class ErrorThenNoneWorker(JobWorker[_EmptyParams, _EmptyResult]):
             await type(self).gate.wait()
         except asyncio.CancelledError:
             task = asyncio.current_task()
-            if task is not None and hasattr(task, "uncancel"):
+            if task is not None:
                 task.uncancel()
         return _EmptyResult()
 
@@ -265,6 +259,13 @@ def test_job_id_format():
     suffix = job_id[2:]
     assert len(suffix) == 12
     assert all(c in "abcdefghijklmnopqrstuvwxyz234567" for c in suffix)
+
+
+def test_type_names_are_the_registered_types_sorted():
+    reg = JobRegistry(max_concurrent=1)
+    assert reg.type_names() == []
+    reg.register_type(NoopJobWorker)
+    assert reg.type_names() == ["noop"]
 
 
 # -- lifecycle ---------------------------------------------------------------

@@ -984,7 +984,7 @@ async def test_create_semantic_chunker_config_embedding_config_not_found(
         )
 
     assert response.status_code == 404, response.text
-    assert "Embedding config does-not-exist not found" in response.text
+    assert "Embedding config not found. ID: does-not-exist." in response.text
 
 
 async def test_create_extractor_config_model_not_found(client, mock_project):
@@ -1489,7 +1489,7 @@ async def test_create_rag_config_missing_config(
         )
 
     assert response.status_code == 404
-    assert "fake_id not found" in response.json()["message"]
+    assert "not found. ID: fake_id." in response.json()["message"]
 
 
 async def test_create_rag_config_with_tags(
@@ -2096,7 +2096,9 @@ async def test_create_rag_config_with_invalid_reranker(
         )
 
     assert response.status_code == 404
-    assert "fake_reranker_id not found" in response.json()["message"]
+    assert (
+        "Reranker config not found. ID: fake_reranker_id." in response.json()["message"]
+    )
 
 
 async def test_get_rag_config_with_reranker(
@@ -3781,10 +3783,10 @@ async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
 @pytest.mark.parametrize(
     "missing_sub_config_type,error_message",
     [
-        ("extractor_config", "Extractor config not found"),
-        ("chunker_config", "Chunker config not found"),
-        ("embedding_config", "Embedding config not found"),
-        ("vector_store_config", "Vector store config not found"),
+        ("extractor_config", "The RAG config refers to extractor config "),
+        ("chunker_config", "The RAG config refers to chunker config "),
+        ("embedding_config", "The RAG config refers to embedding config "),
+        ("vector_store_config", "The RAG config refers to vector store config "),
     ],
 )
 async def test_build_rag_workflow_runner_sub_configs_not_found(
@@ -5133,7 +5135,7 @@ async def test_get_embedding_config_not_found(client, mock_project):
     assert response.status_code == 404
     error_detail = response.json()
     assert "message" in error_detail
-    assert "Embedding config not-found not found" in error_detail["message"]
+    assert "Embedding config not found. ID: not-found." in error_detail["message"]
 
 
 async def test_get_embedding_config_success(

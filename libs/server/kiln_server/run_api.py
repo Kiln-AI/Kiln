@@ -16,6 +16,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
+from kiln_ai.datamodel.lazy_fields import preview_text
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.utils.dataset_import import (
@@ -27,6 +28,7 @@ from kiln_ai.utils.dataset_import import (
 from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from pydantic import BaseModel, ConfigDict, Field
 
+from kiln_server.custom_errors import not_found_error
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -69,7 +71,9 @@ def _walk_run_chain(
         if current.parent_task_run_id in visited:
             chain.reverse()
             return chain, True
-        parent = TaskRun.from_id_and_parent_path(current.parent_task_run_id, task_path)
+        parent = TaskRun.from_id_and_parent_path(
+            current.parent_task_run_id, task_path, readonly=True
+        )
         if parent is None:
             chain.reverse()
             return chain, True
@@ -182,7 +186,7 @@ def _position_chain_turns(
     starts: list[int | None] = []
     prev_len = 0
     for run in chain_runs:
-        trace_len = len(run.trace or [])
+        trace_len = run.trace_length
         if trace_len <= prev_len:
             kept, starts = [run], [None]
             chain_broken = True
@@ -331,11 +335,7 @@ class RunSummary(BaseModel):
 
     @classmethod
     def format_preview(cls, text: str | None, max_length: int = 100) -> str | None:
-        if text is None:
-            return None
-        if len(text) > max_length:
-            return text[:max_length] + "…"
-        return text
+        return preview_text(text, max_length)
 
     @classmethod
     def repair_status_display_name(cls, run: TaskRun) -> str:
@@ -344,7 +344,7 @@ class RunSummary(BaseModel):
         elif run.output and not run.output.rating:
             # A repair isn't requested until rated < 5 stars
             return "NA"
-        elif not run.output or not run.output.output:
+        elif not run.output or run.output_preview is None:
             return "No output"
         elif (
             run.output.rating
@@ -357,7 +357,7 @@ class RunSummary(BaseModel):
             and run.output.rating.type != TaskOutputRatingType.five_star
         ):
             return "Unknown"
-        elif run.output.output:
+        elif run.output_preview is not None:
             return "Repair needed"
         return "Unknown"
 
@@ -370,14 +370,13 @@ class RunSummary(BaseModel):
         )
         if not isinstance(model_name, str):
             model_name = None
-        output = run.output.output if run.output and run.output.output else None
 
         return RunSummary(
             id=run.id,
             rating=run.output.rating,
             tags=run.tags,
-            input_preview=RunSummary.format_preview(run.input),
-            output_preview=RunSummary.format_preview(output),
+            input_preview=run.input_preview,
+            output_preview=run.output_preview,
             created_at=run.created_at,
             repair_state=RunSummary.repair_status_display_name(run),
             model_name=model_name,
@@ -434,9 +433,18 @@ def task_and_run_from_id(
     if run:
         return task, run
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Run not found. ID: {run_id}",
+    raise not_found_error("Run", run_id, "task's runs")
+
+
+def missing_run_input_text(task: Task) -> str:
+    if task.input_schema() is not None:
+        return (
+            "No input provided. This task has an input schema, so its input goes "
+            "in structured_input, as a JSON object that matches the schema."
+        )
+    return (
+        "No input provided. This task takes plain text input, so its input goes "
+        "in plaintext_input."
     )
 
 
@@ -459,6 +467,7 @@ def connect_run_api(app: FastAPI):
             str, Path(description="The unique identifier of the task run.")
         ],
     ) -> TaskRun:
+        """Get one run (dataset item): input, output, ratings, tags and trace."""
         return run_from_id(project_id, task_id, run_id)
 
     @app.get(
@@ -482,13 +491,12 @@ def connect_run_api(app: FastAPI):
             ),
         ],
     ) -> RunChainResponse:
+        """Get the chain of runs of a multi-turn conversation, from the first turn to
+        the given run."""
         task = task_from_id(project_id, task_id)
-        leaf = TaskRun.from_id_and_parent_path(run_id, task.path)
+        leaf = TaskRun.from_id_and_parent_path(run_id, task.path, readonly=True)
         if leaf is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Run not found. ID: {run_id}",
-            )
+            raise not_found_error("Run", run_id, "task's runs")
         if task.turn_mode != TurnMode.multiturn:
             raise HTTPException(
                 status_code=400,
@@ -548,6 +556,7 @@ def connect_run_api(app: FastAPI):
             str, Path(description="The unique identifier of the task run.")
         ],
     ):
+        """Delete one run from the task's dataset."""
         task, run = task_and_run_from_id(project_id, task_id, run_id)
         # 409 not 400: the request is well formed, the resource state forbids it.
         if run.eval_source is not None:
@@ -563,6 +572,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs",
         summary="List Runs",
         description=(
+            "List the task's runs (its dataset items), in full. "
             "For multi-turn tasks, only leaf TaskRuns (those that are not the "
             "parent of another run via parent_task_run_id) are returned. "
             "Intermediate runs in a chain are filtered out. For single-turn "
@@ -586,9 +596,18 @@ def connect_run_api(app: FastAPI):
                 ge=1,
             ),
         ] = None,
+        run_ids: Annotated[
+            list[str] | None,
+            Query(
+                description="Only return the runs with these IDs. Repeat the parameter for each ID. IDs of intermediate runs, or IDs that match no run, are ignored. When omitted, runs are not filtered by ID.",
+            ),
+        ] = None,
     ) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
         runs = list(task.runs(readonly=True))
+        if run_ids is not None:
+            wanted_ids = set(run_ids)
+            runs = [run for run in runs if run.id in wanted_ids]
         runs.sort(key=lambda r: r.created_at, reverse=True)
         if limit is not None:
             runs = runs[:limit]
@@ -642,6 +661,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
         summary="List Run Summaries",
         description=(
+            "List short summaries of the task's runs, lighter than List Runs. "
             "For multi-turn tasks, only leaf TaskRuns (those that are not the "
             "parent of another run via parent_task_run_id) are summarized. "
             "For single-turn tasks this is equivalent to summarizing every run."
@@ -658,11 +678,11 @@ def connect_run_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
     ) -> list[RunSummary]:
-        task = task_from_id(project_id, task_id)
-        # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
-        # Summaries only need leaves.
-        runs = task.runs(readonly=True)
-        return [RunSummary.from_run(run) for run in runs]
+        # A first, uncached read of a large task's runs takes seconds. Off the event
+        # loop, it doesn't hold up every other request the page makes meanwhile.
+        return await to_thread_retrying_torn_read(
+            lambda: summarize_runs(task_from_id(project_id, task_id))
+        )
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs/delete",
@@ -680,6 +700,8 @@ def connect_run_api(app: FastAPI):
         ],
         run_ids: Annotated[list[str], Body(description="List of run IDs to delete.")],
     ):
+        """Delete several runs from the task's dataset. Reports the ones it could not
+        delete."""
         task = task_from_id(project_id, task_id)
         failed_runs: list[str] = []
         failure_reasons: list[str] = []
@@ -701,7 +723,7 @@ def connect_run_api(app: FastAPI):
 
         for run_id in run_ids:
             try:
-                run = TaskRun.from_id_and_parent_path(run_id, task.path)
+                run = TaskRun.from_id_and_parent_path(run_id, task.path, readonly=True)
                 if run is None:
                     record_failure(run_id, "Run not found")
                     continue
@@ -767,10 +789,7 @@ def connect_run_api(app: FastAPI):
             input = request.structured_input
 
         if input is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No input provided. Ensure you provided the proper format (plaintext or structured).",
-            )
+            raise HTTPException(status_code=400, detail=missing_run_input_text(task))
 
         run_config_properties = request.run_config_properties
         skills = load_skills_for_task(task, run_config_properties)
@@ -823,7 +842,9 @@ def connect_run_api(app: FastAPI):
         # just-saved run and tell the caller what happened.
         if request.parent_task_run_id is not None:
             parent_still_exists = (
-                TaskRun.from_id_and_parent_path(request.parent_task_run_id, task.path)
+                TaskRun.from_id_and_parent_path(
+                    request.parent_task_run_id, task.path, readonly=True
+                )
                 is not None
             )
             if not parent_still_exists:
@@ -859,6 +880,7 @@ def connect_run_api(app: FastAPI):
             Dict[str, Any], Body(description="Fields to update on the run.")
         ],
     ) -> TaskRun:
+        """Change fields of a run, such as its rating, tags or repaired output."""
         return await update_run_util(project_id, task_id, run_id, run_data)
 
     @app.post(
@@ -885,6 +907,7 @@ def connect_run_api(app: FastAPI):
             list[str] | None, Body(description="Tags to remove from the task runs.")
         ] = None,
     ):
+        """Add tags to, or remove tags from, several runs at once."""
         task = task_from_id(project_id, task_id)
 
         # all the runs we need to tag
@@ -949,6 +972,7 @@ def connect_run_api(app: FastAPI):
             ),
         ] = None,
     ) -> BulkUploadResponse:
+        """Import runs into the task's dataset from a CSV file, as multipart form data."""
         task = task_from_id(project_id, task_id)
 
         # Parse splits from json form data
@@ -996,6 +1020,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/tags",
         summary="List Run Tags",
         description=(
+            "Count the task's runs for each tag. "
             "Counts only include tags from leaf TaskRuns. For multi-turn tasks, "
             "tags attached to intermediate runs in a chain are not included."
         ),
@@ -1016,6 +1041,11 @@ def connect_run_api(app: FastAPI):
         return await to_thread_retrying_torn_read(
             lambda: count_run_tags(task_from_id(project_id, task_id))
         )
+
+
+def summarize_runs(task: Task) -> list[RunSummary]:
+    """A summary of each of the task's dataset runs. Leaf runs only, as task.runs() returns them."""
+    return [RunSummary.from_run(run) for run in task.runs(readonly=True)]
 
 
 def count_run_tags(task: Task) -> dict[str, int]:
@@ -1046,10 +1076,7 @@ async def update_run_util(
 
         run = TaskRun.from_id_and_parent_path(run_id, task.path)
         if run is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Run not found. ID: {run_id}",
-            )
+            raise not_found_error("Run", run_id, "task's runs")
 
         old_run_dumped = run.model_dump()
         merged = deep_update(old_run_dumped, run_data)

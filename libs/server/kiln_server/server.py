@@ -1,11 +1,17 @@
 import argparse
 import os
+from contextlib import asynccontextmanager
 from importlib.metadata import version
-from typing import Sequence
+from typing import AsyncIterator, Sequence
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from kiln_ai.datamodel.model_cache import (
+    apply_model_cache_setting,
+    model_cache_enabled,
+    set_model_cache_enabled,
+)
 from kiln_ai.utils.config import Config
 
 from .custom_errors import connect_custom_errors
@@ -136,13 +142,37 @@ tags_metadata = [
 ]
 
 
+@asynccontextmanager
+async def default_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Turns the datamodel cache on while the app runs, then restores the previous setting.
+
+    When the `disable_model_cache` setting (`KILN_DISABLE_MODEL_CACHE`) is true, it
+    disables the cache for the rest of the process instead.
+    """
+    original_model_cache_enabled = model_cache_enabled()
+    apply_model_cache_setting(disable=Config.shared().disable_model_cache)
+    try:
+        yield
+    finally:
+        set_model_cache_enabled(original_model_cache_enabled)
+
+
 def make_app(lifespan=None, extra_middleware: list[type] | None = None):
+    """Build the Kiln REST app.
+
+    Args:
+        lifespan: Replaces `default_lifespan`. A caller that passes its own should start
+            the datamodel cache in it with
+            `apply_model_cache_setting(disable=Config.shared().disable_model_cache)`
+            from `kiln_ai.datamodel.model_cache`.
+        extra_middleware: Middleware classes installed inside CORS.
+    """
     app = FastAPI(
         title="Kiln AI API",
         summary="A REST API for Kiln AI.",
         description="This API is used to interact with all aspects of Kiln AI. For example, it can create and manage the data model (projects, tasks, prompts, evals, etc). It can also control the execution of the application including running tasks, evals, and more.",
         version=_get_version(),
-        lifespan=lifespan,
+        lifespan=lifespan if lifespan is not None else default_lifespan,
         openapi_tags=tags_metadata,
     )
 

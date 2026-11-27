@@ -9,7 +9,6 @@ from urllib.parse import quote
 import httpx
 import litellm
 import openai
-import requests
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
@@ -32,7 +31,9 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.ollama_tools import (
     OllamaConnection,
     ollama_base_url,
+    ollama_http_client,
     parse_ollama_tags,
+    record_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import (
     CLOUDFLARE_API_BASE,
@@ -50,8 +51,9 @@ from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.torn_read import to_thread_retrying_torn_read
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
-from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT, with_mcp_deny
 from pydantic import BaseModel, Field
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
@@ -62,6 +64,25 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+PROVIDER_CONNECT_TIMEOUT_SECONDS = 30
+
+
+async def _http_request(method: str, url: str, **kwargs: Any) -> httpx.Response:
+    async with httpx.AsyncClient(
+        follow_redirects=True, timeout=PROVIDER_CONNECT_TIMEOUT_SECONDS
+    ) as client:
+        return await client.request(method, url, **kwargs)
+
+
+def _error_detail(e: Exception) -> str:
+    # Some httpx errors, such as ReadTimeout, stringify to an empty string.
+    detail = str(e)
+    if detail:
+        return detail
+    if isinstance(e, httpx.TimeoutException):
+        return "The request timed out."
+    return type(e).__name__
 
 
 async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnection:
@@ -76,33 +97,42 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
             detail="Invalid Ollama URL. It must start with http:// or https://",
         )
 
-    try:
-        base_url = custom_ollama_url or ollama_base_url()
-        tags = requests.get(base_url + "/api/tags", timeout=5).json()
-    except requests.exceptions.ConnectionError:
-        raise HTTPException(
-            status_code=417,
-            detail="Failed to connect. Ensure Ollama app is running.",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to connect to Ollama: {e}",
-        )
+    base_url = custom_ollama_url or ollama_base_url()
+    async with ollama_http_client() as client:
+        try:
+            tags = (await client.get(base_url + "/api/tags")).json()
+        except (
+            httpx.NetworkError,
+            httpx.ConnectTimeout,
+            httpx.RemoteProtocolError,
+            httpx.ProxyError,
+        ):
+            record_ollama_tags(base_url, None)
+            raise HTTPException(
+                status_code=417,
+                detail="Failed to connect. Ensure Ollama app is running.",
+            )
+        except Exception as e:
+            record_ollama_tags(base_url, None)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to connect to Ollama: {_error_detail(e)}",
+            )
 
-    ollama_connection = parse_ollama_tags(tags)
-    if ollama_connection is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to parse Ollama data - unsure which models are installed.",
-        )
+        record_ollama_tags(base_url, tags)
+        ollama_connection = parse_ollama_tags(tags)
+        if ollama_connection is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to parse Ollama data - unsure which models are installed.",
+            )
 
-    # attempt to get the Ollama version
-    try:
-        version_body = requests.get(base_url + "/api/version", timeout=5).json()
-        ollama_connection.version = version_body.get("version", None)
-    except Exception:
-        pass
+        # attempt to get the Ollama version
+        try:
+            version_body = (await client.get(base_url + "/api/version")).json()
+            ollama_connection.version = version_body.get("version", None)
+        except Exception:
+            pass
 
     # Save the custom Ollama URL if used to connect
     if custom_ollama_url and custom_ollama_url != Config.shared().ollama_base_url:
@@ -141,7 +171,7 @@ async def connect_docker_model_runner(
     except (openai.APIError, httpx.RequestError) as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to connect to Docker Model Runner: {e}",
+            detail=f"Failed to connect to Docker Model Runner: {_error_detail(e)}",
         )
 
     # Save the custom Docker URL if used to connect
@@ -259,6 +289,149 @@ class CreateKilnCopilotApiKeyRequest(BaseModel):
     access_token: str = Field(description="Kinde OAuth access token.")
 
 
+async def available_models() -> List[AvailableModels]:
+    """The models the user can run now, grouped by provider: the answer of
+    `GET /api/available_models`."""
+    # Providers with just keys can return all their models if keys are set
+    key_providers: List[str] = []
+
+    for provider, provider_warning in provider_warnings.items():
+        has_keys = True
+        for required_key in provider_warning.required_config_keys:
+            if Config.shared().get_value(required_key) is None:
+                has_keys = False
+                break
+        if has_keys:
+            key_providers.append(provider)
+    models: List[AvailableModels] = [
+        AvailableModels(
+            provider_name=provider_name_from_id(provider),
+            provider_id=provider,
+            models=[],
+        )
+        for provider in key_providers
+    ]
+
+    for model in built_in_models:
+        for provider in model.providers:
+            if not provider.model_id:
+                # it's possible for models to not have an ID (fine-tune only model)
+                continue
+            if provider.name in key_providers:
+                provider_models = next(
+                    (m for m in models if m.provider_id == provider.name), None
+                )
+                if provider_models:
+                    # no need to couple the frontend to our backend mimetypes enum
+                    mime_types_as_str = (
+                        [str(mime_type) for mime_type in provider.multimodal_mime_types]
+                        if provider.multimodal_mime_types
+                        else None
+                    )
+                    provider_models.models.append(
+                        ModelDetails(
+                            id=model.name,
+                            name=model.friendly_name,
+                            supports_structured_output=provider.supports_structured_output,
+                            supports_data_gen=provider.supports_data_gen,
+                            suggested_for_data_gen=provider.suggested_for_data_gen,
+                            supports_logprobs=provider.supports_logprobs,
+                            supports_function_calling=provider.supports_function_calling,
+                            suggested_for_evals=provider.suggested_for_evals,
+                            suggested_for_synthetic_user=provider.suggested_for_synthetic_user,
+                            uncensored=provider.uncensored,
+                            suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
+                            structured_output_mode=provider.structured_output_mode,
+                            supports_vision=provider.supports_vision,
+                            supports_doc_extraction=provider.supports_doc_extraction,
+                            suggested_for_doc_extraction=provider.suggested_for_doc_extraction,
+                            multimodal_capable=provider.multimodal_capable,
+                            multimodal_mime_types=mime_types_as_str,
+                            available_thinking_levels=provider.available_thinking_levels,
+                            default_thinking_level=provider.default_thinking_level,
+                            deprecated=provider.deprecated,
+                        )
+                    )
+
+    # Docker Model Runner is special: check which models are installed
+    docker_models = await available_docker_model_runner_models()
+    if docker_models:
+        models.insert(0, docker_models)
+
+    # Ollama is special: check which models are installed
+    ollama_models = await available_ollama_models()
+    if ollama_models:
+        models.insert(0, ollama_models)
+
+    # Add any fine tuned models
+    fine_tuned_models = await all_fine_tuned_models()
+    if fine_tuned_models:
+        models.append(fine_tuned_models)
+
+    # Add any openai compatible providers
+    openai_compatible = await openai_compatible_providers()
+
+    # Collect all custom models to merge into provider lists.
+    # Legacy custom_models and user_model_registry are handled separately
+    # but merged the same way (by provider key).
+    models_to_merge: Dict[str, List[ModelDetails]] = {}
+
+    # Legacy custom_models: keyed by kiln_custom_registry
+    for key, model_list in legacy_custom_models_as_available().items():
+        models_to_merge.setdefault(key, []).extend(model_list)
+
+    # New user_model_registry: keyed by provider_id (builtin) or provider name (custom)
+    for key, model_list in user_models_as_available().items():
+        models_to_merge.setdefault(key, []).extend(model_list)
+
+    # Merge custom models into their respective provider lists
+    if models_to_merge:
+        for provider in models:
+            provider_id_str = str(provider.provider_id)
+            if provider_id_str in models_to_merge:
+                provider.models.extend(models_to_merge.pop(provider_id_str))
+
+        # Merge into openai compatible providers (by provider_name)
+        openai_compatible = [
+            AvailableModels(
+                provider_name=provider.provider_name,
+                provider_id=provider.provider_id,
+                models=provider.models
+                + models_to_merge.pop(provider.provider_name, []),
+            )
+            for provider in openai_compatible
+        ]
+        # Run configs resolve legacy custom model ids ("provider::model") only
+        # under kiln_custom_registry; under openai_compatible, "provider" would
+        # be read as the name of an OpenAI compatible server.
+        legacy_models = models_to_merge.pop(
+            ModelProviderName.kiln_custom_registry.value, []
+        )
+        if legacy_models:
+            openai_compatible.append(
+                AvailableModels(
+                    provider_name=provider_name_from_id(
+                        ModelProviderName.kiln_custom_registry
+                    ),
+                    provider_id=ModelProviderName.kiln_custom_registry,
+                    models=legacy_models,
+                )
+            )
+        # Any remaining entries are custom providers with only user models
+        for provider_name, model_list in models_to_merge.items():
+            openai_compatible.append(
+                AvailableModels(
+                    provider_name=provider_name,
+                    provider_id=ModelProviderName.openai_compatible,
+                    models=model_list,
+                )
+            )
+
+    models.extend(openai_compatible)
+
+    return models
+
+
 def connect_provider_api(app: FastAPI):
     @app.get(
         "/api/providers/models",
@@ -267,6 +440,7 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_providers_models() -> ProviderModels:
+        """List every model in Kiln's built-in model list, by ID and name."""
         models = {}
         for model in built_in_models:
             models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
@@ -280,131 +454,9 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_available_models() -> List[AvailableModels]:
-        # Providers with just keys can return all their models if keys are set
-        key_providers: List[str] = []
-
-        for provider, provider_warning in provider_warnings.items():
-            has_keys = True
-            for required_key in provider_warning.required_config_keys:
-                if Config.shared().get_value(required_key) is None:
-                    has_keys = False
-                    break
-            if has_keys:
-                key_providers.append(provider)
-        models: List[AvailableModels] = [
-            AvailableModels(
-                provider_name=provider_name_from_id(provider),
-                provider_id=provider,
-                models=[],
-            )
-            for provider in key_providers
-        ]
-
-        for model in built_in_models:
-            for provider in model.providers:
-                if not provider.model_id:
-                    # it's possible for models to not have an ID (fine-tune only model)
-                    continue
-                if provider.name in key_providers:
-                    available_models = next(
-                        (m for m in models if m.provider_id == provider.name), None
-                    )
-                    if available_models:
-                        # no need to couple the frontend to our backend mimetypes enum
-                        mime_types_as_str = (
-                            [
-                                str(mime_type)
-                                for mime_type in provider.multimodal_mime_types
-                            ]
-                            if provider.multimodal_mime_types
-                            else None
-                        )
-                        available_models.models.append(
-                            ModelDetails(
-                                id=model.name,
-                                name=model.friendly_name,
-                                supports_structured_output=provider.supports_structured_output,
-                                supports_data_gen=provider.supports_data_gen,
-                                suggested_for_data_gen=provider.suggested_for_data_gen,
-                                supports_logprobs=provider.supports_logprobs,
-                                supports_function_calling=provider.supports_function_calling,
-                                suggested_for_evals=provider.suggested_for_evals,
-                                suggested_for_synthetic_user=provider.suggested_for_synthetic_user,
-                                uncensored=provider.uncensored,
-                                suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
-                                structured_output_mode=provider.structured_output_mode,
-                                supports_vision=provider.supports_vision,
-                                supports_doc_extraction=provider.supports_doc_extraction,
-                                suggested_for_doc_extraction=provider.suggested_for_doc_extraction,
-                                multimodal_capable=provider.multimodal_capable,
-                                multimodal_mime_types=mime_types_as_str,
-                                available_thinking_levels=provider.available_thinking_levels,
-                                default_thinking_level=provider.default_thinking_level,
-                                deprecated=provider.deprecated,
-                            )
-                        )
-
-        # Docker Model Runner is special: check which models are installed
-        docker_models = await available_docker_model_runner_models()
-        if docker_models:
-            models.insert(0, docker_models)
-
-        # Ollama is special: check which models are installed
-        ollama_models = await available_ollama_models()
-        if ollama_models:
-            models.insert(0, ollama_models)
-
-        # Add any fine tuned models
-        fine_tuned_models = all_fine_tuned_models()
-        if fine_tuned_models:
-            models.append(fine_tuned_models)
-
-        # Add any openai compatible providers
-        openai_compatible = openai_compatible_providers()
-
-        # Collect all custom models to merge into provider lists.
-        # Legacy custom_models and user_model_registry are handled separately
-        # but merged the same way (by provider key).
-        models_to_merge: Dict[str, List[ModelDetails]] = {}
-
-        # Legacy custom_models: keyed by kiln_custom_registry
-        for key, model_list in legacy_custom_models_as_available().items():
-            models_to_merge.setdefault(key, []).extend(model_list)
-
-        # New user_model_registry: keyed by provider_id (builtin) or provider name (custom)
-        for key, model_list in user_models_as_available().items():
-            models_to_merge.setdefault(key, []).extend(model_list)
-
-        # Merge custom models into their respective provider lists
-        if models_to_merge:
-            for provider in models:
-                provider_id_str = str(provider.provider_id)
-                if provider_id_str in models_to_merge:
-                    provider.models.extend(models_to_merge.pop(provider_id_str))
-
-            # Merge into openai compatible providers (by provider_name)
-            openai_compatible = [
-                AvailableModels(
-                    provider_name=provider.provider_name,
-                    provider_id=provider.provider_id,
-                    models=provider.models
-                    + models_to_merge.pop(provider.provider_name, []),
-                )
-                for provider in openai_compatible
-            ]
-            # Any remaining entries are custom providers with only user models
-            for provider_name, model_list in models_to_merge.items():
-                openai_compatible.append(
-                    AvailableModels(
-                        provider_name=provider_name,
-                        provider_id=ModelProviderName.openai_compatible,
-                        models=model_list,
-                    )
-                )
-
-        models.extend(openai_compatible)
-
-        return models
+        """List the models the user can run now, grouped by connected provider, with
+        each model's capabilities."""
+        return await available_models()
 
     @app.get(
         "/api/providers/embedding_models",
@@ -413,6 +465,7 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_providers_embedding_models() -> ProviderEmbeddingModels:
+        """List every embedding model in Kiln's built-in list, by ID and name."""
         models = {}
         for model in built_in_embedding_models:
             models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
@@ -426,6 +479,8 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_available_embedding_models() -> List[EmbeddingProvider]:
+        """List the embedding models the user can run now, grouped by connected
+        provider."""
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
 
@@ -480,6 +535,7 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_providers_reranker_models() -> ProviderRerankerModels:
+        """List every reranker model in Kiln's built-in list, by ID and name."""
         models = {}
         for model in built_in_rerankers:
             models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
@@ -493,6 +549,7 @@ def connect_provider_api(app: FastAPI):
         openapi_extra=ALLOW_AGENT,
     )
     async def get_available_reranker_models() -> List[RerankerProvider]:
+        """List the reranker models the user can run now, grouped by connected provider."""
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
 
@@ -544,6 +601,8 @@ def connect_provider_api(app: FastAPI):
             str | None, Query(description="Custom URL for the Ollama server.")
         ] = None,
     ) -> OllamaConnection:
+        """Connect to a running Ollama server and list its models. Uses the default
+        address unless custom_ollama_url is set."""
         return await connect_ollama(custom_ollama_url)
 
     @app.post(
@@ -557,6 +616,8 @@ def connect_provider_api(app: FastAPI):
             str | None, Query(description="Custom URL for the Docker Model Runner.")
         ] = None,
     ) -> DockerModelRunnerConnection:
+        """Connect to a running Docker Model Runner and list its models. Uses the
+        default address unless a custom URL is set."""
         chosen_url = docker_model_runner_custom_url
         return await connect_docker_model_runner(chosen_url)
 
@@ -564,7 +625,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/openai_compatible",
         summary="Add OpenAI Compatible Provider",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def save_openai_compatible_providers(
         config: OpenAICompatibleProviderConfig,
@@ -595,7 +656,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/openai_compatible",
         summary="Delete OpenAI Compatible Provider",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def delete_openai_compatible_providers(
         name: Annotated[
@@ -852,7 +913,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/connect_api_key",
         summary="Connect Provider API Key",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def connect_api_key(payload: dict):
         provider = payload.get("provider")
@@ -949,7 +1010,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/disconnect_api_key",
         summary="Disconnect Provider API Key",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def disconnect_api_key(
         provider_id: Annotated[
@@ -1038,7 +1099,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/create_kiln_copilot_api_key",
         summary="Create Kiln Copilot API Key",
         tags=["Providers & Models"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=with_mcp_deny(DENY_AGENT),
     )
     async def create_kiln_copilot_api_key(
         payload: CreateKilnCopilotApiKeyRequest,
@@ -1099,7 +1160,9 @@ async def _create_kiln_copilot_api_key(access_token: str) -> JSONResponse:
     except httpx.RequestError as e:
         return JSONResponse(
             status_code=502,
-            content={"message": f"Failed to connect to Kiln server. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Kiln server. Error: {_error_detail(e)}"
+            },
         )
 
     if response.parsed is not None:
@@ -1130,7 +1193,8 @@ async def connect_openrouter(key: str):
             "Content-Type": "application/json",
         }
         # invalid body, but we just want to see if the key is valid
-        response = requests.post(
+        response = await _http_request(
+            "POST",
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json={},
@@ -1156,7 +1220,9 @@ async def connect_openrouter(key: str):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to OpenRouter. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to OpenRouter. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1167,7 +1233,8 @@ async def connect_siliconflow(key: str):
             "Content-Type": "application/json",
         }
 
-        response = requests.get(
+        response = await _http_request(
+            "GET",
             "https://api.siliconflow.cn/v1/models",
             headers=headers,
         )
@@ -1196,7 +1263,9 @@ async def connect_siliconflow(key: str):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to SiliconFlow. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to SiliconFlow. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1220,7 +1289,8 @@ async def connect_fireworks(key_data: dict):
             "Content-Type": "application/json",
         }
         # list the shared models (fireworks account)
-        response = requests.get(
+        response = await _http_request(
+            "GET",
             f"https://api.fireworks.ai/v1/accounts/{account_id}/models",
             headers=headers,
         )
@@ -1251,7 +1321,9 @@ async def connect_fireworks(key_data: dict):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Fireworks. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Fireworks. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1261,7 +1333,9 @@ async def connect_openai(key: str, reasoning_summaries: bool):
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        response = requests.get("https://api.openai.com/v1/models", headers=headers)
+        response = await _http_request(
+            "GET", "https://api.openai.com/v1/models", headers=headers
+        )
 
         # 401 def means invalid API key, so special case it
         if response.status_code == 401:
@@ -1274,7 +1348,9 @@ async def connect_openai(key: str, reasoning_summaries: bool):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to OpenAI. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to OpenAI. Error: {_error_detail(e)}"
+            },
         )
 
     Config.shared().update_settings(
@@ -1293,8 +1369,8 @@ async def connect_groq(key: str):
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        response = requests.get(
-            "https://api.groq.com/openai/v1/models", headers=headers
+        response = await _http_request(
+            "GET", "https://api.groq.com/openai/v1/models", headers=headers
         )
 
         if "invalid_api_key" in response.text:
@@ -1307,7 +1383,9 @@ async def connect_groq(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Groq. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Groq. Error: {_error_detail(e)}"
+            },
         )
 
     Config.shared().groq_api_key = key
@@ -1320,7 +1398,8 @@ async def connect_groq(key: str):
 
 async def connect_gemini(key: str):
     try:
-        response = requests.get(
+        response = await _http_request(
+            "GET",
             f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
         )
 
@@ -1345,7 +1424,9 @@ async def connect_gemini(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Gemini. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Gemini. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1368,7 +1449,9 @@ async def connect_vertex(project_id: str, project_location: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Vertex. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Vertex. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1378,7 +1461,8 @@ async def connect_together(key: str):
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        response = requests.get(
+        response = await _http_request(
+            "GET",
             "https://api.together.xyz/v1/models",
             headers=headers,
         )
@@ -1400,7 +1484,9 @@ async def connect_together(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Together.ai. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Together.ai. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1410,7 +1496,8 @@ async def connect_huggingface(key: str):
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        response = requests.get(
+        response = await _http_request(
+            "GET",
             "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
             headers=headers,
         )
@@ -1432,7 +1519,9 @@ async def connect_huggingface(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Huggingface. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Huggingface. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1443,7 +1532,9 @@ async def connect_anthropic(key: str):
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
         }
-        response = requests.get("https://api.anthropic.com/v1/models", headers=headers)
+        response = await _http_request(
+            "GET", "https://api.anthropic.com/v1/models", headers=headers
+        )
 
         if response.status_code == 401:
             return JSONResponse(
@@ -1466,7 +1557,9 @@ async def connect_anthropic(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Anthropic. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Anthropic. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1505,7 +1598,7 @@ async def connect_wandb(
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to W&B. Error: {e!s}"},
+            content={"message": f"Failed to connect to W&B. Error: {_error_detail(e)}"},
         )
 
 
@@ -1515,8 +1608,10 @@ async def connect_azure_openai(key: str, endpoint: str):
             "api-key": key,
             "Content-Type": "application/json",
         }
-        response = requests.get(
-            f"{endpoint}/openai/files?api-version=2024-08-01-preview", headers=headers
+        response = await _http_request(
+            "GET",
+            f"{endpoint}/openai/files?api-version=2024-08-01-preview",
+            headers=headers,
         )
 
         if response.status_code == 401:
@@ -1543,7 +1638,9 @@ async def connect_azure_openai(key: str, endpoint: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Azure OpenAI. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Azure OpenAI. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1553,7 +1650,9 @@ async def connect_cerebras(key: str):
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        response = requests.get("https://api.cerebras.ai/v1/models", headers=headers)
+        response = await _http_request(
+            "GET", "https://api.cerebras.ai/v1/models", headers=headers
+        )
 
         if response.status_code == 401:
             return JSONResponse(
@@ -1576,7 +1675,9 @@ async def connect_cerebras(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Cerebras. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Cerebras. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1594,7 +1695,8 @@ async def connect_featherless(key: str):
         # bad key returns 401 while a good key falls through to a model error. That
         # validates the key without spending tokens, and without depending on any
         # real model slug staying available.
-        response = requests.post(
+        response = await _http_request(
+            "POST",
             "https://api.featherless.ai/v1/chat/completions",
             headers=headers,
             json={
@@ -1628,7 +1730,9 @@ async def connect_featherless(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Featherless AI. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Featherless AI. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1741,7 +1845,7 @@ async def connect_cloudflare(key_data: dict):
             content={"message": "Connected to Cloudflare"},
         )
     except Exception as e:
-        return _cloudflare_connect_error(400, f"Error: {str(e) or type(e).__name__}")
+        return _cloudflare_connect_error(400, f"Error: {_error_detail(e)}")
 
 
 async def connect_typesafe(key: str):
@@ -1783,7 +1887,9 @@ async def connect_typesafe(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to TypeSafe AI. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to TypeSafe AI. Error: {_error_detail(e)}"
+            },
         )
 
 
@@ -1847,7 +1953,9 @@ async def connect_kiln_copilot(key: str):
     except httpx.RequestError as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Kiln Copilot. Error: {e!s}"},
+            content={
+                "message": f"Failed to connect to Kiln Copilot. Error: {_error_detail(e)}"
+            },
         )
 
     if response.status_code == 200:
@@ -2267,8 +2375,13 @@ def fine_tune_model_structured_output_mode(
     return StructuredOutputMode.json_instructions
 
 
-def all_fine_tuned_models() -> AvailableModels | None:
-    # Add any fine tuned models
+async def all_fine_tuned_models() -> AvailableModels | None:
+    # Walks every project, task and fine-tune on disk. There is no async file system API, so run it on a worker thread,
+    # where a concurrent save can leave a file half-written; the helper reads it again once.
+    return await to_thread_retrying_torn_read(_load_fine_tuned_models)
+
+
+def _load_fine_tuned_models() -> AvailableModels | None:
     models: List[ModelDetails] = []
 
     for project in all_projects():
@@ -2347,7 +2460,7 @@ class OpenAICompatibleProviderCache:
 _openai_compatible_providers_cache: OpenAICompatibleProviderCache | None = None
 
 
-def openai_compatible_providers() -> List[AvailableModels]:
+async def openai_compatible_providers() -> List[AvailableModels]:
     global _openai_compatible_providers_cache
 
     if (
@@ -2355,7 +2468,7 @@ def openai_compatible_providers() -> List[AvailableModels]:
         or _openai_compatible_providers_cache.is_stale()
     ):
         # Load values and cache them
-        cache = openai_compatible_providers_load_cache()
+        cache = await openai_compatible_providers_load_cache()
         _openai_compatible_providers_cache = cache
 
     if _openai_compatible_providers_cache is None:
@@ -2364,7 +2477,9 @@ def openai_compatible_providers() -> List[AvailableModels]:
     return _openai_compatible_providers_cache.providers
 
 
-def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | None:
+async def openai_compatible_providers_load_cache() -> (
+    OpenAICompatibleProviderCache | None
+):
     provider_config = Config.shared().openai_compatible_providers
     if not provider_config or len(provider_config) == 0:
         return None
@@ -2391,15 +2506,15 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
         api_key = provider.get("api_key") or PLACEHOLDER_API_KEY
 
         try:
-            openai_client = openai.OpenAI(
+            async with openai.AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
                 # Important: max_retries must be 0 for performance.
                 # It's common for these servers to be down sometimes (could be local app that isn't running)
                 # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
                 max_retries=0,
-            )
-            provider_models = openai_client.models.list()
+            ) as openai_client:
+                provider_models = [model async for model in openai_client.models.list()]
             for model in provider_models:
                 models.append(
                     ModelDetails(

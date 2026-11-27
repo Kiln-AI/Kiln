@@ -69,6 +69,10 @@ def get_config_value(key: str):
         return None
 
 
+class ProviderNotConnectedError(ValueError):
+    """A model was asked for on a provider whose keys are not set in Kiln."""
+
+
 def check_provider_warnings(provider_name: ModelProviderName):
     """
     Validates that required configuration is present for a given provider.
@@ -77,14 +81,14 @@ def check_provider_warnings(provider_name: ModelProviderName):
         provider_name: The provider to check
 
     Raises:
-        ValueError: If required configuration keys are missing
+        ProviderNotConnectedError: If required configuration keys are missing
     """
     warning_check = provider_warnings.get(provider_name)
     if warning_check is None:
         return
     for key in warning_check.required_config_keys:
         if get_config_value(key) is None:
-            raise ValueError(warning_check.message)
+            raise ProviderNotConnectedError(warning_check.message)
 
 
 def default_adapter_for_provider(provider_name: ModelProviderName) -> ModelAdapterId:
@@ -567,7 +571,7 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ),
     ModelProviderName.azure_openai: ModelProviderWarning(
         required_config_keys=["azure_openai_api_key", "azure_openai_endpoint"],
-        message="Attempted to use Azure OpenAI without an API key and endpoint set. Configure these in settings.",
+        message="Attempted to use Azure OpenAI without an API key and endpoint set.",
     ),
     ModelProviderName.huggingface: ModelProviderWarning(
         required_config_keys=["huggingface_api_key"],
@@ -626,7 +630,9 @@ def cloudflare_headers(gateway_id: str | None) -> Dict[str, str] | None:
 def _cloudflare_core_config() -> LiteLlmCoreConfig:
     account_id = Config.shared().cloudflare_account_id
     if not account_id:
-        raise ValueError(provider_warnings[ModelProviderName.cloudflare].message)
+        raise ProviderNotConnectedError(
+            provider_warnings[ModelProviderName.cloudflare].message
+        )
     return LiteLlmCoreConfig(
         base_url=cloudflare_base_url(account_id),
         default_headers=cloudflare_headers(Config.shared().cloudflare_ai_gateway_id),

@@ -96,7 +96,7 @@ def _stored_trace_key(run: TaskRun) -> TraceKey | None:
     """
     if run.eval_source is None:
         return None
-    if run.openenv_episode is not None and run.openenv_episode.final_state is None:
+    if run.openenv_episode is not None and not run.openenv_episode.has_final_state:
         return None
     run_config_id = run.output.source.run_config_id if run.output.source else None
     if not run_config_id:
@@ -115,8 +115,8 @@ class _TaskTraces:
     """The state every `TraceIndex` on one task shares."""
 
     def __init__(self) -> None:
-        # Paths, not TaskRuns: reloading re-reads the record (ModelCache validates on
-        # path + mtime), so a long eval never serves a stale trace.
+        # Paths, not TaskRuns: reloading re-reads the record (ModelCache checks the
+        # file's modified time, size and id), so a long eval never serves a stale trace.
         self.paths: Dict[TraceKey, Path] = {}
         # Held only for dict operations, never across I/O: a seed in a worker thread and
         # jobs on the event loop both write `paths`.

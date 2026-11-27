@@ -1,13 +1,16 @@
 import ast
 import json
+import runpy
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import _pyinstaller_hooks_contrib
+from kiln_mcp_server import skill_files
 from PyInstaller import HOMEPATH
 from PyInstaller.building.build_main import discover_hook_directories
 from PyInstaller.depend.analysis import HOOK_PRIORITY_USER_HOOKS, PyiModuleGraph
+from PyInstaller.utils.hooks import collect_data_files
 
 HOOKS_DIR = Path(__file__).parent / "pyinstaller_hooks"
 NLTK_HOOK = HOOKS_DIR / "rthooks" / "pyi_rth_nltk_data_path.py"
@@ -86,3 +89,51 @@ def test_nltk_hook_adds_bundled_data_path_without_importing_nltk(tmp_path):
     assert Path(with_hook["filename"]).name == "data.py"
     # A reload does not add the folder twice.
     assert with_hook["path_after_reload"].count(bundled) == 1
+
+
+MCP_PROJECT_DIR = Path(__file__).parent.parent / "mcp"
+MCP_HOOK = HOOKS_DIR / "hook-kiln_mcp_server.py"
+
+
+def test_the_mcp_project_folder_is_not_a_package():
+    # The build runs with `--paths=.` from `app/`; a regular package there
+    # named `mcp` would shadow the MCP SDK in the frozen app.
+    assert MCP_PROJECT_DIR.is_dir()
+    assert not (MCP_PROJECT_DIR / "__init__.py").exists()
+
+
+def test_the_kiln_mcp_server_hook_exists():
+    assert MCP_HOOK.is_file()
+
+
+def test_the_bundled_data_is_exactly_the_skill_tree():
+    datas = runpy.run_path(str(MCP_HOOK))["datas"]
+    bundled = set()
+    for source, dest in datas:
+        dest_path = PurePosixPath(Path(dest).as_posix())
+        if dest_path.parts[:2] == ("kiln_mcp_server", "skill"):
+            relative = dest_path.relative_to("kiln_mcp_server/skill")
+            bundled.add((relative / Path(source).name).as_posix())
+    assert bundled == set(skill_files.get_index().files)
+
+
+def test_the_bundled_data_skips_hidden_names(tmp_path, monkeypatch):
+    package = tmp_path / "hidden_names_pkg"
+    for relative in (
+        "__init__.py",
+        "skill/SKILL.md",
+        "skill/.DS_Store",
+        "skill/.hidden/a.md",
+        "skill/references/.x",
+        ".top",
+    ):
+        (package / relative).parent.mkdir(parents=True, exist_ok=True)
+        (package / relative).touch()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    excludes = runpy.run_path(str(MCP_HOOK))["DATA_EXCLUDES"]
+
+    datas = collect_data_files("hidden_names_pkg", excludes=excludes)
+
+    assert [Path(source).relative_to(package).as_posix() for source, _ in datas] == [
+        "skill/SKILL.md"
+    ]
