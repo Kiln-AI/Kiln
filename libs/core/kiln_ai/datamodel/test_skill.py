@@ -367,6 +367,7 @@ class TestReferences:
         with pytest.raises(FileNotFoundError, match="Resource file not found"):
             skill.read_reference("missing.md")
 
+    @pytest.mark.windows_ci
     @pytest.mark.parametrize("path", ["../etc/passwd", "..", "../../secret.txt"])
     def test_reference_path_traversal(self, mock_project, path):
         skill = save_skill_with_body(mock_project)
@@ -446,6 +447,7 @@ class TestAssets:
         with pytest.raises(FileNotFoundError, match="Resource file not found"):
             skill.read_asset("missing.csv")
 
+    @pytest.mark.windows_ci
     def test_asset_path_traversal(self, mock_project):
         skill = save_skill_with_body(mock_project)
         with pytest.raises(ValueError, match="Path traversal"):

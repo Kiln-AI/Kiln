@@ -296,6 +296,7 @@ def test_read_skill_applies_the_origin(index):
     )
 
 
+@pytest.mark.windows_ci
 def test_read_is_byte_exact(tmp_path):
     text = "---\nname: x\n---\r\nline one\r\nnon-ascii: \u00e9\u4e2d\n\n"
     index = build_index(write_tree(tmp_path / "skill", {"SKILL.md": "x", "a.md": text}))

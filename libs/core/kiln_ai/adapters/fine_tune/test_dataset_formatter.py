@@ -271,6 +271,7 @@ async def test_dataset_formatter_dump_invalid_split(mock_dataset):
         )
 
 
+@pytest.mark.windows_ci
 async def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
     formatter = DatasetFormatter(mock_dataset, "system message")
     output_path = tmp_path / "output.jsonl"
@@ -286,7 +287,7 @@ async def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
     assert output_path.exists()
 
     # Verify file contents
-    with open(output_path) as f:
+    with open(output_path, encoding="utf-8") as f:
         lines = f.readlines()
         assert len(lines) == 2  # Should have 2 entries for train split
         for line in lines:
@@ -301,6 +302,7 @@ async def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
             assert data["messages"][4]["content"] == '{"test":   "output 你好"}'
 
 
+@pytest.mark.windows_ci
 async def test_dataset_formatter_dump_to_temp_file(mock_dataset):
     formatter = DatasetFormatter(mock_dataset, "system message 你好")
 
@@ -318,7 +320,7 @@ async def test_dataset_formatter_dump_to_temp_file(mock_dataset):
     )
     assert result_path.name.endswith(".jsonl")
     # Verify file contents
-    with open(result_path) as f:
+    with open(result_path, encoding="utf-8") as f:
         lines = f.readlines()
         assert len(lines) == 2
         # check non-ascii characters are not escaped
@@ -330,6 +332,7 @@ async def test_dataset_formatter_dump_to_temp_file(mock_dataset):
         assert "thinking instructions" not in lines[0]
 
 
+@pytest.mark.windows_ci
 async def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path):
     formatter = DatasetFormatter(mock_dataset, "system message")
     output_path = tmp_path / "output.jsonl"
@@ -345,7 +348,7 @@ async def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path
     assert output_path.exists()
 
     # Verify file contents
-    with open(output_path) as f:
+    with open(output_path, encoding="utf-8") as f:
         lines = f.readlines()
         assert len(lines) == 2  # Should have 2 entries for train split
         for line in lines:
@@ -369,6 +372,7 @@ async def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path
             assert tool_call["function"]["arguments"] == '{"test": "output 你好"}'
 
 
+@pytest.mark.windows_ci
 async def test_dataset_formatter_dump_with_intermediate_data(
     mock_dataset, mock_intermediate_outputs
 ):
@@ -392,7 +396,7 @@ async def test_dataset_formatter_dump_with_intermediate_data(
         == "test_dataset -- split-train -- format-openai_chat_jsonl -- cot.jsonl"
     )
     # Verify file contents
-    with open(result_path) as f:
+    with open(result_path, encoding="utf-8") as f:
         lines = f.readlines()
         assert len(lines) == 2
         for line in lines:
@@ -400,6 +404,7 @@ async def test_dataset_formatter_dump_with_intermediate_data(
             assert "thinking instructions" in line
 
 
+@pytest.mark.windows_ci
 async def test_dataset_formatter_dump_with_intermediate_data_r1_style(
     mock_dataset, mock_intermediate_outputs
 ):
@@ -423,7 +428,7 @@ async def test_dataset_formatter_dump_with_intermediate_data_r1_style(
         == "test_dataset -- split-train -- format-openai_chat_jsonl -- cot.jsonl"
     )
     # Verify file contents
-    with open(result_path) as f:
+    with open(result_path, encoding="utf-8") as f:
         lines = f.readlines()
         assert len(lines) == 2
         for line in lines:
@@ -431,6 +436,7 @@ async def test_dataset_formatter_dump_with_intermediate_data_r1_style(
             assert "</think>" in line
 
 
+@pytest.mark.windows_ci
 async def test_dataset_formatter_dump_with_intermediate_data_custom_instructions(
     mock_dataset, mock_intermediate_outputs
 ):
@@ -452,7 +458,7 @@ async def test_dataset_formatter_dump_with_intermediate_data_custom_instructions
         == "test_dataset -- split-train -- format-openai_chat_jsonl -- cot.jsonl"
     )
     # Verify file contents
-    with open(result_path) as f:
+    with open(result_path, encoding="utf-8") as f:
         lines = f.readlines()
         assert len(lines) == 2
         for line in lines:
@@ -934,6 +940,7 @@ def test_build_training_data_with_repaired_output(mock_task):
     assert final_msg.content == '{"test": "repaired output"}'
 
 
+@pytest.mark.windows_ci
 async def test_dataset_formatter_dump_to_file_json_schema_format(
     mock_dataset, tmp_path
 ):
@@ -951,7 +958,7 @@ async def test_dataset_formatter_dump_to_file_json_schema_format(
     assert output_path.exists()
 
     # Verify file contents
-    with open(output_path) as f:
+    with open(output_path, encoding="utf-8") as f:
         lines = f.readlines()
         assert len(lines) == 2  # Should have 2 entries for train split
         for line in lines:

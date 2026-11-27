@@ -8,3 +8,4 @@ When writing tests for Python code:
 4. Test brevity is important. Use approaches for re-use and brevity including using pytest fixtures for repeated code, and using pytest parametrize for similar tests.
 5. Use unittest.mock, unittest.mock.patch and related test tools
 6. After writing a new test, run it and ensure it works. Fix any issues you find.
+7. Mark a test with `@pytest.mark.windows_ci` to run it on Windows CI as well: the `windows-ci-tests` job runs only the tests with this marker. Use it where Windows behaves differently, mainly tests of file paths, file encodings and line endings (path separators, drive letters, the default text encoding and newline translation all differ on Windows).

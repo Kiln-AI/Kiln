@@ -128,7 +128,7 @@ def mock_embedding_config(mock_project):
 @pytest.fixture
 def mock_vector_store_config_fts(mock_project, tmp_path):
     vector_store_config = VectorStoreConfig(
-        id="kiln:vector_store:lancedb",
+        id="kiln_vector_store_lancedb",
         parent=mock_project,
         name="Test Vector Store FTS",
         store_type=VectorStoreType.LANCE_DB_FTS,
@@ -148,7 +148,7 @@ def mock_vector_store_config_fts(mock_project, tmp_path):
 @pytest.fixture
 def mock_vector_store_config_vector(mock_project, tmp_path):
     vector_store_config = VectorStoreConfig(
-        id="kiln:vector_store:lancedb",
+        id="kiln_vector_store_lancedb",
         parent=mock_project,
         name="Test Vector Store Vector",
         store_type=VectorStoreType.LANCE_DB_VECTOR,
@@ -169,7 +169,7 @@ def mock_vector_store_config_vector(mock_project, tmp_path):
 @pytest.fixture
 def mock_vector_store_config_hybrid(mock_project, tmp_path):
     vector_store_config = VectorStoreConfig(
-        id="kiln:vector_store:lancedb",
+        id="kiln_vector_store_lancedb",
         parent=mock_project,
         name="Test Vector Store Hybrid",
         store_type=VectorStoreType.LANCE_DB_HYBRID,
@@ -1391,6 +1391,7 @@ async def test_create_vector_store_config_with_hybrid_type(client, mock_project)
     assert result["properties"]["doc_id_key"] == "doc_id"
 
 
+@pytest.mark.windows_ci
 async def test_get_vector_store_configs(
     client, mock_project, mock_vector_store_config_fts
 ):
@@ -1404,6 +1405,7 @@ async def test_get_vector_store_configs(
     assert result[0]["name"] == "Test Vector Store FTS"
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_success(
     client,
     mock_project,
@@ -1444,6 +1446,7 @@ async def test_create_rag_config_success(
     assert result["vector_store_config_id"] is not None
 
 
+@pytest.mark.windows_ci
 @pytest.mark.parametrize(
     "missing_config_type",
     [
@@ -1492,6 +1495,7 @@ async def test_create_rag_config_missing_config(
     assert "not found. ID: fake_id." in response.json()["message"]
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_with_tags(
     client,
     mock_project,
@@ -1528,6 +1532,7 @@ async def test_create_rag_config_with_tags(
     assert result["tags"] == ["python", "ml", "backend"]
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_with_empty_tags(
     client,
     mock_project,
@@ -1569,6 +1574,7 @@ async def test_create_rag_config_with_empty_tags(
         assert "Tags cannot be an empty list" in str(response_json)
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_with_invalid_tags(
     client,
     mock_project,
@@ -1602,6 +1608,7 @@ async def test_create_rag_config_with_invalid_tags(
     assert "Tags cannot be empty" in response_json["message"]
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_with_null_tags(
     client,
     mock_project,
@@ -1635,6 +1642,7 @@ async def test_create_rag_config_with_null_tags(
     assert result["tags"] is None
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_tags_omitted(
     client,
     mock_project,
@@ -1812,6 +1820,7 @@ async def test_get_document_tag_counts_no_tags(client):
     assert result == {}
 
 
+@pytest.mark.windows_ci
 async def test_get_rag_configs_success(
     client,
     mock_project,
@@ -1893,6 +1902,7 @@ async def test_get_rag_configs_success(
         assert response_rag_config["tags"] == rag_config.tags
 
 
+@pytest.mark.windows_ci
 async def test_get_rag_config_success(
     client,
     mock_project,
@@ -1951,6 +1961,7 @@ STORED_PROVENANCES = [
 ]
 
 
+@pytest.mark.windows_ci
 @pytest.mark.parametrize("stored", STORED_PROVENANCES)
 async def test_read_endpoints_return_stored_provenance_valid_only_on_load(
     client,
@@ -2030,6 +2041,7 @@ async def test_read_endpoints_return_stored_provenance_valid_only_on_load(
         )
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_with_reranker(
     client,
     mock_project,
@@ -2070,6 +2082,7 @@ async def test_create_rag_config_with_reranker(
     assert result["reranker_config_id"] == mock_reranker_config.id
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_with_invalid_reranker(
     client,
     mock_project,
@@ -2101,6 +2114,7 @@ async def test_create_rag_config_with_invalid_reranker(
     )
 
 
+@pytest.mark.windows_ci
 async def test_get_rag_config_with_reranker(
     client,
     mock_project,
@@ -2145,6 +2159,7 @@ async def test_get_rag_config_with_reranker(
     assert result["reranker_config"]["top_n"] == mock_reranker_config.top_n
 
 
+@pytest.mark.windows_ci
 async def test_get_rag_configs_with_and_without_reranker(
     client,
     mock_project,
@@ -2202,6 +2217,7 @@ async def test_get_rag_configs_with_and_without_reranker(
     assert without_reranker["reranker_config"] is None
 
 
+@pytest.mark.windows_ci
 async def test_get_rag_configs_with_mixed_tags_success(
     client,
     mock_project,
@@ -2275,6 +2291,7 @@ async def test_get_rag_configs_with_mixed_tags_success(
         assert response_rag_config["tags"] == rag_config.tags
 
 
+@pytest.mark.windows_ci
 async def test_patch_rag_config_only_updates_is_archived(
     client,
     mock_project,
@@ -2329,6 +2346,7 @@ async def test_patch_rag_config_only_updates_is_archived(
     assert updated["description"] == "Patch Desc"
 
 
+@pytest.mark.windows_ci
 async def test_run_rag_config_returns_error_when_archived(
     client,
     mock_project,
@@ -2367,6 +2385,7 @@ async def test_run_rag_config_returns_error_when_archived(
     assert "archived" in response.json()["message"].lower()
 
 
+@pytest.mark.windows_ci
 async def test_update_rag_config_success(
     client,
     mock_project,
@@ -2465,6 +2484,7 @@ async def test_create_extractor_config_model_not_supported_for_extraction(
     )
 
 
+@pytest.mark.windows_ci
 async def test_run_rag_config_success(
     client,
     mock_project,
@@ -2550,6 +2570,7 @@ async def test_run_rag_config_not_found(client, mock_project):
     assert "RAG config not found" in content or "Unexpected server error" in content
 
 
+@pytest.mark.windows_ci
 async def test_run_rag_config_missing_configs(
     client,
     mock_project,
@@ -2597,6 +2618,7 @@ async def test_run_rag_config_missing_configs(
     assert "missing required configs" in content or "Unexpected server error" in content
 
 
+@pytest.mark.windows_ci
 async def test_get_rag_config_progress_specific_configs(
     client,
     mock_project,
@@ -2686,6 +2708,7 @@ async def test_get_rag_config_progress_specific_configs(
     assert call_args[0][1][1].id == rag_configs[1].id
 
 
+@pytest.mark.windows_ci
 async def test_get_rag_config_progress_all_configs(
     client,
     mock_project,
@@ -2798,6 +2821,7 @@ async def test_get_rag_config_progress_empty_list(
     assert result == {}
 
 
+@pytest.mark.windows_ci
 async def test_get_rag_config_progress_invalid_config_id(
     client,
     mock_project,
@@ -3175,6 +3199,7 @@ def mock_rag_config_hybrid(
     return rag_config
 
 
+@pytest.mark.windows_ci
 async def test_search_rag_config_success_fts(client, mock_project, mock_rag_config_fts):
     """Test successful tool call to RAG config search"""
     search_query = "test search query"
@@ -3231,6 +3256,7 @@ async def test_search_rag_config_success_fts(client, mock_project, mock_rag_conf
     mock_rag_tool.search.assert_called_once_with(query=search_query)
 
 
+@pytest.mark.windows_ci
 async def test_search_rag_config_search_raises_error(
     client, mock_project, mock_rag_config_fts
 ):
@@ -3259,6 +3285,7 @@ async def test_search_rag_config_search_raises_error(
     mock_rag_tool.search.assert_called_once_with(query=search_query)
 
 
+@pytest.mark.windows_ci
 async def test_search_rag_config_success_hybrid(
     client, mock_project, mock_rag_config_hybrid
 ):
@@ -3317,6 +3344,7 @@ async def test_search_rag_config_success_hybrid(
     mock_rag_tool.search.assert_called_once_with(query=search_query)
 
 
+@pytest.mark.windows_ci
 async def test_search_rag_config_success_vector(
     client, mock_project, mock_rag_config_vector
 ):
@@ -3389,6 +3417,7 @@ async def test_search_rag_config_not_found(client, mock_project):
     assert "RAG config not found" in response.json()["message"]
 
 
+@pytest.mark.windows_ci
 async def test_search_rag_config_archived(client, mock_project, mock_rag_config_fts):
     """Test search with archived RAG config"""
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
@@ -3406,6 +3435,7 @@ async def test_search_rag_config_archived(client, mock_project, mock_rag_config_
     assert "archived" in response.json()["message"]
 
 
+@pytest.mark.windows_ci
 async def test_search_rag_config_empty_query(client, mock_project, mock_rag_config_fts):
     """Test search with empty query"""
     with (
@@ -3425,6 +3455,7 @@ async def test_search_rag_config_empty_query(client, mock_project, mock_rag_conf
     assert len(result["results"]) == 0
 
 
+@pytest.mark.windows_ci
 async def test_search_rag_config_no_results(client, mock_project, mock_rag_config_fts):
     """Test search that returns no results (should return empty list, not error)"""
     search_query = "nonexistent query that should return no results"
@@ -3452,6 +3483,7 @@ async def test_search_rag_config_no_results(client, mock_project, mock_rag_confi
     assert result["results"] == []
 
 
+@pytest.mark.windows_ci
 async def test_search_rag_config_invalid_request_body(
     client, mock_project, mock_rag_config_fts
 ):
@@ -3780,6 +3812,7 @@ async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
     assert result["created_documents"][1]["friendly_name"] == "duplicate.txt"
 
 
+@pytest.mark.windows_ci
 @pytest.mark.parametrize(
     "missing_sub_config_type,error_message",
     [
@@ -3858,6 +3891,7 @@ async def test_build_rag_workflow_runner_sub_configs_not_found(
         assert error_message in exc_info.value.detail
 
 
+@pytest.mark.windows_ci
 async def test_build_rag_workflow_runner_success_with_progress(
     mock_project,
     mock_extractor_config,
@@ -3926,6 +3960,7 @@ async def test_build_rag_workflow_runner_success_with_progress(
         mock_runner_class.assert_called_once()
 
 
+@pytest.mark.windows_ci
 async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
     mock_project,
     mock_chunker_config,
@@ -4021,6 +4056,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
         assert kwargs.get("concurrency") == 1
 
 
+@pytest.mark.windows_ci
 async def test_build_rag_workflow_runner_threads_save_context(
     mock_project,
     mock_extractor_config,
@@ -5358,6 +5394,7 @@ async def test_get_documents_filtered_with_document_no_tags(
     assert result[0].id == document.id
 
 
+@pytest.mark.windows_ci
 async def test_download_document_blocks_path_traversal(client, mock_document, tmp_path):
     """A malicious document.kiln whose attachment path escapes the project dir
     (e.g. delivered via project import / git sync) must not be served.
@@ -5752,6 +5789,7 @@ async def test_read_embedding_config_forward_compat_provenance_does_not_500(
     assert saved["provenance"]["origin"] == "future_origin"
 
 
+@pytest.mark.windows_ci
 async def test_create_vector_store_config_with_valid_provenance(
     client, mock_project, mock_vector_store_config_fts
 ):
@@ -6018,6 +6056,7 @@ def _rag_sibling(
     return sibling
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_with_valid_provenance(
     client,
     mock_project,
@@ -6064,6 +6103,7 @@ async def test_create_rag_config_with_valid_provenance(
     assert loaded.provenance.origin == "human"
 
 
+@pytest.mark.windows_ci
 async def test_get_rag_config_reads_return_provenance(
     client,
     mock_project,
@@ -6110,6 +6150,7 @@ async def test_get_rag_config_reads_return_provenance(
     assert detail["provenance"]["notes"] == "Persisted provenance to read back."
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_unknown_sibling_400(
     client,
     mock_project,
@@ -6140,6 +6181,7 @@ async def test_create_rag_config_unknown_sibling_400(
     assert RagConfig.all_children_of_parent_path(mock_project.path) == []
 
 
+@pytest.mark.windows_ci
 async def test_create_rag_config_invalid_origin_422(
     client,
     mock_project,
@@ -6174,6 +6216,7 @@ def test_update_rag_config_model_has_no_provenance_field():
     assert "provenance" not in UpdateRagConfigRequest.model_fields
 
 
+@pytest.mark.windows_ci
 async def test_patch_rag_config_forward_compat_provenance_does_not_500(
     client,
     mock_project,

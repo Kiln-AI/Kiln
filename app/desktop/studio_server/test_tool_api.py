@@ -1081,6 +1081,7 @@ def test_web_ui_task_response_tool_name_matches_libs_core():
     )
 
 
+@pytest.mark.windows_ci
 @pytest.mark.parametrize(
     "relative_path",
     [
@@ -1097,7 +1098,7 @@ def test_web_ui_task_response_consumers_use_the_shared_constant(relative_path):
     """
     source_file = Path(__file__).resolve().parents[2] / "web_ui" / "src" / relative_path
     assert source_file.is_file(), f"expected the web UI source at {source_file}"
-    source = source_file.read_text()
+    source = source_file.read_text(encoding="utf-8")
     assert (
         'import { TASK_RESPONSE_TOOL_NAME } from "$lib/utils/task_response_tool"'
         in source

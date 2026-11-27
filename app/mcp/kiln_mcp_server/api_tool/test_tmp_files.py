@@ -54,6 +54,7 @@ def test_name_and_extension(store, root, is_json, suffix):
     )
 
 
+@pytest.mark.windows_ci
 def test_text_is_written_as_utf8_and_size_is_in_bytes(store):
     saved = store.save('{"name":"é"}', is_json=True)
     assert saved.path.read_bytes() == '{"name":"é"}'.encode()

@@ -100,11 +100,11 @@ jobs:
       - name: Test All Python
         run: uv run python -m pytest --runslow .
 
-  # The web host serves web app routes off the file system, and Windows rejects
-  # filenames that our routes allow. Only a real Windows file system catches that,
-  # so run the web host tests there. Scoped to one test file to stay quick.
-  windows-path-handling-tests:
-    name: Windows Path Handling Tests
+  # Runs only the tests marked windows_ci on Windows, not the full suite. Most are
+  # path, encoding and line-ending tests: separators, drive letters, illegal filename
+  # characters, the default text encoding and newline translation differ there.
+  windows-ci-tests:
+    name: Windows CI Tests
     runs-on: windows-latest
 
     steps:
@@ -124,5 +124,5 @@ jobs:
       - name: Install the project
         run: uv sync --all-extras --dev
 
-      - name: Test Web Host
-        run: uv run python -m pytest app/desktop/studio_server/test_webhost.py
+      - name: Run windows_ci Tests
+        run: uv run python -m pytest -m windows_ci --runslow .

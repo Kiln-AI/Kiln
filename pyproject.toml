@@ -84,6 +84,7 @@ markers = [
     "prerelease: marks tests as part of the curated pre-release smoke set (a small subset of paid tests). Run with '--runprerelease' option, which also implicitly enables paid for those tests.",
     "slow: marks tests as slow. Not run by default, run with '--runslow' option.",
     "ollama: marks tests as requiring ollama server. Not run by default, run with '--ollama' option.",
+    "windows_ci: marks tests that also run on Windows, in the windows-ci-tests CI job. Mostly file path, file encoding and line ending tests.",
 ]
 # pydantic deprecation warnings come from dependencies (not our code).
 # The benchmark fixture "not used at all" warning is a false-positive from pytest-benchmark.

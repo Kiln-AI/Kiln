@@ -1,5 +1,6 @@
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -273,6 +274,7 @@ def test_import_project_duplicate_different_path(client):
     assert "remove project" in response.json()["message"]
 
 
+@pytest.mark.windows_ci
 def test_import_project_duplicate_remove_conflicting_id_success(client):
     mock_project = Project(
         name="Imported Project", description="An imported project", id="dup-id"
@@ -307,7 +309,7 @@ def test_import_project_duplicate_remove_conflicting_id_success(client):
     assert response.status_code == 200
     result = response.json()
     assert result["name"] == "Imported Project"
-    mock_remove.assert_called_once_with("/old/path/project.kiln")
+    mock_remove.assert_called_once_with(str(Path("/old/path/project.kiln")))
     mock_add.assert_called_once_with("/new/path/project.kiln")
 
 
@@ -333,6 +335,7 @@ def test_import_project_duplicate_remove_conflicting_id_false_still_409(client):
     assert response.status_code == 409
 
 
+@pytest.mark.windows_ci
 def test_import_project_duplicate_same_path_remove_conflicting_id(client):
     """Re-importing the exact same path with remove_conflicting_id=true is a
     benign de-register + re-add of the same path."""
@@ -368,7 +371,7 @@ def test_import_project_duplicate_same_path_remove_conflicting_id(client):
     assert response.status_code == 200
     result = response.json()
     assert result["name"] == "Imported Project"
-    mock_remove.assert_called_once_with("/path/to/project.kiln")
+    mock_remove.assert_called_once_with(str(Path("/path/to/project.kiln")))
     mock_add.assert_called_once_with("/path/to/project.kiln")
 
 
