@@ -59,6 +59,7 @@ class TestKilnTaskTool:
         """Create a mock ToolCallContext for testing."""
         context = MagicMock(spec=ToolCallContext)
         context.allow_saving = True
+        context.automatic_prompt_caching = True
         return context
 
     @pytest.fixture
@@ -488,6 +489,7 @@ class TestKilnTaskTool:
         """Test the run method with different allow_saving values."""
         mock_context_false = MagicMock(spec=ToolCallContext)
         mock_context_false.allow_saving = False
+        mock_context_false.automatic_prompt_caching = False
 
         # Setup mocks
         kiln_task_tool._task = mock_task
@@ -522,5 +524,5 @@ class TestKilnTaskTool:
                 default_tags=["tool_call"],
                 skills={},
                 task_run_config_id="test_config_456",
-                automatic_prompt_caching=True,
+                automatic_prompt_caching=False,
             )

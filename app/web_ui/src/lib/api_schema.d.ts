@@ -10657,6 +10657,16 @@ export interface components {
              */
             mean_cost?: number | null;
             /**
+             * Mean Cached Tokens
+             * @description Average input tokens per run served from the prompt cache.
+             */
+            mean_cached_tokens?: number | null;
+            /**
+             * Mean Cache Write Tokens
+             * @description Average input tokens per run written to the prompt cache, which providers bill above the normal input price. A high value next to a low mean_cached_tokens means most runs started with a cold cache.
+             */
+            mean_cache_write_tokens?: number | null;
+            /**
              * Mean Total Llm Latency Ms
              * @description Average total LLM latency per run in milliseconds.
              */

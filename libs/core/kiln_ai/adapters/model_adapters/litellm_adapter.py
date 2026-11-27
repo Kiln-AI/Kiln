@@ -1176,7 +1176,10 @@ class LiteLlmAdapter(BaseAdapter):
                 f"{bind_error}. Call it again with only the arguments in its schema.",
             )
 
-        context = ToolCallContext(allow_saving=self.base_adapter_config.allow_saving)
+        context = ToolCallContext(
+            allow_saving=self.base_adapter_config.allow_saving,
+            automatic_prompt_caching=self.base_adapter_config.automatic_prompt_caching,
+        )
         try:
             result = await tool.run(context, **parsed_args)
         except ToolCallError as e:
