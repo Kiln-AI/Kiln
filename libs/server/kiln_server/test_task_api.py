@@ -25,12 +25,17 @@ def client(app):
 
 
 @pytest.fixture
-def project_and_task(tmp_path):
+def project(tmp_path):
     project_path = tmp_path / "test_project" / "project.kiln"
     project_path.parent.mkdir()
 
     project = Project(name="Test Project", path=str(project_path))
     project.save_to_file()
+    return project
+
+
+@pytest.fixture
+def project_and_task(project):
     task = Task(
         name="Test Task",
         instruction="This is a test instruction",
@@ -410,6 +415,153 @@ def test_create_task_multiturn_with_structured_output_schema_rejected(client, tm
 
     assert response.status_code == 422
     assert "structured output" in response.json()["message"].lower()
+
+
+OUTSIDE_FILE_CONTENT = "not a kiln file"
+VALID_PROMPT = {"name": "Prompt", "prompt": "Prompt text"}
+VALID_EVAL = {
+    "name": "Eval",
+    "eval_set_filter_id": "all",
+    "eval_configs_filter_id": "all",
+    "output_scores": [{"name": "Score", "type": "five_star"}],
+}
+VALID_EVAL_CONFIG = {
+    "name": "Config",
+    "config_type": "g_eval",
+    "model_name": "gpt_4o",
+    "model_provider": "openai",
+    "properties": {"eval_steps": ["Step"]},
+}
+SAVE_LOCATION_PAYLOADS = [
+    pytest.param(lambda target: {"path": target}, "path", id="path"),
+    pytest.param(lambda target: {"parent": {"path": target}}, "parent", id="parent"),
+    pytest.param(
+        lambda target: {"prompts": [{**VALID_PROMPT, "path": target}]},
+        "prompts[0].path",
+        id="child_path",
+    ),
+    pytest.param(
+        lambda target: {
+            "prompts": [VALID_PROMPT, {**VALID_PROMPT, "parent": {"path": target}}]
+        },
+        "prompts[1].parent",
+        id="child_parent",
+    ),
+    pytest.param(
+        lambda target: {"evals": [{**VALID_EVAL, "path": target}]},
+        "evals[0].path",
+        id="child_with_children_path",
+    ),
+    pytest.param(
+        lambda target: {"prompts": [{**VALID_PROMPT, "id": target}]},
+        "prompts[0].id",
+        id="child_absolute_id",
+    ),
+    pytest.param(
+        lambda target: {
+            "prompts": [{**VALID_PROMPT, "id": "../../../../outside_project/escaped"}]
+        },
+        "prompts[0].id",
+        id="child_relative_id",
+    ),
+    pytest.param(
+        lambda target: {
+            "evals": [{**VALID_EVAL, "configs": [{**VALID_EVAL_CONFIG, "id": target}]}]
+        },
+        "evals[0].configs[0].id",
+        id="grandchild_id",
+    ),
+]
+
+
+@pytest.fixture
+def file_outside_project(tmp_path):
+    outside_file = tmp_path / "outside_project" / "notes.txt"
+    outside_file.parent.mkdir()
+    outside_file.write_text(OUTSIDE_FILE_CONTENT)
+    return outside_file
+
+
+@pytest.mark.parametrize("save_location_fields, location", SAVE_LOCATION_PAYLOADS)
+def test_create_task_rejects_save_location_fields(
+    client, project, file_outside_project, save_location_fields, location
+):
+    task_data = {
+        "name": "New Task",
+        "instruction": "Task instruction",
+        **save_location_fields(str(file_outside_project)),
+    }
+
+    with patch("kiln_server.task_api.project_from_id", return_value=project):
+        response = client.post(f"/api/projects/{project.id}/tasks", json=task_data)
+
+    assert response.status_code == 400
+    assert response.json()["message"] == (
+        f"Fields that control where data is saved cannot be set by client: {location}."
+    )
+    assert file_outside_project.read_text() == OUTSIDE_FILE_CONTENT
+    assert list(file_outside_project.parent.iterdir()) == [file_outside_project]
+    assert project.tasks() == []
+
+
+@pytest.mark.parametrize("save_location_fields, location", SAVE_LOCATION_PAYLOADS)
+def test_update_task_rejects_save_location_fields(
+    client, project_and_task, file_outside_project, save_location_fields, location
+):
+    project, task = project_and_task
+    task_file_before = task.path.read_text()
+    update_data = {
+        "description": "Updated description",
+        **save_location_fields(str(file_outside_project)),
+    }
+
+    with patch("kiln_server.task_api.project_from_id", return_value=project):
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}", json=update_data
+        )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == (
+        f"Fields that control where data is saved cannot be set by client: {location}."
+    )
+    assert file_outside_project.read_text() == OUTSIDE_FILE_CONTENT
+    assert list(file_outside_project.parent.iterdir()) == [file_outside_project]
+    assert task.path.read_text() == task_file_before
+
+
+def test_create_task_lists_every_save_location_field(client, project):
+    task_data = {
+        "name": "New Task",
+        "instruction": "Task instruction",
+        "path": "task.kiln",
+        "prompts": [
+            {**VALID_PROMPT, "id": "prompt", "path": "prompt.kiln", "parent": {}}
+        ],
+    }
+
+    with patch("kiln_server.task_api.project_from_id", return_value=project):
+        response = client.post(f"/api/projects/{project.id}/tasks", json=task_data)
+
+    assert response.status_code == 400
+    assert response.json()["message"] == (
+        "Fields that control where data is saved cannot be set by client: "
+        "path, prompts[0].id, prompts[0].path, prompts[0].parent."
+    )
+
+
+def test_update_task_saves_to_original_location(client, project_and_task):
+    project, task = project_and_task
+
+    with patch("kiln_server.task_api.project_from_id", return_value=project):
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}",
+            json={"name": "Renamed Task"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["path"] == str(task.path)
+    assert Task.load_from_file(task.path).name == "Renamed Task"
+    assert [t.path for t in project.tasks()] == [task.path]
 
 
 def test_get_rating_options_empty_task(client, project_and_task):

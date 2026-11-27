@@ -973,6 +973,10 @@ class ParentOfRelationship(BaseModel):
     filesystem_name: str
 
 
+_SAVE_LOCATION_FIELDS = ("path", "parent")
+_CHILD_SAVE_LOCATION_FIELDS = ("id", *_SAVE_LOCATION_FIELDS)
+
+
 # Parent create methods for all child relationships
 # You must pass in parent_of in the subclass definition, defining the child relationships
 class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
@@ -1106,6 +1110,58 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
         return instance
 
     @classmethod
+    def find_save_location_fields(cls, data: Dict[str, Any]) -> list[str]:
+        """Find the keys in a `validate_and_save_with_subrelations` payload that can choose where a model is saved.
+
+        A payload from an untrusted client must not contain them:
+        - `path` sets the file a model is written to.
+        - A child's `id` names the child's folder, so it can point outside the parent.
+        - `parent` is replaced by the save, and is reported so a payload can't claim one.
+
+        The top-level `id` is not reported, because an update payload carries the
+        model's own id; the caller decides whether to accept it. Child payloads are
+        checked through the same relationships the save walks.
+
+        Args:
+            data (Dict[str, Any]): Model data including child relationships
+
+        Returns:
+            list[str]: The location of each key found, such as "path" or
+            "prompts[0].id". Empty when there are none.
+        """
+        top_level = [field for field in _SAVE_LOCATION_FIELDS if field in data]
+        return top_level + cls._find_child_save_location_fields(data)
+
+    @classmethod
+    def _find_child_save_location_fields(cls, data: Dict[str, Any]) -> list[str]:
+        locations: list[str] = []
+        for key, children in data.items():
+            if key not in cls._parent_of or not isinstance(children, list):
+                continue
+            child_type = cls._child_type(key)
+            for index, child in enumerate(children):
+                if not isinstance(child, dict):
+                    continue
+                child_locations = [
+                    field for field in _CHILD_SAVE_LOCATION_FIELDS if field in child
+                ]
+                if issubclass(child_type, KilnParentModel):
+                    child_locations += child_type._find_child_save_location_fields(
+                        child
+                    )
+                locations.extend(
+                    f"{key}[{index}].{location}" for location in child_locations
+                )
+        return locations
+
+    @classmethod
+    def _child_type(cls, python_name: str) -> Type[KilnParentedModel]:
+        relationship = cls._parent_of[python_name]
+        if isinstance(relationship, ParentOfRelationship):
+            return relationship.model
+        return relationship
+
+    @classmethod
     def _validate_nested(
         cls,
         data: Dict[str, Any],
@@ -1144,11 +1200,7 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
 
         for key, value_list in data.items():
             if key in cls._parent_of:
-                parent_type_or_rel = cls._parent_of[key]
-                if isinstance(parent_type_or_rel, ParentOfRelationship):
-                    parent_type = parent_type_or_rel.model
-                else:
-                    parent_type = parent_type_or_rel
+                parent_type = cls._child_type(key)
                 if not isinstance(value_list, list):
                     raise ValueError(
                         f"Expected a list for {key}, but got {type(value_list)}"
