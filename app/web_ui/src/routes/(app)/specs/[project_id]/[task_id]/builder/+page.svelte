@@ -213,6 +213,7 @@
     stale_case_caches,
     pick_target_run_config,
     prefilled_judge_thinking_level,
+    with_judge_default_thinking_level,
     restore_turns_per_case,
     stop_primary_action,
     MAX_TURNS_PER_CASE,
@@ -1663,13 +1664,15 @@
   // Read off the dropdown's combined value, not the ids it parses from it: the
   // ids trail a reseed by a tick, and checking the level against the previous
   // model could clear one the reseeded model offers.
-  $: judge_model_details = judge_model_combined
-    ? available_model_details(
-        judge_model_combined.split("/").slice(1).join("/"),
-        judge_model_combined.split("/")[0],
-        $available_models,
-      )
-    : null
+  $: judge_model_details = with_judge_default_thinking_level(
+    judge_model_combined
+      ? available_model_details(
+          judge_model_combined.split("/").slice(1).join("/"),
+          judge_model_combined.split("/")[0],
+          $available_models,
+        )
+      : null,
+  )
   $: judge_thinking_levels =
     judge_model_details?.available_thinking_levels ?? null
   $: judge_thinking_level_options = [
@@ -1680,20 +1683,14 @@
       ),
     },
   ]
-  // The dropdown starts on the judge model's default level, and a level the
-  // newly picked model doesn't offer falls back to it. A committed blank is
-  // kept only while grounding still runs on the judge (an OpenEnv build with
-  // no Environment Setup Model yet), where the judge's level is part of the
-  // grounded cases' cache key (see prefilled_judge_thinking_level).
+  // The dropdown starts on the judge's default level (high where the model
+  // offers it, see with_judge_default_thinking_level), and a level the
+  // newly picked model doesn't offer falls back to it. Grounding never reads
+  // the judge's level, so a committed blank needs no keeping.
   $: staged_judge_thinking_level = prefilled_judge_thinking_level(
     staged_judge_thinking_level,
     judge_model_details,
-    build_openenv_server_id !== null &&
-      grounding_lane_model === null &&
-      judge_thinking_level === null &&
-      judge_model !== null &&
-      judge_model_combined ===
-        `${judge_model.model_provider}/${judge_model.model_name}`,
+    false,
   )
   let drive_settings_submitting = false
   // Typed as KilnError so the dialog's FormContainer renders it in its own
@@ -1823,7 +1820,7 @@
     ) {
       return
     }
-    // A judge picked here starts on its model's default thinking level, as a
+    // A judge picked here starts on the judge's default thinking level, as a
     // model picked in the dropdown does.
     const judge_was_null = judge_model === null
     if (judge_model === null) {
@@ -1861,17 +1858,20 @@
     }
     if (judge_was_null && judge_model !== null) {
       judge_thinking_level =
-        available_model_details(
-          judge_model.model_name,
-          judge_model.model_provider,
-          models,
+        with_judge_default_thinking_level(
+          available_model_details(
+            judge_model.model_name,
+            judge_model.model_provider,
+            models,
+          ),
         )?.default_thinking_level ?? null
     }
     // Starts on the judge model, which is what grounding ran on before it
-    // had a lane of its own.
+    // had a lane of its own, at that model's own default level: the judge's
+    // raised default would make every case's grounding cost more.
     if (grounding_needed && grounding_lane_model === null) {
       grounding_lane_model = judge_model
-      grounding_thinking_level = judge_thinking_level
+      grounding_thinking_level = null
     }
   }
 
@@ -1926,7 +1926,7 @@
       : grounding_model_combined
     staged_grounding_thinking_level = grounding_lane_model
       ? grounding_thinking_level
-      : judge_thinking_level
+      : null
     // The input lane holds more than a model, and its component stays mounted
     // between opens, so reseed the whole lane: a visit abandoned by Esc or
     // Cancel must not leave its tool and sampling edits on the next one. With
@@ -2890,13 +2890,11 @@
         return
       }
       await refresh_data_guide(new_copilot_abort_signal())
-      // Drafts from before the Environment Setup Model lane ground on the judge, as
-      // they did then.
+      // Drafts from before the Environment Setup Model lane ground on the judge
+      // model, at that model's own default level rather than the judge's.
       const grounding_model: GroundingModel = {
         ...(grounding_lane_model ?? chosen_judge_model),
-        thinking_level: grounding_lane_model
-          ? grounding_thinking_level
-          : judge_thinking_level,
+        thinking_level: grounding_lane_model ? grounding_thinking_level : null,
       }
       const grounding_key =
         openenv_server_id === null
@@ -3490,13 +3488,11 @@
         return
       }
       await refresh_data_guide(new_copilot_abort_signal())
-      // Drafts from before the Environment Setup Model lane ground on the judge, as
-      // they did then.
+      // Drafts from before the Environment Setup Model lane ground on the judge
+      // model, at that model's own default level rather than the judge's.
       const grounding_model: GroundingModel = {
         ...(grounding_lane_model ?? chosen_judge_model),
-        thinking_level: grounding_lane_model
-          ? grounding_thinking_level
-          : judge_thinking_level,
+        thinking_level: grounding_lane_model ? grounding_thinking_level : null,
       }
       const grounding_key =
         openenv_server_id === null

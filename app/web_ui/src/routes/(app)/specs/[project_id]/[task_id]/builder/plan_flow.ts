@@ -175,6 +175,31 @@ export function prefilled_judge_thinking_level(
   return level
 }
 
+// The judge's level when the user has not picked one. At a model's own
+// default (often medium) some judge models skip thinking and return a verdict
+// with no reasoning, and the review cannot explain or group such a verdict.
+export const JUDGE_DEFAULT_THINKING_LEVEL = "high"
+const LEVELS_BELOW_JUDGE_DEFAULT = new Set(["none", "minimal", "low", "medium"])
+
+// The judge model's details with the default level raised to
+// JUDGE_DEFAULT_THINKING_LEVEL when the model offers it. A model whose own
+// default is already higher keeps it.
+export function with_judge_default_thinking_level<
+  T extends {
+    available_thinking_levels?: Record<string, string> | null
+    default_thinking_level?: string | null
+  },
+>(details: T | null): T | null {
+  if (details === null) return null
+  const offered = Object.values(details.available_thinking_levels ?? {})
+  if (!offered.includes(JUDGE_DEFAULT_THINKING_LEVEL)) return details
+  const current = details.default_thinking_level ?? null
+  if (current !== null && !LEVELS_BELOW_JUDGE_DEFAULT.has(current)) {
+    return details
+  }
+  return { ...details, default_thinking_level: JUDGE_DEFAULT_THINKING_LEVEL }
+}
+
 // ── Top-off drive planning ────────────────────────────────────────────────
 //
 // A retry after a partial drive must fill the batch, not replace it: the

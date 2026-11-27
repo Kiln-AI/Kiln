@@ -14,6 +14,8 @@ import {
   is_partial_stop,
   judge_thinking_level_refused,
   prefilled_judge_thinking_level,
+  with_judge_default_thinking_level,
+  JUDGE_DEFAULT_THINKING_LEVEL,
   load_plan_openenv_context,
   missing_slot_indices,
   new_plan_confirm,
@@ -1438,5 +1440,68 @@ describe("prefilled_judge_thinking_level", () => {
   it("changes nothing while the model's details are unknown", () => {
     expect(prefilled_judge_thinking_level("xhigh", null, false)).toBe("xhigh")
     expect(prefilled_judge_thinking_level(null, null, false)).toBeNull()
+  })
+})
+
+describe("with_judge_default_thinking_level", () => {
+  const levels = { Low: "low", Medium: "medium", High: "high", Max: "max" }
+
+  it("is high, so the judge writes reasoning the review can read", () => {
+    expect(JUDGE_DEFAULT_THINKING_LEVEL).toBe("high")
+  })
+
+  it.each([["medium"], ["low"], [null]])(
+    "raises a model default of %s to high when the model offers it",
+    (model_default) => {
+      const details = {
+        available_thinking_levels: levels,
+        default_thinking_level: model_default,
+      }
+      expect(
+        with_judge_default_thinking_level(details)?.default_thinking_level,
+      ).toBe("high")
+    },
+  )
+
+  it("keeps a model default that is already above high", () => {
+    const details = {
+      available_thinking_levels: levels,
+      default_thinking_level: "max",
+    }
+    expect(with_judge_default_thinking_level(details)).toBe(details)
+  })
+
+  it("keeps the model default when the model doesn't offer high", () => {
+    const details = {
+      available_thinking_levels: { Low: "low", Medium: "medium" },
+      default_thinking_level: "medium",
+    }
+    expect(with_judge_default_thinking_level(details)).toBe(details)
+    expect(with_judge_default_thinking_level({})).toEqual({})
+    expect(with_judge_default_thinking_level(null)).toBeNull()
+  })
+
+  it("feeds the dropdown prefill, which still keeps a level the user picked", () => {
+    const details = with_judge_default_thinking_level({
+      available_thinking_levels: levels,
+      default_thinking_level: "medium",
+    })
+    expect(prefilled_judge_thinking_level(null, details, false)).toBe("high")
+    expect(prefilled_judge_thinking_level("low", details, false)).toBe("low")
+    expect(prefilled_judge_thinking_level("xhigh", details, false)).toBe("high")
+  })
+
+  it("prefills the model's own default when the model doesn't offer high", () => {
+    const no_high = with_judge_default_thinking_level({
+      available_thinking_levels: { Low: "low", Medium: "medium" },
+      default_thinking_level: "medium",
+    })
+    expect(prefilled_judge_thinking_level(null, no_high, false)).toBe("medium")
+    expect(prefilled_judge_thinking_level("high", no_high, false)).toBe(
+      "medium",
+    )
+    const no_levels = with_judge_default_thinking_level({})
+    expect(prefilled_judge_thinking_level(null, no_levels, false)).toBeNull()
+    expect(prefilled_judge_thinking_level("high", no_levels, false)).toBeNull()
   })
 })

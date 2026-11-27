@@ -1260,7 +1260,7 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       "reusable_grounded_cases( cached_grounded_cases, approved_prompts, spec_text(), grounding_key, )",
     )
     expect(normalize(drive)).toContain(
-      "const grounding_model: GroundingModel = { ...(grounding_lane_model ?? chosen_judge_model), thinking_level: grounding_lane_model ? grounding_thinking_level : judge_thinking_level, }",
+      "const grounding_model: GroundingModel = { ...(grounding_lane_model ?? chosen_judge_model), thinking_level: grounding_lane_model ? grounding_thinking_level : null, }",
     )
     expect(normalize(drive)).toContain(
       "grounding_model: model_choice_key(grounding_model), data_guide: data_guide_in_use(), max_turns: grounding_turn_limit(chosen_turns),",
@@ -1307,6 +1307,40 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     // Read where it is used, never from a reactive copy that a drive would
     // see a tick late.
     expect(contains("$: grounding_guide_text")).toBe(false)
+  })
+
+  it("starts the judge on its raised default, and grounding never copies it", () => {
+    // The judge defaults to high thinking so it writes reasoning the review
+    // can read; grounding runs once per case, so it keeps its model's own
+    // default rather than paying for the judge's level.
+    expect(
+      contains("$: judge_model_details = with_judge_default_thinking_level("),
+    ).toBe(true)
+    expect(
+      contains(
+        "$: staged_judge_thinking_level = prefilled_judge_thinking_level( staged_judge_thinking_level, judge_model_details, false, )",
+      ),
+    ).toBe(true)
+    for (const drive of [
+      "async function on_drive_multi_turn(",
+      "async function on_drive_single_turn(",
+    ]) {
+      expect(normalize(function_body(drive))).toContain(
+        "thinking_level: grounding_lane_model ? grounding_thinking_level : null,",
+      )
+    }
+    expect(
+      normalize(function_body("async function open_drive_settings(")),
+    ).toContain(
+      "staged_grounding_thinking_level = grounding_lane_model ? grounding_thinking_level : null",
+    )
+    const fill = normalize(function_body("async function fill_null_lanes("))
+    expect(fill).toContain(
+      "grounding_lane_model = judge_model grounding_thinking_level = null",
+    )
+    expect(fill).not.toContain(
+      "grounding_thinking_level = judge_thinking_level",
+    )
   })
 
   it("checks the OpenEnv server answers before a drive spends anything", () => {
