@@ -12,14 +12,14 @@ Words used here:
 - **The gateway** is HT's own MCP server for its agents. It has 54 tools. It stays until phase 6.
 - **Loop agents** are the agent sessions HT starts (planner, builder, analyst and the others). **Loop code** is HT's own Python.
 - **A chat client** is an agent that works with a user over Kiln's MCP server.
-- **Scoped** means a request that carries a scope. **Unscoped** means one that does not.
+- **A role** (section 5) says which routes a caller of Kiln's API may call and which eval data it may see. "HT's roles" are something else: the jobs of its agents, such as planner and builder.
 
 A line marked **Proposed** is a call made while drafting. The owner can overrule it. Section 11 lists the questions that need the owner.
 
 Sources that this document draws on, and replaces where they differ:
 
 - [review_fixes.md](../harness_tuner_switchover/review_fixes.md): the decisions of the switchover review.
-- [scope_decisions.md](../harness_tuner_port/scope_decisions.md): the scope rulings.
+- [scope_decisions.md](../harness_tuner_port/scope_decisions.md): the rulings on withheld data. Its four scopes are replaced here by roles (section 5).
 - The switchover's [functional spec](../harness_tuner_switchover/functional_spec.md), sections 3 and 7: the first form of the Kiln APIs and of the proof.
 
 ## 1. What changes, in short
@@ -27,12 +27,12 @@ Sources that this document draws on, and replaces where they differ:
 | Area | Today | After |
 |---|---|---|
 | Where HT lives | Its own repository, its own releases | The Kiln repository, Kiln's releases. The PyPI package `harness-tuner` stays, as a thin launcher of Kiln's copy (phase 7) |
-| How a loop agent reaches Kiln | HT's gateway, 54 typed tools | Kiln's MCP server, on a scoped URL: `call_kiln_api` and `kiln_skill` |
-| What keeps val and test from an agent | The gateway's rules, for HT's agents only | Scopes in Kiln's API, for every MCP connection. And HT's code, which does not pass those values to its agents |
+| How a loop agent reaches Kiln | HT's gateway, 54 typed tools | Kiln's MCP server, on the URL of its role: `call_kiln_api` and `kiln_skill` |
+| What keeps val and test from an agent, and limits what it may call | The gateway's rules, for HT's agents only | Roles in Kiln's API, for every MCP connection. And HT's code, which does not pass those values to its agents |
 | Role procedures | Skill files that HT copies into each agent CLI's folder | Files of Kiln's skill, under `references/client_guidance/harness_tuner/` |
 | Knowledge, API reference, model information | HT ships copies | Kiln's own. The copies are removed |
 | Measurement calculations (floor, detectability, paired comparison, smells) | HT code | Kiln code, one copy, behind standard APIs |
-| The REST API for a caller that sends no scope | — | Unchanged |
+| The REST API for a caller that names no role | — | Unchanged |
 
 ## 2. Rules for every phase
 
@@ -130,7 +130,7 @@ Compares a candidate with a baseline on one eval, from stored results, without r
 - `significant` reads the unrounded p value. HT compared a rounded value until now, so a p between 0.04995 and 0.05 changes side. The owner accepted this.
 - One eval for each call. It returns no headline number across evals.
 - The confidence is fixed at 0.95.
-- `split` is required and may be `train`, `val` or `test`. The route itself does not refuse `test`: an unscoped caller, such as the UI, may compare on it. A scope that withholds test numbers refuses it (section 5).
+- `split` is required and may be `train`, `val` or `test`. The route itself does not refuse `test`: a caller with no role, such as the UI, may compare on it. A role that withholds test numbers is refused (section 5).
 - The name is `paired_comparison`, because the existing `run_comparison` beside it runs evals on the test split and spends money.
 
 ### 4.6 Skill bundles
@@ -181,101 +181,92 @@ Two gateway tools do work that no single API call does. Phase 4 needs an answer 
 
 Done when: each route has tests with HT's pinned values, and the skill's checks pass.
 
-## 5. Phase 3: Scopes
+## 5. Phase 3: Roles
 
-### 5.1 What a scope is
+### 5.1 What a role is
 
-- **A scope is a set of restrictions that a request to Kiln's REST API can carry.** The request names them in one header. The API enforces them.
-- A request with no header is today's API, with no new code path. The header can only take away.
+- **A role says two things about a caller: which routes it may call, and which eval data it may see.**
+- **Which routes: a map.** Every route of the API is in or out of each role. A role can call a route only when the route is in. There is no third state.
+- **Which data: two settings of the role.** The splits whose per-item data is withheld, and the splits whose numbers are withheld (5.3).
+- **A request to Kiln's REST API names its role in one header.** The API enforces it. A request with no header is today's API, with no new code path. The header can only take away.
 - Any REST caller may send the header. The caller that always does is Kiln's MCP server.
-- **An MCP connection has one scope for all its calls.** The URL path of the connection names it. The `call_kiln_api` tool puts it in the header of each call it makes to the API. The scope is self-describing: no token, and no memory on the server.
-- Scoping adds no tool and hides no tool. A scoped connection has the same two tools and the same API, and gets a clear error when a call goes outside its scope.
-- **Proposed:** the forms of the URL:
+- **An MCP connection has one role for all its calls.** The URL path of the connection names it. The `call_kiln_api` tool puts it in the header of each call it makes. The server keeps no memory of a connection.
+- A role adds no tool and hides no tool. Every connection has the same two tools, and gets a clear error when a call is outside its role.
+- The roles are a short, fixed list, defined in one place in Kiln. A URL cannot make a new one or change one.
 
-  | URL | Scope |
-  |---|---|
-  | `/mcp` | The default (5.3) |
-  | `/mcp/open` | No scope. The user opted out |
-  | `/mcp/<settings>` | The settings named, for example `fence_eval_data=val,test;fence_eval_results=val,test;block_eval_changes` |
+### 5.2 The roles
 
-  The architecture sets the exact syntax. A URL that names an unknown setting is refused when the client connects.
+| Role | URL | Routes that are in | Data withheld | Numbers withheld |
+|---|---|---|---|---|
+| Chat (the default) | `/mcp` | Every route, except the ones blocked for MCP today | val, test | test |
+| Open | `/mcp/open` | The same routes as chat | none | none |
+| Tuner: build | `/mcp/<name>` | Reads of the task's definition and of train data. Creates of run configs, prompts, code tools and skills. Runs and eval jobs. Memory reads and writes | val, test | val, test |
+| Tuner: plan | `/mcp/<name>` | The same reads. Memory reads and writes. No create, no run, no eval job | val, test | val, test |
+| Tuner: review | `/mcp/<name>` | The same reads. Nothing that writes | val, test | val, test |
+| Tuner: val | `/mcp/<name>` | A few reads of the task and its run configs, the summary routes and the paired comparison, memory reads. Nothing that writes | val, test | test |
 
-### 5.2 The five scopes
+- The four tuner roles are named by the job, not by HT's own role names. **Proposed:** four lists, not one for each of HT's roles; 6.2 says which of HT's roles uses which. The architecture sets the names and the exact routes of each, starting from the gateway's lists of today.
+- The route that today's block list refuses for every MCP connection is out of every role but "no header".
+- No tuner role has a route that deletes, a route that edits the task, an eval, a judge or an eval input, a route that changes a dataset item, or the plain run route that takes free input text.
+- A URL that names an unknown role is refused when the client connects.
 
-**`fence_eval_data=<splits>`** withholds the per-item data of the named splits.
+### 5.3 Withheld data
 
-- An item is withheld when it is in a named split of any eval of the task. Whether an item is in a split comes from the eval definitions only, not from the name of a tag.
+These rules are the same for every role that withholds a split. They are the part of this phase that is code in the handlers.
+
+**Per-item data of a withheld split:**
+
+- An item is withheld when it is in a withheld split of any eval of the task. Whether an item is in a split comes from the eval definitions only, not from the name of a tag.
 - Withheld: the item itself (an eval input, or a dataset run), its result rows, its traces and its judge traces.
-- The results route looks only at the split that the request names: a request for a named split is refused. An item that is train in one eval and held out in another is still returned in the train rows of the first. This is a known limit, accepted.
+- The results route looks only at the split that the request names: a request for a withheld split is refused. An item that is train in one eval and held out in another is still returned in the train rows of the first. This is a known limit, accepted.
 - A direct read of a withheld item or of a run made from it is refused.
 - The eval-input list is asked with its existing filter for a split the caller can read. It fails in full if the answer would hold a withheld item.
 - The two run lists fail in full when the answer would hold a withheld item. Runs are the older form of eval data, so a good error is enough here.
 - A dataset run that is in no split is readable.
 - Routes that copy many items out at once, such as the dataset download, are refused.
 
-**`fence_eval_results=<splits>`** withholds the numbers of the named splits.
+**Numbers of a withheld split:**
 
-- The four summary routes of 4.4 and the paired comparison of 4.5 are refused for a named split. A call to a summary route with no `split` means `test`, so it is refused when `test` is named.
-- The existing routes that run a comparison or a calibration over the test split are refused when `test` is named.
-- **An eval job on a named split is allowed.** The connection cannot read what the job produces, but it can run the job and give the user the link to the page of the UI that shows the result. This is a common case, for example the test result at the end of the work. The docstring of the eval job route names this case as allowed: run, then link. The skill's text on the test split is updated for it, and that wording gets the owner's sign-off, because it touches a rule of the method.
-- **A memory record that carries a tag with the name of a named split, for example `val`, is hidden,** and the connection cannot write that tag. HT's code stores the val numbers of each promotion in such a record. This is the gateway's rule of today, kept with the same logic and applied to a scoped connection. (Decided by the owner, 2026-11-27.)
-
-**`block_eval_changes`** The connection cannot:
-
-1. create, edit or delete an eval, a spec or a judge config, or change an eval's default judge;
-2. create, edit or delete eval inputs;
-3. change a dataset run that is in any eval split: edit, re-tag, rate, repair or delete;
-4. give a run a tag that an eval split uses.
-
-This is also what stops a withheld item from being made readable.
-
-**`readonly`** Only GET requests that do not stream. No exception for a route or a caller.
-
-**`block_deletes`** Every `DELETE` request is refused. A simple check of the method, and nothing else.
-
-### 5.3 Defaults
-
-| Connection | `fence_eval_data` | `fence_eval_results` | `block_eval_changes` | `readonly` | `block_deletes` |
-|---|---|---|---|---|---|
-| REST with no scope | — | — | — | — | — |
-| `/mcp` (every MCP client by default) | val, test | test | — | — | — |
-| `/mcp/open` | — | — | — | — | — |
-
-HT's connections are in 6.2.
+- The four summary routes of 4.4 and the paired comparison of 4.5 are refused for a withheld split. A call to a summary route with no `split` means `test`, so it is refused when `test` is withheld.
+- The existing routes that run a comparison or a calibration over the test split are refused when `test` is withheld.
+- **An eval job on a withheld split is allowed** for a role that has the eval job route. The caller cannot read what the job produces, but it can run the job and give the user the link to the page of the UI that shows the result. This is a common case, for example the test result at the end of the work. The docstring of the eval job route names this case as allowed: run, then link. The skill's text on the test split is updated for it, and that wording gets the owner's sign-off, because it touches a rule of the method.
+- **A memory record that carries a tag with the name of a withheld split, for example `val`, is hidden,** and the caller cannot write that tag. HT's code stores the val numbers of each promotion in such a record. This is the gateway's rule of today, kept with the same logic.
 
 ### 5.4 Refusals
 
 - **First: withheld data is never returned.** This rule has no exception.
 - **Second, as the goal: a request succeeds in full or fails,** and nothing is dropped in silence. Where that costs too much for a route, the route may leave the withheld items out. Its answer then says how many it left out. The architecture lists each route that does this, with the reason.
-- The error says what was withheld, why, and what the caller can do in its place. For example: read the val result by numbers with the paired comparison. It names the skill file that has the rule.
-- The error does not tell the reader how to remove the scope.
+- The error says what was refused, why, and what the caller can do in its place. For example: read the val result by numbers with the paired comparison. It names the skill file that has the rule.
+- A call to a route that is out of the role gets an error that names the role and says the route is not in it.
+- The error does not tell the reader how to get another role.
 
-### 5.5 Complete by test
+### 5.5 Every route decides, and a test checks it
 
-- Every route of the API is classified for each scope: not affected, refused, or checked by a named rule.
-- A test fails the build for a route with no classification. So a new route cannot be added without a decision.
-- Each rule of 5.2 has tests on the REST API with the header, and one test through the MCP URL.
-- **Kept over time.** Kiln's code review guidance gains a check for val and test leaks: a new or changed route that returns eval items, their results or their numbers has a scope classification and a test, and a reviewer looks for a new way that such data can leave. The guidance for coding agents that write API code says the same.
-- **Documented.** A README in `app/mcp` describes the scopes: what each one does, the URL forms, the defaults, the header, and how to classify a new route.
+- **The map is complete.** Each route says, where the route is defined, which roles it is in. A route that says nothing fails the build. So every pull request that adds a route must decide, and a new route is never given to a role by accident or kept from one by forgetting.
+- **Eval data is marked.** A route that returns eval items, their results or their numbers says so, and names the rule of 5.3 that it applies. A test fails the build for a route that is in a role and returns eval data with no rule.
+- **Each role is tested as a whole.** For each role, one test walks every route: a route that is out is refused, a route that is in is not refused for its role. Each rule of 5.3 has tests on the REST API with the header, and one test through the MCP URL.
+- **Kept over time.** Kiln's code review guidance gains a check for val and test leaks: a new or changed route that returns eval items, their results or their numbers has its mark and a test, and a reviewer looks for a new way that such data can leave. The guidance for coding agents that write API code says the same, and says how to choose the roles of a new route.
+- **Documented.** A README in `app/mcp` describes the roles: what each one is for, its URL, what it withholds, the header, and how to add a route.
 
 ### 5.6 Files that `call_kiln_api` saves
 
-`call_kiln_api` can save a large answer to a file (`save_to_tmpfile`). Today every connection saves into one folder, so an agent that may read that folder can read a file that a connection with a weaker scope saved there.
+`call_kiln_api` can save a large answer to a file (`save_to_tmpfile`). Today every connection saves into one folder, so an agent that may read that folder can read a file that a connection with another role saved there.
 
-- **A folder for each scope.** A connection saves into a sub-folder of Kiln's temp folder. The name of the sub-folder is worked out from the connection's scope, and from nothing else, so the server keeps no memory of a connection. A connection with no scope has a sub-folder too.
-- Connections with the same scope share a sub-folder. They may read the same data, so nothing is disclosed.
+- **A folder for each role.** A connection saves into a sub-folder of Kiln's temp folder, named from its role. A request with no role has a sub-folder too.
+- Connections with the same role share a sub-folder. They may read the same data, so nothing is disclosed.
 - The clean-up of old files covers every sub-folder, as it covers the one folder today.
 - The tool's answer gives the full path of the saved file, as today.
-- Kiln gives a caller a way to learn the folder of a scope before any file is saved, so that a sandbox can be set up first. The architecture sets how.
+- Kiln gives a caller a way to learn the folder of a role before any file is saved, so that a sandbox can be set up first. The architecture sets how.
 
-### 5.7 What the scopes do not do
+### 5.7 What the roles do not do
 
 Stated so that nobody assumes more:
 
-- They prevent accidental disclosure. They are not a defence against a caller that works to get around them.
+- They prevent accidental disclosure and accidental damage. They are not a defence against a caller that works to get around them.
 - They do not control file access. An agent that can read the project folder can read every item.
 - Not mitigated, by decision: a task that uses Kiln's own API tool, a tool server at Kiln's own address, code that a code tool or a code judge runs, and the job error log read by run id.
 - The prompt generators that copy stored runs into a prompt can copy a held-out item. The cleanup and robustness project fixes the generators. This project does not work around it. When this project is done, a check says whether that fix is on main; if it is not, the owner is warned (section 8).
+- The chat role has no limit on what it may write or delete. A chat client works with a user, across the whole API.
 
 ### 5.8 What users see
 
@@ -301,28 +292,30 @@ Done when: the tests of 5.5 pass, and a chat client on `/mcp` can do a one-off e
 
 ### 6.2 The connections
 
-Each agent session connects to Kiln's MCP server on the URL for its role. It has no other route to Kiln: as today, its shell has no network and it cannot read the project folder.
+Each agent session connects to Kiln's MCP server on the URL of its role. It has no other route to Kiln: as today, its shell has no network and it cannot read the project folder.
 
-| Roles | `fence_eval_data` | `fence_eval_results` | `block_eval_changes` | `readonly` | `block_deletes` |
-|---|---|---|---|---|---|
-| Planner, builder, probe, analyst | val, test | val, test | yes | — | yes |
-| Baseline review, describe eval | val, test | val, test | yes | yes | yes |
-| Promote, report (the val readers) | val, test | test | yes | yes | yes |
-| Integrity review, generality review | no connection, as today | | | | |
+| HT's roles | Kiln role (5.2) |
+|---|---|
+| Builder, probe | Tuner: build |
+| Planner, analyst | Tuner: plan |
+| Baseline review, describe eval | Tuner: review |
+| Promote, report (the val readers) | Tuner: val |
+| Integrity review, generality review | No connection, as today |
 
-- **Each agent can read the saved files of its own scope, and no others.** HT gives the agent's sandbox read access to the folder of the agent's scope (5.6), for each agent CLI it supports: Claude Code, Codex and OpenCode. It gives no access to Kiln's temp folder as a whole. Without this an agent cannot open a trace or a long answer that it saved.
-  - To verify on each platform: that HT and the Kiln app resolve the same temp folder. They run as the same user.
-  - The proof of phase 6 tests both sides: an agent opens a file it saved, and it cannot open a file in another scope's folder.
-- There is no list of tools or routes for a role. A planner can call the route that creates a run config, which the gateway did not give it. Its role file says what its role does. This was decided with the scopes.
 - **The val readers** read val by numbers: the summary routes with `split=val` and the paired comparison. They cannot read a val row. They write nothing.
-- **The experimental eval-building role is removed.** It creates evals, which `block_eval_changes` refuses. The option `--experimental-eval-building` goes, with the role, its prompt, and the instructions in role files and docs that exist only for it. The loop then never builds an eval, which is what it does today when the option is off. Kiln's knowledge keeps its text on new evals: a chat client can build one with its user.
+- **A role's list starts from the gateway's list for the same roles.** Where HT's roles that share a Kiln role differ today (the probe has fewer tools than the builder), the Kiln role has the larger list, and the role file says what the role does.
+- **Each agent can read the saved files of its own role, and no others.** HT gives the agent's sandbox read access to the folder of the agent's role (5.6), for each agent CLI it supports: Claude Code, Codex and OpenCode. It gives no access to Kiln's temp folder as a whole. Without this an agent cannot open a trace or a long answer that it saved.
+  - To verify on each platform: that HT and the Kiln app resolve the same temp folder. They run as the same user.
+  - The proof of phase 6 tests both sides: an agent opens a file it saved, and it cannot open a file in another role's folder.
+- **The experimental eval-building role is removed.** It creates evals, and no tuner role has a route that does. The option `--experimental-eval-building` goes, with the role, its prompt, and the instructions in role files and docs that exist only for it. The loop then never builds an eval, which is what it does today when the option is off. Kiln's knowledge keeps its text on new evals: a chat client can build one with its user.
+- **When Kiln gains a route that a loop agent should use,** the route's author puts it in the tuner roles that need it (5.5). Until then the loop agents cannot call it.
 
 ### 6.3 What replaces each group of gateway tools
 
 | Gateway tools | After |
 |---|---|
 | Reads of the task, run configs, prompts, evals, specs, tools, skills, documents | The same reads through `call_kiln_api` |
-| Train results | The results route with `split=train`. The agent names the split; the scope refuses any other |
+| Train results | The results route with `split=train`. The agent names the split; its role refuses any other |
 | One task run, with its trace | The run route, and the trace as text (4.8) |
 | Train items and their expected outputs | The eval-input routes, asked for the train split |
 | Run a run config on a train item | The eval job of 4.8 |
@@ -335,78 +328,38 @@ Each agent session connects to Kiln's MCP server on the URL for its role. It has
 | The val summary | Loop code puts it in the val readers' input. No call |
 | Paging of a long answer | `body_limit`, `jq_filter` and `save_to_tmpfile` of `call_kiln_api` |
 
-A file that `call_kiln_api` saves must be readable inside the agent's sandbox. Sections 5.6 and 6.2 say how: a folder for each scope, and read access to that folder only.
+A file that `call_kiln_api` saves must be readable inside the agent's sandbox. Sections 5.6 and 6.2 say how: a folder for each role, and read access to that folder only.
 
-### 6.4 What the gateway does that the scopes do not
+### 6.4 What the gateway does today, and what does it after
 
-**Reviewed by the owner on 2026-11-27.** Each item carries the decision. One item waits: item 4, for an explanation.
+Reviewed by the owner on 2026-11-27. The roles of 5.2 keep most of what the gateway's own tool lists did. This list is what is left.
 
-**Note:** the owner is weighing another design for how connections are limited: a few roles, each an allow list of routes, in place of the write-side scopes. If that is chosen, items 2, 8 and 9 change. This section is not restructured until that is decided.
+**Kept, by a role's list of routes:**
 
-The gateway does more than keep val and test away. Each item below is something it does today that no scope does. For each: what it does today, what happens after phase 4, and a proposal.
+1. **No deletes, and no edits of what exists.** No tuner role has a route that deletes a record, edits the task, or changes an eval or a dataset item. "New objects only, and the parent is never changed" stays true because the routes are not in the lists.
+2. **The input of a run comes from the item.** The plain run route, which takes free text, is in no tuner role. An agent runs a train item by its id, with the eval job of 4.8.
+3. **Who may start what.** Only the build role can create a run config or start a run or an eval job. The val and review roles write nothing.
 
-1. **The model policy.** *Decided (question 1).*
-   - Today: the gateway refuses a run config with a model that the user's policy does not allow, when an agent creates one or runs one.
-   - After: the role files state the allowed models. Loop code checks each run config an agent made, before anything else uses it.
-   - What is lost: an agent can create a run config with another model and run it itself, in a quick check, before loop code sees it. The task's data then goes to a provider the user did not allow.
+**Kept, in another place:**
 
-2. **No deletes, and no edits of what exists.**
-   - Today: the gateway has no tool that deletes a record, edits the task, changes a setting or a provider, or changes an existing run config or prompt (it can rename a run config). "New objects only, and the parent is never changed" is true because the tools do not exist.
-   - After: a train-side agent can call any route that is not blocked for MCP. That includes the routes that delete a task, a run, a run config's prompt or a memory record, and the route that edits the task and its default run config. `block_eval_changes` covers evals, eval inputs and dataset items in a split, and nothing else. A `readonly` role is safe.
-   - Decided: one more scope, `block_deletes`. It is a simple check of the method: it refuses every `DELETE` request. HT's connections set it. Two routes delete with a `POST` (many runs, many documents); the simple check does not cover them, and the role files say not to call them. Edits of the task stay a rule of the role files, checked in the audit.
+4. **Code trust.** The route that grants it is blocked for every MCP connection, on purpose: only the user grants trust. Loop code grants it, from code, at the point where an agent does it today.
+5. **The `val` memory record** stays hidden from the train-side roles (5.3).
+6. **The memory write feed.** The gateway wrote one line for each memory write, and HT showed it in its log and on its screen. Loop code reads the memory list after each session and reports what is new.
+7. **Val readers write nothing, on disk too.** The val role has no route that writes. The file rule is HT's own, unchanged.
 
-3. **Code trust.**
-   - Today: the builder and the probe call a gateway tool that tells Kiln to trust the project's code tools.
-   - After: that route is blocked for every MCP connection, on purpose: only the user grants trust. So an agent cannot call it.
-   - Decided: loop code grants trust, from code, at the point where an agent does it today.
+**Lost, and accepted by the owner:**
 
-4. **An answer holds only named fields.**
-   - Today: the gateway copies named fields from Kiln's answer. A field that Kiln adds later cannot reach an agent.
-   - After: the agent gets Kiln's whole answer.
-   - What is lost: a guard against a future field that carries held-out content, for example a new field of a result row. The scope rules work on items, not on fields.
-   - Proposal: accept. The code review check of 5.5 covers a new field on a route that returns eval data. *Waits for the owner, after an explanation.*
-
-5. **Tags that are named like a held-out split.**
-   - Today: an item with a tag named `val`, `test`, `val_*`, `test_*`, `holdout*` or `heldout*` is kept from agents, also when no eval uses that tag. The reason: the test items of a deleted eval are still test items.
-   - After: held-out status comes from eval definitions only (5.2). Such an item is readable.
-   - Decided: accept the loss. HT's start-up check still finds such tags and warns the user before a run.
-
-6. **An item that is train in one eval and held out in another.**
-   - Today: the gateway keeps such an item from agents in every read.
-   - After: the item is returned in the train rows of the first eval (5.2). A direct read of the item is still refused.
-   - Decided: accept. HT's start-up check still reports each overlap, so the user can fix the split design.
-
-7. **One project and one task.**
-   - Today: every gateway call is built for the run's project and task. An agent cannot name another.
-   - After: the agent names both ids on each call, from its input. It can read another task or project.
-   - Decided: accept, and it is wanted: a sub-agent is another task, and an agent must be able to read it.
-
-8. **The input of a run comes from the item.**
-   - Today: to run a run config, an agent names a train item. The gateway reads the item's input itself. The agent cannot run free text.
-   - After: the eval job of 4.8 does the same, by item id. But the plain run route is open too, and it takes any input text.
-   - Decided: accept. The role files name the eval job as the way.
-
-9. **Who may start what, and how much at once.**
-   - Today: the planner and the analyst cannot create a run config, run an item or start an eval job. Only the builder exports a skill. The runs that agents start are limited to four at once in each session.
-   - After: no tool lists (decided with the scopes). Every train-side role can start a run or an eval job, with a concurrency it chooses, up to Kiln's limit of 100.
-   - What is lost: a limit on spend that an agent starts by mistake.
-   - Decided: guidance is enough. The role files say which roles do not start runs or eval jobs, and with what concurrency the others do. HT does not track the cost of what agents start.
-
-10. **Memory.**
-    - Today: the gateway limits memory calls to the project scope and the task's scope, and it lets only some roles update a record. It writes one line for each memory write to a file, from which HT shows the write in its log and its screen.
-    - After: Kiln's memory routes, by the rules of `references/knowledge/memory.md`. Which role writes which record is a rule of the role files. The `val` tag stays protected (5.2).
-    - Decided: accept the first two. For the third, loop code reads the memory list after each session and reports what is new, so the log and the screen keep their lines.
-
-11. **Val readers write nothing, on disk too.**
-    - Today: the promote and report roles have no write tool, and their sandbox cannot write a file.
-    - After: `readonly` on the connection. The file rule is HT's own, unchanged.
-    - Decided: no loss.
-
-12. **Small things that go.** The gateway repairs a name that Kiln would refuse, checks a request before it reaches Kiln, and limits an answer to 40,000 characters. After: Kiln refuses a bad name or a bad request with its own error, and `call_kiln_api` limits a body with `body_limit`. Decided: accept.
+8. **The model policy.** The role files state the allowed models. Loop code checks each run config that an agent made, before anything else uses it. An agent with the build role can still create a run config with another model and run it itself, in a quick check, before loop code sees it.
+9. **An answer holds only named fields.** The gateway copies a fixed list of fields from each of Kiln's answers and drops the rest, so a field that Kiln adds later cannot reach an agent. After, the agent gets Kiln's whole answer. The code review check of 5.5 is the guard for a new field that carries eval data.
+10. **Tags that are named like a held-out split.** The gateway keeps an item tagged `val`, `test` or `holdout…` from agents, also when no eval uses the tag. After, held-out status comes from eval definitions only. HT's start-up check still finds such tags and warns the user before a run.
+11. **An item that is train in one eval and held out in another.** The gateway keeps it from agents in every read. After, it is returned in the train rows of the first eval; a direct read of the item is still refused. HT's start-up check still reports each overlap.
+12. **One project and one task.** After, the agent names both ids on each call and can read another task. This is wanted: a sub-agent is another task.
+13. **How much at once.** The gateway limits the runs an agent starts to four at once. After, the build role chooses the concurrency of an eval job, up to Kiln's limit. The role file gives the number. HT does not track the cost of what agents start.
+14. **Small things.** The gateway repairs a name that Kiln would refuse, checks a request before it reaches Kiln, and limits an answer to 40,000 characters. After, Kiln answers with its own error, and `call_kiln_api` limits a body with `body_limit`.
 
 ### 6.5 Loop code
 
-Loop code is trusted. It calls Kiln with no scope, and it keeps val and test data away from its agents itself, as today.
+Loop code is trusted. It calls Kiln with no role, and it keeps val and test data away from its agents itself, as today.
 
 - **Minimal rewrites.** Loop code keeps its structure and its call sites. Where Kiln and HT share a calculation (the floor, detectability, the numbers of a paired comparison, the smells), the function moves into Kiln's code, and both Kiln's route and HT's loop code import it. HT's callers are not rewritten to make HTTP calls.
 - It uses Kiln's routes where it used a copy of data: model information and the skill bundle routes.
@@ -428,7 +381,7 @@ Loop code is trusted. It calls Kiln with no scope, and it keeps val and test dat
 
 The gateway's code is not removed in this phase. It is no longer used. It goes at the end of phase 6.
 
-Done when: HT's tests pass, and a run on the demo project completes with every agent on a scoped connection.
+Done when: HT's tests pass, and a run on the demo project completes with every agent on the connection of its role.
 
 ## 7. Phase 5: Coherence check
 
@@ -436,7 +389,7 @@ Phase 4 changes many things at once. This phase builds nothing. It checks that e
 
 - **No name of a removed thing is left.** A search of both the code and every text for: each gateway tool name, each removed skill, each removed command and option, the paths of HT's old knowledge copy, and the words "gateway" and "skill installer" where they describe how things work now.
 - **Every pointer resolves.** Each path that a role file, a role prompt or HT's code names in Kiln's skill is a file that exists. Each endpoint doc that a role file names exists, and the route is one the role's connection may call.
-- **Each role, end to end.** For each role: its prompt names its role file; the role file names only calls that its scope allows; the calls it needs for its job are all named; and its sandbox can read the folder of its scope's saved files.
+- **Each role, end to end.** For each role: its prompt names its role file; the role file names only routes that are in its Kiln role; the calls it needs for its job are all named; and its sandbox can read the folder of its Kiln role's saved files.
 - **Kiln's skill reads right for both readers.** The files that changed for this project are read once as a chat client and once as a loop agent.
 - **The docs match.** HT's docs (install, command line, architecture, agents, limitations, the contributor guide), the README of `app/mcp`, Kiln's help articles on the MCP server, and the command line's own help text.
 - **The tests match.** No test is skipped or deleted without a reason written beside it. No fake of a route differs from the real route.
@@ -446,8 +399,8 @@ Done when: the list is worked through, each finding is fixed or recorded with a 
 
 ## 8. Phase 6: Proof, then the gateway goes
 
-1. **Scope tests.** Each of the gateway's fence tests has a test of the same intent on a scoped connection: a held-out row cannot be read, a val number cannot be read by a train-side role, an eval cannot be changed, a val reader cannot write. Also: an agent opens a file that it saved, and it cannot open a file in the folder of another scope (6.2). A gateway test with no scope test is listed, with the reason (6.4).
-2. **The audit.** A read of the moved HT against the checklist of its core concepts. Each item is checked in the place that now carries it: a scope, a role file, Kiln's skill or HT's code. The checklist is the switchover's (its functional spec, section 7): tune on train, confirm on val, never read test; val by numbers only; the promotion rule; one change for each experiment; new objects only; provenance; no train item value or judge text in a prompt, skill or tool; hard limits; only allowed models; cost from recorded usage; the memory conventions; val readers write nothing; one attempt for each idea; the task's default run config is never changed; the verdict words; the loop never asks a person.
+1. **Role tests.** Each of the gateway's fence tests has a test of the same intent on a connection with a tuner role: a held-out row cannot be read, a val number cannot be read by a train-side role, an eval cannot be changed, a val reader cannot write. Also: an agent opens a file that it saved, and it cannot open a file in the folder of another role (6.2). A gateway test with no role test is listed, with the reason (6.4).
+2. **The audit.** A read of the moved HT against the checklist of its core concepts. Each item is checked in the place that now carries it: a Kiln role, a role file, Kiln's skill or HT's code. The checklist is the switchover's (its functional spec, section 7): tune on train, confirm on val, never read test; val by numbers only; the promotion rule; one change for each experiment; new objects only; provenance; no train item value or judge text in a prompt, skill or tool; hard limits; only allowed models; cost from recorded usage; the memory conventions; val readers write nothing; one attempt for each idea; the task's default run config is never changed; the verdict words; the loop never asks a person.
 3. **Runs on the demo project.** Full runs with default options. A run passes when it finishes without an error from a missing file, a refused call that the role needed, or a wrong call that the agent could not correct, and its report is written. **Proposed:** the owner reads the runs and decides whether agent sessions on the generic API work well enough, by the number of failed calls and the cost of each session against a run from phase 1.
 4. **Then:** the gateway, its tests and its console script are deleted, and the searches of phase 5 are run again.
 5. **A warning, if it applies.** The prompt generators that copy stored runs into a prompt are fixed by the cleanup and robustness project, not by this one. At the end of this phase, check main. If the fix is not there, tell the owner in plain words: a held-out item can still reach an agent through such a generator.
@@ -479,18 +432,19 @@ Out of scope:
 Risks:
 
 - **Loop agents on the generic API.** A typed tool is hard to call wrongly. On `call_kiln_api` an agent reads a doc, then builds a path and a body. More tokens and more wrong calls are likely. Phase 6 measures it, and the gateway is the fallback until then.
-- **A weaker fence in known places** (6.4). Each is accepted under "accidental, not adversarial". HT's public promise says the test set is never read; its docs must say what enforces that after the move.
-- **A route that is missed.** A route with the wrong classification leaks under a scope, in silence. The test of 5.5 covers a new route. It does not check that a classification is right; the scope tests of phase 6 do that for the gateway's cases.
-- **A scope that leaks into background work.** An eval job that a scoped request starts must run unscoped, or it filters its own reads. The architecture keeps the scope on the request.
+- **A weaker fence in known places** (6.4, items 8 to 14). Each is accepted under "accidental, not adversarial". HT's public promise says the test set is never read; its docs must say what enforces that after the move.
+- **A route that is marked wrongly.** A new route is out of the tuner roles until someone puts it in, so a mistake there costs a feature, not a leak. The chat role is the other way: it has every route. A route that returns eval data and is not marked as such leaks to a chat client, in silence. The marks and the review check of 5.5 are the guard.
+- **A role that leaks into background work.** An eval job that a request with a role starts must run with no role, or it filters its own reads. The architecture keeps the role on the request.
 - **A live default changes** (5.8).
+- **A new Kiln route is not open to loop agents until someone puts it in a tuner role.** The build fails until each new route decides (5.5), so the decision cannot be forgotten. It can still be made wrongly, by an author who does not know HT.
 - **Size of the move.** About 57,000 lines and 4,000 tests come under Kiln's checks and CI.
 
 ## 11. Questions, answered
 
 The owner answered these on 2026-11-27. Each answer is written into the section it belongs to.
 
-1. **The model policy without the gateway.** Role files state the allowed models. Loop code checks each run config that an agent made, before anything else uses it. An agent's own quick runs are not checked by code (6.4).
-2. **The `val` memory record** is hidden by `fence_eval_results`, as the gateway hides it today (5.2).
+1. **The model policy without the gateway.** Role files state the allowed models. Loop code checks each run config that an agent made, before anything else uses it. An agent's own quick runs are not checked by code (6.4, item 8).
+2. **The `val` memory record** is hidden from a role that withholds val numbers, as the gateway hides it today (5.3).
 3. **The experimental eval-building option** is removed, with its role and its instructions (6.2).
-4. **The paired comparison** allows the test split for a caller with no scope (4.5).
+4. **The paired comparison** allows the test split for a caller with no role (4.5).
 5. **The prompt generators.** This project does not work around them. It warns the owner at the end if the cleanup project's fix is not on main (section 8).
