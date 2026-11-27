@@ -17,12 +17,12 @@ This spec replaces [harness_tuner_switchover](../harness_tuner_switchover/projec
 
 ## The end state
 
-- **One repository and one release.** Harness-tuner ships with the Kiln app.
+- **One repository and one release.** Harness-tuner ships with the Kiln app. The PyPI package `harness-tuner` stays, as a thin launcher of Kiln's copy.
 - **One skill.** Harness-tuner's role procedures are in Kiln's skill, beside the knowledge they use.
 - **One API and one MCP server.** Harness-tuner's agents get the same two tools as every MCP client: `call_kiln_api` and `kiln_skill`.
 - **One fence.** A scope on the MCP connection, enforced in Kiln's API. Every MCP client gets it.
 
-Harness-tuner's own Python code is trusted. It calls Kiln with no scope and keeps val and test data away from its agents itself, as it does today. The scopes are for agents.
+Harness-tuner's own Python code is trusted. It calls Kiln with no scope and keeps val and test data away from its agents itself, as it does today. The scopes are for agents. Its code keeps its structure: the move rewrites as little of it as possible.
 
 ## Principles
 
@@ -30,7 +30,7 @@ Harness-tuner's own Python code is trusted. It calls Kiln with no scope and keep
 - **Every MCP connection has a scope by default.** A user can opt out on the URL.
 - **Accidental, not adversarial.** The scopes prevent accidental disclosure and accidental overfitting. They are not a defence against a caller that works to get around them.
 - **Complete.** Every route is classified for the scopes, and a test fails the build for a route that is not.
-- **Harness-tuner's method does not change.** This is a move and a port, not a redesign of how it tunes.
+- **Harness-tuner's method does not change.** This is a move and a port, not a redesign of how it tunes. Where a rule must change, a person signs it off first.
 - **No duplicate code, and no poor shape carried over.** One copy of each calculation and each rule.
 - **Each phase stands on its own.** A later phase can wait, or not happen, and the earlier ones are still complete and useful.
 
@@ -40,9 +40,11 @@ Harness-tuner's own Python code is trusted. It calls Kiln with no scope and keep
 2. **Kiln APIs.** The APIs that every client gets (below).
 3. **Scopes.** The four scopes, the default for MCP connections, and the skill text that explains them. Harness-tuner still runs on its gateway, so this phase is tested with MCP clients alone.
 4. **Harness-tuner on Kiln's MCP server and skill.** Its role skills move into Kiln's skill and name endpoints. Its agents connect on scoped URLs. Its copies are removed.
-5. **Proof.** The gateway's fence tests are rewritten as scope tests. An audit against harness-tuner's core concepts, and runs on the demo project. When the proof passes, the gateway is deleted.
+5. **Coherence check.** Nothing is built. A check that every needed update was made: no name of a removed thing is left, every pointer resolves, and the docs and tests match.
+6. **Proof.** The gateway's fence tests are rewritten as scope tests. An audit against harness-tuner's core concepts, and runs on the demo project. When the proof passes, the gateway is deleted.
+7. **The launcher package.** The PyPI package `harness-tuner` becomes a thin launcher: it gets Kiln's release, installs it, and starts Kiln's copy of harness-tuner. Last, by hand, the owner makes the old repository private.
 
-Phases 1 to 3 need nothing from phase 4. Until phase 4 lands, harness-tuner keeps working on its gateway. If the proof of phase 5 fails, the gateway stays, and the result is still sound: scopes for every other MCP client, and the gateway for the loop.
+Phases 1 to 3 need nothing from phase 4. Until phase 4 lands, harness-tuner keeps working on its gateway. If the proof of phase 6 fails, the gateway stays, and the result is still sound: scopes for every other MCP client, and the gateway for the loop.
 
 ## Scopes
 
@@ -101,7 +103,6 @@ Harness-tuner's own code may call these routes or import the same code. Either w
 
 ## Open
 
-- **Packaging.** How the command line, PyPI and the app bundle fit together. It does not block the plan.
-- **Harness-tuner's own code: REST or import.** This follows from the packaging.
+- **How the launcher gets and installs Kiln's release** on each platform (phase 7). For the architecture.
 - **The cleanup and robustness project.** The canceled spec relied on its fixes, such as the prompt generators that skip items of an eval split. To check: which of them this spec needs before the scopes are complete.
 - **Three places where the gateway is stricter than the scopes.** It returns only named fields. It treats a tag named like `holdout` as held out when no eval uses it. It takes out an item that is train in one eval and held out in another. The functional spec says for each whether the scopes match it or the gap is accepted.

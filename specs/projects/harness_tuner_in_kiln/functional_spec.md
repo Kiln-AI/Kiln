@@ -4,17 +4,17 @@ status: draft
 
 # Functional Spec: Harness Tuner in Kiln
 
-Read the [project overview](project_overview.md) first. This document says what each of the five phases delivers.
+Read the [project overview](project_overview.md) first. This document says what each of the seven phases delivers.
 
 Words used here:
 
 - **HT** is Kiln Harness Tuner. Its code is at commit `6780366` of its own repository when this was written.
-- **The gateway** is HT's own MCP server for its agents. It has 54 tools. It stays until phase 5.
+- **The gateway** is HT's own MCP server for its agents. It has 54 tools. It stays until phase 6.
 - **Loop agents** are the agent sessions HT starts (planner, builder, analyst and the others). **Loop code** is HT's own Python.
 - **A chat client** is an agent that works with a user over Kiln's MCP server.
 - **Scoped** means a request that carries a scope. **Unscoped** means one that does not.
 
-A line marked **Proposed** is a call made while drafting. The owner can overrule it. Section 9 lists the questions that need the owner.
+A line marked **Proposed** is a call made while drafting. The owner can overrule it. Section 11 lists the questions that need the owner.
 
 Sources that this document draws on, and replaces where they differ:
 
@@ -26,9 +26,9 @@ Sources that this document draws on, and replaces where they differ:
 
 | Area | Today | After |
 |---|---|---|
-| Where HT lives | Its own repository, its own releases | The Kiln repository, Kiln's releases |
+| Where HT lives | Its own repository, its own releases | The Kiln repository, Kiln's releases. The PyPI package `harness-tuner` stays, as a thin launcher of Kiln's copy (phase 7) |
 | How a loop agent reaches Kiln | HT's gateway, 54 typed tools | Kiln's MCP server, on a scoped URL: `call_kiln_api` and `kiln_skill` |
-| What keeps val and test from an agent | The gateway's rules, for HT's agents only | Scopes in Kiln's API, for every MCP connection |
+| What keeps val and test from an agent | The gateway's rules, for HT's agents only | Scopes in Kiln's API, for every MCP connection. And HT's code, which does not pass those values to its agents |
 | Role procedures | Skill files that HT copies into each agent CLI's folder | Files of Kiln's skill, under `references/client_guidance/harness_tuner/` |
 | Knowledge, API reference, model information | HT ships copies | Kiln's own. The copies are removed |
 | Measurement calculations (floor, detectability, paired comparison, smells) | HT code | Kiln code, one copy, behind standard APIs |
@@ -37,7 +37,8 @@ Sources that this document draws on, and replaces where they differ:
 ## 2. Rules for every phase
 
 - **Each phase is complete on its own.** It can be merged and released without the next one.
-- **HT's method does not change.** Its numbers, its rules for keeping a candidate and its loop are moved, not redesigned. Where a rule must change, this document says so.
+- **HT's method does not change.** Its numbers, its rules for keeping a candidate and its loop are moved, not redesigned. Where a rule must change, a person signs it off first, in so many words. This document names the changes it knows of.
+- **Loop code has minimal rewrites.** HT's own Python keeps its structure and its call sites. Where Kiln and HT must share one calculation, the function moves to a place both import; its callers in HT are not rewritten.
 - **One copy.** When a phase gives Kiln a calculation or a rule, the same phase or phase 4 removes HT's copy. No phase ends with a new duplicate that has no planned removal.
 - **Every new route** is a standard REST route, reached through `call_kiln_api`. No new MCP tools. Each new or changed route updates the generated web client schema and the skill's API reference in the same phase, because CI checks both.
 - **Kiln's conventions apply** to all new code in the Kiln packages.
@@ -47,18 +48,27 @@ Sources that this document draws on, and replaces where they differ:
 HT's code, tests, docs and demo project come into the Kiln repository. HT works as it does today.
 
 - **Same behaviour.** The gateway, HT's own skills, its copies of the knowledge and its REST client stay as they are. A run of HT from the Kiln repository gives what a run from its own repository gives.
-- **Same commands.** The command `harness-tuner` and its options do not change. The other four console scripts stay until phase 4.
+- **Same commands.** The command `harness-tuner` and its options do not change. HT's package installs four more commands today, and all four stay in this phase, because nothing changes yet:
+
+  | Command | What it is | Goes in |
+  |---|---|---|
+  | `harness-tuner-gateway-mcp` | Starts the gateway. HT runs it for each agent session; a person does not | Phase 6, with the gateway |
+  | `harness-tuner-skill-installer-mcp` | Starts the skill installer's server. HT runs it for two roles | Phase 4: the skill bundle routes replace it |
+  | `harness-tuner-install-agents` | Copies HT's skills into a person's own project, for work by hand with an agent | Phase 4: Kiln's MCP server and skill replace it |
+  | `kiln_api_mcp` | HT's own `call_kiln_api` server, for the same work by hand | Phase 4: Kiln's MCP server replaces it |
 - **Kiln's checks.** HT's tests run in Kiln's CI. HT's code passes Kiln's lint and format checks. **Proposed:** the type check may come in steps, which the architecture sets, because HT has about 57,000 lines that Kiln's type checker has not seen.
 - **Not built.** Nothing of the two-repository design: no version route, no minimum-version field, no contract test, no reader of Kiln's skill over MCP.
 - **The version.** **Proposed:** from its first release out of the Kiln repository, HT has Kiln's version number.
-- **The old repository.** It gets a pointer to the new place. When, and what happens to its open work, is the owner's call.
-- **Packaging** is open (overview). This phase needs only that a developer can run HT from the repository, and that today's way to install it keeps working until a later phase replaces it.
+- **The old repository** keeps working for its users until phase 7. It is made private as the last step of this project (section 9).
+- **Packaging.** This phase needs only that a developer can run HT from the repository. Today's PyPI package keeps working, unchanged, until phase 7 replaces it.
 
 Done when: HT's full test suite passes in Kiln's CI, and one run on the demo project from the Kiln repository completes.
 
 ## 4. Phase 2: Kiln APIs
 
-Every number and definition is HT's, unchanged, except where this section says so. Where HT has a test that pins a value, Kiln has a test with the same value. None of these routes spends money.
+The bar for this phase: each route gives the same result that HT's own code gives today. Every number and definition is HT's, unchanged, except where this section says so. Where HT has a test that pins a value, Kiln has a test with the same value. None of these routes spends money.
+
+The owner approved the proposals of this section on 2026-11-27, on that bar. One point is still open: whether the paired comparison allows the test split (question 4).
 
 ### 4.1 Significance floor
 
@@ -79,7 +89,7 @@ Answers: can this task's evals show an improvement of this run config at all?
 - Several stored rows of one item are folded into one, by the mean, as HT does.
 - An eval with no stored train row gives rows with `n = 0`. Neither that nor an eval with no default judge config is an error.
 - The route returns facts only. Whether a result is too weak to act on is the caller's decision.
-- **Proposed:** the confidence is fixed at 0.95.
+- The confidence is fixed at 0.95.
 
 ### 4.3 Smell check
 
@@ -99,7 +109,7 @@ Checks a run config for the five smells that code can detect. Pure code, no mode
 - A skill that cannot be read is named in `unread_skills`. The other skills are still checked.
 - The model's release date comes from Kiln's model info. A model with no known release date gives no `old-model` detection and is named in the response.
 - The limits are fixed in Kiln. No parameter changes one.
-- **Proposed:** the route takes no date. It uses today's date.
+- The route takes no date. It uses today's date.
 
 ### 4.4 Scores by split
 
@@ -121,7 +131,7 @@ Compares a candidate with a baseline on one eval, from stored results, without r
 - One eval for each call. It returns no headline number across evals.
 - The confidence is fixed at 0.95.
 - **Proposed:** `split` is required and may be `train`, `val` or `test`. The route itself does not refuse `test`: an unscoped caller, such as the UI, may compare on it. A scope that withholds test numbers refuses it (section 5).
-- **Proposed:** the name is `paired_comparison`, because the existing `run_comparison` beside it runs evals on the test split and spends money.
+- The name is `paired_comparison`, because the existing `run_comparison` beside it runs evals on the test split and spends money.
 
 ### 4.6 Skill bundles
 
@@ -129,12 +139,14 @@ Kiln's API can create a skill today, but only its `SKILL.md`. It cannot add or r
 
 **Create from a folder:** `POST /api/projects/{project_id}/skills/from_folder`
 
+- Every MCP client can call it. Creating a skill with reference files over MCP is wanted, not only for HT.
+
 - **In:** `folder_path` (an absolute path on the machine that runs Kiln) and `provenance`.
 - The caller writes a skill folder in a place of its own and names the path. Kiln checks that it is a valid skill and copies it into the project. The caller never writes into the project, and never writes a `.kiln` file.
 - The folder holds exactly: `SKILL.md`, and optionally `references/` and `assets/`. Nothing else at its root.
 - `SKILL.md` has front matter with exactly `name` and `description`, and a body that is not blank. The name follows Kiln's existing skill name rules. The description is 1 to 1,024 characters.
 - Every file is UTF-8 text. A binary file is refused. (Binary assets are a P2, outside this spec.)
-- No symlinks. Each file is at most 512 KiB, and the whole folder at most 2 MiB.
+- No symlinks. Each file is at most 4 MB, and the whole folder at most 25 MB. Inside those limits, a reasonable design is the caller's job.
 - A name that another skill of the project has is allowed, as on the existing create route. A new version of a skill may keep its name.
 - Kiln writes the skill with its own datamodel. The skill is listed only when it is whole. A failure leaves nothing behind.
 - **Errors:** every problem with the folder is reported in one answer. Nothing is written on a refusal.
@@ -153,12 +165,16 @@ Kiln's API can create a skill today, but only its `SKILL.md`. It cannot add or r
 
 Two gateway tools do work that no single API call does. Phase 4 needs an answer for each, and a chat client has the same need.
 
-- **A trace as text.** The gateway writes each train trace as a readable file that an agent can search. Kiln returns a trace as JSON. **Proposed:** a new route returns one task run's trace as readable text, in the form HT's trace files have today. With `save_to_tmpfile` an agent gets a file to search.
-- **Run a run config on a train item, by the item's id.** The gateway takes an item id and reads the input itself, so the agent does not supply the input text. Kiln has this for an eval with a V2 judge: an eval job with `judge: false`, `split: "train"` and `item_ids`. **Proposed:** that job is the way for every eval, and the gap for an eval with a legacy judge is closed here.
+- **A trace as text.** The gateway writes each train trace as a readable file that an agent can search. Kiln returns a trace as JSON. A new route returns one task run's trace as readable text, in the form HT's trace files have today. With `save_to_tmpfile` an agent gets a file to search.
+- **Run a run config on a train item, by the item's id.** The gateway takes an item id and reads the input itself, so the agent does not supply the input text. Kiln has this for an eval with a V2 judge: an eval job with `judge: false`, `split: "train"` and `item_ids`. That job is the way for every eval, and the gap for an eval with a legacy judge is closed here.
 
 ### 4.9 Skill text for the new routes
 
-- The files that say only Kiln Harness Tuner can install a skill with reference files name the skill bundle routes: `references/levers/skill.md`, `references/knowledge/adding_skills.md`, and the chat guide. The lever also stops saying that a new version needs a new name.
+- **Creating a skill with reference files.** Kiln's skill tells a chat client today that this needs Kiln Harness Tuner, because no API could do it. After this phase any MCP client can do it with the skill bundle routes. So that text is removed, and the routes are named in its place. The three places:
+  - `references/levers/skill.md`: "install with the `install_skill_bundle` tool of Kiln Harness Tuner's skill installer. The skill installer is not a Kiln endpoint".
+  - `references/knowledge/adding_skills.md`: "`references/*` files have NO API."
+  - The chat guide: the skill installer is listed as a tool that Kiln does not have.
+- **A new version of a skill.** The lever says "install it under a new name" and "Each name can be installed once". Both go. The new text: a new version may keep the name, and this is common. A new run config attaches the new version in place of the old one, so no prompt that names the skill needs a change.
 - `references/knowledge/train_val_test.md`, the table of which call reads which split, names the `split` parameter and the paired comparison. It stops telling the reader to use the results call with a `jq_filter` for val numbers.
 - The chat guide's section on reading the shared documents names the detectability read and the smell check, where it says today that a chat client does not have them.
 - The knowledge trees themselves are not reworded for these routes. Spec one's rule holds: they keep HT's text, and the chat guide explains them.
@@ -169,9 +185,10 @@ Done when: each route has tests with HT's pinned values, and the skill's checks 
 
 ### 5.1 What a scope is
 
-- A scope is a set of settings on one MCP connection. It is in the URL path of the connection. It is self-describing: no token, and no memory on the server.
-- The MCP tool passes the scope to the API on its loopback call, as a header. The API enforces it.
-- The header can only take away. A request with no header is today's API.
+- **A scope is a set of restrictions that a request to Kiln's REST API can carry.** The request names them in one header. The API enforces them.
+- A request with no header is today's API, with no new code path. The header can only take away.
+- Any REST caller may send the header. The caller that always does is Kiln's MCP server.
+- **An MCP connection has one scope for all its calls.** The URL path of the connection names it. The `call_kiln_api` tool puts it in the header of each call it makes to the API. The scope is self-describing: no token, and no memory on the server.
 - Scoping adds no tool and hides no tool. A scoped connection has the same two tools and the same API, and gets a clear error when a call goes outside its scope.
 - **Proposed:** the forms of the URL:
 
@@ -200,8 +217,8 @@ Done when: each route has tests with HT's pinned values, and the skill's checks 
 
 - The four summary routes of 4.4 and the paired comparison of 4.5 are refused for a named split. A call to a summary route with no `split` means `test`, so it is refused when `test` is named.
 - The existing routes that run a comparison or a calibration over the test split are refused when `test` is named.
-- **Proposed:** an eval job on a named split is refused, because the connection could read nothing of what it produces.
-- **Proposed:** a memory record that carries a tag with the name of a named split, for example `val`, is hidden, and the connection cannot write that tag. HT's code stores the val numbers of each promotion in such a record. See question 2.
+- **An eval job on a named split is allowed.** The connection cannot read what the job produces, but it can run the job and give the user the link to the page of the UI that shows the result. This is a common case, for example the test result at the end of the work. The docstring of the eval job route names this case as allowed: run, then link. The skill's text on the test split is updated for it, and that wording gets the owner's sign-off, because it touches a rule of the method.
+- **Proposed, not decided:** a memory record that carries a tag with the name of a named split, for example `val`, is hidden, and the connection cannot write that tag. HT's code stores the val numbers of each promotion in such a record. The gateway does this today for HT's agents; in Kiln's API it would be new. See question 2.
 
 **`block_eval_changes`** The connection cannot:
 
@@ -226,7 +243,8 @@ HT's connections are in 6.2.
 
 ### 5.4 Refusals
 
-- A request succeeds in full or fails. Nothing is dropped in silence.
+- **First: withheld data is never returned.** This rule has no exception.
+- **Second, as the goal: a request succeeds in full or fails,** and nothing is dropped in silence. Where that costs too much for a route, the route may leave the withheld items out. Its answer then says how many it left out. The architecture lists each route that does this, with the reason.
 - The error says what was withheld, why, and what the caller can do in its place. For example: read the val result by numbers with the paired comparison. It names the skill file that has the rule.
 - The error does not tell the reader how to remove the scope.
 
@@ -235,6 +253,8 @@ HT's connections are in 6.2.
 - Every route of the API is classified for each scope: not affected, refused, or checked by a named rule.
 - A test fails the build for a route with no classification. So a new route cannot be added without a decision.
 - Each rule of 5.2 has tests on the REST API with the header, and one test through the MCP URL.
+- **Kept over time.** Kiln's code review guidance gains a check for val and test leaks: a new or changed route that returns eval items, their results or their numbers has a scope classification and a test, and a reviewer looks for a new way that such data can leave. The guidance for coding agents that write API code says the same.
+- **Documented.** A README in `app/mcp` describes the scopes: what each one does, the URL forms, the defaults, the header, and how to classify a new route.
 
 ### 5.6 What the scopes do not do
 
@@ -249,7 +269,7 @@ Stated so that nobody assumes more:
 
 - **The MCP server is live.** After this phase a chat client on `/mcp` can no longer read val or test rows, or test numbers. The release notes say so.
 - **The skill** explains the default and its reason: the rule in `references/knowledge/train_val_test.md`, and one line in the root `SKILL.md`. The val numbers come from the routes of 4.4 and 4.5, which is why phase 2 comes first.
-- **The Connect page.** **Proposed:** one sentence says what an MCP client cannot read by default, with a link to the help article that gives the opt-out URL. No new control.
+- **The Connect page does not change.** The opt-out URL is in the docs.
 
 Done when: the tests of 5.5 pass, and a chat client on `/mcp` can do a one-off experiment by the skill's guide with no refused call.
 
@@ -300,9 +320,11 @@ Each agent session connects to Kiln's MCP server on the URL for its role. It has
 | The val summary | Loop code puts it in the val readers' input. No call |
 | Paging of a long answer | `body_limit`, `jq_filter` and `save_to_tmpfile` of `call_kiln_api` |
 
-A file that `call_kiln_api` saves must be readable inside the agent's sandbox.
+A file that `call_kiln_api` saves must be readable inside the agent's sandbox. Today every connection saves into one shared folder. A scoped agent that can read that folder can read a file that an open connection saved there, with val or test rows in it. **Proposed:** a scoped connection saves into a folder of its own.
 
 ### 6.4 Rules of the gateway that are not scopes
+
+**Not approved.** The owner reviews this list item by item, with a fuller explanation of each, after the questions of section 11. Nothing here is settled.
 
 | Gateway rule | After |
 |---|---|
@@ -318,7 +340,8 @@ A file that `call_kiln_api` saves must be readable inside the agent's sandbox.
 
 Loop code is trusted. It calls Kiln with no scope, and it keeps val and test data away from its agents itself, as today.
 
-- It uses Kiln's one copy of each calculation: the detectability read and the floor, the paired comparison for the numbers of a comparison, the smell check, model information, and the skill bundle routes. It calls the route or imports the code; the architecture chooses, by the packaging.
+- **Minimal rewrites.** Loop code keeps its structure and its call sites. Where Kiln and HT share a calculation (the floor, detectability, the numbers of a paired comparison, the smells), the function moves into Kiln's code, and both Kiln's route and HT's loop code import it. HT's callers are not rewritten to make HTTP calls.
+- It uses Kiln's routes where it used a copy of data: model information and the skill bundle routes.
 - Kept in HT: the refusal of an underpowered run and its options, the stop rules, the promotion rules, the screening and measurement engine, the latency comparison, the integrity, judge-copy and reference checks, the generality review, the model policy, and the noise check behind its option.
 - The noise check is not changed in what it does. It uses Kiln's floor functions where it used HT's copy.
 - It still reads the rows itself for cost, latency and missing items.
@@ -331,23 +354,48 @@ Loop code is trusted. It calls Kiln with no scope, and it keeps val and test dat
 - Its skill installer.
 - Its five smell detectors, and its own floor, detectability and comparison arithmetic.
 - The skills `memory`, `kiln-harness-tuner-code-tool-authoring`, `experiment-costing` and `kiln-task-setup`. Kiln's skill has each.
-- The command `harness-tuner-install-agents`, and three more console scripts: the skill installer's server, `kiln_api_mcp`, and (in phase 5) the gateway's server.
+- Three console scripts: `harness-tuner-install-agents`, the skill installer's server, and `kiln_api_mcp` (section 3 has the table). The gateway's server goes in phase 6.
 - Its start-up probes of Kiln's API list. One release has both.
 
-The gateway's code is not removed in this phase. It is no longer used.
+The gateway's code is not removed in this phase. It is no longer used. It goes at the end of phase 6.
 
 Done when: HT's tests pass, and a run on the demo project completes with every agent on a scoped connection.
 
-## 7. Phase 5: Proof, then the gateway goes
+## 7. Phase 5: Coherence check
+
+Phase 4 changes many things at once. This phase builds nothing. It checks that every needed update was made, and fixes what it finds.
+
+- **No name of a removed thing is left.** A search of both the code and every text for: each gateway tool name, each removed skill, each removed command and option, the paths of HT's old knowledge copy, and the words "gateway" and "skill installer" where they describe how things work now.
+- **Every pointer resolves.** Each path that a role file, a role prompt or HT's code names in Kiln's skill is a file that exists. Each endpoint doc that a role file names exists, and the route is one the role's connection may call.
+- **Each role, end to end.** For each role: its prompt names its role file; the role file names only calls that its scope allows; the calls it needs for its job are all named.
+- **Kiln's skill reads right for both readers.** The files that changed for this project are read once as a chat client and once as a loop agent.
+- **The docs match.** HT's docs (install, command line, architecture, agents, limitations, the contributor guide), the README of `app/mcp`, Kiln's help articles on the MCP server, and the command line's own help text.
+- **The tests match.** No test is skipped or deleted without a reason written beside it. No fake of a route differs from the real route.
+- **The decisions of this spec.** Each decision of this document and of [review_fixes.md](../harness_tuner_switchover/review_fixes.md) that still applies is found in the result.
+
+Done when: the list is worked through, each finding is fixed or recorded with a reason, and the owner has seen the record.
+
+## 8. Phase 6: Proof, then the gateway goes
 
 1. **Scope tests.** Each of the gateway's fence tests has a test of the same intent on a scoped connection: a held-out row cannot be read, a val number cannot be read by a train-side role, an eval cannot be changed, a val reader cannot write. A gateway test with no scope test is listed, with the reason (6.4).
 2. **The audit.** A read of the moved HT against the checklist of its core concepts. Each item is checked in the place that now carries it: a scope, a role file, Kiln's skill or HT's code. The checklist is the switchover's (its functional spec, section 7): tune on train, confirm on val, never read test; val by numbers only; the promotion rule; one change for each experiment; new objects only; provenance; no train item value or judge text in a prompt, skill or tool; hard limits; only allowed models; cost from recorded usage; the memory conventions; val readers write nothing; one attempt for each idea; the task's default run config is never changed; the verdict words; the loop never asks a person.
 3. **Runs on the demo project.** Full runs with default options. A run passes when it finishes without an error from a missing file, a refused call that the role needed, or a wrong call that the agent could not correct, and its report is written. **Proposed:** the owner reads the runs and decides whether agent sessions on the generic API work well enough, by the number of failed calls and the cost of each session against a run from phase 1.
-4. **Then:** the gateway, its tests and its console script are deleted.
+4. **Then:** the gateway, its tests and its console script are deleted, and the searches of phase 5 are run again.
 
 If the proof fails and cannot be fixed, phase 4 is taken back. HT stays on its gateway. Phases 1 to 3 stand.
 
-## 8. Out of scope, and risks
+## 9. Phase 7: The launcher package, and the old repository
+
+- **`harness-tuner` stays on PyPI.** A person who runs `harness-tuner` today, for example with `uvx`, still can.
+- **The package becomes a thin launcher.** It holds no tuner code. It gets Kiln's release, installs it, and starts the copy of HT that the release holds. The real code ships with Kiln only.
+- The launcher lives in the Kiln repository, in a folder of its own. Its README for PyPI is in that folder. The text is the README HT has today, or very close.
+- **Proposed:** the launcher takes the same options as `harness-tuner` and passes them on unchanged. It says which Kiln version it started.
+- How it finds, downloads and installs Kiln's release on each platform is for the architecture.
+- **Last, by hand:** when the launcher is published and works, the owner makes the old repository private. This is the final step of the project.
+
+Done when: `harness-tuner` from PyPI starts HT from a Kiln release on each platform Kiln supports, and the old repository is private.
+
+## 10. Out of scope, and risks
 
 Out of scope:
 
@@ -355,19 +403,19 @@ Out of scope:
 - A port of the noise check into Kiln.
 - A UI for HT, and the compare view's display of val and test results.
 - Binary assets in a skill.
-- A guide that tells a chat client how to start HT. It stays in Kiln's knowledge backlog until the packaging is decided.
+- A guide that tells a chat client how to start HT. It stays in Kiln's knowledge backlog.
 - Moving any other HT tool into Kiln's API: the screening and measurement engine, the model preflight, the integrity, judge-copy and reference checks, the generality review, probes and the latency comparison.
 
 Risks:
 
-- **Loop agents on the generic API.** A typed tool is hard to call wrongly. On `call_kiln_api` an agent reads a doc, then builds a path and a body. More tokens and more wrong calls are likely. Phase 5 measures it, and the gateway is the fallback until then.
+- **Loop agents on the generic API.** A typed tool is hard to call wrongly. On `call_kiln_api` an agent reads a doc, then builds a path and a body. More tokens and more wrong calls are likely. Phase 6 measures it, and the gateway is the fallback until then.
 - **A weaker fence in known places** (6.4). Each is accepted under "accidental, not adversarial". HT's public promise says the test set is never read; its docs must say what enforces that after the move.
-- **A route that is missed.** A route with the wrong classification leaks under a scope, in silence. The test of 5.5 covers a new route. It does not check that a classification is right; the scope tests of phase 5 do that for the gateway's cases.
+- **A route that is missed.** A route with the wrong classification leaks under a scope, in silence. The test of 5.5 covers a new route. It does not check that a classification is right; the scope tests of phase 6 do that for the gateway's cases.
 - **A scope that leaks into background work.** An eval job that a scoped request starts must run unscoped, or it filters its own reads. The architecture keeps the scope on the request.
 - **A live default changes** (5.7).
 - **Size of the move.** About 57,000 lines and 4,000 tests come under Kiln's checks and CI.
 
-## 9. Questions for the owner
+## 11. Questions for the owner
 
 1. **The model policy.** The gateway refuses a run config with a model the policy does not allow, when an agent creates one or runs one. Without the gateway, an agent can create and run such a run config before loop code sees it, and the task's data goes to a provider the user did not allow. Loop code re-checks only before its own eval jobs. Options: (a) a fifth setting on the connection that names the allowed models; (b) role files state the allowed models, and loop code checks each run config an agent made before anything else uses it, which leaves the agent's own quick runs unchecked; (c) Kiln gets a project-level list of allowed models, which every caller obeys. **Proposed:** (a).
 2. **The `val` memory record.** HT's code stores the val numbers of each promotion in a memory record tagged `val`. Train-side roles must not read it, and a chat client may. The proposal in 5.2 makes `fence_eval_results` hide a record that carries a named split's name as a tag. That puts a tag convention into Kiln's API. The other choice: HT stops storing val numbers in memory, and chat clients read them from the summary routes.
