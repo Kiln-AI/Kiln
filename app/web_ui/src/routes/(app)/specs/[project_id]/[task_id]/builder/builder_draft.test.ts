@@ -439,8 +439,10 @@ describe("reusable_cached_cases — SU-case reuse", () => {
     ).toBe(guided.cases)
   })
 
-  it("misses on an older draft's cases once a Data Guide is in use", () => {
-    expect(reusable_cached_cases(cache, prompts, spec, "A rule.")).toBeNull()
+  it("keeps an older draft's cases, which have no guide on record", () => {
+    expect(reusable_cached_cases(cache, prompts, spec, "A rule.")).toBe(
+      cache.cases,
+    )
   })
 
   it("misses on an empty cached case list", () => {

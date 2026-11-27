@@ -42,7 +42,8 @@ export type CachedSuCases = {
   prompts_json: string
   spec_text: string
   // The trimmed Data Guide the case writer read, "" for none. Older drafts
-  // lack it: their cases were written without a guide.
+  // lack it and keep their cases whatever the guide is now: nothing on record
+  // says which guide they were written under.
   data_guide?: string
   cases: SyntheticUserCaseWire[]
 }
@@ -59,7 +60,9 @@ export function reusable_cached_cases(
 ): SyntheticUserCaseWire[] | null {
   if (!cache || cache.cases.length === 0) return null
   if (cache.spec_text !== spec) return null
-  if ((cache.data_guide ?? "") !== data_guide) return null
+  if (cache.data_guide !== undefined && cache.data_guide !== data_guide) {
+    return null
+  }
   if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
   return cache.cases
 }
@@ -273,12 +276,12 @@ export type BuilderDraft = {
   // minting — persisted beside the plan it grounded, so a restored session
   // mints with the same grounding (and saves the same provenance record).
   grounding_sample: { input: string; output: string } | null
-  // The task's saved Data Guide as it read when Step 4 was entered (null when
-  // the task had none, or the read failed), and whether the user keeps it in
-  // the single-turn requests. Persisted beside the plan for the same reason as
-  // the grounding sample: a restored session must mint under exactly what its
-  // plan was drafted with, not under whatever the guide says by then. Drafts
-  // written before guides were read here restore as no guide, off.
+  // The task's saved Data Guide as it last read (null when the task had none,
+  // or the first read failed), and whether the user keeps it in the requests.
+  // Every plan and drive reads the guide again before using it, so this copy
+  // is what a restored session shows until then, and what it keeps if that
+  // read fails. Drafts written before guides were read here restore as no
+  // guide, off.
   data_guide_text: string | null
   use_data_guide: boolean
   // The user chose Continue Without Data Guide on this draft: Step 4 plans

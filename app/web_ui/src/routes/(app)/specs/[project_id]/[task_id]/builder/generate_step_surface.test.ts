@@ -1263,7 +1263,7 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       "const grounding_model: GroundingModel = { ...(grounding_lane_model ?? chosen_judge_model), thinking_level: grounding_lane_model ? grounding_thinking_level : judge_thinking_level, }",
     )
     expect(normalize(drive)).toContain(
-      "grounding_model: model_choice_key(grounding_model), data_guide: grounding_guide_text,",
+      "grounding_model: model_choice_key(grounding_model), data_guide: data_guide_in_use(),",
     )
   })
 
@@ -1274,11 +1274,39 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       function_body("async function generated_cases_for_plan("),
     )
     expect(generated).toContain(
-      "reusable_cached_cases( cached_su_cases, approved_prompts, spec_text(), grounding_guide_text, )",
+      "reusable_cached_cases( cached_su_cases, approved_prompts, spec_text(), data_guide_in_use(), )",
     )
     expect(normalize(resolve_cases)).toContain(
       "const cases = grounding_key && !is_multi_turn ? plan_row_cases(approved_prompts) : await generated_cases_for_plan(approved_prompts)",
     )
+  })
+
+  it("reads the Data Guide again before every plan and drive uses it", () => {
+    // An edit on the Data Guide page made after Step 4 opened must reach the
+    // plan, the case writer and grounding, not the text read on entry.
+    const plan = normalize(function_body("async function on_plan_batch("))
+    expect(plan).toContain(
+      "await refresh_data_guide(signal) const guidance = await plan_guidance(signal)",
+    )
+    for (const drive of [
+      "async function on_drive_multi_turn(",
+      "async function on_drive_single_turn(",
+    ]) {
+      const body = normalize(function_body(drive))
+      const refresh = body.indexOf(
+        "await refresh_data_guide(new_copilot_abort_signal())",
+      )
+      expect(refresh).toBeGreaterThan(-1)
+      expect(refresh).toBeLessThan(
+        body.indexOf("data_guide: data_guide_in_use()"),
+      )
+      expect(refresh).toBeLessThan(
+        body.indexOf("author_judge_prompt_for_spec("),
+      )
+    }
+    // Read where it is used, never from a reactive copy that a drive would
+    // see a tick late.
+    expect(contains("$: grounding_guide_text")).toBe(false)
   })
 
   it("gives the case writer the Data Guide the drive uses", () => {
@@ -1288,7 +1316,7 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     expect(
       normalize(function_body("async function request_generated_cases(")),
     ).toContain(
-      "target_specification: spec_text(), case_prompts, data_guide: grounding_guide_text || null,",
+      "target_specification: spec_text(), case_prompts, data_guide: data_guide_in_use() || null,",
     )
     // The guide goes as its own field and the spec stays plain, so the judge
     // author, which reads the spec, never gets the guide.

@@ -2247,6 +2247,7 @@
       // The arm's base guidance carries the balance policy; the user's steer
       // (when they typed one) is appended to it, never replaces it — see
       // compose_plan_guidance.
+      await refresh_data_guide(signal)
       const guidance = await plan_guidance(signal)
       const planned = await request_batch_plan(
         guidance,
@@ -2522,7 +2523,7 @@
       cached_su_cases,
       approved_prompts,
       spec_text(),
-      grounding_guide_text,
+      data_guide_in_use(),
     )
     if (cached) {
       posthog.capture("eval_v2_su_cases_reused", {
@@ -2539,7 +2540,7 @@
     cached_su_cases = {
       prompts_json: JSON.stringify(approved_prompts),
       spec_text: spec_text(),
-      data_guide: grounding_guide_text,
+      data_guide: data_guide_in_use(),
       cases,
     }
     return cases
@@ -2561,7 +2562,7 @@
         body: {
           target_specification: spec_text(),
           case_prompts,
-          data_guide: grounding_guide_text || null,
+          data_guide: data_guide_in_use() || null,
         },
         signal,
       },
@@ -2828,6 +2829,7 @@
       const openenv_server_id = await ensure_openenv_server(
         drive_config.tool_ids,
       )
+      await refresh_data_guide(new_copilot_abort_signal())
       // Drafts from before the Environment Setup Model lane ground on the judge, as
       // they did then.
       const grounding_model: GroundingModel = {
@@ -2842,7 +2844,7 @@
           : {
               openenv_server_id,
               grounding_model: model_choice_key(grounding_model),
-              data_guide: grounding_guide_text,
+              data_guide: data_guide_in_use(),
             }
 
       // 2. Author the judge before preflight and any SU spend, so a failure
@@ -3420,6 +3422,7 @@
       const openenv_server_id = await ensure_openenv_server(
         drive_config.tool_ids,
       )
+      await refresh_data_guide(new_copilot_abort_signal())
       // Drafts from before the Environment Setup Model lane ground on the judge, as
       // they did then.
       const grounding_model: GroundingModel = {
@@ -3434,7 +3437,7 @@
           : {
               openenv_server_id,
               grounding_model: model_choice_key(grounding_model),
-              data_guide: grounding_guide_text,
+              data_guide: data_guide_in_use(),
             }
       if (
         grounding_key === null &&
@@ -3953,10 +3956,13 @@
     if (data_guide_text !== null) on_plan_batch()
   }
 
-  // The Data Guide text grounding reads, trimmed: the task's guide when it is
-  // on, "" otherwise. Part of the grounded cases' cache key.
-  $: grounding_guide_text =
-    use_data_guide && data_guide_text ? data_guide_text.trim() : ""
+  // The Data Guide text the case writer and grounding read, trimmed: the
+  // task's guide when it is on, "" otherwise. Part of both case caches' keys.
+  // A function, not a reactive statement: a drive reads it right after
+  // refresh_data_guide, before Svelte would have updated a derived value.
+  function data_guide_in_use(): string {
+    return use_data_guide && data_guide_text ? data_guide_text.trim() : ""
+  }
 
   // The single-turn data-guide param, one expression for both the plan and
   // the mint so the minted-input cache (keyed on it) cannot drift from what
@@ -3978,15 +3984,7 @@
     const had_guide = data_guide_text !== null
     data_guide_read = "reading"
     try {
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
-        {
-          params: { path: { project_id, task_id } },
-          signal: new_copilot_abort_signal(),
-        },
-      )
-      if (error) throw error
-      data_guide_text = data?.guide?.trim() ? data.guide : null
+      data_guide_text = await fetch_data_guide_text(new_copilot_abort_signal())
       data_guide_read = data_guide_text === null ? "none" : "found"
     } catch (e) {
       if (is_abort_error(e)) {
@@ -4002,6 +4000,40 @@
     } else if (!had_guide) {
       use_data_guide = true
     }
+  }
+  // The task's saved Data Guide, or null when it is blank. Throws on a failed
+  // read, an abort included.
+  async function fetch_data_guide_text(
+    signal: AbortSignal,
+  ): Promise<string | null> {
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+      { params: { path: { project_id, task_id } }, signal },
+    )
+    if (error) throw error
+    return data?.guide?.trim() ? data.guide : null
+  }
+
+  // Reads the guide again right before a plan or a drive uses it, so an edit
+  // made on the Data Guide page since Step 4 opened reaches the plan, the case
+  // writer and grounding. A failed read keeps the text already held; an abort
+  // throws. On and off follow read_data_guide.
+  async function refresh_data_guide(signal: AbortSignal): Promise<void> {
+    let text: string | null
+    try {
+      text = await fetch_data_guide_text(signal)
+    } catch (e) {
+      if (is_abort_error(e)) throw e
+      console.warn("Could not read the Data Guide again:", e)
+      return
+    }
+    if (text === null) {
+      use_data_guide = false
+    } else if (data_guide_text === null) {
+      use_data_guide = true
+    }
+    data_guide_text = text
+    data_guide_read = text === null ? "none" : "found"
   }
 
   // Same pattern for Review (5) → Save (6): land on Save with the request
