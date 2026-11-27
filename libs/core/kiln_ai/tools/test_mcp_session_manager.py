@@ -1,11 +1,16 @@
+import json
 import os
 import subprocess
+from datetime import timedelta
+from functools import partial
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import httpx
 import pytest
+from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, TextContent
+from mcp.types import LATEST_PROTOCOL_VERSION, ErrorData, TextContent
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.external_tool_server import (
@@ -2109,3 +2114,88 @@ class TestMCPSessionCacheKeyHelpers:
         self, cache_key, expected_session_id
     ):
         assert parse_mcp_session_cache_session_id(cache_key) == expected_session_id
+
+
+def _patch_remote_transport(handler):
+    """Run the real MCP SDK transport against `handler`, with no sockets or threads."""
+
+    def client_factory(headers=None, timeout=None, auth=None):
+        return httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            headers=headers,
+            timeout=timeout,
+            auth=auth,
+        )
+
+    return patch(
+        "kiln_ai.tools.mcp_session_manager.streamablehttp_client",
+        partial(streamablehttp_client, httpx_client_factory=client_factory),
+    )
+
+
+def _rpc_reply(request, **body):
+    return httpx.Response(
+        200,
+        json={"jsonrpc": "2.0", "id": json.loads(request.content)["id"], **body},
+    )
+
+
+class TestRemoteMCPServerFailures:
+    @pytest.mark.parametrize(
+        "reply,expected_error",
+        [
+            pytest.param(
+                lambda request: httpx.Response(200, html="<html>Sign in</html>"),
+                "Unexpected content type",
+                id="web_page",
+            ),
+            pytest.param(
+                lambda request: _rpc_reply(
+                    request, error={"code": -32603, "message": "Server is busy"}
+                ),
+                "Server is busy",
+                id="json_rpc_error",
+            ),
+        ],
+    )
+    async def test_unusable_reply_to_connect_raises_readable_error(
+        self, reply, expected_error, basic_remote_server
+    ):
+        with _patch_remote_transport(reply):
+            with pytest.raises(KilnMCPError, match=expected_error):
+                with anyio.fail_after(5):
+                    async with MCPSessionManager.shared().mcp_client(
+                        basic_remote_server
+                    ):
+                        pass
+
+    async def test_server_that_stops_replying_hits_the_limit(self, basic_remote_server):
+        async def handler(request):
+            method = json.loads(request.content)["method"]
+            if method == "initialize":
+                return _rpc_reply(
+                    request,
+                    result={
+                        "protocolVersion": LATEST_PROTOCOL_VERSION,
+                        "capabilities": {},
+                        "serverInfo": {"name": "test", "version": "1"},
+                    },
+                )
+            if method == "tools/list":
+                await anyio.sleep_forever()
+            return httpx.Response(202)
+
+        with (
+            _patch_remote_transport(handler),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.timedelta",
+                return_value=timedelta(seconds=0.1),
+            ) as limit,
+        ):
+            with pytest.raises(KilnMCPError, match="Timed out while waiting"):
+                with anyio.fail_after(5):
+                    async with MCPSessionManager.shared().mcp_client(
+                        basic_remote_server
+                    ) as session:
+                        await session.list_tools()
+        limit.assert_called_once_with(seconds=30)
