@@ -11,7 +11,7 @@ import pytest
 import uvicorn
 from uvicorn.supervisors.watchfilesreload import FileFilter
 
-from app.desktop.dev_env import set_dev_env_vars
+from app.desktop.dev_env import dev_ui_origin, set_dev_env_vars
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -74,7 +74,7 @@ def env_when_app_built():
             if name != "make_app":
                 raise AttributeError(name)
             captured_env.update(os.environ)
-            return lambda: MagicMock(name="fastapi_app")
+            return lambda **kwargs: MagicMock(name="fastapi_app", **kwargs)
 
     desktop_package = sys.modules["app.desktop"]
     previously_imported = getattr(desktop_package, "dev_app", None)
@@ -199,6 +199,21 @@ def test_dev_app_sets_dev_env_vars_before_importing_the_app(env_when_app_built):
         DEV_ENV_VARS, "true"
     )
     assert dev_app_module.dev_app is not None
+
+
+def test_dev_app_tells_the_app_where_vite_serves_the_ui(env_when_app_built):
+    os.environ["KILN_FRONTEND_PORT"] = "5180"
+
+    dev_app_module = importlib.import_module("app.desktop.dev_app")
+
+    assert dev_app_module.dev_app.ui_origin == "http://localhost:5180"
+
+
+def test_dev_ui_origin_defaults_to_the_vite_port():
+    with patch.dict(os.environ):
+        os.environ.pop("KILN_FRONTEND_PORT", None)
+
+        assert dev_ui_origin() == "http://localhost:5173"
 
 
 def test_set_dev_env_vars_keeps_an_explicit_skip_remote_model_list():

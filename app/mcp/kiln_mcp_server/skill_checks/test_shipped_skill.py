@@ -535,7 +535,8 @@ def test_the_setup_delimiter_is_on_a_line_of_its_own():
 
 
 def test_memory_names_each_format_file():
-    # The skill tool cannot list a folder, so each file is named by its path.
+    # The skill tool lists a folder only in the error for a missing path, so
+    # each file is named by its path.
     formats = _sections(read_file(MEMORY, get_index()))[
         "The formats that Kiln Harness Tuner writes"
     ]

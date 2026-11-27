@@ -123,7 +123,11 @@ def api_app() -> FastAPI:
 
 
 def build_server(
-    api_app: FastAPI, tmp_path: Path, host: str = "127.0.0.1", version: str = "9.9.9"
+    api_app: FastAPI,
+    tmp_path: Path,
+    host: str = "127.0.0.1",
+    version: str = "9.9.9",
+    ui_origin: str | None = None,
 ) -> KilnMcpServer:
     """A server whose `call_kiln_api` reaches `api_app` in process."""
     return build_kiln_mcp_server(
@@ -132,6 +136,7 @@ def build_server(
         host=host,
         port=8757,
         tmp_root=tmp_path / "kiln_mcp",
+        ui_origin=ui_origin,
         api_transport=httpx.ASGITransport(app=api_app),
     )
 

@@ -166,6 +166,15 @@ def test_the_skill_tool_serves_the_shipped_skill(mcp_client):
     assert result["content"][0]["text"].startswith("# Kiln")
 
 
+def test_a_ui_origin_reaches_the_skill_tool_description(api_app, tmp_path):
+    server = build_server(api_app, tmp_path, ui_origin="http://localhost:5173")
+    with TestClient(host_app(server), base_url="http://localhost:8757") as client:
+        tools = result_of(client, "tools/list")["tools"]
+    (skill_tool,) = [tool for tool in tools if tool["name"] == "kiln_skill"]
+    description = skill_tool["description"]
+    assert "http://localhost:5173, not http://localhost:8757" in description
+
+
 def test_a_broken_skill_bundle_fails_the_build(monkeypatch, api_app, tmp_path):
     def missing_index():
         raise RuntimeError(skill_files.E_NO_SKILL_MD)

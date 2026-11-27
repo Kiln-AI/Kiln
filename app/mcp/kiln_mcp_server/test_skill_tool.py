@@ -24,7 +24,12 @@ def index(tmp_path) -> SkillIndex:
     )
 
 
-def make_mcp(index: SkillIndex, host: str = "127.0.0.1", port: int = 8757) -> FastMCP:
+def make_mcp(
+    index: SkillIndex,
+    host: str = "127.0.0.1",
+    port: int = 8757,
+    ui_origin: str | None = None,
+) -> FastMCP:
     mcp = FastMCP(
         name="kiln",
         stateless_http=True,
@@ -32,7 +37,9 @@ def make_mcp(index: SkillIndex, host: str = "127.0.0.1", port: int = 8757) -> Fa
             enable_dns_rebinding_protection=False
         ),
     )
-    register_skill_tool(mcp, bound_host=host, bound_port=port, index=index)
+    register_skill_tool(
+        mcp, bound_host=host, bound_port=port, ui_origin=ui_origin, index=index
+    )
     return mcp
 
 
@@ -79,6 +86,32 @@ async def test_schema_has_only_optional_path(mcp):
         },
     }
     assert tool.outputSchema is None
+
+
+async def test_a_ui_on_another_address_adds_one_note_to_the_description(index):
+    tool = await list_tool(make_mcp(index, ui_origin="http://localhost:5173"))
+    assert tool.description == (
+        SKILL_TOOL_DESCRIPTION
+        + "\n\nNote: the Kiln UI is running at http://localhost:5173, not "
+        "http://localhost:8757; use that address in any UI link you give the user."
+    )
+
+
+@pytest.mark.parametrize("ui_origin", [None, "http://localhost:8757"])
+async def test_a_ui_on_the_app_address_leaves_the_description_alone(index, ui_origin):
+    tool = await list_tool(make_mcp(index, ui_origin=ui_origin))
+    assert tool.description == SKILL_TOOL_DESCRIPTION
+
+
+async def test_the_ui_note_names_the_bound_app_address(index):
+    tool = await list_tool(
+        make_mcp(index, host="0.0.0.0", port=9000, ui_origin="http://localhost:5174")
+    )
+    assert tool.description is not None
+    assert tool.description.endswith(
+        "Note: the Kiln UI is running at http://localhost:5174, not "
+        "http://localhost:9000; use that address in any UI link you give the user."
+    )
 
 
 async def test_meta_always_load_and_annotations(mcp):

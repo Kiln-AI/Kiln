@@ -1,7 +1,7 @@
 ---
 title: Dealing with a wrong eval
 description: The judge fails right answers or passes wrong ones, or the eval does not measure the issue. Classify each fire, try changes only on the config failures, report the rest. Do not tune toward the judge.
-reviewed: 2026-11-25
+reviewed: 2026-11-27
 kind: eval
 applies_to: all
 ---
@@ -43,9 +43,14 @@ tunes the agent toward the judge, not toward the task.
 4. For the eval-data failures and the judge failures: report them in
    `open_questions` for the user. Give the items that show them
    and what is wrong in each: the reasoning against the score, or the
-   expected output against the instructions. The fix is a change to the
-   eval: corrected expected outputs, or a judge calibrated against human
-   labels. An experiment does not change an existing eval. When the eval does
+   expected output against the instructions. The fix for a judge failure
+   is a judge calibrated against human labels. The fix for an eval-data
+   failure is a new eval: a copy of the old eval's items with the corrected
+   expected outputs, which the user makes in the app. Never change the
+   inputs or the expected outputs of an eval in use: the items of an eval
+   only grow, so that it keeps catching regressions. The old eval is
+   archived only when the user agrees. An experiment does not change an
+   existing eval. When the eval does
    not measure the failure that an issue names, report that too. Only
    when `eval_building` is `true`, an `eval_only` item can commission a
    new eval for the issue, under the rules of Kiln Harness Tuner for

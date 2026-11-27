@@ -10,7 +10,7 @@ This is the Kiln skill. The Kiln app serves it over MCP, through the `kiln_skill
 ## Reading this skill
 
 - Read any path in this skill by calling `kiln_skill` with that exact path as `path`, for example `kiln_skill(path="references/knowledge/specs_and_evals.md")`.
-- The tool cannot list a folder. Do not guess a file name: each file is named by this text or by a file it leads to.
+- Do not guess a file name: each file is named by this text or by a file it leads to.
 - This text arrived through a `kiln_skill` call and can drop out of the conversation, for example when it is summarised. When it is no longer in the conversation, read it again. The same holds for any skill file that your current work depends on.
 
 ## Who reads this skill

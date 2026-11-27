@@ -2,7 +2,7 @@
 
 These rules apply if you have the `call_kiln_api` tool. If you do not, you need not read them.
 
-`call_kiln_api` takes `method`, `url_path`, and optionally `body`, `query_params`, `jq_filter`, `body_limit` and `save_to_tmpfile`. Kiln Harness Tuner loop agents do not have this tool: they reach Kiln through the loop gateway.
+`call_kiln_api` takes `method`, `url_path`, and optionally `body`, `query_params`, `jq_filter`, `body_limit` and `save_to_tmpfile`.
 
 **Making a call:**
 

@@ -107,13 +107,15 @@ def build_kiln_mcp_server(
     host: str,
     port: int,
     tmp_root: Path,
+    ui_origin: str | None = None,
     api_transport: httpx.AsyncBaseTransport | None = None,
 ) -> KilnMcpServer:
     """Build a new server for `api_app`, bound to `host` and `port`.
 
     `call_kiln_api` reaches the routes that `api_app` has at this moment, over
     loopback HTTP, or through `api_transport` when one is given. Files that it
-    saves go in `tmp_root`.
+    saves go in `tmp_root`. `ui_origin` is the address of the web UI when
+    another server serves it, as Vite does under the dev server.
 
     Raises RuntimeError when the skill files are missing from the package, so a
     broken bundle fails at start rather than at an agent's first call.
@@ -139,7 +141,7 @@ def build_kiln_mcp_server(
         transport=api_transport,
     )
 
-    register_skill_tool(mcp, bound_host=host, bound_port=port)
+    register_skill_tool(mcp, bound_host=host, bound_port=port, ui_origin=ui_origin)
     register_call_kiln_api(mcp, api_deps)
     skill_files.get_index()
 

@@ -39,7 +39,7 @@ Never read test. Val: summary metrics may be read; val rows may not (a follow-up
 ## 6. Standing rules
 
 - The Kiln Assistant's skill was ported from a private source. No repo file or commit message names that source.
-- `kiln_skill` cannot list a folder: every file is reached by a path some file names.
+- `kiln_skill` lists a folder only in the error for a path that names no file: every file is reached by a path some file names.
 
 ## 7. Working with the owner
 

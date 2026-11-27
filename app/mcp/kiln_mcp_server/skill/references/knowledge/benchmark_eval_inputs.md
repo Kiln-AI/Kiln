@@ -26,7 +26,7 @@ Load the relevant endpoint doc **before** making each API call — they have req
 
 ## EvalInputs: the dataset rows
 
-EvalInputs live on disk under the task (`eval_inputs/<id>/eval_input.kiln`). The Eval Inputs endpoints list, create, update and delete them (`references/knowledge/api_docs/eval_inputs_api_list.md`); an update changes the tags and the reference data only, never `data`. Never create EvalInputs yourself: they are eval data (`references/knowledge/create_eval.md`). Change a benchmark's dataset only when the user asks for it. Each row has:
+EvalInputs live on disk under the task (`eval_inputs/<id>/eval_input.kiln`). The Eval Inputs endpoints list, create, update and delete them (`references/knowledge/api_docs/eval_inputs_api_list.md`); an update changes the tags and the reference data only, never `data`. Never create EvalInputs yourself: they are eval data (`references/knowledge/create_eval.md`). Never change the `data` or the `reference` of an EvalInput that an eval uses, even to fix it: the items of an eval only grow, so that it keeps catching regressions. The fix for wrong reference data is a new eval: a copy of the old eval's items with the corrected reference data, which the user makes in the app. The old eval is archived only when the user agrees (`references/improving_agents/playbooks/dealing-with-a-wrong-eval.md`). Change a benchmark's dataset in any other way only when the user asks for it. Each row has:
 
 - `data` — what to run, one of two types:
 
