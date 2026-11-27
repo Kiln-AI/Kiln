@@ -1193,6 +1193,7 @@ async def test_run_job_full_trace_serializes_per_message_usage(
         "total_tokens": None,
         "cost": 0.001,
         "cached_tokens": None,
+        "cache_write_tokens": None,
     }
 
 
@@ -4624,7 +4625,9 @@ class TestConversationUsage:
         chain = _fresh_leaf(
             mock_task,
             data_source,
-            cumulative_usage=MessageUsage(cost=2.0, total_tokens=10),
+            cumulative_usage=MessageUsage(
+                cost=2.0, total_tokens=10, cached_tokens=6, cache_write_tokens=2
+            ),
         ).chain
         # The leaf's own usage is last-turn-only and must not win.
         chain[-1].usage = Usage(cost=0.5, total_tokens=3)
@@ -4632,6 +4635,8 @@ class TestConversationUsage:
         assert usage is not None
         assert usage.cost == pytest.approx(2.0)
         assert usage.total_tokens == 10
+        assert usage.cached_tokens == 6
+        assert usage.cache_write_tokens == 2
 
     def test_falls_back_to_summing_the_trace_when_cumulative_is_missing(
         self, mock_task, data_source

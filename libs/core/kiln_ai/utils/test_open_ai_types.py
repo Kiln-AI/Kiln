@@ -443,6 +443,7 @@ class TestSerializeTrace:
             "total_tokens": None,
             "cost": 0.01,
             "cached_tokens": None,
+            "cache_write_tokens": None,
         }
 
     def test_output_is_byte_identical_to_json_dumps_for_a_plain_data_trace(self):

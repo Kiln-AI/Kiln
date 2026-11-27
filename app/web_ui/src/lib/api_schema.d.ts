@@ -10657,6 +10657,16 @@ export interface components {
              */
             mean_cost?: number | null;
             /**
+             * Mean Cached Tokens
+             * @description Average input tokens per run served from the prompt cache.
+             */
+            mean_cached_tokens?: number | null;
+            /**
+             * Mean Cache Write Tokens
+             * @description Average input tokens per run written to the prompt cache, which providers bill above the normal input price. A high value next to a low mean_cached_tokens means most runs started with a cold cache.
+             */
+            mean_cache_write_tokens?: number | null;
+            /**
              * Mean Total Llm Latency Ms
              * @description Average total LLM latency per run in milliseconds.
              */
@@ -10820,6 +10830,11 @@ export interface components {
              * @description Number of tokens served from prompt cache. None if not reported.
              */
             cached_tokens?: number | null;
+            /**
+             * Cache Write Tokens
+             * @description Number of input tokens written to the prompt cache, which providers bill above the normal input price. None if not reported.
+             */
+            cache_write_tokens?: number | null;
         };
         /** ModelDetails */
         ModelDetails: {
@@ -15523,6 +15538,11 @@ export interface components {
              * @description Number of tokens served from prompt cache. None if not reported.
              */
             cached_tokens?: number | null;
+            /**
+             * Cache Write Tokens
+             * @description Number of input tokens written to the prompt cache, which providers bill above the normal input price. None if not reported.
+             */
+            cache_write_tokens?: number | null;
             /**
              * Total Llm Latency Ms
              * @description Total time spent waiting on LLM API calls in milliseconds. Sum of per-call latencies, excludes tool execution time.

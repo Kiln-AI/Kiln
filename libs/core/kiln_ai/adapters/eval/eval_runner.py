@@ -1670,6 +1670,7 @@ def _conversation_usage(chain: list[TaskRun]) -> Usage | None:
         total_tokens=totals.total_tokens,
         cost=totals.cost,
         cached_tokens=totals.cached_tokens,
+        cache_write_tokens=totals.cache_write_tokens,
         total_llm_latency_ms=sum(latencies) if latencies else None,
     )
     if all(v is None for v in usage.model_dump().values()):

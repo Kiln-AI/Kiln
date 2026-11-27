@@ -1624,6 +1624,23 @@ async def test_null_or_empty_tool_arguments_become_empty_object_and_run_saves(
     assert datamodel.TaskRun.load_from_file(run.path).trace == run.trace
 
 
+@pytest.mark.parametrize("automatic_prompt_caching", [True, False])
+async def test_tool_call_context_carries_the_caching_choice_of_the_run(
+    tools_adapter, automatic_prompt_caching
+):
+    tools_adapter.base_adapter_config.automatic_prompt_caching = (
+        automatic_prompt_caching
+    )
+    add_tool = Mock(wraps=MockTool("add"))
+    tool_call = MockToolCall("call_1", "add", '{"a": 2, "b": 2}')
+
+    with patch.object(tools_adapter, "cached_available_tools", return_value=[add_tool]):
+        await tools_adapter.process_tool_calls([tool_call])  # type: ignore[list-item]
+
+    context = add_tool.run.call_args.args[0]
+    assert context.automatic_prompt_caching is automatic_prompt_caching
+
+
 async def test_tool_call_without_name_fails_run_before_any_tool_runs(tools_adapter):
     tool_call_response = _make_model_response(
         content=None,

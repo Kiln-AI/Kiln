@@ -655,6 +655,14 @@ class MeanUsage(BaseModel):
     mean_cost: float | None = Field(
         default=None, description="Average cost per run in USD."
     )
+    mean_cached_tokens: float | None = Field(
+        default=None,
+        description="Average input tokens per run served from the prompt cache.",
+    )
+    mean_cache_write_tokens: float | None = Field(
+        default=None,
+        description="Average input tokens per run written to the prompt cache, which providers bill above the normal input price. A high value next to a low mean_cached_tokens means most runs started with a cold cache.",
+    )
     mean_total_llm_latency_ms: float | None = Field(
         default=None,
         description="Average total LLM latency per run in milliseconds.",
@@ -1258,6 +1266,8 @@ _USAGE_FIELDS = (
     "output_tokens",
     "total_tokens",
     "cost",
+    "cached_tokens",
+    "cache_write_tokens",
     "total_llm_latency_ms",
 )
 

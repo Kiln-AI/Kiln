@@ -184,7 +184,8 @@ the run's own report, and cite that report rather than the bare number.
 - **Drive sizes and cache behaviour**: read the recorded usage of each
   conversation off the per-item rows of
   `GET …/run_config/{rc}/results?split=train` (`task_run_usage`:
-  `input_tokens`, `output_tokens`, `cached_tokens`, `cost`, …), counted once
+  `input_tokens`, `output_tokens`, `cached_tokens`, `cache_write_tokens`,
+  `cost`, …), counted once
   per `scored_run_id`, because several evals' rows can name the same
   TaskRun; or off the scored TaskRun (`usage`). For one drive's own cost on
   a seeded item, read `usage`, not `cumulative_usage`: `cumulative_usage`
@@ -192,6 +193,11 @@ the run's own report, and cite that report rather than the bare number.
   cheapest instrument in the kit; use it instead of eyeballing traces.
   `cache_hit` is `cached_tokens / input_tokens`; the calls per conversation
   are the model's messages in the trace.
+  On a Claude model, `cache_write_tokens` are the input tokens a call wrote to
+  the cache at about 1.25× the input price; calls in the next 5 minutes read
+  them back as `cached_tokens`. A small corpus is mostly such cold calls, so
+  its cost per item overstates a larger run: `mean_cache_write_tokens` next to
+  `mean_cached_tokens` in `mean_usage` shows how cold the measured runs were.
 - **Judge and synthetic-user sizes**: read `eval_usage` (lane 3) off the
   per-item rows of `GET …/run_config/{rc}/results?split=train`, with the
   drive's `task_run_usage` on the same row, and `synthetic_user_usage`

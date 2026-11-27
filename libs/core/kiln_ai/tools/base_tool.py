@@ -32,6 +32,9 @@ class ToolCallContext:
     """Used for Kiln Tasks as Tools, to know if the tool call should save the task run it invoked to that task's Dataset."""
     allow_saving: bool = True
 
+    """Used for Kiln Tasks as Tools: the calling run's `AdapterConfig.automatic_prompt_caching`, which the run of the invoked task follows."""
+    automatic_prompt_caching: bool = False
+
     """The code-eval judge score schema (allow_float_scores=False) as a JSON string.
 
     Set only by the code-eval pump so the llm_judge tool can resolve through the

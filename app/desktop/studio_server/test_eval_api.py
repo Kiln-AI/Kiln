@@ -3112,6 +3112,7 @@ class TestEvalRunTraceJoin:
             "total_tokens": 18,
             "cost": 0.5,
             "cached_tokens": None,
+            "cache_write_tokens": None,
         }
 
     def test_returns_the_output_that_was_scored_not_a_later_repair(
@@ -5170,6 +5171,8 @@ async def test_get_run_config_eval_scores_with_usage(
             output_tokens=50,
             total_tokens=150,
             cost=0.005,
+            cached_tokens=0,
+            cache_write_tokens=80,
             total_llm_latency_ms=500,
         ),
         parent=mock_task,
@@ -5192,6 +5195,8 @@ async def test_get_run_config_eval_scores_with_usage(
             output_tokens=100,
             total_tokens=300,
             cost=0.010,
+            cached_tokens=80,
+            cache_write_tokens=0,
             total_llm_latency_ms=1000,
         ),
         parent=mock_task,
@@ -5329,6 +5334,9 @@ async def test_get_run_config_eval_scores_with_usage(
     assert mean_usage["mean_output_tokens"] == 75.0
     assert mean_usage["mean_total_tokens"] == 225.0
     assert mean_usage["mean_cost"] == 0.0075
+    # One cold run wrote 80 tokens to the cache, one warm run read them.
+    assert mean_usage["mean_cached_tokens"] == 40.0
+    assert mean_usage["mean_cache_write_tokens"] == 40.0
     # Expected mean latency: (500+1000)/2 = 750.0 (2 of 3 runs have latency, 66.7% > 50%)
     assert mean_usage["mean_total_llm_latency_ms"] == 750.0
 

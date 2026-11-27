@@ -129,8 +129,12 @@ class AdapterConfig:
     unmanaged_tools: list[KilnToolInterface] | None = None
 
     """
-    When True, automatically inject prompt caching hints into completion
-    requests. This is a cost optimization and does not affect model output.
+    When True, completion requests to a Claude model carry prompt caching hints:
+    on the system prompt, and on the last message when a later call re-sends it (a
+    tool loop, a multi-turn task). It changes cost, never model output. A first
+    call pays a premium to write the cache, and calls in the next few minutes that
+    share the prefix read it at a fraction of the input price. Requests to other
+    models are not changed; their providers cache a shared prefix unasked.
     """
     automatic_prompt_caching: bool = False
 

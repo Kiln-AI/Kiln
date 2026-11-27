@@ -179,6 +179,7 @@ from different points in time, so the field doesn't apply.
 |total_tokens|one of: integer or null|No|The total number of tokens used.|
 |cost|one of: number or null|No|The cost in US dollars, saved at runtime (prices can change over time).|
 |cached_tokens|one of: integer or null|No|Number of tokens served from prompt cache. None if not reported.|
+|cache_write_tokens|one of: integer or null|No|Number of input tokens written to the prompt cache, which providers bill above the normal input price. None if not reported.|
 |total_llm_latency_ms|one of: integer or null|No|Total time spent waiting on LLM API calls in milliseconds. Sum of per-call latencies, excludes tool execution time.|
 
 ### MessageUsage
@@ -202,6 +203,7 @@ waiting on LLM calls.
 |total_tokens|one of: integer or null|No|The total number of tokens used.|
 |cost|one of: number or null|No|The cost in US dollars, saved at runtime (prices can change over time).|
 |cached_tokens|one of: integer or null|No|Number of tokens served from prompt cache. None if not reported.|
+|cache_write_tokens|one of: integer or null|No|Number of input tokens written to the prompt cache, which providers bill above the normal input price. None if not reported.|
 
 ### EvalItemSource
 

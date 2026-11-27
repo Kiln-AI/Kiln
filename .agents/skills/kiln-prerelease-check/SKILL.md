@@ -261,7 +261,7 @@ The prerelease set should cover, at minimum:
 | Document extraction (whitelist of models × probe mime types) | `test_extract_document_success_prerelease_smoke`, `test_provider_bad_request_prerelease_smoke` |
 | Semantic chunker (real embedding integration) | `test_semantic_chunker_real_integration` |
 | Fireworks fine-tune | `test_fetch_all_deployments` |
-| Prompt caching (Anthropic + OpenAI + Gemini + Fireworks + Together) | `test_prompt_caching_cache_hit` |
+| Prompt caching (Anthropic + OpenAI + Gemini + Fireworks + Together; single-turn runs on Anthropic) | `test_prompt_caching_cache_hit`, `test_prompt_caching_single_turn_cache_hit` |
 
 If a new provider/family in `ml_model_list.py` isn't represented in the prerelease set, note the gap as a recommendation.
 

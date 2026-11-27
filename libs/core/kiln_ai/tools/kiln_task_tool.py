@@ -99,6 +99,7 @@ class KilnTaskTool(KilnToolInterface):
                 default_tags=["tool_call"],
                 skills=skills,
                 task_run_config_id=self._run_config_id,
+                automatic_prompt_caching=context.automatic_prompt_caching,
             ),
         )
         task_run = await adapter.invoke(

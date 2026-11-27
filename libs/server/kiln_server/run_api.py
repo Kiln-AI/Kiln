@@ -801,6 +801,9 @@ def connect_run_api(app: FastAPI):
                 default_tags=request.tags,
                 skills=skills,
                 task_run_config_id=request.task_run_config_id,
+                # Runs of one task share its system prompt and tools, and a tool loop
+                # re-sends its messages on every model call.
+                automatic_prompt_caching=True,
             ),
         )
 
