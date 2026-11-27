@@ -590,6 +590,38 @@ export async function load_plan_openenv_context(
   }
 }
 
+// Whether the build's OpenEnv server publishes a reset schema, as Generation
+// Settings last read it: null when the server couldn't be reached.
+export type ResetSchemaRead = {
+  openenv_server_id: string
+  published: boolean | null
+}
+
+// Generation Settings' note when the build's OpenEnv server publishes no reset
+// schema at all, or couldn't be reached to say. A schema with any arguments,
+// even only a seed, gets none. Every case then starts in the server's default
+// state, which is fine for a server with one starting state, so the user may
+// still generate. Null while the schema is unread.
+export function no_reset_arguments_warning(
+  openenv_server_id: string | null,
+  read: ResetSchemaRead | null,
+): string | null {
+  if (openenv_server_id === null || read === null) return null
+  if (read.openenv_server_id !== openenv_server_id || read.published === true) {
+    return null
+  }
+  if (read.published === null) {
+    return "Kiln couldn't reach your OpenEnv server to read its reset arguments. The drive checks the server again before it spends anything."
+  }
+  return "Your OpenEnv server publishes no reset arguments, so every case starts from its default state."
+}
+
+// Why a drive stopped before spending anything: its OpenEnv server didn't
+// answer when it was checked.
+export function openenv_unreachable_message(detail: string): string {
+  return `Kiln couldn't reach your OpenEnv server, so nothing was generated. Start the server and try again. ${detail}`
+}
+
 // What the drive is about to spend, shown on the button that spends it. The
 // multi-turn arm bills per TURN (every case is a whole conversation), so it
 // states the multiplication rather than the case count alone; the single-turn

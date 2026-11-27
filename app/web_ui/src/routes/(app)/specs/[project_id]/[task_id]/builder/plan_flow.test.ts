@@ -4,6 +4,8 @@ import {
   compact_batch_slots,
   dominant_failure_message,
   drive_cost_warning,
+  no_reset_arguments_warning,
+  openenv_unreachable_message,
   drive_lanes_unchanged,
   drive_stop_banner,
   driven_data_confirm,
@@ -943,6 +945,63 @@ describe("compact_batch_slots", () => {
       enriched,
       t("b"),
     ])
+  })
+})
+
+describe("no_reset_arguments_warning", () => {
+  it("states the fact when the server publishes no reset schema", () => {
+    expect(
+      no_reset_arguments_warning("srv_1", {
+        openenv_server_id: "srv_1",
+        published: false,
+      }),
+    ).toBe(
+      "Your OpenEnv server publishes no reset arguments, so every case starts from its default state.",
+    )
+  })
+
+  it("says so when the server couldn't be reached", () => {
+    expect(
+      no_reset_arguments_warning("srv_1", {
+        openenv_server_id: "srv_1",
+        published: null,
+      }),
+    ).toBe(
+      "Kiln couldn't reach your OpenEnv server to read its reset arguments. The drive checks the server again before it spends anything.",
+    )
+  })
+
+  it("stays quiet when the server publishes a schema, even a seed-only one", () => {
+    expect(
+      no_reset_arguments_warning("srv_1", {
+        openenv_server_id: "srv_1",
+        published: true,
+      }),
+    ).toBeNull()
+  })
+
+  it("stays quiet before the schema is read, or for another server", () => {
+    expect(no_reset_arguments_warning("srv_1", null)).toBeNull()
+    expect(
+      no_reset_arguments_warning("srv_1", {
+        openenv_server_id: "srv_2",
+        published: false,
+      }),
+    ).toBeNull()
+    expect(
+      no_reset_arguments_warning(null, {
+        openenv_server_id: "srv_1",
+        published: false,
+      }),
+    ).toBeNull()
+  })
+})
+
+describe("openenv_unreachable_message", () => {
+  it("says nothing was spent and what to do, then the server's reason", () => {
+    expect(openenv_unreachable_message("Connection refused.")).toBe(
+      "Kiln couldn't reach your OpenEnv server, so nothing was generated. Start the server and try again. Connection refused.",
+    )
   })
 })
 

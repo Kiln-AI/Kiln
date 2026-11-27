@@ -1309,6 +1309,42 @@ describe("grounding a build's cases in its OpenEnv server", () => {
     expect(contains("$: grounding_guide_text")).toBe(false)
   })
 
+  it("checks the OpenEnv server answers before a drive spends anything", () => {
+    for (const drive of [
+      "async function on_drive_multi_turn(",
+      "async function on_drive_single_turn(",
+    ]) {
+      const body = normalize(function_body(drive))
+      const check = body.indexOf(
+        "openenv_server_id !== null && !(await openenv_server_answers(openenv_server_id))",
+      )
+      expect(check).toBeGreaterThan(-1)
+      expect(check).toBeLessThan(body.indexOf("author_judge_prompt_for_spec("))
+    }
+  })
+
+  it("warns in Generation Settings when the server offers no reset arguments", () => {
+    const dialog = region(
+      '<Dialog bind:this={drive_settings_dialog} title="Generation Settings">',
+      "</Dialog>",
+    )
+    expect(normalize(dialog)).toContain(
+      '{#if reset_arguments_warning} <Warning warning_color="warning" warning_message={reset_arguments_warning} /> {/if}',
+    )
+    // The reset schema, not the brief: a seed-only schema has an empty brief
+    // and must get no note.
+    const open = normalize(function_body("async function open_drive_settings("))
+    expect(open).toContain(
+      "await load_openenv_server_reset_schema( project_id, openenv_server_id, )",
+    )
+    expect(open).toContain(
+      "reset_schema_read = { openenv_server_id, published: schema !== null }",
+    )
+    expect(open).toContain(
+      "reset_schema_read = { openenv_server_id, published: null }",
+    )
+  })
+
   it("gives the case writer the Data Guide the drive uses", () => {
     // The writer of each simulated user's first message and persona reads the
     // guide only through generate_cases, so a first-message rule in it (a

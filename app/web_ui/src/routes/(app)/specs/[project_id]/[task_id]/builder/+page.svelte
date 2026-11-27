@@ -87,6 +87,7 @@
   } from "./grounding_flow"
   import {
     load_openenv_server_reset_arguments_brief,
+    load_openenv_server_reset_schema,
     lookup_run_openenv_server,
   } from "$lib/api/openenv_server_api"
   import { is_openenv_tool_id } from "$lib/utils/openenv"
@@ -195,6 +196,8 @@
     compact_batch_slots,
     dominant_failure_message,
     drive_cost_warning,
+    no_reset_arguments_warning,
+    openenv_unreachable_message,
     drive_lanes_unchanged,
     drive_stop_banner,
     driven_data_confirm,
@@ -216,6 +219,7 @@
     type DriveStop,
     type PreflightFailure,
     type PreflightLane,
+    type ResetSchemaRead,
   } from "./plan_flow"
   // Reuse v1's themed loading animations on the wizard's transition screens
   // instead of bare dot-spinners, so the two builders feel consistent.
@@ -1183,6 +1187,10 @@
   // directly above the button that spends it. Quotes the STAGED length, so the
   // number moves with the stepper the user is holding rather than with the
   // value the last submit committed.
+  $: reset_arguments_warning = no_reset_arguments_warning(
+    build_openenv_server_id,
+    reset_schema_read,
+  )
   $: drive_cost_message = drive_cost_warning({
     is_multi_turn,
     count: planned_total,
@@ -1351,6 +1359,9 @@
   // Never drafted: the server's owner can rewrite it at any time, and a
   // restored copy would plan against starting states the server no longer has.
   let reset_arguments_brief: CachedResetArgumentsBrief | null = null
+  // Whether that server publishes a reset schema at all, for Generation
+  // Settings' note. Never drafted, for the same reason.
+  let reset_schema_read: ResetSchemaRead | null = null
   $: build_openenv_server_id = openenv_server_lookup?.openenv_server_id ?? null
   // A single-turn build on an OpenEnv server takes its inputs from grounded
   // cases: each input is a grounded case's opening message, run in that case's
@@ -1395,6 +1406,28 @@
     )
     reset_arguments_brief = { openenv_server_id, brief }
     return brief
+  }
+
+  // A fresh read of the server's reset arguments before a drive spends
+  // anything: a server that has gone away stops the drive here, before the
+  // judge, the case writer or grounding runs. Returns false after setting
+  // generation_error.
+  async function openenv_server_answers(
+    openenv_server_id: string,
+  ): Promise<boolean> {
+    try {
+      const brief = await load_openenv_server_reset_arguments_brief(
+        project_id,
+        openenv_server_id,
+      )
+      reset_arguments_brief = { openenv_server_id, brief }
+      return true
+    } catch (e) {
+      generation_error = openenv_unreachable_message(
+        createKilnError(e).getMessage(),
+      )
+      return false
+    }
   }
 
   // The target run config's tools, for planning. Free of side effects: a
@@ -1853,6 +1886,22 @@
       await prepopulate_lanes()
     } catch (e) {
       console.warn("Could not resolve the default models:", e)
+    }
+    // The no-reset-arguments note reads the server's reset schema, which a
+    // restored draft does not carry. A server that doesn't answer is noted
+    // too; the drive checks it again before it spends anything.
+    if (build_openenv_server_id !== null) {
+      const openenv_server_id = build_openenv_server_id
+      try {
+        const schema = await load_openenv_server_reset_schema(
+          project_id,
+          openenv_server_id,
+        )
+        reset_schema_read = { openenv_server_id, published: schema !== null }
+      } catch (e) {
+        console.warn("Could not read the OpenEnv server's reset schema:", e)
+        reset_schema_read = { openenv_server_id, published: null }
+      }
     }
     // Reseed the dropdowns from the committed lanes (also discards any
     // uncommitted picks from a previously cancelled dialog).
@@ -2829,6 +2878,12 @@
       const openenv_server_id = await ensure_openenv_server(
         drive_config.tool_ids,
       )
+      if (
+        openenv_server_id !== null &&
+        !(await openenv_server_answers(openenv_server_id))
+      ) {
+        return
+      }
       await refresh_data_guide(new_copilot_abort_signal())
       // Drafts from before the Environment Setup Model lane ground on the judge, as
       // they did then.
@@ -3422,6 +3477,12 @@
       const openenv_server_id = await ensure_openenv_server(
         drive_config.tool_ids,
       )
+      if (
+        openenv_server_id !== null &&
+        !(await openenv_server_answers(openenv_server_id))
+      ) {
+        return
+      }
       await refresh_data_guide(new_copilot_abort_signal())
       // Drafts from before the Environment Setup Model lane ground on the judge, as
       // they did then.
@@ -6406,6 +6467,12 @@
         fancy_select_options={judge_thinking_level_options}
         info_description={THINKING_LEVEL_INFO_DESCRIPTION}
         optional={true}
+      />
+    {/if}
+    {#if reset_arguments_warning}
+      <Warning
+        warning_color="warning"
+        warning_message={reset_arguments_warning}
       />
     {/if}
     <!-- What the run costs, last child of the form so it sits directly above
