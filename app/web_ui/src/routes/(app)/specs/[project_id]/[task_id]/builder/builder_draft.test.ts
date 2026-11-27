@@ -14,6 +14,7 @@ import {
   restore_synthetic_user_guide,
   reusable_cached_cases,
   reusable_grounded_cases,
+  grounding_turn_limit,
   reusable_minted_inputs,
   run_config_cache_key,
   should_invalidate_refined_values,
@@ -458,6 +459,35 @@ describe("reusable_cached_cases — SU-case reuse", () => {
   })
 })
 
+describe("grounding_turn_limit", () => {
+  it("is 1 only for a one-message conversation", () => {
+    expect(grounding_turn_limit(1)).toBe(1)
+    expect(grounding_turn_limit(2)).toBeNull()
+    expect(grounding_turn_limit(5)).toBeNull()
+    expect(grounding_turn_limit(null)).toBeNull()
+  })
+
+  it("keeps a grounded set across lengths of more than one message", () => {
+    const key = (turns: number) => ({
+      openenv_server_id: "srv_1",
+      grounding_model: "m",
+      data_guide: "",
+      max_turns: grounding_turn_limit(turns),
+    })
+    const cache: CachedGroundedCases = {
+      prompts_json: JSON.stringify(["a"]),
+      spec_text: "s",
+      ...key(3),
+      cases: [{ seed_prompt: "hi", synthetic_user_info: "x" }],
+      grounding_dropped: 0,
+      drops: [],
+      drops_notice_seen: false,
+    }
+    expect(reusable_grounded_cases(cache, ["a"], "s", key(4))).toBe(cache)
+    expect(reusable_grounded_cases(cache, ["a"], "s", key(1))).toBeNull()
+  })
+})
+
 describe("reusable_grounded_cases", () => {
   const prompts = ["scenario a"]
   const spec = "no fabrication"
@@ -467,6 +497,7 @@ describe("reusable_grounded_cases", () => {
     openenv_server_id: "srv_1",
     grounding_model: "openai/gpt_5_4",
     data_guide: "Shoppers asking about orders.",
+    max_turns: null,
     cases: [
       {
         seed_prompt: "hi",
@@ -483,6 +514,7 @@ describe("reusable_grounded_cases", () => {
     openenv_server_id: "srv_1",
     grounding_model: "openai/gpt_5_4",
     data_guide: "Shoppers asking about orders.",
+    max_turns: null,
   }
 
   it("reuses when plan, spec, server, model and guide all match", () => {
@@ -534,6 +566,23 @@ describe("reusable_grounded_cases", () => {
         data_guide: "",
       }),
     ).toBeNull()
+  })
+
+  it("misses when the turn limit changed", () => {
+    expect(
+      reusable_grounded_cases(grounded, prompts, spec, {
+        ...key,
+        max_turns: 1,
+      }),
+    ).toBeNull()
+  })
+
+  it("keeps an older draft's set, which has no turn limit on record", () => {
+    const { max_turns: _turns, ...older } = grounded
+    expect(reusable_grounded_cases(older, prompts, spec, key)).toBe(older)
+    expect(
+      reusable_grounded_cases(older, prompts, spec, { ...key, max_turns: 1 }),
+    ).toBe(older)
   })
 
   it("grounds again from a cache saved before the Data Guide was keyed", () => {

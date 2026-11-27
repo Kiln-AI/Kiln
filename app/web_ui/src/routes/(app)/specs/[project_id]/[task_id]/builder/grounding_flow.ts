@@ -120,7 +120,9 @@ export type GroundingModel = ModelChoice & { thinking_level?: string | null }
 
 // The ground_cases request body. A blank Data Guide is sent as null, so the
 // grounding agent reads no guide rather than an empty one; so is a blank
-// example input.
+// example input. max_turns is grounding_turn_limit of the multi-turn drive's
+// length: 1 for a one-message conversation, else null, as on a single-turn
+// build.
 export function ground_cases_request(args: {
   target_run_config_id: string
   grounding_model: GroundingModel
@@ -128,11 +130,13 @@ export function ground_cases_request(args: {
   cases: GroundCaseApi[]
   data_guide: string
   example_input?: string | null
+  max_turns?: number | null
 }): GroundCasesRequest {
   return {
     ...args,
     data_guide: args.data_guide.trim() || null,
     example_input: args.example_input?.trim() || null,
+    max_turns: args.max_turns ?? null,
   }
 }
 

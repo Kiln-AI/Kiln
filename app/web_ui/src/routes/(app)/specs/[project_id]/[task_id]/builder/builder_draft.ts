@@ -84,6 +84,10 @@ export type CachedGroundedCases = {
   // The trimmed Data Guide the grounding agent read, "" for none. Missing on
   // older drafts, which ground again.
   data_guide?: string
+  // The turn limit grounding was told: 1 for a one-message conversation, null
+  // otherwise, since only that limit changes what grounding is told. Missing on
+  // older drafts, which keep their sets.
+  max_turns?: number | null
   cases: SyntheticUserCaseWire[]
   // How many cases grounding dropped. The drive counts them as planned-for,
   // not failed, so the shortfall it reports is only its own.
@@ -112,10 +116,20 @@ export type CaseGroundingKey = {
   openenv_server_id: string
   grounding_model: string
   data_guide: string
+  // grounding_turn_limit of the drive's conversation length.
+  max_turns: number | null
+}
+
+// The turn limit grounding is told for a conversation of `turns` replies: only
+// a one-message conversation changes what grounding does, so any other length
+// is sent and keyed as none, and changing it reuses the grounded set.
+export function grounding_turn_limit(turns: number | null): number | null {
+  return turns === 1 ? 1 : null
 }
 
 // The cached grounded set iff it came from EXACTLY this plan and spec and was
-// grounded in this server by this model under this Data Guide.
+// grounded in this server by this model under this Data Guide and turn limit.
+// A set from an older draft has no turn limit on record and is kept.
 export function reusable_grounded_cases(
   cache: CachedGroundedCases | null,
   approved_prompts: string[],
@@ -128,6 +142,9 @@ export function reusable_grounded_cases(
   if (cache.openenv_server_id !== key.openenv_server_id) return null
   if (cache.grounding_model !== key.grounding_model) return null
   if (cache.data_guide === undefined || cache.data_guide !== key.data_guide) {
+    return null
+  }
+  if (cache.max_turns !== undefined && cache.max_turns !== key.max_turns) {
     return null
   }
   return cache

@@ -130,12 +130,73 @@ def test_system_prompt_names_the_tools_and_every_result_field(
 
 def test_system_prompt_lists_every_case_message_section():
     message = case_message(
-        CASE, eval_context=EVAL_CONTEXT, reset_schema=None, target_tools=[]
+        CASE,
+        eval_context=EVAL_CONTEXT.model_copy(update={"max_turns": 3}),
+        reset_schema=None,
+        target_tools=[],
     )
     prompt = system_prompt()
     for tag in re.findall(r"^<(\w+)>$", message, flags=re.MULTILINE):
         if tag != "seed_prompt":
             assert f"\n<{tag}> " in prompt
+
+
+@pytest.mark.parametrize(
+    ("max_turns", "limit"),
+    [
+        (
+            1,
+            "1 message: seed_prompt is all the agent under test gets, and the "
+            "conversation ends after its one reply.",
+        ),
+        (
+            3,
+            "3 messages: the conversation ends once the agent under test has "
+            "replied 3 times.",
+        ),
+    ],
+)
+def test_case_message_gives_the_turn_limit_after_the_simulated_user(max_turns, limit):
+    message = case_message(
+        CASE,
+        eval_context=EVAL_CONTEXT.model_copy(update={"max_turns": max_turns}),
+        reset_schema=None,
+        target_tools=[],
+    )
+    assert f"</simulated_user>\n\n<turn_limit>\n{limit}\n</turn_limit>\n\n" in message
+
+
+def test_case_message_without_a_turn_limit_leaves_it_out():
+    message = case_message(
+        CASE, eval_context=EVAL_CONTEXT, reset_schema=None, target_tools=[]
+    )
+    assert "<turn_limit>" not in message
+
+
+def test_system_prompt_keeps_the_record_in_a_one_message_seed_prompt():
+    """With one message the agent can't ask which record the user means, so the rule
+    that strips the item the agent has to find must not strip the record's name."""
+    prompt = system_prompt()
+    assert (
+        "The user can still name the item they mean when the agent asks. When "
+        "<turn_limit> gives the user one message, the agent can't ask: keep in "
+        "seed_prompt what the agent needs to identify the record the user means "
+        "(its name, number or email), as the scenario has the user know it."
+    ) in prompt
+
+
+def test_single_turn_prompt_has_no_turn_limit():
+    assert "turn_limit" not in system_prompt(mode="single_turn")
+
+
+def test_single_turn_context_refuses_a_turn_limit():
+    with pytest.raises(ValueError, match="max_turns is for multi-turn"):
+        EvalContext(
+            specification="s",
+            target_task_prompt="p",
+            mode="single_turn",
+            max_turns=1,
+        )
 
 
 SINGLE_TURN_CASE = GroundingCase(

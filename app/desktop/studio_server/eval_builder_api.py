@@ -422,6 +422,15 @@ class GroundCasesRequest(TargetRunConfigFields):
         description="Single-turn tasks only: a real input from the task's dataset, "
         "for the format and voice of the inputs the grounding agent writes.",
     )
+    max_turns: int | None = Field(
+        default=None,
+        ge=1,
+        le=20,
+        description="Multi-turn tasks only: the drive's turn limit, the most replies "
+        "the agent under test gives per case. With one, the grounding agent keeps "
+        "in the opening message what identifies the record the user means. Omit "
+        "when unknown.",
+    )
     cases: list[GroundCaseApi] = Field(
         min_length=1,
         max_length=NUM_CASES_MAX,
@@ -453,6 +462,11 @@ def _check_cases_fit_turn_mode(task: Task, request: GroundCasesRequest) -> None:
         raise HTTPException(
             status_code=422,
             detail="example_input is for single-turn tasks only.",
+        )
+    if not multi_turn and request.max_turns is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="max_turns is for multi-turn tasks only.",
         )
 
 
@@ -1716,6 +1730,7 @@ def connect_eval_builder_api(app: FastAPI):
             specification=input.specification,
             data_guide=input.data_guide,
             example_input=input.example_input,
+            max_turns=input.max_turns,
             cases=input.cases,
         )
         return CancellableStreamingResponse(

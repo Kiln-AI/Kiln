@@ -1263,7 +1263,7 @@ describe("grounding a build's cases in its OpenEnv server", () => {
       "const grounding_model: GroundingModel = { ...(grounding_lane_model ?? chosen_judge_model), thinking_level: grounding_lane_model ? grounding_thinking_level : judge_thinking_level, }",
     )
     expect(normalize(drive)).toContain(
-      "grounding_model: model_choice_key(grounding_model), data_guide: data_guide_in_use(),",
+      "grounding_model: model_choice_key(grounding_model), data_guide: data_guide_in_use(), max_turns: grounding_turn_limit(chosen_turns),",
     )
   })
 

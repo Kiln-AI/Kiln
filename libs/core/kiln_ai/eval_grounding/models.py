@@ -72,6 +72,13 @@ class EvalContext(BaseModel):
         description="A real input from the task's dataset, for the input's format and "
         "voice. Single-turn only.",
     )
+    max_turns: int | None = Field(
+        default=None,
+        ge=1,
+        description="How many replies the agent under test gives before the "
+        "conversation ends, so how many messages the simulated user can send. None "
+        "when it isn't known. Multi-turn only.",
+    )
 
     @model_validator(mode="after")
     def _single_turn_fields(self) -> Self:
@@ -81,6 +88,8 @@ class EvalContext(BaseModel):
             raise ValueError(
                 "input_schema and example_input are for single-turn grounding only."
             )
+        if self.mode == "single_turn" and self.max_turns is not None:
+            raise ValueError("max_turns is for multi-turn grounding only.")
         return self
 
 

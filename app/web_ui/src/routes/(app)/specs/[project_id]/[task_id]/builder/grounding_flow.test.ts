@@ -161,7 +161,14 @@ describe("ground_cases_request", () => {
       ...base,
       data_guide: "Shoppers asking about orders.",
       example_input: "Where is order 12?",
+      max_turns: null,
     })
+  })
+
+  it("sends the multi-turn drive's turn limit", () => {
+    expect(
+      ground_cases_request({ ...base, data_guide: "", max_turns: 1 }).max_turns,
+    ).toBe(1)
   })
 
   it("sends a blank guide and a missing example as null", () => {

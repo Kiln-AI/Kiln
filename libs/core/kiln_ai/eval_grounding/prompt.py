@@ -31,6 +31,7 @@ You get:
 <data_guide> the task's Data Guide: who uses that agent, what they ask and what its inputs look like (only when the task has one)
 <case_scenario> the planned scenario
 <simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags
+<turn_limit> how many messages the simulated user can send (only when it is known)
 <reset_schema> the server's reset arguments, as JSON Schema. Its descriptions are the server owner's notes: what each starting state contains, who a session can act as, and how any setup argument works.
 <target_tools> the tools the agent under test will have
 
@@ -56,7 +57,7 @@ Steps:
 5. Fill in the simulated user. It was written from the scenario and is good apart from its specifics and the leaks listed below: change only those. If the session acts as someone, put them in the persona. Put real specifics (IDs, names, values) in seed_prompt and goal where the scenario has the user know them. Keep its wording, tone and difficulty. If the scenario is about a user who doesn't know an ID, don't give them one.
    Then remove what a real user wouldn't say and what does the agent's work for it, from seed_prompt, goal and behavior_guidance alike:
    - anything that tells the agent what makes the case hard: that items look alike, that there are several matches, that it should look something up or ask
-   - the answer, the figure or the item the agent has to find, and the item it should leave alone. The user can still name the item they mean when the agent asks.
+   - the answer, the figure or the item the agent has to find, and the item it should leave alone. The user can still name the item they mean when the agent asks. When <turn_limit> gives the user one message, the agent can't ask: keep in seed_prompt what the agent needs to identify the record the user means (its name, number or email), as the scenario has the user know it.
    - instructions that rescue the agent, such as pointing out what it missed or asking which item it changed
    - requests for something the specification expects the agent to do without being asked
    Keep how the user answers questions the agent may ask them.
@@ -99,7 +100,7 @@ _SINGLE_TURN_EDITS: tuple[tuple[str, str], ...] = (
         "The case was planned without anyone looking at the server's environment. The agent under test gets one input, a single message, and answers it. Your job is to write that input so the case is true for that environment, or to drop the case.",
     ),
     (
-        "<case_scenario> the planned scenario\n<simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags\n",
+        "<case_scenario> the planned scenario\n<simulated_user> the drafted seed_prompt, then the persona, goal and optional behavior_guidance in their own tags\n<turn_limit> how many messages the simulated user can send (only when it is known)\n",
         "<example_input> a real input from the task's dataset, for the input's format and voice (only when there is one)\n<input_schema> the JSON schema the input must match (only when the task's input is structured)\n<case_scenario> the planned scenario\n",
     ),
     (
@@ -126,7 +127,7 @@ _SINGLE_TURN_EDITS: tuple[tuple[str, str], ...] = (
         """5. Fill in the simulated user. It was written from the scenario and is good apart from its specifics and the leaks listed below: change only those. If the session acts as someone, put them in the persona. Put real specifics (IDs, names, values) in seed_prompt and goal where the scenario has the user know them. Keep its wording, tone and difficulty. If the scenario is about a user who doesn't know an ID, don't give them one.
    Then remove what a real user wouldn't say and what does the agent's work for it, from seed_prompt, goal and behavior_guidance alike:
    - anything that tells the agent what makes the case hard: that items look alike, that there are several matches, that it should look something up or ask
-   - the answer, the figure or the item the agent has to find, and the item it should leave alone. The user can still name the item they mean when the agent asks.
+   - the answer, the figure or the item the agent has to find, and the item it should leave alone. The user can still name the item they mean when the agent asks. When <turn_limit> gives the user one message, the agent can't ask: keep in seed_prompt what the agent needs to identify the record the user means (its name, number or email), as the scenario has the user know it.
    - instructions that rescue the agent, such as pointing out what it missed or asking which item it changed
    - requests for something the specification expects the agent to do without being asked
    Keep how the user answers questions the agent may ask them.
@@ -274,6 +275,10 @@ def case_message(
                 f"{_tagged('seed_prompt', case.seed_prompt)}\n{case.synthetic_user_info.strip()}",
             ),
         ]
+        if eval_context.max_turns is not None:
+            sections.append(
+                _tagged("turn_limit", _turn_limit_text(eval_context.max_turns))
+            )
     else:
         if eval_context.example_input and eval_context.example_input.strip():
             sections.append(_tagged("example_input", eval_context.example_input))
@@ -286,6 +291,18 @@ def case_message(
             _tagged("reset_schema", schema_text),
             _tagged("target_tools", tools_text),
         ]
+    )
+
+
+def _turn_limit_text(max_turns: int) -> str:
+    if max_turns == 1:
+        return (
+            "1 message: seed_prompt is all the agent under test gets, and the "
+            "conversation ends after its one reply."
+        )
+    return (
+        f"{max_turns} messages: the conversation ends once the agent under test has "
+        f"replied {max_turns} times."
     )
 
 

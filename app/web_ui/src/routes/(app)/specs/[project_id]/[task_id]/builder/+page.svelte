@@ -49,6 +49,7 @@
     reusable_cached_cases,
     reusable_grounded_cases,
     reusable_minted_inputs,
+    grounding_turn_limit,
     should_invalidate_refined_values,
     should_prefill_suggested_name,
     run_config_cache_key,
@@ -1131,7 +1132,8 @@
   // multi-minute generation. Rides the persisted draft.
   let cached_su_cases: CachedSuCases | null = null
   // On an OpenEnv build, the same cases after grounding in the server, keyed
-  // on the server and judge model as well. Rides the persisted draft.
+  // on the server, the grounding model, the Data Guide and a one-message turn
+  // limit as well. Rides the persisted draft.
   let cached_grounded_cases: CachedGroundedCases | null = null
   // The single-turn arm's minted inputs, reused on a re-run while the plan
   // and input-generator model are byte-unchanged. Rides the persisted draft.
@@ -2646,6 +2648,7 @@
     target_run_config_id: string,
     grounding_model: GroundingModel,
     data_guide: string,
+    max_turns: number | null,
     signal: AbortSignal,
   ): Promise<GroundingOutcome | null> {
     const request_cases = grounding_request_cases(
@@ -2662,6 +2665,7 @@
       specification: spec_text(),
       cases: request_cases,
       data_guide,
+      max_turns,
       // Single-turn: a real input from the task's dataset, for format.
       example_input: is_multi_turn ? null : grounding_sample?.input ?? null,
     })
@@ -2803,6 +2807,7 @@
       target_run_config_id,
       grounding_model,
       grounding_key.data_guide,
+      grounding_key.max_turns,
       new_copilot_abort_signal(),
     )
     if (outcome === null) return null
@@ -2900,6 +2905,7 @@
               openenv_server_id,
               grounding_model: model_choice_key(grounding_model),
               data_guide: data_guide_in_use(),
+              max_turns: grounding_turn_limit(chosen_turns),
             }
 
       // 2. Author the judge before preflight and any SU spend, so a failure
@@ -3499,6 +3505,7 @@
               openenv_server_id,
               grounding_model: model_choice_key(grounding_model),
               data_guide: data_guide_in_use(),
+              max_turns: null,
             }
       if (
         grounding_key === null &&

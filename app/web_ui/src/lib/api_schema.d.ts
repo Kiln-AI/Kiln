@@ -9466,6 +9466,11 @@ export interface components {
              */
             example_input?: string | null;
             /**
+             * Max Turns
+             * @description Multi-turn tasks only: the drive's turn limit, the most replies the agent under test gives per case. With one, the grounding agent keeps in the opening message what identifies the record the user means. Omit when unknown.
+             */
+            max_turns?: number | null;
+            /**
              * Cases
              * @description The cases to ground. Frames refer to each by its position here (case_index).
              */

@@ -105,6 +105,7 @@ async def grounding_frames(
     data_guide: str | None,
     example_input: str | None,
     cases: Sequence[GroundCaseApi],
+    max_turns: int | None = None,
 ) -> AsyncGenerator[GroundingFrame, None]:
     """Ground every case, one frame per finished case, between grounding_started and
     grounding_finished. A single-turn task grounds in single-turn mode: the agent
@@ -131,6 +132,7 @@ async def grounding_frames(
                 mode="single_turn" if single_turn else "multi_turn",
                 input_schema=task.input_json_schema if single_turn else None,
                 example_input=(example_input or None) if single_turn else None,
+                max_turns=None if single_turn else max_turns,
             ),
             openenv_server=openenv_server,
             session_manager=session_manager,

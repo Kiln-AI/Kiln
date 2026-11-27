@@ -461,6 +461,33 @@ class TestGroundCasesRoute:
         assert resp.status_code == 422
         assert "only its scenario" in resp.text
 
+    def test_the_turn_limit_reaches_the_grounding_agent(
+        self, client, project_task_server
+    ):
+        _project, _task, server = project_task_server
+        calls: list[dict[str, Any]] = []
+        fake = _fake_ground_cases(
+            [GroundingFinished(grounded=0, dropped=0, usage=None, usage_complete=True)],
+            calls,
+        )
+        with patch(f"{SERVICE}.ground_cases", new=fake):
+            resp = client.post(GROUND_URL, json=_request(server, max_turns=1))
+        assert resp.status_code == 200, resp.text
+        (call,) = calls
+        assert call["eval_context"].max_turns == 1
+
+    def test_a_turn_limit_on_a_single_turn_task_is_422(
+        self, client, project_task_server
+    ):
+        project, _task, server = project_task_server
+        single_turn = Task(name="single", instruction="Answer.", parent=project)
+        with patch(f"{API}.task_from_id", return_value=single_turn):
+            resp = client.post(
+                GROUND_URL, json=self._single_turn_request(server, max_turns=1)
+            )
+        assert resp.status_code == 422
+        assert "max_turns is for multi-turn tasks only" in resp.text
+
     def test_an_example_input_on_a_multi_turn_task_is_422(
         self, client, project_task_server
     ):
