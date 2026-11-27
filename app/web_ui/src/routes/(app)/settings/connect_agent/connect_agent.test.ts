@@ -119,6 +119,9 @@ describe("repo files that repeat the prompt and the stub skill", () => {
     expect(guide).toContain("http://localhost:8757/mcp")
     expect(guide).toContain("http://localhost:8757/ping")
     expect(guide).toContain("https://kiln.tech/download")
+    expect(guide).toContain(
+      "- Any other answer: stop and ask the user. Never start a Kiln server yourself.",
+    )
     const lines = guide.split("\n")
     for (const heading of [
       "### Claude Code",

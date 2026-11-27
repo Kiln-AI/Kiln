@@ -1,9 +1,9 @@
-# Knowledge backlog
+# Kiln MCP backlog
 
-This file lists the known gaps and the pending ideas of the knowledge of the
-Kiln skill: what the knowledge does not teach yet, what Kiln itself cannot do
-yet, and the technique, playbook, smell, lever, guide or code change that is
-not written yet. It is the one place to debate the next change with the
+This file is the backlog of the Kiln MCP server, its Kiln skill and the Kiln
+API they use: what the knowledge does not teach yet, what Kiln itself cannot
+do yet, the bugs and gaps found in use, and the technique, playbook, smell,
+lever, guide or code change that is not written yet. It is the one place to debate the next change with the
 highest leverage. It is outside the `kiln_mcp_server` package, so no agent on
 the Kiln MCP reads it. To add an entry, add it at the end of `Unranked`, in
 the format below, and do not rank it: the owners rank, and to move an entry
@@ -14,7 +14,7 @@ technique, playbook, smell, lever, code or guide (a hand-written file of
 `references/knowledge/`). `Where` is one or more of knowledge or kiln, joined
 by `, `. `Depends on` is `None`, or the titles of other entries joined by
 `; `. `Source` is a link, a short reference or `None`.
-`app/mcp/kiln_mcp_server/skill_checks/test_knowledge_backlog.py` checks the
+`app/mcp/kiln_mcp_server/skill_checks/test_backlog.py` checks the
 format. The `knowledge-maintenance` skill
 (`.agents/skills/knowledge-maintenance/SKILL.md`) says when to add an entry.
 
@@ -70,9 +70,9 @@ not in documents.
 - Depends on: None
 - Source: Kiln Harness Tuner: Kiln gaps note, gap 9; overview 7.7; owner
 
-A world is hard to change, so you do not change it: you wrap it in Kiln code tools. Teach what a
-world is, which worlds and fixtures a project has, and how to read them. The Kiln API reference
-has no `/worlds` routes.
+A world is hard to change: wrap it in Kiln code tools, do not change it. Teach what a world is,
+which worlds and fixtures a project has, how to read them, and evals that run in a world (grounding,
+each case's judge guidance, the final world state the judge reads). The API has no `/worlds` routes.
 
 ## Unranked
 
@@ -648,9 +648,9 @@ edit saves a few tokens, but it breaks the cache and can cost 10x more.
 - Depends on: None
 - Source: kiln_mcp_server backlog B8; API enforcement of the rule is tracked as the scopes item (P2) in `specs/projects/kiln_mcp_server/project_overview.md`
 
-Mike signs it off or improves it. Open: val is summary numbers only, yet "whether it is significant"
-is one; that needs per-item val scores, and the spec planned the paired statistics call on val.
-Absent: Kiln Harness Tuner's zero-number val→train signals (rejection reason, regressed-issue flag).
+Mike signs it off or improves it. Open: significance on val needs per-item scores; Kiln Harness
+Tuner's zero-number val→train signals are absent. Test runs only in the app, on purpose: when asked
+to "run the eval", say that val runs here and that test runs in the Kiln app, and give the link.
 
 ### A manual review of four files against the port rules
 
@@ -716,3 +716,136 @@ the shipped Kiln Harness Tuner drops the flag. Bring it back only after it is te
 A knowledge file, `references/knowledge/using_harness_tuner.md`: how the user's own agent,
 connected to Kiln with the skill, runs the Kiln Harness Tuner CLI in place of running the
 experiments itself.
+
+### Reject bad run config values
+
+- Kind: code
+- Where: kiln
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+Run config create and PATCH save any `thinking_level`; a bad one fails later as a generic 500.
+Check it against the model's levels and name the field (also in the v2 eval config error). A PATCH
+that sends `run_config_properties` returns 200 and ignores them: return 422, create a new config.
+
+### Pass the provider's error through when a run fails
+
+- Kind: code
+- Where: kiln
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+A run that fails at the provider returns 500 "An unexpected error occurred." and only the error
+type. Pass the provider's message through, so the agent can fix the request.
+
+### Split memory.md by memory type
+
+- Kind: guide
+- Where: knowledge
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+`references/knowledge/memory.md` is about 24k characters, read whole. Split it into an index and a
+small doc for each memory type in a subfolder, so an agent reads only the type it needs.
+
+### Partial reads and search of the skill
+
+- Kind: code
+- Where: kiln
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+`kiln_skill` returns whole files only: a first build read about 165k characters of skill for 10
+API calls. Open: give `kiln_skill` partial reads and search, or give the agent the skill's path on
+disk to use its own file tools. The latter may be easier and more powerful.
+
+### Split the code tool authoring doc
+
+- Kind: guide
+- Where: knowledge
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+Split `references/knowledge/code_tool_authoring.md` (about 19k characters) into smaller docs, and
+maybe `references/knowledge/tools.md` too.
+
+### Bare-array responses in the endpoint docs
+
+- Kind: code
+- Where: kiln, knowledge
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+The API doc generator writes a bare-array response (a pydantic RootModel) as `value: array | null`,
+as in the eval run judge trace doc, so agents write `.value[]`. Fix the generator and regenerate.
+
+### Name rules in the name field descriptions
+
+- Kind: code
+- Where: kiln, knowledge
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+A name rejects `/ \ ? % * : | < > . , ; =`, and edge or doubled whitespace, but `name` fields do
+not say so (PATCH run config: "The updated name."). Put the rule in the shared field description.
+
+### Endpoint docs that contradict themselves
+
+- Kind: code
+- Where: kiln, knowledge
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+Create run config marks `prompt_id` Required, and its description says it defaults.
+`judge_types.md` says v2 evals skip multi-turn items, yet a v2 LLM judge scored multi-turn
+EvalInputs: say which item sources and judge types skip.
+
+### Kiln Harness Tuner leftovers on the chat path
+
+- Kind: guide
+- Where: knowledge
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+`code_tool_authoring.md` is described as an experiment lever, yet a first build is routed to it.
+The `JinjaInputTransform` docs point at a spec file the skill cannot serve.
+
+### Run by saved run config id
+
+- Kind: code
+- Where: kiln
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+A run must repeat the whole `run_config_properties`, and is linked to its saved config only when
+`task_run_config_id` is also sent. Accept the saved config's id alone; the server fills the rest.
+
+### Show the body's shape when a jq filter fails
+
+- Kind: code
+- Where: kiln
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+`call_kiln_api` reports only jq's message, e.g. "Cannot index array with string". Append the body's
+top-level type and, for an object, its keys, so the agent fixes the filter without guessing.
+
+### Judge traces with eval results
+
+- Kind: code
+- Where: kiln
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+Eval result rows carry `judge_trace: null`, so reading why items failed takes one call per item.
+Add an `include_judge_trace` flag to the eval results endpoint.
+
+### Check a judge before trusting it
+
+- Kind: guide
+- Where: knowledge
+- Depends on: None
+- Source: Bug bash, 2026-11
+
+In `judge_types.md`: check that a judge returns its reasoning, since one without cannot be checked.
+To change a judge, run both on val, list and read every changed verdict, then switch the default.

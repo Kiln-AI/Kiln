@@ -133,13 +133,21 @@ def test_bare_make_app_uses_the_configured_host_and_port(monkeypatch):
     monkeypatch.setenv("KILN_LOCAL_API_PORT", "9100")
     with patch.object(desktop_server, "connect_kiln_mcp_server") as connect:
         app = make_app()
-    connect.assert_called_once_with(app, host="0.0.0.0", port=9100)
+    connect.assert_called_once_with(app, host="0.0.0.0", port=9100, ui_origin=None)
 
 
 def test_explicit_host_and_port_win_over_the_config():
     with patch.object(desktop_server, "connect_kiln_mcp_server") as connect:
         app = make_app(host="192.168.1.5", port=9200)
-    connect.assert_called_once_with(app, host="192.168.1.5", port=9200)
+    connect.assert_called_once_with(app, host="192.168.1.5", port=9200, ui_origin=None)
+
+
+def test_a_ui_origin_reaches_the_mcp_server():
+    with patch.object(desktop_server, "connect_kiln_mcp_server") as connect:
+        app = make_app(host="127.0.0.1", port=8757, ui_origin="http://localhost:5173")
+    connect.assert_called_once_with(
+        app, host="127.0.0.1", port=8757, ui_origin="http://localhost:5173"
+    )
 
 
 @pytest.mark.parametrize(

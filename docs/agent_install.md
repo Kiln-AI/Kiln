@@ -23,6 +23,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8757/mcp
 
 - `405` is the expected answer: the server is there, and it accepts only POST.
 - `404` means this Kiln is too old. Ask the user to update it (in Kiln: Settings, then Check for Update), then check again.
+- Any other answer: stop and ask the user. Never start a Kiln server yourself.
 
 If you cannot make HTTP requests, ask the user to confirm that Kiln is open, and go on.
 

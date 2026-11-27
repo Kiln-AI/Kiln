@@ -165,6 +165,7 @@ Decisions in the guide (4.3):
 - The MCP server and the stub skill are installed at user level, so that they work in every project.
 - Codex users invoke the stub as Codex does, with `$kiln`. The guide says so; the Connect page names neither `/kiln` nor `$kiln`, only "ask it to work with Kiln".
 - The `405` or `404` test in step 1 relies on the server answering `GET /mcp` with 405 (server doc 2.1).
+- Any other answer in step 1 stops the agent, which asks the user. The agent never starts a Kiln server itself: a second server that it starts and registers at user level breaks later sessions.
 
 ### 4.3 Full draft
 
@@ -194,6 +195,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8757/mcp
 
 - `405` is the expected answer: the server is there, and it accepts only POST.
 - `404` means this Kiln is too old. Ask the user to update it (in Kiln: Settings, then Check for Update), then check again.
+- Any other answer: stop and ask the user. Never start a Kiln server yourself.
 
 If you cannot make HTTP requests, ask the user to confirm that Kiln is open, and go on.
 

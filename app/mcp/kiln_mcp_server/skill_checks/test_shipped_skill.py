@@ -535,7 +535,8 @@ def test_the_setup_delimiter_is_on_a_line_of_its_own():
 
 
 def test_memory_names_each_format_file():
-    # The skill tool cannot list a folder, so each file is named by its path.
+    # The skill tool lists a folder only in the error for a missing path, so
+    # each file is named by its path.
     formats = _sections(read_file(MEMORY, get_index()))[
         "The formats that Kiln Harness Tuner writes"
     ]
@@ -1324,9 +1325,8 @@ def test_the_maintenance_skill_names_the_commands():
         "uv run python -m pytest app/mcp\n",
         "uv run ruff check",
         "uv run ruff format --check",
-        "app/mcp/knowledge_backlog.md",
-        "uv run python -m pytest"
-        " app/mcp/kiln_mcp_server/skill_checks/test_knowledge_backlog.py",
+        "app/mcp/backlog.md",
+        "uv run python -m pytest app/mcp/kiln_mcp_server/skill_checks/test_backlog.py",
     ):
         assert command in text, command
 

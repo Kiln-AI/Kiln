@@ -251,7 +251,7 @@ skill/
 The agent gets it from one tool call, and it can leave the context at compaction. Every kind of client reads it (4.6), so it is short: it says what the skill is and how to use it, and trusts the reader with the rest. It has at most 300 lines and 20,000 characters, and these parts in this order (Phase 21):
 
 1. The intro: what the skill is (served by the Kiln app over MCP, through the `kiln_skill` tool) and what it holds. The rules apply only while the agent does Kiln work.
-2. "Reading this skill": read a path by calling `kiln_skill` with it as `path` (`kiln_skill(path="…")`); the tool cannot list a folder, so do not guess a file name; when this text, or a file the work depends on, is no longer in the conversation, read it again. `SKILL.md` is the one file that names the skill tool (section 8, `tree-call-syntax`).
+2. "Reading this skill": read a path by calling `kiln_skill` with it as `path` (`kiln_skill(path="…")`); do not guess a file name, since each file is named by this text or a file it leads to; when this text, or a file the work depends on, is no longer in the conversation, read it again. `SKILL.md` is the one file that names the skill tool (section 8, `tree-call-syntax`).
 3. "Who reads this skill": the kinds of client. A chat client reads `references/client_guidance/chat/using_kiln_from_chat.md` at the start of every session. A non-interactive agent with its own instructions (such as Kiln Harness Tuner) follows them on any conflict, ignores "ask the user" instructions, and does not read `references/client_guidance/chat/`; if it reads a file there, it fits any lesson to its own process.
 4. "Kiln concepts": what Kiln is; projects and tasks; run configs (one way to run a task); models and AI providers; the dataset (every run of a task); the Kiln UI. Each names its best knowledge file.
 5. "Kiln features": one line for each real feature (evals and specs, prompts, synthetic data, fine-tuning, tools, sub-agents, skills, RAG, issues, memory), each with its best knowledge file or help article. It moved here, rewritten, from the Learn About Kiln mode's table, which now points to it.
@@ -384,7 +384,7 @@ Since Phase 22 ([decisions](../harness_tuner_alignment_decisions.md) section 17)
 
 The brief asked for a stricter test: no shared file links into `references/client_guidance/` at all. That cannot hold with "only path fixes" for the shared files, since 35 places in them named the moved files. The labelled form keeps every link and states its condition. The levers' line is the shortest form, "In a chat with a user: `<path>`.", because `output_mode.md` would pass its 6,000-character limit with the old description beside the longer path.
 
-**Reachability.** `kiln_skill` cannot list a folder: `SKILL.md` names `using_kiln_from_chat.md`, which names every chat file in its table; `SKILL.md`'s feature table names every knowledge file directly in `references/knowledge/` that another part does not.
+**Reachability.** `kiln_skill` lists a folder only in the error for a path that names no file, so each file is reached by a path that another file names: `SKILL.md` names `using_kiln_from_chat.md`, which names every chat file in its table; `SKILL.md`'s feature table names every knowledge file directly in `references/knowledge/` that another part does not.
 
 ## 5. Commands and CI entries
 

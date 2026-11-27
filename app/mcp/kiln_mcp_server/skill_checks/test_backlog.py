@@ -1,4 +1,4 @@
-"""The knowledge backlog, `app/mcp/knowledge_backlog.md`: its fixed format.
+"""The Kiln MCP backlog, `app/mcp/backlog.md`: its fixed format.
 
 `backlog_problems` reads the file and returns one problem for each broken
 rule. The tests on the real file assert that it has none of each rule. The
@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-BACKLOG = PACKAGE_ROOT.parent / "knowledge_backlog.md"
+BACKLOG = PACKAGE_ROOT.parent / "backlog.md"
 
 SECTIONS = ("Ranked", "Unranked")
 FIELDS = ("Kind", "Where", "Depends on", "Source")

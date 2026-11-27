@@ -154,9 +154,12 @@ def make_app(
     *,
     host: str | None = None,
     port: int | None = None,
+    ui_origin: str | None = None,
 ):
     """Build the desktop app for a server bound to `host` and `port`. A value
-    left out is the configured one, which is what the dev server binds to."""
+    left out is the configured one, which is what the dev server binds to.
+    `ui_origin` is the address of the web UI when another server serves it, as
+    Vite does under the dev server; by default the app serves its own UI."""
     config = Config.shared()
     bound_host = host if host is not None else config.kiln_local_api_host
     bound_port = port if port is not None else config.kiln_local_api_port
@@ -199,7 +202,7 @@ def make_app(
     connect_dev_tools(app)
     connect_chat_api(app)
     connect_jobs_api(app)
-    connect_kiln_mcp_server(app, host=bound_host, port=bound_port)
+    connect_kiln_mcp_server(app, host=bound_host, port=bound_port, ui_origin=ui_origin)
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app

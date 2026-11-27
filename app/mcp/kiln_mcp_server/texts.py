@@ -44,4 +44,9 @@ SKILL_TOOL_DESCRIPTION = (
 Only the paths that the skill writes exist; do not guess. If the instructions are no longer in this conversation, call again with no arguments."""
 )
 
+
+def ui_address_note(ui_origin: str, app_origin: str) -> str:
+    return f"Note: the Kiln UI is running at {ui_origin}, not {app_origin}; use that address in any UI link you give the user."
+
+
 PATH_DESCRIPTION = "Optional. The path of a skill file to read, relative to the skill root and exactly as the skill's instructions wrote it, for example `references/knowledge/specs_and_evals.md`. Omit it to read the skill's instructions."
