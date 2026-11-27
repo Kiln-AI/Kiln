@@ -10,7 +10,10 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
 )
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    require_openrouter_for_zero_data_retention,
+)
 from kiln_ai.utils.name_generator import generate_memorable_name
 
 
@@ -92,6 +95,11 @@ class BaseFinetuneAdapter(ABC):
         # Raise exception if run config is none
         if run_config is None:
             raise ValueError("Run config is required")
+        # The fine-tune's run config is moved to the kiln_fine_tune provider below,
+        # which cannot carry zero data retention.
+        require_openrouter_for_zero_data_retention(
+            run_config.openrouter_routing, ModelProviderName.kiln_fine_tune
+        )
 
         # Default name if not provided
         if name is None:

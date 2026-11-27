@@ -36,6 +36,7 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
     MCPToolReference,
+    OpenRouterRouting,
     ToolsRunConfig,
 )
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
@@ -797,6 +798,126 @@ def test_build_extra_body_non_openrouter_no_provider_order(config, mock_task):
 
         # Non-OpenRouter providers should not have provider options
         assert "provider" not in extra_body
+
+
+OPENROUTER_DEFAULT_ORDER = [
+    "fireworks",
+    "parasail",
+    "together",
+    "deepinfra",
+    "novita",
+    "groq",
+    "amazon-bedrock",
+    "azure",
+    "nebius",
+]
+OPENROUTER_R1_PROVIDER_OPTIONS = {
+    "require_parameters": True,
+    "order": ["fireworks", "together"],
+    "ignore": ["deepinfra"],
+}
+
+
+def routing_mock_provider(
+    name: ModelProviderName = ModelProviderName.openrouter, r1: bool = False
+) -> Mock:
+    mock_provider = Mock()
+    mock_provider.name = name
+    mock_provider.default_thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = r1
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+    mock_provider.openai_reasoning_summary = None
+    return mock_provider
+
+
+@pytest.mark.parametrize(
+    "routing,r1,expected_provider_options",
+    [
+        # Nothing requested: exactly the options Kiln sends without the field.
+        (None, False, {"order": OPENROUTER_DEFAULT_ORDER}),
+        (OpenRouterRouting(), False, {"order": OPENROUTER_DEFAULT_ORDER}),
+        (None, True, OPENROUTER_R1_PROVIDER_OPTIONS),
+        (OpenRouterRouting(), True, OPENROUTER_R1_PROVIDER_OPTIONS),
+        # Zero data retention is added on top of the order, default or pinned.
+        (
+            OpenRouterRouting(zero_data_retention=True),
+            False,
+            {"order": OPENROUTER_DEFAULT_ORDER, "zdr": True},
+        ),
+        (
+            OpenRouterRouting(zero_data_retention=True),
+            True,
+            {**OPENROUTER_R1_PROVIDER_OPTIONS, "zdr": True},
+        ),
+        # A sort replaces the default order, but not a model's pinned order.
+        (OpenRouterRouting(sort="price"), False, {"sort": "price"}),
+        (OpenRouterRouting(sort="price"), True, OPENROUTER_R1_PROVIDER_OPTIONS),
+        (
+            OpenRouterRouting(zero_data_retention=True, sort="latency"),
+            False,
+            {"sort": "latency", "zdr": True},
+        ),
+        (
+            OpenRouterRouting(zero_data_retention=True, sort="latency"),
+            True,
+            {**OPENROUTER_R1_PROVIDER_OPTIONS, "zdr": True},
+        ),
+    ],
+)
+def test_build_extra_body_openrouter_routing(
+    config, mock_task, routing, r1, expected_provider_options
+):
+    config.run_config_properties.openrouter_routing = routing
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    extra_body = adapter.build_extra_body(routing_mock_provider(r1=r1))
+
+    assert extra_body["provider"] == expected_provider_options
+
+
+def test_build_extra_body_sort_keeps_logprobs_filters(config, mock_task):
+    config.run_config_properties.openrouter_routing = OpenRouterRouting(
+        sort="throughput"
+    )
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(top_logprobs=5),
+    )
+    mock_provider = routing_mock_provider()
+    mock_provider.logprobs_openrouter_options = True
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body["provider"] == {
+        "sort": "throughput",
+        "require_parameters": True,
+        "ignore": ["deepinfra"],
+    }
+
+
+def test_build_extra_body_zero_data_retention_refused_off_openrouter(config, mock_task):
+    config.run_config_properties.openrouter_routing = OpenRouterRouting(
+        zero_data_retention=True
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    with pytest.raises(ValueError, match=r"zero data retention.*'openai' was not sent"):
+        adapter.build_extra_body(routing_mock_provider(ModelProviderName.openai))
+
+
+def test_build_extra_body_sort_not_sent_off_openrouter(config, mock_task):
+    config.run_config_properties.openrouter_routing = OpenRouterRouting(sort="price")
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    extra_body = adapter.build_extra_body(routing_mock_provider(ModelProviderName.groq))
+
+    assert "provider" not in extra_body
 
 
 @pytest.mark.parametrize(

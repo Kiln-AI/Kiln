@@ -55,6 +55,7 @@ from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
+    require_openrouter_for_zero_data_retention,
 )
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
@@ -158,6 +159,11 @@ class BaseAdapter(metaclass=ABCMeta):
         self.base_adapter_config = config or AdapterConfig()
 
         if isinstance(run_config, KilnAgentRunConfigProperties):
+            # Validation can be skipped (model_copy, assignment), and not every
+            # adapter builds an OpenRouter request, so check before any adapter runs.
+            require_openrouter_for_zero_data_retention(
+                run_config.openrouter_routing, run_config.model_provider_name
+            )
             self.update_run_config_unknown_structured_output_mode()
             self.prompt_builder = (
                 self.base_adapter_config.prompt_builder

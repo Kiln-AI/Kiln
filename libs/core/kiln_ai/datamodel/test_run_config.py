@@ -13,6 +13,7 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
     MCPToolReference,
+    OpenRouterRouting,
     RunConfigProperties,
     ToolsRunConfig,
 )
@@ -473,3 +474,59 @@ class TestInputTransformField:
         assert isinstance(restored, KilnAgentRunConfigProperties)
         assert isinstance(restored.input_transform, JinjaInputTransform)
         assert restored.input_transform.template == "{{ input.x }}"
+
+
+class TestOpenRouterRoutingField:
+    def test_backcompat_no_openrouter_routing_key(self):
+        config = run_config_adapter.validate_python(KILN_AGENT_JSON)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.openrouter_routing is None
+
+    def test_roundtrip(self):
+        raw = {
+            **KILN_AGENT_JSON,
+            "model_provider_name": "openrouter",
+            "openrouter_routing": {"zero_data_retention": True, "sort": "price"},
+        }
+        config = run_config_adapter.validate_python(raw)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.openrouter_routing == OpenRouterRouting(
+            zero_data_retention=True, sort="price"
+        )
+        restored = run_config_adapter.validate_json(config.model_dump_json())
+        assert restored == config
+
+    @pytest.mark.parametrize("provider", ["openai", "typesafe", "openai_compatible"])
+    def test_zero_data_retention_requires_openrouter(self, provider):
+        raw = {
+            **KILN_AGENT_JSON,
+            "model_provider_name": provider,
+            "openrouter_routing": {"zero_data_retention": True},
+        }
+        with pytest.raises(ValidationError, match="zero data retention"):
+            run_config_adapter.validate_python(raw)
+
+    @pytest.mark.parametrize(
+        "routing", [{"zero_data_retention": False}, {"sort": "price"}, {}]
+    )
+    def test_routing_without_zero_data_retention_allowed_off_openrouter(self, routing):
+        config = run_config_adapter.validate_python(
+            {**KILN_AGENT_JSON, "openrouter_routing": routing}
+        )
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.openrouter_routing == OpenRouterRouting(**routing)
+
+    @pytest.mark.parametrize(
+        "routing",
+        [
+            # OpenRouter's own name for the field: must not load as "no restriction"
+            {"zdr": True},
+            {"zero_data_retention": True, "data_collection": "deny"},
+            {"sort": "cheapest"},
+        ],
+    )
+    def test_rejects_unknown_keys_and_values(self, routing):
+        with pytest.raises(ValidationError):
+            run_config_adapter.validate_python(
+                {**KILN_AGENT_JSON, "openrouter_routing": routing}
+            )

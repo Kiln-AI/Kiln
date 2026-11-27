@@ -15,7 +15,10 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
 )
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    OpenRouterRouting,
+)
 
 
 class MockFinetune(BaseFinetuneAdapter):
@@ -339,6 +342,28 @@ async def test_create_and_start_missing_run_config(mock_dataset):
             thinking_instructions=None,
             data_strategy=ChatStrategy.single_turn,
             run_config=None,
+        )
+
+
+async def test_create_and_start_refuses_zero_data_retention(mock_dataset):
+    run_config = KilnAgentRunConfigProperties(
+        model_name="gpt-4o-mini",
+        model_provider_name=ModelProviderName.openrouter,
+        prompt_id="simple_prompt_builder",
+        structured_output_mode=StructuredOutputMode.json_schema,
+        openrouter_routing=OpenRouterRouting(zero_data_retention=True),
+    )
+    with pytest.raises(ValueError, match="zero data retention"):
+        await MockFinetune.create_and_start(
+            dataset=mock_dataset,
+            provider_id="openai",
+            provider_base_model_id="gpt-4o-mini-2024-07-18",
+            train_split_name="train",
+            parameters={"epochs": 10},
+            system_message="Test system message",
+            thinking_instructions=None,
+            data_strategy=ChatStrategy.single_turn,
+            run_config=run_config,
         )
 
 

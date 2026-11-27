@@ -35,6 +35,7 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
     MCPToolReference,
+    OpenRouterRouting,
     ToolsRunConfig,
 )
 from kiln_ai.datamodel.skill import Skill
@@ -1463,6 +1464,26 @@ class TestAdapterRouting:
 
         assert isinstance(adapter, JevAdapter)
         assert adapter.adapter_name() == "kiln_jev_adapter"
+
+    def test_jev_adapter_refuses_zero_data_retention(self, mock_config, basic_task):
+        # model_copy skips the run config validator, so the adapter's own check must refuse.
+        run_config = KilnAgentRunConfigProperties(
+            model_name="jev_1_13",
+            model_provider_name=ModelProviderName.openrouter,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+            openrouter_routing=OpenRouterRouting(zero_data_retention=True),
+        ).model_copy(update={"model_provider_name": ModelProviderName.typesafe})
+        with patch(
+            "kiln_ai.adapters.adapter_registry.kiln_model_provider_from"
+        ) as mock_lookup:
+            mock_lookup.return_value = KilnModelProvider(
+                name=ModelProviderName.typesafe,
+                model_id="jev-test",
+                adapter=ModelAdapterId.jev,
+            )
+            with pytest.raises(ValueError, match="zero data retention"):
+                adapter_for_task(kiln_task=basic_task, run_config_properties=run_config)
 
     def test_default_entry_routes_to_litellm_adapter(
         self, mock_config, mock_lite_llm_core_config_for_provider, basic_task

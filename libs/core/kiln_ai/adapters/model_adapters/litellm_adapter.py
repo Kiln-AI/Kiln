@@ -58,7 +58,9 @@ from kiln_ai.datamodel.json_schema import (
 )
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
+    OpenRouterRouting,
     as_kiln_agent_run_config,
+    require_openrouter_for_zero_data_retention,
 )
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
@@ -788,11 +790,13 @@ class LiteLlmAdapter(BaseAdapter):
         if provider.anthropic_extended_thinking and "thinking" not in extra_body:
             extra_body["thinking"] = {"type": "enabled", "budget_tokens": 4000}
 
+        order_is_model_specific = False
         if provider.r1_openrouter_options:
             # Require providers that support the reasoning parameter
             provider_options["require_parameters"] = True
             # Prefer R1 providers with reasonable perf/quants
             provider_options["order"] = ["fireworks", "together"]
+            order_is_model_specific = True
             # R1 providers with unreasonable quants
             provider_options["ignore"] = ["deepinfra"]
 
@@ -825,10 +829,44 @@ class LiteLlmAdapter(BaseAdapter):
             # LiteLLM sends calls carrying reasoning_summary to /v1/responses as reasoning.summary.
             extra_body["reasoning_summary"] = provider.openai_reasoning_summary
 
+        self._apply_openrouter_routing(
+            run_config.openrouter_routing,
+            provider,
+            provider_options,
+            order_is_model_specific,
+        )
+
         if len(provider_options) > 0:
             extra_body["provider"] = provider_options
 
         return extra_body
+
+    def _apply_openrouter_routing(
+        self,
+        routing: OpenRouterRouting | None,
+        provider: KilnModelProvider,
+        provider_options: dict[str, Any],
+        order_is_model_specific: bool,
+    ) -> None:
+        """Add the run config's OpenRouter routing choices to the request's `provider` options.
+
+        Raises:
+            ValueError: zero data retention is requested for a call that does not go
+                through OpenRouter, where nothing would enforce it.
+        """
+        require_openrouter_for_zero_data_retention(routing, provider.name)
+        if routing is None or provider.name != ModelProviderName.openrouter:
+            return
+
+        if routing.zero_data_retention:
+            # A filter on OpenRouter's side, applied on top of `order`: only ZDR
+            # endpoints may serve the request.
+            provider_options["zdr"] = True
+
+        if routing.sort is not None and not order_is_model_specific:
+            # OpenRouter applies `sort` only when `order` is absent.
+            provider_options.pop("order", None)
+            provider_options["sort"] = routing.sort
 
     def litellm_model_id(self) -> str:
         # The model ID is an interesting combination of format and url endpoint.
