@@ -42,6 +42,9 @@ export type PanelCase = Pick<
 export const TOO_EASY_PASS_RATE = 0.85
 // At or below this pass rate some cases may be impossible for any agent.
 export const TOO_HARD_PASS_RATE = 0.1
+// Below this many judged cases one case moves the rate by more than 10
+// points, so neither verdict is shown.
+export const MIN_HEADROOM_CASES = 10
 
 export type HeadroomVerdict = "too_easy" | "too_hard" | "ok"
 
@@ -57,8 +60,10 @@ export function headroom(cases: Pick<PanelCase, "judge_score">[]): Headroom {
   const passed = cases.filter((c) => c.judge_score === "pass").length
   const rate = total > 0 ? passed / total : 0
   let verdict: HeadroomVerdict = "ok"
-  if (total > 0 && rate >= TOO_EASY_PASS_RATE) verdict = "too_easy"
-  else if (total > 0 && rate <= TOO_HARD_PASS_RATE) verdict = "too_hard"
+  if (total >= MIN_HEADROOM_CASES && rate >= TOO_EASY_PASS_RATE)
+    verdict = "too_easy"
+  else if (total >= MIN_HEADROOM_CASES && rate <= TOO_HARD_PASS_RATE)
+    verdict = "too_hard"
   return { passed, total, rate, verdict }
 }
 

@@ -104,6 +104,16 @@ function question_labels(container: HTMLElement): string[] {
 }
 
 describe("EvalCheckPanel", () => {
+  it("shows no too-easy or too-hard warning under 10 cases", () => {
+    for (const cases of [batch(9, 0), batch(0, 9)]) {
+      const { container } = show(cases, { status: "idle" })
+      const all = text(container)
+      expect(all).not.toContain("Too easy")
+      expect(all).not.toContain("Check for cases no agent can pass")
+      cleanup()
+    }
+  })
+
   it("names the run config the batch was driven with", () => {
     const { container } = show(
       batch(10, 0),
@@ -138,7 +148,8 @@ describe("EvalCheckPanel", () => {
   it("with all failures and a grouping, shows who and what failed", () => {
     const { container } = show(batch(0, 2), { status: "ready", grouping })
     const all = text(container)
-    expect(all).toContain("Check for cases no agent can pass")
+    // Two cases are under the 10-case minimum for a too-hard verdict.
+    expect(all).not.toContain("Check for cases no agent can pass")
     expect(all).toContain("Grouped 2 of 2 failures.")
     expect(all).toContain("it can miss a fault in the judge itself")
     const who = [

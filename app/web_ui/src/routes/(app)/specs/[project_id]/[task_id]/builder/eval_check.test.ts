@@ -31,6 +31,7 @@ const {
   rehearsal_check,
   rule_label,
   run_config_phrase,
+  MIN_HEADROOM_CASES,
   TOO_EASY_PASS_RATE,
   TOO_HARD_PASS_RATE,
   WHOLE_EVAL_KEY,
@@ -159,6 +160,22 @@ describe("headroom", () => {
   it("is neutral on an empty batch", () => {
     expect(headroom([]).verdict).toBe("ok")
   })
+
+  it.each([
+    [9, 0, "ok"],
+    [0, 9, "ok"],
+    [1, 0, "ok"],
+    [10, 0, "too_easy"],
+    [0, 10, "too_hard"],
+    [1, 9, "too_hard"],
+    [9, 1, "too_easy"],
+  ])(
+    "needs at least 10 cases for a verdict: %i passes and %i fails read as %s",
+    (passes, fails, verdict) => {
+      expect(MIN_HEADROOM_CASES).toBe(10)
+      expect(headroom(batch(passes, fails)).verdict).toBe(verdict)
+    },
+  )
 
   it("says what each verdict means", () => {
     expect(headroom_text(headroom(batch(59, 1)))).toContain("Too easy: 98%")
