@@ -13,10 +13,19 @@ from kiln_ai.tools.base_tool import (
     ToolCallResult,
 )
 from kiln_ai.utils.project_utils import project_from_id
+from kiln_ai.utils.usage import MessageUsage, Usage
 
 
 class KilnTaskToolResult(ToolCallResult):
     kiln_task_tool_data: str
+
+
+def _sub_task_usage(run_usage: Usage | None) -> MessageUsage | None:
+    """Tokens and cost of a sub-task run, or None when the run reported none."""
+    if run_usage is None:
+        return None
+    usage = run_usage.without_latency()
+    return None if usage.is_empty() else usage
 
 
 class KilnTaskTool(KilnToolInterface):
@@ -112,6 +121,7 @@ class KilnTaskTool(KilnToolInterface):
         return KilnTaskToolResult(
             output=task_run.output.output,
             kiln_task_tool_data=f"{self._project_id}:::{self._tool_id}:::{self._task.id}:::{task_run.id}",
+            usage=_sub_task_usage(task_run.usage),
         )
 
     @cached_property

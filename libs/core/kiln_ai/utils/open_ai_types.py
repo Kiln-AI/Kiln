@@ -9,6 +9,7 @@ Otherwise we are using OpenAI SDK types directly.
 
 import json
 from typing import (
+    Annotated,
     Any,
     Iterable,
     List,
@@ -31,7 +32,7 @@ from openai.types.chat.chat_completion_assistant_message_param import (
     ContentArrayOfContentPart,
     FunctionCall,
 )
-from pydantic import TypeAdapter
+from pydantic import Field, TypeAdapter
 from typing_extensions import Required, TypedDict
 
 from kiln_ai.utils.usage import MessageUsage
@@ -108,6 +109,19 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     """
 
 
+TOOL_MESSAGE_USAGE_DESCRIPTION = (
+    "Token usage and cost that this tool call reported. A Kiln task tool "
+    "(sub-agent) reports its sub-task run's total, which already includes that "
+    "run's own sub-agents. A code tool reports the total of the sub-agents its "
+    "code called. The error message of a failed sub-agent call reports what it "
+    "spent before it failed. Already counted in the `usage` and "
+    "`cumulative_usage` of the run that made the call: do not add it, or the "
+    "saved sub-task run's usage, to those again. Absent when the tool reported "
+    "no usage, and on Kiln task tool messages in older task run files, whose "
+    "sub-agent spend the run's usage does not hold."
+)
+
+
 class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
     content: Required[Union[str, Iterable[ChatCompletionContentPartTextParam]]]
     """The contents of the tool message."""
@@ -123,6 +137,12 @@ class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
 
     Formatted as `<project_id>:::<tool_id>:::<task_id>:::<run_id>`
     """
+
+    usage: Annotated[
+        Optional[MessageUsage],
+        Field(description=TOOL_MESSAGE_USAGE_DESCRIPTION),
+    ]
+    """See `TOOL_MESSAGE_USAGE_DESCRIPTION`."""
 
     is_error: Optional[bool]
     """Whether this tool message represents an error result."""

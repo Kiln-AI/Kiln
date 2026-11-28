@@ -2344,7 +2344,7 @@ async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
     adapter.build_chat_formatter = capturing_build
 
     async def mock_run_model_turn(
-        provider, messages, top_logprobs, skip_response_format
+        provider, messages, top_logprobs, skip_response_format, *_call_maps
     ):
         # Match the real contract: mutate the caller's list in place.
         messages.append({"role": "assistant", "content": "How can I help?"})
@@ -2437,7 +2437,7 @@ async def test_run_with_prior_trace_preserves_tool_calls(mock_task):
     captured_messages = []
 
     async def mock_run_model_turn(
-        provider, messages, top_logprobs, skip_response_format
+        provider, messages, top_logprobs, skip_response_format, *_call_maps
     ):
         captured_messages.extend(messages)
         # Match the real contract: mutate the caller's list in place.
@@ -2521,7 +2521,7 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
     call_count = 0
 
     async def mock_run_model_turn(
-        provider, messages, top_logprobs, skip_response_format
+        provider, messages, top_logprobs, skip_response_format, *_call_maps
     ):
         nonlocal call_count
         call_count += 1
@@ -2955,7 +2955,7 @@ async def test_unmanaged_tools_only_return_on_tool_call_and_resume_mocked(
     call_count = 0
 
     async def mock_run_model_turn(
-        provider, prior_messages, top_logprobs, skip_response_format
+        provider, prior_messages, top_logprobs, skip_response_format, *_call_maps
     ):
         nonlocal call_count
         call_count += 1
@@ -3816,7 +3816,7 @@ class TestUsageTracking:
         adapter = LiteLlmAdapter(config=cfg, kiln_task=mock_task)
 
         async def mock_run_model_turn(
-            provider, prior_messages, top_logprobs, skip_response_format
+            provider, prior_messages, top_logprobs, skip_response_format, *_call_maps
         ):
             from litellm.types.utils import Message as LiteLLMMessage
 

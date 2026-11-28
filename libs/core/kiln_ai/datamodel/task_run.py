@@ -106,24 +106,41 @@ class TaskRun(
     )
     usage: Usage | None = Field(
         default=None,
-        description="Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used.",
+        description=(
+            "Usage information for the task run: the tokens and cost of its own "
+            "model calls plus the usage that its tool calls reported, such as a "
+            "Kiln task tool (sub-agent) with its own nested sub-agents, including "
+            "one called from inside a code tool. A sub-agent that fails, or that "
+            "is stopped when its code tool times out or ends, reports its completed "
+            "model calls and finished sub-agents; work still in flight when it is "
+            "stopped reports nothing. A sub-agent error that ends the "
+            "run (a retryable error) fails this run too, so its spend is on no "
+            "record. `total_llm_latency_ms` covers only this run's own model "
+            "calls. The rule is per tool message: a tool message with `usage` is "
+            "counted here, one without it is not. Older task run files have Kiln "
+            "task tool messages without `usage`, whose sub-agent spend is not "
+            "counted; a call that reported no usage has no `usage` either."
+        ),
     )
     cumulative_usage: MessageUsage | None = Field(
         default=None,
         description=(
             "Sum of per-message token usage and cost across the entire trace, "
-            "including any seeded prior trace. None on records created before "
-            "this field existed. For a fresh (non-seeded) run, the token / "
-            "cost fields equal those of `usage`."
+            "including any seeded prior trace: model calls (assistant messages) "
+            "and the usage that tool calls reported (tool messages). None on records "
+            "created before this field existed. For a fresh (non-seeded) run, "
+            "the token / cost fields equal those of `usage`."
         ),
     )
     synthetic_user_usage: Usage | None = Field(
         default=None,
         description=(
             "The synthetic-user driver model's spend for an eval-driven "
-            "conversation, recorded beside the assistant's own usage so `usage` "
-            "stays assistant-only. None for ordinary runs, and for migrated "
-            "legacy traces whose driver cost is fused into `usage`."
+            "conversation, recorded beside `usage` so that `usage` stays the spend "
+            "of the agent under test: its own model calls and its sub-agents, "
+            "which are part of the agent. The synthetic user is not. None for "
+            "ordinary runs, and for migrated legacy traces whose driver cost is "
+            "fused into `usage`."
         ),
     )
     trace: Annotated[list[ChatCompletionMessageParam] | None, LargeField()] = Field(

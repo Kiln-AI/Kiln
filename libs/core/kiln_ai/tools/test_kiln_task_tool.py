@@ -10,6 +10,7 @@ from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool, KilnTaskToolResult
+from kiln_ai.utils.usage import MessageUsage, Usage
 
 
 class TestKilnTaskTool:
@@ -172,6 +173,7 @@ class TestKilnTaskTool:
             mock_adapter_for_task.return_value = mock_adapter
 
             mock_task_run = MagicMock()
+            mock_task_run.usage = None
             mock_task_run.id = "run_789"
             mock_task_run.output.output = "Task completed successfully"
             mock_adapter.invoke.return_value = mock_task_run
@@ -222,6 +224,69 @@ class TestKilnTaskTool:
                 == "test_project:::test_tool_id:::test_task_123:::run_789"
             )
 
+    @pytest.mark.parametrize(
+        "run_usage, expected",
+        [
+            pytest.param(
+                Usage(
+                    input_tokens=100,
+                    output_tokens=20,
+                    total_tokens=120,
+                    cost=0.5,
+                    cached_tokens=30,
+                    total_llm_latency_ms=900,
+                ),
+                MessageUsage(
+                    input_tokens=100,
+                    output_tokens=20,
+                    total_tokens=120,
+                    cost=0.5,
+                    cached_tokens=30,
+                ),
+                id="tokens_and_cost_without_latency",
+            ),
+            pytest.param(None, None, id="run_without_usage"),
+            pytest.param(Usage(), None, id="run_that_reported_nothing"),
+            pytest.param(
+                Usage(total_llm_latency_ms=900),
+                None,
+                id="run_that_reported_latency_only",
+            ),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_run_reports_the_sub_task_runs_usage(
+        self,
+        kiln_task_tool,
+        mock_context,
+        mock_task,
+        mock_run_config,
+        run_usage,
+        expected,
+    ):
+        kiln_task_tool._task = mock_task
+        kiln_task_tool._run_config = mock_run_config
+        mock_task_run = MagicMock()
+        mock_task_run.output.output = "done"
+        mock_task_run.usage = run_usage
+
+        with (
+            patch(
+                "kiln_ai.adapters.adapter_registry.adapter_for_task"
+            ) as mock_adapter_for_task,
+            patch(
+                "kiln_ai.adapters.adapter_registry.load_skills_for_task",
+                return_value={},
+            ),
+        ):
+            mock_adapter_for_task.return_value.invoke = AsyncMock(
+                return_value=mock_task_run
+            )
+            result = await kiln_task_tool.run(context=mock_context, input="test input")
+
+        assert result.usage == expected
+        assert type(result.usage) is type(expected)
+
     @pytest.mark.asyncio
     async def test_run_with_structured_input(
         self, kiln_task_tool, mock_context, mock_task, mock_run_config
@@ -251,6 +316,7 @@ class TestKilnTaskTool:
             mock_adapter_for_task.return_value = mock_adapter
 
             mock_task_run = MagicMock()
+            mock_task_run.usage = None
             mock_task_run.id = "run_789"
             mock_task_run.output.output = "Structured task completed"
             mock_adapter.invoke.return_value = mock_task_run
@@ -508,6 +574,7 @@ class TestKilnTaskTool:
             mock_adapter_for_task.return_value = mock_adapter
 
             mock_task_run = MagicMock()
+            mock_task_run.usage = None
             mock_task_run.id = "run_789"
             mock_task_run.output.output = "Task completed"
             mock_adapter.invoke.return_value = mock_task_run

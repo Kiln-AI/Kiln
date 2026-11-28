@@ -16,10 +16,13 @@ Provides:
 
 from __future__ import annotations
 
+import asyncio
+
 import litellm
 from pydantic import BaseModel
 
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.usage import MessageUsage
 
 _GENERIC_FALLBACK_MESSAGE = "An unexpected error occurred."
 
@@ -65,11 +68,47 @@ class KilnRunError(Exception):
         message: str,
         partial_trace: list[ChatCompletionMessageParam] | None,
         original: Exception,
+        usage: MessageUsage | None = None,
     ) -> None:
         super().__init__(message)
         self.partial_trace = partial_trace
         self.original = original
         self.error_type = type(original).__name__
+        self._usage = usage
+
+    def usage_before_failure(self) -> MessageUsage | None:
+        """Tokens and cost this run spent before it failed: its own model calls
+        and the usage its tool calls reported. Not a seeded prior trace. None when
+        nothing was recorded."""
+        if self._usage is None or self._usage.is_empty():
+            return None
+        return self._usage
+
+
+_SPEND_BEFORE_CANCEL_ATTR = "kiln_usage_before_cancel"
+
+
+def record_usage_before_cancel(
+    cancelled: asyncio.CancelledError, usage: MessageUsage
+) -> None:
+    """Add a run's spend so far to the cancellation that stopped it.
+
+    The same CancelledError is re-raised, so cancellation works as before; a
+    caller that stopped the run (a code tool's timeout) reads the spend with
+    `usage_before_cancel`. Runs stopped by one cancellation add up.
+    """
+    previous = usage_before_cancel(cancelled)
+    setattr(
+        cancelled,
+        _SPEND_BEFORE_CANCEL_ATTR,
+        usage if previous is None else previous + usage,
+    )
+
+
+def usage_before_cancel(cancelled: BaseException) -> MessageUsage | None:
+    """The spend that cancelled runs recorded with `record_usage_before_cancel`."""
+    usage = getattr(cancelled, _SPEND_BEFORE_CANCEL_ATTR, None)
+    return usage if isinstance(usage, MessageUsage) else None
 
 
 class StructuredOutputParseError(ValueError):

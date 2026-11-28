@@ -280,8 +280,18 @@ class AdapterStream:
                         return
 
                 # Existing flow: handle tool calls internally
+                first_tool_message = len(self._messages)
                 async for event in self._handle_tool_calls(tool_calls):
                     yield event
+                # A tool that called models (a sub-agent) reports that spend on
+                # its tool message; it is part of what this run cost.
+                usage += MessageUsage.from_trace(
+                    [
+                        m
+                        for m in self._messages[first_tool_message:]
+                        if isinstance(m, dict)
+                    ]
+                )
 
                 assistant_msg = self._extract_task_response(tool_calls)
                 if assistant_msg is not None:

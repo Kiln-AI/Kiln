@@ -641,7 +641,15 @@ class ScoreSummary(BaseModel):
 
 
 class MeanUsage(BaseModel):
-    """Average token usage across eval runs."""
+    """Average token usage across eval runs.
+
+    Averages each scored task run's `usage`, which includes the run's sub-agents
+    only where its tool messages carry `usage`: a Kiln task tool's message, a code
+    tool's message for the sub-agents its code called, and the error message of a
+    failed sub-agent call. Task runs saved before tool messages carried it leave
+    out their sub-agents' spend, so a run config evaluated then and one evaluated
+    since are not comparable on cost.
+    """
 
     mean_input_tokens: float | None = Field(
         default=None, description="Average input tokens per run."
@@ -1204,7 +1212,8 @@ def scored_trace_usage(trace: TaskRun) -> Usage | None:
     One record shape needs more than `trace.usage`:
 
     - An eval-driven conversation stores the synthetic-user driver model's spend
-      in `synthetic_user_usage`, beside the assistant-only `usage`. Only its
+      in `synthetic_user_usage`, beside `usage`, which holds the agent under
+      test: its model calls and its sub-agents. Only its
       **cost** is blended in here, deliberately, even though the field carries
       the driver's tokens and latency too:
 
@@ -1212,11 +1221,12 @@ def scored_trace_usage(trace: TaskRun) -> Usage | None:
         models included. That is what a run-config summary should report, and it
         matches migrated legacy traces, which have the blend fused inside
         `usage` with `synthetic_user_usage` None.
-      * Tokens are not. The synthetic user is usually a different model on a
-        different provider from the agent under test, so folding its ~3.5k input
-        tokens per conversation into this figure would attribute them to the
-        agent and make `cost / total_tokens` meaningless — the exact conflation
-        `synthetic_user_usage` exists to undo.
+      * Tokens are not. The synthetic user is not part of the agent under
+        test, so folding its ~3.5k input tokens per conversation into this
+        figure would attribute them to the agent — the exact conflation
+        `synthetic_user_usage` exists to undo. A sub-agent's tokens are in
+        `usage` because the sub-agent is part of the agent, even on another
+        model; so `usage.total_tokens` can span several models.
       * Latency is not. This summary reports how responsive the agent is;
         driver-side wall clock is not the agent's, and summing it would make
         every driven run config look slower than it is.
@@ -1224,6 +1234,9 @@ def scored_trace_usage(trace: TaskRun) -> Usage | None:
       Blending everything would also make this field mean two different
       quantities depending on record age: legacy records blend cost only, since
       that is all the old field carried.
+
+    A task run saved before Kiln task tool messages carried `usage` leaves its
+    sub-agents' spend out of `usage`; this returns it as stored.
 
     None when the record has nothing to report, so it contributes nothing to an
     average instead of counting as a zero.

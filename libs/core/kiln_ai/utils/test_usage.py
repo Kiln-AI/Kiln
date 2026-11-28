@@ -147,6 +147,26 @@ def test_from_trace_skips_non_assistant_messages():
     assert MessageUsage.from_trace(trace) == MessageUsage()
 
 
+def test_from_trace_counts_usage_on_tool_messages():
+    model_call = MessageUsage(
+        input_tokens=10, output_tokens=5, total_tokens=15, cost=0.01
+    )
+    sub_agent = MessageUsage(
+        input_tokens=100, output_tokens=50, total_tokens=150, cost=0.1
+    )
+    trace: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "calling", "usage": model_call},
+        {"role": "tool", "content": "{}", "tool_call_id": "c1", "usage": sub_agent},
+        {"role": "tool", "content": "{}", "tool_call_id": "c2"},
+        {"role": "assistant", "content": "done", "usage": model_call},
+    ]
+
+    assert MessageUsage.from_trace(trace) == MessageUsage(
+        input_tokens=120, output_tokens=60, total_tokens=180, cost=0.12
+    )
+
+
 def test_from_trace_single_assistant_with_usage():
     usage = MessageUsage(input_tokens=10, output_tokens=5, total_tokens=15, cost=0.01)
     trace: list[ChatCompletionMessageParam] = [
@@ -303,3 +323,21 @@ def test_from_trace_accepts_usage_with_legacy_latency_key():
     assert type(result) is MessageUsage
     assert result.input_tokens == 3
     assert result.cost == 0.01
+
+
+def test_usage_without_latency_keeps_tokens_and_cost():
+    usage = Usage(
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        cost=0.01,
+        cached_tokens=3,
+        total_llm_latency_ms=900,
+    )
+
+    result = usage.without_latency()
+
+    assert type(result) is MessageUsage
+    assert result == MessageUsage(
+        input_tokens=10, output_tokens=5, total_tokens=15, cost=0.01, cached_tokens=3
+    )

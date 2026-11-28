@@ -25,7 +25,7 @@ fresh interpreter and asserts ``kiln_ai.datamodel`` never lands in
 any serialized reference to the old path keep working.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -93,6 +93,10 @@ class MessageUsage(BaseModel):
         ge=0,
     )
 
+    def is_empty(self) -> bool:
+        """True when no field was reported."""
+        return all(value is None for value in self.model_dump().values())
+
     def __add__(self, other: "MessageUsage") -> "MessageUsage":
         """Add two MessageUsage objects together, handling None values gracefully.
 
@@ -114,14 +118,18 @@ class MessageUsage(BaseModel):
 
     @staticmethod
     def from_trace(
-        trace: "list[ChatCompletionMessageParam] | None",
+        trace: "Sequence[ChatCompletionMessageParam] | None",
     ) -> "MessageUsage":
-        """Sum per-message usage across all assistant messages in a trace.
+        """Sum per-message usage across a trace: every model call and every sub-agent call.
+
+        Assistant messages carry the usage of the model call that produced
+        them. Tool messages carry usage only when the tool spent on models
+        itself (a Kiln task tool: the sub-task run's total).
 
         Returns MessageUsage() (all fields None) when trace is None/empty
-        or no assistant message has a `usage` field. Skips non-assistant
-        messages and messages where `usage` is missing or None. Always
-        returns a MessageUsage instance — never None.
+        or no message has a `usage` field. Skips other roles and messages
+        where `usage` is missing or None. Always returns a MessageUsage
+        instance — never None.
 
         Accepts per-message `usage` values that are either MessageUsage
         instances (including the Usage subclass) or plain dicts (e.g.
@@ -135,7 +143,7 @@ class MessageUsage(BaseModel):
         for message in trace:
             if not isinstance(message, dict):
                 continue
-            if message.get("role") != "assistant":
+            if message.get("role") not in ("assistant", "tool"):
                 continue
             raw_usage = message.get("usage")
             if raw_usage is None:
@@ -162,6 +170,10 @@ class Usage(MessageUsage):
         description="Total time spent waiting on LLM API calls in milliseconds. Sum of per-call latencies, excludes tool execution time.",
         ge=0,
     )
+
+    def without_latency(self) -> MessageUsage:
+        """The token and cost fields of this usage, as a :class:`MessageUsage`."""
+        return MessageUsage(**self.model_dump(include=set(MessageUsage.model_fields)))
 
     def __add__(self, other: "MessageUsage | Usage") -> "Usage":
         """Add Usage to either Usage or MessageUsage.

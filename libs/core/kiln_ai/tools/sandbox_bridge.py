@@ -35,6 +35,7 @@ from kiln_ai.datamodel.tool_id import (
 )
 from kiln_ai.sandbox.spawn import start_process_with_light_main
 from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.utils.usage import MessageUsage
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,10 @@ def describe_crash(subject: str, exit_code: int | None) -> str:
     return f"{subject} crashed (exit code {exit_code})"
 
 
+# How long a stopped code tool waits for its cancelled nested calls.
+_CANCELLED_CALL_GRACE_S = 5.0
+
+
 @dataclass
 class BridgeResult:
     """Raw outcome of one bridged child run — no result interpretation.
@@ -175,6 +180,13 @@ class NestedToolServer:
         # Why each allowlisted environment tool that failed to resolve is unavailable, by
         # the name the code calls it (the last segment of its id).
         self._unavailable: dict[str, str] = {}
+        self._usage = MessageUsage()
+
+    @property
+    def usage(self) -> MessageUsage | None:
+        """Total usage the tools called through this server reported, such as a
+        Kiln task tool's sub-task run. None when none reported any."""
+        return None if self._usage.is_empty() else self._usage
 
     async def serve(
         self,
@@ -312,6 +324,8 @@ class NestedToolServer:
                 return
 
             result = await tool.run(self._context, **arguments)
+            if result.usage is not None:
+                self._usage += result.usage
 
             if result.is_error:
                 # The tool reports timeouts as a typed flag; sniffing the output
@@ -340,6 +354,16 @@ class NestedToolServer:
                 )
                 self._record(tool_name, arguments, result.output, False, start)
 
+        except asyncio.CancelledError as exc:
+            # The code tool stopped (timeout, crash or result) while this call
+            # ran; a sub-agent recorded what it spent so far on the cancellation.
+            from kiln_ai.adapters.errors import usage_before_cancel
+
+            spent = usage_before_cancel(exc)
+            if spent is not None:
+                self._usage += spent
+            raise
+
         except asyncio.TimeoutError as exc:
             logger.warning(
                 "Nested sandbox call timed out for '%s': %s",
@@ -366,6 +390,13 @@ class NestedToolServer:
                 tool_name,
                 exc,
             )
+            # Function-local: tools/ and adapters/ import each other.
+            from kiln_ai.adapters.errors import KilnRunError
+
+            if isinstance(exc, KilnRunError):
+                spent = exc.usage_before_failure()
+                if spent is not None:
+                    self._usage += spent
             responses.put(
                 {
                     "type": "tool_result",
@@ -579,8 +610,14 @@ async def _pump(
                     duration_ms=elapsed,
                 )
     finally:
-        for t in pending_tasks:
+        still_running = list(pending_tasks)
+        for t in still_running:
             t.cancel()
+        if still_running:
+            # Let each cancelled call record what it spent before the caller
+            # reads the server's usage; a call that ignores the cancellation is
+            # left behind.
+            await asyncio.wait(still_running, timeout=_CANCELLED_CALL_GRACE_S)
         if p.is_alive():
             p.kill()
             await loop.run_in_executor(executor, p.join, 5)

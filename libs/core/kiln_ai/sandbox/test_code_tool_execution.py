@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kiln_ai.adapters.errors import record_usage_before_cancel
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.project import Project
 from kiln_ai.sandbox.spawn import _spawn_lock
@@ -25,9 +26,11 @@ from kiln_ai.tools.code_tool import (
 )
 from kiln_ai.tools.sandbox_bridge import (
     CODE_SANDBOX_MAX_CONCURRENCY,
+    BridgeResult,
     NestedToolServer,
     _depth,
 )
+from kiln_ai.utils.usage import MessageUsage
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1653,3 +1656,107 @@ class TestUIExampleFilterAndTransform:
         assert not result.is_error, f"Expected success, got: {result.output}"
         parsed = json.loads(result.output)
         assert len(parsed) == 3
+
+
+class _CollectedResponses:
+    def __init__(self):
+        self.messages: list[dict] = []
+
+    def put(self, msg: dict) -> None:
+        self.messages.append(msg)
+
+
+@pytest.mark.parametrize(
+    "bridge_result, is_error",
+    [
+        pytest.param(BridgeResult(result_msg={"ok": "done"}), False, id="finished"),
+        pytest.param(BridgeResult(timed_out=True), True, id="timed_out"),
+    ],
+)
+async def test_code_tool_reports_the_usage_of_the_tools_its_code_called(
+    tmp_path, bridge_result, is_error
+):
+    paid = FakeTool(
+        "kiln_tool::add_numbers",
+        "fake_add",
+        result=ToolCallResult(
+            output="3", usage=MessageUsage(input_tokens=100, cost=0.01)
+        ),
+    )
+    pct = _make_python_code_tool(
+        tmp_path,
+        "def run(x):\n    return x\n",
+        tool_allowlist=["kiln_tool::add_numbers"],
+    )
+
+    async def child_calls_the_tool_twice(*, server: NestedToolServer, **_kwargs):
+        for call_id in (1, 2):
+            await server.serve(
+                {
+                    "type": "tool_call",
+                    "call_id": call_id,
+                    "tool_name": "fake_add",
+                    "arguments": {},
+                },
+                _CollectedResponses(),
+            )
+        return bridge_result
+
+    with (
+        patch(
+            "kiln_ai.tools.tool_registry.tool_from_id_and_project", return_value=paid
+        ),
+        patch(
+            "kiln_ai.tools.code_tool.run_bridged_child",
+            side_effect=child_calls_the_tool_twice,
+        ),
+    ):
+        result = await pct.run(x="go")
+
+    assert result.is_error is is_error
+    assert result.usage is not None
+    assert result.usage.input_tokens == 200
+    assert result.usage.cost == pytest.approx(0.02)
+
+
+class _StoppedSubAgent(FakeTool):
+    """A sub-agent that is still running when the code tool stops. On the
+    cancellation it records what it spent, as a model adapter run does."""
+
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError as cancelled:
+            record_usage_before_cancel(
+                cancelled, MessageUsage(input_tokens=300, cost=0.03)
+            )
+            raise
+        raise AssertionError("The code tool must stop this call")
+
+
+@pytest.mark.asyncio
+async def test_a_code_tool_that_times_out_counts_a_sub_agent_still_running(tmp_path):
+    sub_agent = _StoppedSubAgent(
+        "kiln_tool::add_numbers", "ask_child", params=EMPTY_SCHEMA
+    )
+    code = textwrap.dedent("""\
+        from kiln import tools
+        def run(x):
+            return tools.ask_child()
+    """)
+    tool = _make_python_code_tool(
+        tmp_path,
+        code,
+        tool_allowlist=["kiln_tool::add_numbers"],
+        timeout_seconds=1,
+    )
+    with patch(
+        "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+        return_value=sub_agent,
+    ):
+        result = await tool.run(None, x="test")
+
+    assert result.timed_out is True
+    assert result.usage is not None
+    assert result.usage.input_tokens == 300
+    assert result.usage.cost == pytest.approx(0.03)

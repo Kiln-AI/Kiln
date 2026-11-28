@@ -1628,7 +1628,8 @@ class EvalRunner:
             trace=leaf.trace,
             usage=_conversation_usage(drive_result.chain),
             # The synthetic-user driver's spend rides its own field so `usage`
-            # stays honestly assistant-only. The whole Usage, not a cost-only
+            # stays the agent's: its model calls and its sub-agents, which the
+            # trace's tool messages carry. The whole Usage, not a cost-only
             # stub: the SU is usually a different model on a different provider
             # from the agent, so its tokens are the half that makes the figure
             # reconcilable. `drive_case` already returns None for a drive whose
@@ -1650,10 +1651,11 @@ class EvalRunner:
 
 
 def _conversation_usage(chain: list[TaskRun]) -> Usage | None:
-    """Conversation-total assistant spend for one driven multi-turn conversation.
+    """Conversation-total agent spend for one driven multi-turn conversation.
 
     The leaf's own `usage` covers only its final turn, so tokens and cost come
-    from the cumulative recompute over the full trace, and latency sums each
+    from the cumulative recompute over the full trace (model calls and
+    sub-agent tool messages), and latency sums each
     turn's in-flight accumulator. None when no turn reported anything — an
     all-None Usage would read as a report where there was none.
     """
