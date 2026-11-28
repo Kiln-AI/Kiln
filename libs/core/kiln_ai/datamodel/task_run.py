@@ -102,11 +102,13 @@ class TaskRun(
         description=(
             "Usage information for the task run: the tokens and cost of its own "
             "model calls plus the usage that its tool calls reported, such as a "
-            "Kiln task tool (sub-agent) with its own nested sub-agents. A failed "
-            "tool call, and a sub-agent called from inside a code tool, report no "
-            "usage. `total_llm_latency_ms` covers only this run's own model calls. "
-            "Runs whose trace has no `usage` on its Kiln task tool messages hold "
-            "only their own model calls."
+            "Kiln task tool (sub-agent) with its own nested sub-agents, including "
+            "one called from inside a code tool, and a sub-agent's spend before it "
+            "failed. `total_llm_latency_ms` covers only this run's own model calls. "
+            "The rule is per tool message: a tool message with `usage` is counted "
+            "here, one without it is not. Older task run files have Kiln task "
+            "tool messages without `usage`, whose sub-agent spend is not counted; "
+            "a call that reported no usage has no `usage` either."
         ),
     )
     cumulative_usage: MessageUsage | None = Field(
@@ -123,9 +125,11 @@ class TaskRun(
         default=None,
         description=(
             "The synthetic-user driver model's spend for an eval-driven "
-            "conversation, recorded beside the assistant's own usage so `usage` "
-            "stays assistant-only. None for ordinary runs, and for migrated "
-            "legacy traces whose driver cost is fused into `usage`."
+            "conversation, recorded beside `usage` so that `usage` stays the spend "
+            "of the agent under test: its own model calls and its sub-agents, "
+            "which are part of the agent. The synthetic user is not. None for "
+            "ordinary runs, and for migrated legacy traces whose driver cost is "
+            "fused into `usage`."
         ),
     )
     trace: list[ChatCompletionMessageParam] | None = Field(

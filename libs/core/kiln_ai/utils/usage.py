@@ -93,6 +93,10 @@ class MessageUsage(BaseModel):
         ge=0,
     )
 
+    def is_empty(self) -> bool:
+        """True when no field was reported."""
+        return all(value is None for value in self.model_dump().values())
+
     def __add__(self, other: "MessageUsage") -> "MessageUsage":
         """Add two MessageUsage objects together, handling None values gracefully.
 

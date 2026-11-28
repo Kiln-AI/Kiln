@@ -12,12 +12,14 @@
   import {
     calculate_subtask_usage,
     has_subtask_calls,
-    run_usage_totals,
+    known_subtask_usage,
+    subtask_fetch_needs,
+    usage_properties,
     type SubtaskReference,
     type SubtaskUsage,
   } from "$lib/utils/run_subtask_usage"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { formatDate, formatLatency } from "$lib/utils/formatters"
+  import { formatDate } from "$lib/utils/formatters"
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
@@ -213,7 +215,8 @@
   }
 
   let subtask_usage: SubtaskUsage | null = null
-  let subtask_usage_loading = false
+  // Which Usage rows still wait on subtask runs; the rest show known figures.
+  let subtask_loading = { cost: false, latency: false }
   // Counter to prevent race conditions: when run changes rapidly, multiple async requests
   // may be in flight. We only update state if this request is still the latest one.
   let subtask_usage_request_id = 0
@@ -222,131 +225,29 @@
     const request_id = ++subtask_usage_request_id
 
     if (!has_subtask_calls(trace)) {
-      if (request_id === subtask_usage_request_id) {
-        subtask_usage = null
-        subtask_usage_loading = false
-      }
+      subtask_usage = null
+      subtask_loading = { cost: false, latency: false }
       return
     }
 
-    subtask_usage_loading = true
+    subtask_usage = known_subtask_usage(trace)
+    subtask_loading = subtask_fetch_needs(trace)
+    if (!subtask_loading.cost && !subtask_loading.latency) {
+      return
+    }
     try {
       const usage = await calculate_subtask_usage(trace, fetch_subtask_run)
       if (request_id === subtask_usage_request_id) {
         subtask_usage = usage
       }
-    } catch {
-      if (request_id === subtask_usage_request_id) {
-        subtask_usage = null
-      }
+    } catch (error) {
+      // The figures known from the trace stay on the panel.
+      console.warn("Failed to load subtask usage.", error)
     } finally {
       if (request_id === subtask_usage_request_id) {
-        subtask_usage_loading = false
+        subtask_loading = { cost: false, latency: false }
       }
     }
-  }
-
-  function get_usage_properties(
-    base_cost: number,
-    base_tokens: number,
-    base_latency_ms: number,
-    subtask_usage: SubtaskUsage | null,
-    subtask_usage_loading: boolean,
-  ) {
-    let properties = []
-
-    const label = (metric: string) => "Total " + metric
-
-    const totals = run_usage_totals(
-      { cost: base_cost, tokens: base_tokens, latency_ms: base_latency_ms },
-      subtask_usage,
-    )
-    const subtask_cost = subtask_usage?.cost ?? 0
-    const subtask_tokens = subtask_usage?.tokens ?? 0
-    const subtask_latency_ms = subtask_usage?.latency_ms ?? 0
-
-    if (subtask_usage_loading) {
-      properties.push({
-        name: label("Cost"),
-        value: "Loading...",
-      })
-    } else {
-      const total_cost = totals.cost
-      if (total_cost > 0) {
-        properties.push({
-          name: label("Cost"),
-          value: `$${total_cost.toFixed(6)}`,
-        })
-      }
-    }
-
-    if (subtask_usage_loading) {
-      properties.push({
-        name: "Subtasks Cost",
-        value: "Loading...",
-      })
-    } else if (subtask_cost > 0) {
-      properties.push({
-        name: "Subtasks Cost",
-        value: `$${subtask_cost.toFixed(6)}`,
-      })
-    }
-
-    if (subtask_usage_loading) {
-      properties.push({
-        name: label("Tokens"),
-        value: "Loading...",
-      })
-    } else {
-      const total_tokens = totals.tokens
-      if (total_tokens > 0) {
-        properties.push({
-          name: label("Tokens"),
-          value: total_tokens,
-        })
-      }
-    }
-
-    if (subtask_usage_loading) {
-      properties.push({
-        name: "Subtasks Tokens",
-        value: "Loading...",
-      })
-    } else if (subtask_tokens > 0) {
-      properties.push({
-        name: "Subtasks Tokens",
-        value: subtask_tokens,
-      })
-    }
-
-    if (subtask_usage_loading) {
-      properties.push({
-        name: label("Latency"),
-        value: "Loading...",
-      })
-    } else {
-      const total_latency = totals.latency_ms
-      if (total_latency > 0) {
-        properties.push({
-          name: label("Latency"),
-          value: formatLatency(total_latency),
-        })
-      }
-    }
-
-    if (subtask_usage_loading) {
-      properties.push({
-        name: "Subtasks Latency",
-        value: "Loading...",
-      })
-    } else if (subtask_latency_ms > 0) {
-      properties.push({
-        name: "Subtasks Latency",
-        value: formatLatency(subtask_latency_ms),
-      })
-    }
-
-    return properties
   }
 
   $: is_multiturn = task?.turn_mode === "multiturn"
@@ -386,12 +287,10 @@
     ? sum_trace_latency_ms(run?.trace)
     : run?.usage?.total_llm_latency_ms ?? 0
 
-  $: usage_properties = get_usage_properties(
-    base_cost,
-    base_tokens,
-    base_latency_ms,
+  $: usage_properties_list = usage_properties(
+    { cost: base_cost, tokens: base_tokens, latency_ms: base_latency_ms },
     subtask_usage,
-    subtask_usage_loading,
+    subtask_loading,
   )
 
   // ---- Feedback ----
@@ -683,9 +582,9 @@
     />
   </div>
   <div>
-    {#if usage_properties && usage_properties.length > 0}
+    {#if usage_properties_list.length > 0}
       <PropertyList
-        properties={usage_properties}
+        properties={usage_properties_list}
         title={is_multiturn ? "Total Usage" : "Usage"}
       />
     {/if}

@@ -24,7 +24,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import chat_message_to_dict
-from kiln_ai.adapters.errors import EMPTY_RESPONSE_ERROR_MESSAGE
+from kiln_ai.adapters.errors import EMPTY_RESPONSE_ERROR_MESSAGE, KilnRunError
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.litellm_utils.tool_calls import (
     MISSING_TOOL_NAME_ERROR,
@@ -286,6 +286,8 @@ class LiteLlmAdapter(BaseAdapter):
         messages: list[ChatCompletionMessageIncludingLiteLLM],
         top_logprobs: int | None,
         skip_response_format: bool,
+        message_latency: dict[int, int] | None = None,
+        message_usage: dict[int, MessageUsage] | None = None,
     ) -> ModelTurnResult:
         """
         Call the model for a single top level turn: from user message to agent message.
@@ -294,15 +296,18 @@ class LiteLlmAdapter(BaseAdapter):
 
         `messages` is the caller-owned list and is mutated in place (append/extend
         only — never rebound) so the partial trace survives any exception
-        escaping this method.
+        escaping this method. `message_latency` and `message_usage`, when
+        given, are filled in place for the same reason.
         """
 
         usage = Usage()
         tool_calls_count = 0
         # Per-LLM-call latency / usage, keyed by index in the messages list.
         # Kept separate because we don't own the LiteLLM message objects.
-        message_latency: dict[int, int] = {}
-        message_usage: dict[int, MessageUsage] = {}
+        if message_latency is None:
+            message_latency = {}
+        if message_usage is None:
+            message_usage = {}
 
         while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
             completion_kwargs = await self.build_completion_kwargs(
@@ -421,6 +426,38 @@ class LiteLlmAdapter(BaseAdapter):
         trace_ref: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> tuple[RunOutput, Usage | None]:
+        message_latency: dict[int, int] = {}
+        message_usage: dict[int, MessageUsage] = {}
+        try:
+            return await self._run_turns(
+                input, trace_ref, prior_trace, message_latency, message_usage
+            )
+        except KilnRunError:
+            raise
+        except Exception as e:
+            # The partial trace keeps the usage of each model call made so far,
+            # so a caller (a parent run calling this one as a tool) can count it.
+            raise self._run_error(
+                e,
+                lambda: (
+                    self.all_messages_to_trace(
+                        trace_ref,  # type: ignore[arg-type]
+                        message_latency,
+                        message_usage,
+                    )
+                    if trace_ref
+                    else None
+                ),
+            ) from e
+
+    async def _run_turns(
+        self,
+        input: InputType,
+        trace_ref: list[ChatCompletionMessageParam],
+        prior_trace: list[ChatCompletionMessageParam] | None,
+        message_latency: dict[int, int],
+        message_usage: dict[int, MessageUsage],
+    ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
         provider = self.model_provider()
@@ -440,8 +477,6 @@ class LiteLlmAdapter(BaseAdapter):
         prior_output: str | None = None
         final_choice: Choices | None = None
         turns = 0
-        message_latency: dict[int, int] = {}
-        message_usage: dict[int, MessageUsage] = {}
 
         # Same loop for both fresh runs and prior_trace continuation.
         # _run_model_turn has its own internal loop for tool calls (model calls tool -> we run it -> model continues).
@@ -469,6 +504,8 @@ class LiteLlmAdapter(BaseAdapter):
                 messages_internal,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
+                message_latency,
+                message_usage,
             )
 
             usage += turn_result.usage
@@ -1157,10 +1194,16 @@ class LiteLlmAdapter(BaseAdapter):
             )
             # The exception text can hold internals (paths, hosts, secrets), and
             # this message is shown to the model and saved in the trace.
-            return _tool_error_message(
+            error_message = _tool_error_message(
                 tool_call.id,
                 f"Error: tool '{tool_name}' failed unexpectedly and couldn't complete this call.",
             )
+            # A tool that is itself a model run (a Kiln task tool) can fail after
+            # it spent; that spend is part of what this run cost.
+            spent = e.usage_before_failure() if isinstance(e, KilnRunError) else None
+            if spent is not None:
+                error_message["usage"] = spent
+            return error_message
 
         tool_message = ChatCompletionToolMessageParamWrapper(
             role="tool",

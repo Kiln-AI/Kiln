@@ -247,6 +247,11 @@ class TestKilnTaskTool:
             ),
             pytest.param(None, None, id="run_without_usage"),
             pytest.param(Usage(), None, id="run_that_reported_nothing"),
+            pytest.param(
+                Usage(total_llm_latency_ms=900),
+                None,
+                id="run_that_reported_latency_only",
+            ),
         ],
     )
     @pytest.mark.asyncio

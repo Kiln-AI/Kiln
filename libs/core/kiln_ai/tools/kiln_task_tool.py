@@ -25,9 +25,7 @@ def _sub_task_usage(run_usage: Usage | None) -> MessageUsage | None:
     if run_usage is None:
         return None
     usage = run_usage.without_latency()
-    if all(value is None for value in usage.model_dump().values()):
-        return None
-    return usage
+    return None if usage.is_empty() else usage
 
 
 class KilnTaskTool(KilnToolInterface):

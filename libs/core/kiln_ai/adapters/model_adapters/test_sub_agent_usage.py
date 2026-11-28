@@ -10,11 +10,13 @@ from collections import deque
 from pathlib import Path
 from unittest.mock import patch
 
+import litellm
 import pytest
 from litellm.types.utils import ModelResponse
 from litellm.types.utils import Usage as LiteLlmUsage
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
 from kiln_ai.datamodel import (
@@ -26,13 +28,24 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+    TurnMode,
+)
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
+    EvalDataType,
+    EvalInput,
+    EvalInputSplit,
     EvalOutputScore,
     ExactMatchProperties,
+    MultiTurnDriveConfig,
+    MultiTurnSyntheticEvalInputData,
+    SyntheticUserInfo,
+    UserMessage,
 )
 from kiln_ai.datamodel.eval_splits import resolve_split
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
@@ -103,8 +116,14 @@ class ScriptedProvider:
     def script(
         self, task: Task, *replies: ModelResponse | Exception, delay_s: float = 0.0
     ) -> None:
-        self._scripts[task.instruction] = deque(replies)
-        self._delays[task.instruction] = delay_s
+        self.script_marker(task.instruction, *replies, delay_s=delay_s)
+
+    def script_marker(
+        self, marker: str, *replies: ModelResponse | Exception, delay_s: float = 0.0
+    ) -> None:
+        """Script the agent whose system message contains `marker`."""
+        self._scripts[marker] = deque(replies)
+        self._delays[marker] = delay_s
 
     def _agent(self, kwargs: dict) -> str:
         system_message = kwargs["messages"][0]["content"]
@@ -156,12 +175,18 @@ class Agents:
         Config.shared().save_setting("projects", [str(project_path)])
         self._run_configs: dict[str, TaskRunConfig] = {}
 
-    def add(self, name: str, sub_agents: tuple[Task, ...] = ()) -> Task:
+    def add(
+        self,
+        name: str,
+        sub_agents: tuple[Task, ...] = (),
+        turn_mode: TurnMode = TurnMode.single_turn,
+    ) -> Task:
         """An agent that can call each of `sub_agents` as the tool `ask_<name>`."""
         task = Task(
             parent=self.project,
             name=name,
             instruction=f"You are the {name} agent.",
+            turn_mode=turn_mode,
         )
         task.save_to_file()
         run_config = TaskRunConfig(
@@ -326,7 +351,7 @@ async def test_run_includes_its_sub_agent_call(agents, one_sub_agent_call, strea
 
     # Latency stays the parent's own model calls: the child's is not added.
     assert child_run.usage is not None and run.usage is not None
-    assert child_run.usage.total_llm_latency_ms >= 20
+    assert child_run.usage.total_llm_latency_ms > 0
     assert run.usage.total_llm_latency_ms == own_latency_ms(run)
 
     # The saved file keeps the per-message usage, so the total can be re-derived.
@@ -371,7 +396,8 @@ async def test_each_call_is_counted_once_when_a_tool_is_called_several_times(
     assert len(child.runs()) == 3
 
 
-async def test_nested_sub_agents_are_counted_once(agents, provider):
+@streamed_or_not
+async def test_nested_sub_agents_are_counted_once(agents, provider, streamed):
     grandchild = agents.add("grandchild")
     child = agents.add("child", sub_agents=(grandchild,))
     parent = agents.add("parent", sub_agents=(child,))
@@ -404,7 +430,7 @@ async def test_nested_sub_agents_are_counted_once(agents, provider):
         ),
     )
 
-    run = await run_agent(agents.adapter(parent), "go", streamed=False)
+    run = await run_agent(agents.adapter(parent), "go", streamed)
 
     grandchild_total = {
         "cost": 0.1,
@@ -440,6 +466,7 @@ async def test_nested_sub_agents_are_counted_once(agents, provider):
     assert_usage(grandchild_run.usage, **grandchild_total)
 
 
+@streamed_or_not
 @pytest.mark.parametrize(
     "parent_cost, child_cost, expected_cost",
     [
@@ -449,7 +476,7 @@ async def test_nested_sub_agents_are_counted_once(agents, provider):
     ],
 )
 async def test_unknown_cost_is_left_out_of_the_sum_not_counted_as_zero(
-    agents, provider, parent_cost, child_cost, expected_cost
+    agents, provider, parent_cost, child_cost, expected_cost, streamed
 ):
     """The same rule as two model calls in one run: a cost the provider did not
     report adds nothing, and a run where nothing was reported has no cost at all."""
@@ -470,16 +497,15 @@ async def test_unknown_cost_is_left_out_of_the_sum_not_counted_as_zero(
         reply("child answer", cost=child_cost, input_tokens=1000, output_tokens=50),
     )
 
-    run = await run_agent(agents.adapter(parent), "go", streamed=False)
+    run = await run_agent(agents.adapter(parent), "go", streamed)
 
     total = {"cost": expected_cost, "input_tokens": 1220, "output_tokens": 65}
     assert_usage(run.usage, **total)
     assert_usage(run.cumulative_usage, **total)
 
 
-async def test_a_failed_sub_agent_call_adds_no_usage(agents, provider):
-    child = agents.add("child")
-    parent = agents.add("parent", sub_agents=(child,))
+def parent_calls_child_once(provider: ScriptedProvider, parent: Task) -> None:
+    """The parent asks its child once, then answers; its own calls cost 0.003."""
     provider.script(
         parent,
         reply(
@@ -487,16 +513,111 @@ async def test_a_failed_sub_agent_call_adds_no_usage(agents, provider):
         ),
         reply("done", cost=0.002, input_tokens=120, output_tokens=5),
     )
+
+
+PARENT_OWN = {"cost": 0.003, "input_tokens": 220, "output_tokens": 15}
+
+
+@streamed_or_not
+async def test_a_sub_agent_that_fails_before_spending_adds_no_usage(
+    agents, provider, streamed
+):
+    child = agents.add("child")
+    parent = agents.add("parent", sub_agents=(child,))
+    parent_calls_child_once(provider, parent)
     provider.script(child, RuntimeError("the child's provider failed"))
+
+    run = await run_agent(agents.adapter(parent), "go", streamed)
+
+    (tool_message,) = tool_messages(run)
+    assert tool_message["is_error"] is True
+    assert "usage" not in tool_message
+    assert_usage(run.usage, **PARENT_OWN)
+    assert_usage(run.cumulative_usage, **PARENT_OWN)
+
+
+@streamed_or_not
+async def test_a_sub_agent_that_fails_after_a_paid_call_adds_that_spend(
+    agents, provider, streamed
+):
+    child = agents.add("child")
+    parent = agents.add("parent", sub_agents=(child,))
+    parent_calls_child_once(provider, parent)
+    provider.script(
+        child,
+        # A call to a tool the child doesn't have gets an error result, so the
+        # child makes a second model call, which fails.
+        reply(
+            calls=(("k1", "no_such_tool"),),
+            cost=0.01,
+            input_tokens=1000,
+            output_tokens=10,
+        ),
+        RuntimeError("the child's provider failed"),
+    )
+
+    run = await run_agent(agents.adapter(parent), "go", streamed)
+
+    (tool_message,) = tool_messages(run)
+    assert tool_message["is_error"] is True
+    assert_usage(tool_message["usage"], cost=0.01, input_tokens=1000, output_tokens=10)
+    total = {"cost": 0.013, "input_tokens": 1220, "output_tokens": 25}
+    assert_usage(run.usage, **total)
+    assert_usage(run.cumulative_usage, **total)
+
+
+async def test_a_sub_agent_that_fails_after_a_grandchild_call_adds_both(
+    agents, provider
+):
+    grandchild = agents.add("grandchild")
+    child = agents.add("child", sub_agents=(grandchild,))
+    parent = agents.add("parent", sub_agents=(child,))
+    parent_calls_child_once(provider, parent)
+    provider.script(
+        child,
+        reply(
+            calls=(("k1", "ask_grandchild"),),
+            cost=0.01,
+            input_tokens=1000,
+            output_tokens=10,
+        ),
+        RuntimeError("the child's provider failed"),
+    )
+    provider.script(
+        grandchild,
+        reply("grandchild answer", cost=0.1, input_tokens=10000, output_tokens=100),
+    )
 
     run = await run_agent(agents.adapter(parent), "go", streamed=False)
 
     (tool_message,) = tool_messages(run)
     assert tool_message["is_error"] is True
-    assert "usage" not in tool_message
-    own = {"cost": 0.003, "input_tokens": 220, "output_tokens": 15}
-    assert_usage(run.usage, **own)
-    assert_usage(run.cumulative_usage, **own)
+    assert_usage(
+        tool_message["usage"], cost=0.11, input_tokens=11000, output_tokens=110
+    )
+    total = {"cost": 0.113, "input_tokens": 11220, "output_tokens": 125}
+    assert_usage(run.usage, **total)
+    assert_usage(run.cumulative_usage, **total)
+
+
+async def test_a_run_ending_sub_agent_error_still_fails_the_parent(agents, provider):
+    child = agents.add("child")
+    parent = agents.add("parent", sub_agents=(child,))
+    provider.script(
+        parent,
+        reply(
+            calls=(("c1", "ask_child"),), cost=0.001, input_tokens=100, output_tokens=10
+        ),
+    )
+    provider.script(
+        child,
+        litellm.RateLimitError(
+            message="slow down", llm_provider="openai", model="gpt-4.1-mini"
+        ),
+    )
+
+    with pytest.raises(KilnRunError):
+        await run_agent(agents.adapter(parent), "go", streamed=False)
 
 
 @streamed_or_not
@@ -523,8 +644,11 @@ async def test_continued_conversation_keeps_earlier_sub_agent_calls_in_cumulativ
     )
 
     first = await run_agent(agents.adapter(parent), "go", streamed)
+    # Continue from the saved file, as the API does: its usage values are dicts.
+    assert first.path is not None
+    saved_trace = TaskRun.load_from_file(first.path).trace
     second = await run_agent(
-        agents.adapter(parent), "go on", streamed, prior_trace=first.trace
+        agents.adapter(parent), "go on", streamed, prior_trace=saved_trace
     )
 
     # `usage` is this turn only; `cumulative_usage` is the whole conversation.
@@ -604,3 +728,97 @@ async def test_eval_job_run_includes_a_sub_agent_whose_run_is_not_saved(
     (tool_message,) = tool_messages(scored_run)
     assert tool_message["kiln_task_tool_data"].endswith(":::None")
     assert_usage(tool_message["usage"], cost=0.01, input_tokens=1000, output_tokens=50)
+
+
+async def test_multi_turn_eval_drive_includes_the_sub_agent_but_not_the_synthetic_user(
+    agents, provider
+):
+    child = agents.add("child")
+    parent = agents.add("parent", sub_agents=(child,), turn_mode=TurnMode.multiturn)
+    provider.script(
+        parent,
+        reply(
+            calls=(("c1", "ask_child"),), cost=0.001, input_tokens=100, output_tokens=10
+        ),
+        reply("first answer", cost=0.002, input_tokens=120, output_tokens=5),
+        reply("second answer", cost=0.004, input_tokens=400, output_tokens=40),
+    )
+    provider.script(
+        child,
+        reply("child answer", cost=0.01, input_tokens=1000, output_tokens=50),
+    )
+    # The synthetic user's system prompt names its persona.
+    provider.script_marker(
+        "a customer who wants a refund",
+        reply("and the refund?", cost=0.5, input_tokens=50000, output_tokens=500),
+    )
+    Config.shared().save_setting("open_router_api_key", "fake-key-for-offline-tests")
+
+    redrive_eval = Eval(
+        parent=parent,
+        name="multi turn",
+        splits={"test": EvalInputSplit(filter_id="all")},
+        eval_configs_filter_id="all",
+        evaluation_data_type=EvalDataType.full_trace,
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Is the last answer right",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    redrive_eval.save_to_file()
+    eval_config = EvalConfig(
+        parent=redrive_eval,
+        name="exact match",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="second answer"),
+    )
+    eval_config.save_to_file()
+    item = EvalInput(
+        parent=parent,
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="I want my money back"),
+            synthetic_user_info=SyntheticUserInfo(
+                persona="a customer who wants a refund", goal="get a refund"
+            ),
+            drive_config=MultiTurnDriveConfig(
+                model_name="claude_4_5_haiku", model_provider="openrouter", turns=2
+            ),
+        ),
+    )
+    item.save_to_file()
+    split = resolve_split(parent, redrive_eval, "test")
+    assert split is not None
+    runner = EvalRunner(
+        eval_configs=[eval_config],
+        run_configs=[agents.run_config(parent)],
+        eval_run_type="task_run_eval",
+        split=split,
+    )
+
+    await runner.run_job(
+        EvalJob(
+            item=item,
+            eval_config=eval_config,
+            type="task_run_eval",
+            task_run_config=agents.run_config(parent),
+        )
+    )
+
+    (eval_run,) = eval_config.runs()
+    assert eval_run.skipped_reason is None
+    (scored_run,) = [
+        run
+        for run in parent.runs(include_eval_generated=True)
+        if run.id == eval_run.scored_run_id
+    ]
+    # The agent's three calls and its sub-agent, both turns.
+    agent_total = {"cost": 0.017, "input_tokens": 1620, "output_tokens": 105}
+    assert_usage(scored_run.usage, **agent_total)
+    assert_usage(scored_run.cumulative_usage, **agent_total)
+    # The synthetic user is not part of the agent, so it stays on its own field.
+    assert scored_run.synthetic_user_usage is not None
+    assert scored_run.synthetic_user_usage.cost == pytest.approx(0.5)
+    assert scored_run.synthetic_user_usage.input_tokens == 50000

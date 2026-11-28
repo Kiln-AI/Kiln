@@ -9,6 +9,7 @@ Otherwise we are using OpenAI SDK types directly.
 
 import json
 from typing import (
+    Annotated,
     Any,
     Iterable,
     List,
@@ -31,7 +32,7 @@ from openai.types.chat.chat_completion_assistant_message_param import (
     ContentArrayOfContentPart,
     FunctionCall,
 )
-from pydantic import TypeAdapter
+from pydantic import Field, TypeAdapter
 from typing_extensions import Required, TypedDict
 
 from kiln_ai.utils.usage import MessageUsage
@@ -108,6 +109,17 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     """
 
 
+TOOL_MESSAGE_USAGE_DESCRIPTION = (
+    "Token usage and cost that this tool call reported. A Kiln task tool "
+    "(sub-agent) reports its sub-task run's total, which already includes that "
+    "run's own sub-agents, or what it spent before it failed. Already counted in "
+    "the `usage` and `cumulative_usage` of the run that made the call: do not add "
+    "it, or the saved sub-task run's usage, to those again. Absent when the tool "
+    "reported no usage, and on Kiln task tool messages in older task run files, "
+    "whose sub-agent spend the run's usage does not hold."
+)
+
+
 class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
     content: Required[Union[str, Iterable[ChatCompletionContentPartTextParam]]]
     """The contents of the tool message."""
@@ -124,15 +136,11 @@ class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
     Formatted as `<project_id>:::<tool_id>:::<task_id>:::<run_id>`
     """
 
-    usage: Optional[MessageUsage]
-    """Token usage and cost that this tool call reported (`ToolCallResult.usage`).
-
-    A Kiln task tool (sub-agent) reports its sub-task run's total, which already
-    includes that run's own sub-agent calls. The run that made the call counts
-    it in its `usage` and `cumulative_usage`. Absent when the tool reported no
-    usage, including a failed call. Older task run files don't carry it on Kiln
-    task tool messages; the usage of those runs holds only their own model calls.
-    """
+    usage: Annotated[
+        Optional[MessageUsage],
+        Field(description=TOOL_MESSAGE_USAGE_DESCRIPTION),
+    ]
+    """See `TOOL_MESSAGE_USAGE_DESCRIPTION`."""
 
     is_error: Optional[bool]
     """Whether this tool message represents an error result."""

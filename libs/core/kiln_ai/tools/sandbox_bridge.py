@@ -35,6 +35,7 @@ from kiln_ai.datamodel.tool_id import (
 )
 from kiln_ai.sandbox.spawn import start_process_with_light_main
 from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.utils.usage import MessageUsage
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +176,13 @@ class NestedToolServer:
         # Why each allowlisted environment tool that failed to resolve is unavailable, by
         # the name the code calls it (the last segment of its id).
         self._unavailable: dict[str, str] = {}
+        self._usage = MessageUsage()
+
+    @property
+    def usage(self) -> MessageUsage | None:
+        """Total usage the tools called through this server reported, such as a
+        Kiln task tool's sub-task run. None when none reported any."""
+        return None if self._usage.is_empty() else self._usage
 
     async def serve(
         self,
@@ -312,6 +320,8 @@ class NestedToolServer:
                 return
 
             result = await tool.run(self._context, **arguments)
+            if result.usage is not None:
+                self._usage += result.usage
 
             if result.is_error:
                 # The tool reports timeouts as a typed flag; sniffing the output
@@ -366,6 +376,13 @@ class NestedToolServer:
                 tool_name,
                 exc,
             )
+            # Function-local: tools/ and adapters/ import each other.
+            from kiln_ai.adapters.errors import KilnRunError
+
+            if isinstance(exc, KilnRunError):
+                spent = exc.usage_before_failure()
+                if spent is not None:
+                    self._usage += spent
             responses.put(
                 {
                     "type": "tool_result",

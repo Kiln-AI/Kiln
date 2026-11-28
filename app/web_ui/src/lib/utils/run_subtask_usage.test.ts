@@ -3,7 +3,10 @@ import type { TaskRun, Trace, TraceMessage } from "$lib/types"
 import {
   calculate_subtask_usage,
   has_subtask_calls,
+  known_subtask_usage,
   run_usage_totals,
+  subtask_fetch_needs,
+  usage_properties,
   type SubtaskReference,
   type SubtaskUsage,
 } from "./run_subtask_usage"
@@ -12,25 +15,31 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-type Spend = { cost: number; total_tokens: number }
+type Spend = { cost: number | null; total_tokens: number | null }
 
 // A Kiln task tool message. `counted` is the usage newer runs record on it.
-function subtask_call(run_id: string, counted?: Spend): TraceMessage {
+function subtask_call(
+  run_id: string,
+  counted?: Spend,
+  tool_data = `project:::tool:::task:::${run_id}`,
+): TraceMessage {
   return {
     role: "tool",
     tool_call_id: `call_${run_id}`,
     content: "subtask output",
-    kiln_task_tool_data: `project:::tool:::task:::${run_id}`,
+    kiln_task_tool_data: tool_data,
     ...(counted ? { usage: counted } : {}),
   }
 }
 
 function saved_run(
-  usage: Spend & { total_llm_latency_ms: number },
+  usage: (Spend & { total_llm_latency_ms: number }) | null,
   trace: Trace = [],
 ): TaskRun {
   return { usage, trace } as TaskRun
 }
+
+const COMPLETE = { latency_complete: true, cost_complete: true }
 
 // Serves saved subtask runs by run id; anything else is a deleted run.
 function fetcher(runs: Record<string, TaskRun>) {
@@ -73,6 +82,7 @@ describe("calculate_subtask_usage", () => {
       latency_ms: 700,
       uncounted_cost: 0,
       uncounted_tokens: 0,
+      ...COMPLETE,
     })
   })
 
@@ -85,7 +95,13 @@ describe("calculate_subtask_usage", () => {
     )
 
     expect(fetch_run).not.toHaveBeenCalled()
-    expect(usage).toMatchObject({ cost: 0.01, tokens: 1050, uncounted_cost: 0 })
+    expect(usage).toMatchObject({
+      cost: 0.01,
+      tokens: 1050,
+      uncounted_cost: 0,
+      cost_complete: true,
+      latency_complete: false,
+    })
   })
 
   it("counts a nested counted subtask once", async () => {
@@ -113,6 +129,7 @@ describe("calculate_subtask_usage", () => {
       latency_ms: 800,
       uncounted_cost: 0,
       uncounted_tokens: 0,
+      ...COMPLETE,
     })
   })
 
@@ -159,6 +176,8 @@ describe("calculate_subtask_usage", () => {
       cost: 0.02,
       uncounted_cost: 0.02,
       tokens: 20,
+      cost_complete: false,
+      latency_complete: false,
     })
   })
 
@@ -218,7 +237,7 @@ describe("calculate_subtask_usage", () => {
     })
   })
 
-  it("reports nothing for an older unsaved subtask, without a fetch", async () => {
+  it("flags an older unsaved subtask as unknown, without a fetch", async () => {
     const fetch_run = fetcher({})
 
     const usage = await calculate_subtask_usage(
@@ -233,6 +252,92 @@ describe("calculate_subtask_usage", () => {
       latency_ms: 0,
       uncounted_cost: 0,
       uncounted_tokens: 0,
+      latency_complete: false,
+      cost_complete: false,
+    })
+  })
+
+  it("counts a subtask run referenced twice once", async () => {
+    const fetch_run = fetcher({
+      r1: saved_run({
+        cost: 0.01,
+        total_tokens: 100,
+        total_llm_latency_ms: 70,
+      }),
+      r2: saved_run({
+        cost: 0.02,
+        total_tokens: 200,
+        total_llm_latency_ms: 50,
+      }),
+    })
+    const counted = { cost: 0.01, total_tokens: 100 }
+
+    const usage = await calculate_subtask_usage(
+      [
+        subtask_call("r1", counted),
+        subtask_call("r1", counted),
+        subtask_call("r2"),
+        subtask_call("r2"),
+      ],
+      fetch_run,
+    )
+
+    expect(fetch_run).toHaveBeenCalledTimes(2)
+    expect(usage.cost).toBeCloseTo(0.03)
+    expect(usage.uncounted_cost).toBeCloseTo(0.02)
+    expect(usage).toMatchObject({ tokens: 300, latency_ms: 120 })
+    expect(
+      known_subtask_usage([
+        subtask_call("r1", counted),
+        subtask_call("r1", counted),
+      ]).cost,
+    ).toBeCloseTo(0.01)
+  })
+
+  it("treats a null cost or token count on a tool message as zero", async () => {
+    const usage = await calculate_subtask_usage(
+      [
+        subtask_call("None", { cost: null, total_tokens: 100 }),
+        subtask_call("None", { cost: 0.01, total_tokens: null }),
+      ],
+      fetcher({}),
+    )
+
+    expect(usage).toMatchObject({
+      cost: 0.01,
+      tokens: 100,
+      cost_complete: true,
+    })
+  })
+
+  it("adds nothing for an older saved subtask run with no usage", async () => {
+    const usage = await calculate_subtask_usage(
+      [subtask_call("r1")],
+      fetcher({ r1: saved_run(null) }),
+    )
+
+    expect(usage).toMatchObject({
+      cost: 0,
+      tokens: 0,
+      latency_ms: 0,
+      ...COMPLETE,
+    })
+  })
+
+  it("keeps the counted usage of a call with malformed tool data", async () => {
+    const fetch_run = fetcher({})
+
+    const usage = await calculate_subtask_usage(
+      [subtask_call("x", { cost: 0.01, total_tokens: 100 }, "not:::enough")],
+      fetch_run,
+    )
+
+    expect(fetch_run).not.toHaveBeenCalled()
+    expect(usage).toMatchObject({
+      cost: 0.01,
+      tokens: 100,
+      cost_complete: true,
+      latency_complete: false,
     })
   })
 })
@@ -247,6 +352,7 @@ describe("run_usage_totals", () => {
       latency_ms: 0,
       uncounted_cost: 0,
       uncounted_tokens: 0,
+      ...COMPLETE,
       ...overrides,
     }
   }
@@ -278,5 +384,102 @@ describe("run_usage_totals", () => {
 
   it("is the run's own usage when there are no subtasks", () => {
     expect(run_usage_totals(run_usage, null)).toEqual(run_usage)
+  })
+})
+
+describe("known_subtask_usage and subtask_fetch_needs", () => {
+  it("reads counted figures from the trace and names the rows that need a fetch", () => {
+    const trace = [
+      subtask_call("saved", { cost: 0.01, total_tokens: 100 }),
+      subtask_call("None", { cost: 0.02, total_tokens: 200 }),
+    ]
+
+    expect(known_subtask_usage(trace)).toMatchObject({
+      cost: 0.03,
+      tokens: 300,
+      cost_complete: true,
+      latency_complete: false,
+    })
+    expect(subtask_fetch_needs(trace)).toEqual({ cost: false, latency: true })
+  })
+
+  it("needs a fetch for cost only when an older call has a saved run", () => {
+    expect(subtask_fetch_needs([subtask_call("old")])).toEqual({
+      cost: true,
+      latency: true,
+    })
+    expect(subtask_fetch_needs([subtask_call("None")])).toEqual({
+      cost: false,
+      latency: false,
+    })
+  })
+})
+
+describe("usage_properties", () => {
+  const run_usage = { cost: 0.013, tokens: 1220, latency_ms: 400 }
+  const eval_run_subtasks: SubtaskUsage = {
+    cost: 0.01,
+    tokens: 1050,
+    latency_ms: 0,
+    uncounted_cost: 0,
+    uncounted_tokens: 0,
+    cost_complete: true,
+    latency_complete: false,
+  }
+
+  it("shows known cost while only latency loads", () => {
+    const rows = usage_properties(run_usage, eval_run_subtasks, {
+      cost: false,
+      latency: true,
+    })
+
+    expect(rows.map((row) => [row.name, row.value])).toEqual([
+      ["Total Cost", "$0.013000"],
+      ["Subtasks Cost", "$0.010000"],
+      ["Total Tokens", 1220],
+      ["Subtasks Tokens", 1050],
+      ["Total Latency", "Loading..."],
+      ["Subtasks Latency", "Loading..."],
+    ])
+  })
+
+  it("marks a latency total that leaves out subtasks", () => {
+    const rows = usage_properties(run_usage, eval_run_subtasks, {
+      cost: false,
+      latency: false,
+    })
+
+    const latency = rows.find((row) => row.name === "Total Latency")
+    expect(latency?.warn_icon).toBe(true)
+    expect(latency?.tooltip).toContain("eval run")
+    const cost = rows.find((row) => row.name === "Total Cost")
+    expect(cost?.warn_icon).toBeUndefined()
+  })
+
+  it("marks a cost total that leaves out an older subtask", () => {
+    const rows = usage_properties(
+      run_usage,
+      { ...eval_run_subtasks, cost: 0, tokens: 0, cost_complete: false },
+      { cost: false, latency: false },
+    )
+
+    expect(rows.find((row) => row.name === "Total Cost")?.warn_icon).toBe(true)
+    expect(rows.find((row) => row.name === "Total Tokens")?.warn_icon).toBe(
+      true,
+    )
+  })
+
+  it("shows the run's own figures with no warning when there are no subtasks", () => {
+    const rows = usage_properties(run_usage, null, {
+      cost: false,
+      latency: false,
+    })
+
+    expect(rows.map((row) => row.name)).toEqual([
+      "Total Cost",
+      "Total Tokens",
+      "Total Latency",
+    ])
+    expect(rows.some((row) => row.warn_icon)).toBe(false)
   })
 })

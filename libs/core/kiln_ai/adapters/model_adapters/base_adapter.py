@@ -4,7 +4,7 @@ import json
 import uuid
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, AsyncIterator, Dict, Tuple
+from typing import TYPE_CHECKING, AsyncIterator, Callable, Dict, Tuple
 
 from litellm.types.utils import ModelResponseStream
 
@@ -258,10 +258,13 @@ class BaseAdapter(metaclass=ABCMeta):
         # follows). `_run` must mutate this list in place (extend/append,
         # or `list[:] = ...`) and never rebind the local name.
         trace_ref: list[ChatCompletionMessageParam] = []
+        # The finished trace carries per-call usage; trace_ref may not.
+        completed_trace: list[ChatCompletionMessageParam] | None = None
         try:
             run_output, usage = await self._run(
                 formatted_input, trace_ref, prior_trace=prior_trace
             )
+            completed_trace = run_output.trace
 
             if not run_output.is_toolcall_pending:
                 # Normal completion: parse and validate output
@@ -350,21 +353,32 @@ class BaseAdapter(metaclass=ABCMeta):
             # Already wrapped — pass through so we don't double-wrap.
             raise
         except Exception as e:
-            # Trace conversion can itself throw (e.g., a malformed partial
-            # assistant message was appended to `messages` just before the
-            # real failure). Never let that swallow the original exception —
-            # fall back to no trace so the user still sees the real error.
-            partial_trace: list[ChatCompletionMessageParam] | None = None
-            if trace_ref:
-                try:
-                    partial_trace = self._messages_to_trace(trace_ref)
-                except Exception:
-                    partial_trace = None
-            raise KilnRunError(
-                message=format_error_message(e),
-                partial_trace=partial_trace,
-                original=e,
+            raise self._run_error(
+                e,
+                lambda: (
+                    completed_trace
+                    or (self._messages_to_trace(trace_ref) if trace_ref else None)
+                ),
             ) from e
+
+    @staticmethod
+    def _run_error(
+        e: Exception,
+        build_partial_trace: Callable[[], list[ChatCompletionMessageParam] | None],
+    ) -> KilnRunError:
+        """Wrap a run failure in a KilnRunError with the trace built so far."""
+        # Trace conversion can itself throw (e.g., a malformed partial
+        # assistant message was appended just before the real failure). Never
+        # let that swallow the original exception: fall back to no trace.
+        try:
+            partial_trace = build_partial_trace()
+        except Exception:
+            partial_trace = None
+        return KilnRunError(
+            message=format_error_message(e),
+            partial_trace=partial_trace,
+            original=e,
+        )
 
     async def invoke_returning_run_output(
         self,

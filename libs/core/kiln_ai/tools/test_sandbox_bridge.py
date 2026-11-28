@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.datamodel.project import Project
 from kiln_ai.sandbox.worker import child_main
 from kiln_ai.tools import sandbox_bridge
@@ -36,6 +37,7 @@ from kiln_ai.tools.sandbox_bridge import (
     describe_crash,
     run_bridged_child,
 )
+from kiln_ai.utils.usage import MessageUsage
 
 REGISTRY_PATH = "kiln_ai.tools.tool_registry.tool_from_id_and_project"
 
@@ -83,6 +85,18 @@ class _FakeTool(KilnToolInterface):
 
     async def run(self, context=None, **kwargs) -> ToolCallResult:
         return self._result
+
+
+class _FailingRunTool(_FakeTool):
+    """A tool that is a model run and fails after it spent."""
+
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
+        spent: MessageUsage = MessageUsage(input_tokens=7, cost=0.07)
+        raise KilnRunError(
+            message="sub-task failed",
+            partial_trace=[{"role": "assistant", "content": "x", "usage": spent}],
+            original=RuntimeError("sub-task failed"),
+        )
 
 
 class _CollectingResponses:
@@ -529,3 +543,42 @@ class TestRunBridgedChild:
         }
         assert result.timed_out is False
         assert result.crashed is False
+
+
+class TestNestedToolServerUsage:
+    @pytest.mark.asyncio
+    async def test_sums_the_usage_tools_report_and_a_failed_run_spent(self, tmp_path):
+        project = _make_project(tmp_path)
+        paid = _FakeTool(
+            "kiln_tool::add_numbers",
+            "paid",
+            result=ToolCallResult(
+                output="42", usage=MessageUsage(input_tokens=10, cost=0.01)
+            ),
+        )
+        failing = _FailingRunTool("kiln_tool::subtract_numbers", "failing")
+        free = _FakeTool("kiln_tool::multiply_numbers", "free")
+        tools = {t._id: t for t in (paid, failing, free)}
+        server = NestedToolServer(
+            allowlist=list(tools),
+            project=project,
+            task=None,
+            context=None,
+        )
+        assert server.usage is None
+
+        with patch(REGISTRY_PATH, side_effect=lambda tool_id, *a, **k: tools[tool_id]):
+            for call_id, name in enumerate(["paid", "paid", "failing", "free"]):
+                await server.serve(
+                    {
+                        "type": "tool_call",
+                        "call_id": call_id,
+                        "tool_name": name,
+                        "arguments": {},
+                    },
+                    _CollectingResponses(),
+                )
+
+        assert server.usage is not None
+        assert server.usage.input_tokens == 27
+        assert server.usage.cost == pytest.approx(0.09)

@@ -20,6 +20,7 @@ import litellm
 from pydantic import BaseModel
 
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.usage import MessageUsage
 
 _GENERIC_FALLBACK_MESSAGE = "An unexpected error occurred."
 
@@ -70,6 +71,12 @@ class KilnRunError(Exception):
         self.partial_trace = partial_trace
         self.original = original
         self.error_type = type(original).__name__
+
+    def usage_before_failure(self) -> MessageUsage | None:
+        """Tokens and cost the run spent before it failed, read from the partial
+        trace. None when the partial trace holds no usage."""
+        usage = MessageUsage.from_trace(self.partial_trace)
+        return None if usage.is_empty() else usage
 
 
 class StructuredOutputParseError(ValueError):

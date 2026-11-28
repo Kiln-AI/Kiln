@@ -5178,6 +5178,7 @@ export interface components {
             tool_call_id: string;
             /** Kiln Task Tool Data */
             kiln_task_tool_data?: string | null;
+            /** @description Token usage and cost that this tool call reported. A Kiln task tool (sub-agent) reports its sub-task run's total, which already includes that run's own sub-agents, or what it spent before it failed. Already counted in the `usage` and `cumulative_usage` of the run that made the call: do not add it, or the saved sub-task run's usage, to those again. Absent when the tool reported no usage, and on Kiln task tool messages in older task run files, whose sub-agent spend the run's usage does not hold. */
             usage?: components["schemas"]["MessageUsage"] | null;
             /** Is Error */
             is_error?: boolean | null;
@@ -9916,6 +9917,11 @@ export interface components {
         /**
          * MeanUsage
          * @description Average token usage across eval runs.
+         *
+         *     Averages each scored task run's `usage`, which includes the run's sub-agents
+         *     only where its Kiln task tool messages carry `usage`. Task runs saved before
+         *     tool messages carried it leave out their sub-agents' spend, so a run config
+         *     evaluated then and one evaluated since are not comparable on cost.
          */
         MeanUsage: {
             /**
@@ -13388,11 +13394,11 @@ export interface components {
              * @default []
              */
             tags: string[];
-            /** @description Usage information for the task run: the tokens and cost of its own model calls plus the usage that its tool calls reported, such as a Kiln task tool (sub-agent) with its own nested sub-agents. A failed tool call, and a sub-agent called from inside a code tool, report no usage. `total_llm_latency_ms` covers only this run's own model calls. Runs whose trace has no `usage` on its Kiln task tool messages hold only their own model calls. */
+            /** @description Usage information for the task run: the tokens and cost of its own model calls plus the usage that its tool calls reported, such as a Kiln task tool (sub-agent) with its own nested sub-agents, including one called from inside a code tool, and a sub-agent's spend before it failed. `total_llm_latency_ms` covers only this run's own model calls. The rule is per tool message: a tool message with `usage` is counted here, one without it is not. Older task run files have Kiln task tool messages without `usage`, whose sub-agent spend is not counted; a call that reported no usage has no `usage` either. */
             usage?: components["schemas"]["Usage"] | null;
             /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace: model calls (assistant messages) and the usage that tool calls reported (tool messages). None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
             cumulative_usage?: components["schemas"]["MessageUsage"] | null;
-            /** @description The synthetic-user driver model's spend for an eval-driven conversation, recorded beside the assistant's own usage so `usage` stays assistant-only. None for ordinary runs, and for migrated legacy traces whose driver cost is fused into `usage`. */
+            /** @description The synthetic-user driver model's spend for an eval-driven conversation, recorded beside `usage` so that `usage` stays the spend of the agent under test: its own model calls and its sub-agents, which are part of the agent. The synthetic user is not. None for ordinary runs, and for migrated legacy traces whose driver cost is fused into `usage`. */
             synthetic_user_usage?: components["schemas"]["Usage"] | null;
             /**
              * Trace
@@ -13473,11 +13479,11 @@ export interface components {
              * @default []
              */
             tags: string[];
-            /** @description Usage information for the task run: the tokens and cost of its own model calls plus the usage that its tool calls reported, such as a Kiln task tool (sub-agent) with its own nested sub-agents. A failed tool call, and a sub-agent called from inside a code tool, report no usage. `total_llm_latency_ms` covers only this run's own model calls. Runs whose trace has no `usage` on its Kiln task tool messages hold only their own model calls. */
+            /** @description Usage information for the task run: the tokens and cost of its own model calls plus the usage that its tool calls reported, such as a Kiln task tool (sub-agent) with its own nested sub-agents, including one called from inside a code tool, and a sub-agent's spend before it failed. `total_llm_latency_ms` covers only this run's own model calls. The rule is per tool message: a tool message with `usage` is counted here, one without it is not. Older task run files have Kiln task tool messages without `usage`, whose sub-agent spend is not counted; a call that reported no usage has no `usage` either. */
             usage?: components["schemas"]["Usage"] | null;
             /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace: model calls (assistant messages) and the usage that tool calls reported (tool messages). None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
             cumulative_usage?: components["schemas"]["MessageUsage"] | null;
-            /** @description The synthetic-user driver model's spend for an eval-driven conversation, recorded beside the assistant's own usage so `usage` stays assistant-only. None for ordinary runs, and for migrated legacy traces whose driver cost is fused into `usage`. */
+            /** @description The synthetic-user driver model's spend for an eval-driven conversation, recorded beside `usage` so that `usage` stays the spend of the agent under test: its own model calls and its sub-agents, which are part of the agent. The synthetic user is not. None for ordinary runs, and for migrated legacy traces whose driver cost is fused into `usage`. */
             synthetic_user_usage?: components["schemas"]["Usage"] | null;
             /**
              * Trace

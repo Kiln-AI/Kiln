@@ -32,6 +32,7 @@ from kiln_ai.tools.sandbox_bridge import (
     describe_crash,
     run_bridged_child,
 )
+from kiln_ai.utils.usage import MessageUsage
 
 __all__ = [
     "ChildOutcome",
@@ -53,6 +54,7 @@ class ChildOutcome:
     timed_out: bool = False
     crashed: bool = False
     exit_code: int | None = None
+    usage: MessageUsage | None = None
 
     def crash_description(self, subject: str) -> str:
         """Phrase this outcome's ``crashed`` state. Shared with the bridge."""
@@ -98,16 +100,24 @@ class PythonCodeTool(KilnToolInterface):
         self, context: ToolCallContext | None = None, **kwargs: Any
     ) -> ToolCallResult:
         outcome = await self._invoke(context, kwargs)
+        # Tools the code called were paid for whether or not the code finished.
+        usage = outcome.usage
 
         tool_name = self._code_tool.tool_function_name
         if outcome.timed_out:
             msg = f"Code tool '{tool_name}' timed out after {self._code_tool.timeout_seconds}s"
             return ToolCallResult(
-                output=msg, is_error=True, error_message=msg, timed_out=True
+                output=msg,
+                is_error=True,
+                error_message=msg,
+                timed_out=True,
+                usage=usage,
             )
         if outcome.crashed:
             msg = outcome.crash_description(f"Code tool '{tool_name}'")
-            return ToolCallResult(output=msg, is_error=True, error_message=msg)
+            return ToolCallResult(
+                output=msg, is_error=True, error_message=msg, usage=usage
+            )
         if outcome.error is not None:
             tb_text = outcome.traceback_str or ""
             output = f"Code tool '{tool_name}' failed: {outcome.error}"
@@ -117,10 +127,11 @@ class PythonCodeTool(KilnToolInterface):
                 output=output,
                 is_error=True,
                 error_message=outcome.error,
+                usage=usage,
             )
 
         assert outcome.ok is not None
-        return ToolCallResult(output=outcome.ok)
+        return ToolCallResult(output=outcome.ok, usage=usage)
 
     def _build_server(self, context: ToolCallContext | None) -> NestedToolServer:
         return NestedToolServer(
@@ -141,7 +152,9 @@ class PythonCodeTool(KilnToolInterface):
             timeout_s=float(self._code_tool.timeout_seconds),
             server=server,
         )
-        return _bridge_result_to_outcome(result)
+        outcome = _bridge_result_to_outcome(result)
+        outcome.usage = server.usage
+        return outcome
 
 
 def _bridge_result_to_outcome(result: BridgeResult) -> ChildOutcome:
