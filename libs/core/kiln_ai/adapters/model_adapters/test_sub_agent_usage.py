@@ -861,18 +861,25 @@ async def test_a_stopped_sub_agent_records_its_completed_calls_on_the_cancellati
         hang,
     )
 
-    run = asyncio.create_task(agents.adapter(child).invoke("go"))
+    recorded: list[MessageUsage | None] = []
+
+    async def run_child_like_a_code_tool() -> None:
+        # Read inside the cancelled task, as the code tool's bridge does: awaiting
+        # a cancelled task from another one gives a new CancelledError on 3.10.
+        try:
+            await agents.adapter(child).invoke("go")
+        except asyncio.CancelledError as cancelled:
+            recorded.append(usage_before_cancel(cancelled))
+            raise
+
+    run = asyncio.create_task(run_child_like_a_code_tool())
     await hang.reached.wait()
     run.cancel()
-    with pytest.raises(asyncio.CancelledError) as cancelled:
+    with pytest.raises(asyncio.CancelledError):
         await run
 
-    assert_usage(
-        usage_before_cancel(cancelled.value),
-        cost=0.01,
-        input_tokens=1000,
-        output_tokens=10,
-    )
+    (spent,) = recorded
+    assert_usage(spent, cost=0.01, input_tokens=1000, output_tokens=10)
 
 
 async def test_a_failed_continued_run_reports_only_its_own_spend(agents, provider):
