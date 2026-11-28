@@ -4,7 +4,7 @@ import inspect
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Tuple
 
 import jsonschema
@@ -24,7 +24,11 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.chat.chat_formatter import chat_message_to_dict
-from kiln_ai.adapters.errors import EMPTY_RESPONSE_ERROR_MESSAGE, KilnRunError
+from kiln_ai.adapters.errors import (
+    EMPTY_RESPONSE_ERROR_MESSAGE,
+    KilnRunError,
+    record_usage_before_cancel,
+)
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.litellm_utils.tool_calls import (
     MISSING_TOOL_NAME_ERROR,
@@ -243,6 +247,31 @@ def _validate_unmanaged_tools(tools: list[KilnToolInterface]) -> None:
 
 
 @dataclass
+class _RunRecords:
+    """Per-call latency and usage of one run, keyed by index in its messages.
+
+    Filled in place, so what was spent survives an exception or a cancellation.
+    """
+
+    latency: dict[int, int] = field(default_factory=dict)
+    usage: dict[int, MessageUsage] = field(default_factory=dict)
+    # Index of the first message this run added: earlier ones are seeded.
+    first_new_message: int = 0
+
+    def spent(
+        self, messages: list[ChatCompletionMessageIncludingLiteLLM]
+    ) -> MessageUsage:
+        """This run's model calls plus the usage its tool calls reported."""
+        total = MessageUsage()
+        for call_usage in self.usage.values():
+            total += call_usage
+        new_messages = messages[self.first_new_message :]
+        return total + MessageUsage.from_trace(
+            [m for m in new_messages if isinstance(m, dict) and m.get("role") == "tool"]
+        )
+
+
+@dataclass
 class ModelTurnResult:
     assistant_message: str
     all_messages: list[ChatCompletionMessageIncludingLiteLLM]
@@ -426,28 +455,29 @@ class LiteLlmAdapter(BaseAdapter):
         trace_ref: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> tuple[RunOutput, Usage | None]:
-        message_latency: dict[int, int] = {}
-        message_usage: dict[int, MessageUsage] = {}
+        records = _RunRecords()
+        # `trace_ref` holds LiteLLM `Message` objects until it is converted.
+        messages: list[ChatCompletionMessageIncludingLiteLLM] = trace_ref  # type: ignore[assignment]
         try:
-            return await self._run_turns(
-                input, trace_ref, prior_trace, message_latency, message_usage
-            )
+            return await self._run_turns(input, trace_ref, prior_trace, records)
         except KilnRunError:
             raise
+        except asyncio.CancelledError as e:
+            # A caller that stopped this run (a code tool's timeout) can still
+            # count what it spent.
+            record_usage_before_cancel(e, records.spent(messages))
+            raise
         except Exception as e:
-            # The partial trace keeps the usage of each model call made so far,
-            # so a caller (a parent run calling this one as a tool) can count it.
+            # A caller (a parent run calling this one as a tool) counts what it
+            # spent; the partial trace keeps the usage of each model call.
             raise self._run_error(
                 e,
                 lambda: (
-                    self.all_messages_to_trace(
-                        trace_ref,  # type: ignore[arg-type]
-                        message_latency,
-                        message_usage,
-                    )
-                    if trace_ref
+                    self.all_messages_to_trace(messages, records.latency, records.usage)
+                    if messages
                     else None
                 ),
+                records.spent(messages),
             ) from e
 
     async def _run_turns(
@@ -455,10 +485,11 @@ class LiteLlmAdapter(BaseAdapter):
         input: InputType,
         trace_ref: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None,
-        message_latency: dict[int, int],
-        message_usage: dict[int, MessageUsage],
+        records: _RunRecords,
     ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
+        message_latency = records.latency
+        message_usage = records.usage
 
         provider = self.model_provider()
         if not provider.model_id:
@@ -473,6 +504,7 @@ class LiteLlmAdapter(BaseAdapter):
         # mutations don't each need their own suppression.
         messages_internal: list[ChatCompletionMessageIncludingLiteLLM] = trace_ref  # type: ignore[assignment]
         messages_internal.extend(copy.deepcopy(chat_formatter.initial_messages()))
+        records.first_new_message = len(messages_internal)
 
         prior_output: str | None = None
         final_choice: Choices | None = None

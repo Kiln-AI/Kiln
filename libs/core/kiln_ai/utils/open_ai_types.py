@@ -112,11 +112,13 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
 TOOL_MESSAGE_USAGE_DESCRIPTION = (
     "Token usage and cost that this tool call reported. A Kiln task tool "
     "(sub-agent) reports its sub-task run's total, which already includes that "
-    "run's own sub-agents, or what it spent before it failed. Already counted in "
-    "the `usage` and `cumulative_usage` of the run that made the call: do not add "
-    "it, or the saved sub-task run's usage, to those again. Absent when the tool "
-    "reported no usage, and on Kiln task tool messages in older task run files, "
-    "whose sub-agent spend the run's usage does not hold."
+    "run's own sub-agents. A code tool reports the total of the sub-agents its "
+    "code called. The error message of a failed sub-agent call reports what it "
+    "spent before it failed. Already counted in the `usage` and "
+    "`cumulative_usage` of the run that made the call: do not add it, or the "
+    "saved sub-task run's usage, to those again. Absent when the tool reported "
+    "no usage, and on Kiln task tool messages in older task run files, whose "
+    "sub-agent spend the run's usage does not hold."
 )
 
 

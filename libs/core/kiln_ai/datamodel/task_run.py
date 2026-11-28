@@ -103,12 +103,16 @@ class TaskRun(
             "Usage information for the task run: the tokens and cost of its own "
             "model calls plus the usage that its tool calls reported, such as a "
             "Kiln task tool (sub-agent) with its own nested sub-agents, including "
-            "one called from inside a code tool, and a sub-agent's spend before it "
-            "failed. `total_llm_latency_ms` covers only this run's own model calls. "
-            "The rule is per tool message: a tool message with `usage` is counted "
-            "here, one without it is not. Older task run files have Kiln task "
-            "tool messages without `usage`, whose sub-agent spend is not counted; "
-            "a call that reported no usage has no `usage` either."
+            "one called from inside a code tool. A sub-agent that fails, or that "
+            "is stopped when its code tool times out or ends, reports its completed "
+            "model calls and finished sub-agents; work still in flight when it is "
+            "stopped reports nothing. A sub-agent error that ends the "
+            "run (a retryable error) fails this run too, so its spend is on no "
+            "record. `total_llm_latency_ms` covers only this run's own model "
+            "calls. The rule is per tool message: a tool message with `usage` is "
+            "counted here, one without it is not. Older task run files have Kiln "
+            "task tool messages without `usage`, whose sub-agent spend is not "
+            "counted; a call that reported no usage has no `usage` either."
         ),
     )
     cumulative_usage: MessageUsage | None = Field(

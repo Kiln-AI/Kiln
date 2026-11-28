@@ -34,7 +34,8 @@ type SubtaskCall = {
   // The usage on the tool message, already in the run's own usage. Null on
   // older runs and on calls that reported nothing.
   counted: MessageSpend | null
-  // Null when the subtask run was not saved or the tool data is malformed.
+  // Null when the subtask run was not saved, the tool data is malformed, or
+  // the message is not a Kiln task tool's (a code tool or a failed call).
   reference: SubtaskReference | null
 }
 
@@ -55,17 +56,32 @@ function reference_key(reference: SubtaskReference): string {
   return `${reference.project_id}:${reference.task_id}:${reference.run_id}`
 }
 
-// Only Kiln task tools report usage today, so the other tool messages hold none.
+/**
+ * The subtask calls of a trace: Kiln task tool messages, and any other tool
+ * message that carries `usage` (a code tool that called sub-agents, or the
+ * error message of a failed sub-agent call). A subtask run referenced more
+ * than once is one call; its counted usage is kept from whichever message has it.
+ */
 function subtask_calls(trace: Trace | null | undefined): SubtaskCall[] {
   const calls: SubtaskCall[] = []
+  const by_reference = new Map<string, SubtaskCall>()
   for (const message of trace ?? []) {
-    if (!("kiln_task_tool_data" in message) || !message.kiln_task_tool_data) {
-      continue
+    if (message.role !== "tool") continue
+    const tool_data =
+      "kiln_task_tool_data" in message ? message.kiln_task_tool_data : null
+    const counted = ("usage" in message ? message.usage : null) ?? null
+    if (!tool_data && !counted) continue
+    const reference = tool_data ? subtask_reference(tool_data) : null
+    if (reference) {
+      const earlier = by_reference.get(reference_key(reference))
+      if (earlier) {
+        earlier.counted ??= counted
+        continue
+      }
     }
-    calls.push({
-      counted: message.usage ?? null,
-      reference: subtask_reference(message.kiln_task_tool_data),
-    })
+    const call = { counted, reference }
+    if (reference) by_reference.set(reference_key(reference), call)
+    calls.push(call)
   }
   return calls
 }
@@ -106,13 +122,7 @@ export function known_subtask_usage(
   trace: Trace | null | undefined,
 ): SubtaskUsage {
   const total = empty_usage()
-  const seen = new Set<string>()
   for (const call of subtask_calls(trace)) {
-    if (call.reference) {
-      const key = reference_key(call.reference)
-      if (seen.has(key)) continue
-      seen.add(key)
-    }
     if (call.counted) {
       total.cost += call.counted.cost ?? 0
       total.tokens += call.counted.total_tokens ?? 0

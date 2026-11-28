@@ -128,6 +128,10 @@ def describe_crash(subject: str, exit_code: int | None) -> str:
     return f"{subject} crashed (exit code {exit_code})"
 
 
+# How long a stopped code tool waits for its cancelled nested calls.
+_CANCELLED_CALL_GRACE_S = 5.0
+
+
 @dataclass
 class BridgeResult:
     """Raw outcome of one bridged child run — no result interpretation.
@@ -349,6 +353,16 @@ class NestedToolServer:
                     }
                 )
                 self._record(tool_name, arguments, result.output, False, start)
+
+        except asyncio.CancelledError as exc:
+            # The code tool stopped (timeout, crash or result) while this call
+            # ran; a sub-agent recorded what it spent so far on the cancellation.
+            from kiln_ai.adapters.errors import usage_before_cancel
+
+            spent = usage_before_cancel(exc)
+            if spent is not None:
+                self._usage += spent
+            raise
 
         except asyncio.TimeoutError as exc:
             logger.warning(
@@ -596,8 +610,14 @@ async def _pump(
                     duration_ms=elapsed,
                 )
     finally:
-        for t in pending_tasks:
+        still_running = list(pending_tasks)
+        for t in still_running:
             t.cancel()
+        if still_running:
+            # Let each cancelled call record what it spent before the caller
+            # reads the server's usage; a call that ignores the cancellation is
+            # left behind.
+            await asyncio.wait(still_running, timeout=_CANCELLED_CALL_GRACE_S)
         if p.is_alive():
             p.kill()
             await loop.run_in_executor(executor, p.join, 5)

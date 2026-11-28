@@ -647,9 +647,11 @@ class MeanUsage(BaseModel):
     """Average token usage across eval runs.
 
     Averages each scored task run's `usage`, which includes the run's sub-agents
-    only where its Kiln task tool messages carry `usage`. Task runs saved before
-    tool messages carried it leave out their sub-agents' spend, so a run config
-    evaluated then and one evaluated since are not comparable on cost.
+    only where its tool messages carry `usage`: a Kiln task tool's message, a code
+    tool's message for the sub-agents its code called, and the error message of a
+    failed sub-agent call. Task runs saved before tool messages carried it leave
+    out their sub-agents' spend, so a run config evaluated then and one evaluated
+    since are not comparable on cost.
     """
 
     mean_input_tokens: float | None = Field(

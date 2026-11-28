@@ -387,6 +387,68 @@ describe("run_usage_totals", () => {
   })
 })
 
+describe("tool messages that carry usage without Kiln task tool data", () => {
+  // A code tool's message for the sub-agents its code called, or the error
+  // message of a failed sub-agent call.
+  function usage_only_message(id: string, counted: Spend): TraceMessage {
+    return {
+      role: "tool",
+      tool_call_id: id,
+      content: "code tool output",
+      usage: counted,
+    }
+  }
+
+  it("counts them in the subtask figures", async () => {
+    const trace = [
+      usage_only_message("code", { cost: 0.03, total_tokens: 300 }),
+      usage_only_message("failed", { cost: 0.01, total_tokens: 100 }),
+      { role: "tool", tool_call_id: "plain", content: "4" } as TraceMessage,
+    ]
+    const fetch_run = fetcher({})
+
+    expect(has_subtask_calls(trace)).toBe(true)
+    const usage = await calculate_subtask_usage(trace, fetch_run)
+
+    expect(fetch_run).not.toHaveBeenCalled()
+    expect(usage.cost).toBeCloseTo(0.04)
+    expect(usage).toMatchObject({
+      tokens: 400,
+      uncounted_cost: 0,
+      cost_complete: true,
+      latency_complete: false,
+    })
+    expect(known_subtask_usage(trace).cost).toBeCloseTo(0.04)
+  })
+})
+
+describe("a subtask run referenced twice", () => {
+  it("uses the counted usage whichever message has it", async () => {
+    const fetch_run = fetcher({
+      r1: saved_run({
+        cost: 0.01,
+        total_tokens: 100,
+        total_llm_latency_ms: 70,
+      }),
+    })
+    const trace = [
+      subtask_call("r1"),
+      subtask_call("r1", { cost: 0.01, total_tokens: 100 }),
+    ]
+
+    const usage = await calculate_subtask_usage(trace, fetch_run)
+
+    expect(usage).toMatchObject({
+      cost: 0.01,
+      tokens: 100,
+      uncounted_cost: 0,
+      uncounted_tokens: 0,
+      latency_ms: 70,
+    })
+    expect(subtask_fetch_needs(trace)).toEqual({ cost: false, latency: true })
+  })
+})
+
 describe("known_subtask_usage and subtask_fetch_needs", () => {
   it("reads counted figures from the trace and names the rows that need a fetch", () => {
     const trace = [

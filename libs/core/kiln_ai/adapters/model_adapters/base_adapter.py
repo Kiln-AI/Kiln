@@ -260,11 +260,13 @@ class BaseAdapter(metaclass=ABCMeta):
         trace_ref: list[ChatCompletionMessageParam] = []
         # The finished trace carries per-call usage; trace_ref may not.
         completed_trace: list[ChatCompletionMessageParam] | None = None
+        completed_usage: Usage | None = None
         try:
             run_output, usage = await self._run(
                 formatted_input, trace_ref, prior_trace=prior_trace
             )
             completed_trace = run_output.trace
+            completed_usage = usage
 
             if not run_output.is_toolcall_pending:
                 # Normal completion: parse and validate output
@@ -359,14 +361,17 @@ class BaseAdapter(metaclass=ABCMeta):
                     completed_trace
                     or (self._messages_to_trace(trace_ref) if trace_ref else None)
                 ),
+                completed_usage.without_latency() if completed_usage else None,
             ) from e
 
     @staticmethod
     def _run_error(
         e: Exception,
         build_partial_trace: Callable[[], list[ChatCompletionMessageParam] | None],
+        usage: MessageUsage | None = None,
     ) -> KilnRunError:
-        """Wrap a run failure in a KilnRunError with the trace built so far."""
+        """Wrap a run failure in a KilnRunError with the trace built so far and
+        what this run spent before it failed."""
         # Trace conversion can itself throw (e.g., a malformed partial
         # assistant message was appended just before the real failure). Never
         # let that swallow the original exception: fall back to no trace.
@@ -378,6 +383,7 @@ class BaseAdapter(metaclass=ABCMeta):
             message=format_error_message(e),
             partial_trace=partial_trace,
             original=e,
+            usage=usage,
         )
 
     async def invoke_returning_run_output(

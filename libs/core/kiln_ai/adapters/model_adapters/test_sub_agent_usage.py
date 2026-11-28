@@ -16,7 +16,7 @@ from litellm.types.utils import ModelResponse
 from litellm.types.utils import Usage as LiteLlmUsage
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.errors import KilnRunError, usage_before_cancel
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
 from kiln_ai.datamodel import (
@@ -101,6 +101,13 @@ def reply(
     return response
 
 
+class Hang:
+    """A scripted reply that never comes: the call waits until it is cancelled."""
+
+    def __init__(self) -> None:
+        self.reached = asyncio.Event()
+
+
 class ScriptedProvider:
     """Stands in for the provider: each agent answers from its own queue of replies.
 
@@ -110,16 +117,22 @@ class ScriptedProvider:
     """
 
     def __init__(self) -> None:
-        self._scripts: dict[str, deque[ModelResponse | Exception]] = {}
+        self._scripts: dict[str, deque[ModelResponse | Exception | Hang]] = {}
         self._delays: dict[str, float] = {}
 
     def script(
-        self, task: Task, *replies: ModelResponse | Exception, delay_s: float = 0.0
+        self,
+        task: Task,
+        *replies: ModelResponse | Exception | Hang,
+        delay_s: float = 0.0,
     ) -> None:
         self.script_marker(task.instruction, *replies, delay_s=delay_s)
 
     def script_marker(
-        self, marker: str, *replies: ModelResponse | Exception, delay_s: float = 0.0
+        self,
+        marker: str,
+        *replies: ModelResponse | Exception | Hang,
+        delay_s: float = 0.0,
     ) -> None:
         """Script the agent whose system message contains `marker`."""
         self._scripts[marker] = deque(replies)
@@ -131,7 +144,7 @@ class ScriptedProvider:
         assert len(matches) == 1, f"{len(matches)} scripts match: {system_message}"
         return matches[0]
 
-    def _next_reply(self, agent: str) -> ModelResponse:
+    def _next_reply(self, agent: str) -> ModelResponse | Hang:
         assert self._scripts[agent], f"Script ran out of replies for: {agent}"
         next_reply = self._scripts[agent].popleft()
         if isinstance(next_reply, Exception):
@@ -145,11 +158,18 @@ class ScriptedProvider:
     async def acompletion(self, **kwargs) -> ModelResponse:
         agent = self._agent(kwargs)
         await asyncio.sleep(self._delays[agent])
-        return self._next_reply(agent)
+        next_reply = self._next_reply(agent)
+        if isinstance(next_reply, Hang):
+            next_reply.reached.set()
+            await asyncio.sleep(3600)
+            raise AssertionError("A hanging call must be cancelled")
+        return next_reply
 
     def streaming_completion(self, **kwargs) -> "_ScriptedStream":
         agent = self._agent(kwargs)
-        return _ScriptedStream(self._next_reply(agent), self._delays[agent])
+        next_reply = self._next_reply(agent)
+        assert not isinstance(next_reply, Hang), "Hang is for invoked runs"
+        return _ScriptedStream(next_reply, self._delays[agent])
 
 
 class _ScriptedStream:
@@ -822,3 +842,61 @@ async def test_multi_turn_eval_drive_includes_the_sub_agent_but_not_the_syntheti
     assert scored_run.synthetic_user_usage is not None
     assert scored_run.synthetic_user_usage.cost == pytest.approx(0.5)
     assert scored_run.synthetic_user_usage.input_tokens == 50000
+
+
+async def test_a_stopped_sub_agent_records_its_completed_calls_on_the_cancellation(
+    agents, provider
+):
+    """What a code tool's timeout reads when it stops a sub-agent mid-run."""
+    child = agents.add("child")
+    hang = Hang()
+    provider.script(
+        child,
+        reply(
+            calls=(("k1", "no_such_tool"),),
+            cost=0.01,
+            input_tokens=1000,
+            output_tokens=10,
+        ),
+        hang,
+    )
+
+    run = asyncio.create_task(agents.adapter(child).invoke("go"))
+    await hang.reached.wait()
+    run.cancel()
+    with pytest.raises(asyncio.CancelledError) as cancelled:
+        await run
+
+    assert_usage(
+        usage_before_cancel(cancelled.value),
+        cost=0.01,
+        input_tokens=1000,
+        output_tokens=10,
+    )
+
+
+async def test_a_failed_continued_run_reports_only_its_own_spend(agents, provider):
+    """A failed run's spend leaves out the conversation it continued."""
+    child = agents.add("child")
+    provider.script(
+        child,
+        reply("first answer", cost=0.5, input_tokens=5000, output_tokens=50),
+        reply(
+            calls=(("k1", "no_such_tool"),),
+            cost=0.01,
+            input_tokens=1000,
+            output_tokens=10,
+        ),
+        RuntimeError("the provider failed"),
+    )
+    first = await agents.adapter(child).invoke("go")
+
+    with pytest.raises(KilnRunError) as failed:
+        await agents.adapter(child).invoke("go on", prior_trace=first.trace)
+
+    assert_usage(
+        failed.value.usage_before_failure(),
+        cost=0.01,
+        input_tokens=1000,
+        output_tokens=10,
+    )

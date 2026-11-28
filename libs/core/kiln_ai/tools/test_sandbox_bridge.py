@@ -96,6 +96,7 @@ class _FailingRunTool(_FakeTool):
             message="sub-task failed",
             partial_trace=[{"role": "assistant", "content": "x", "usage": spent}],
             original=RuntimeError("sub-task failed"),
+            usage=spent,
         )
 
 
