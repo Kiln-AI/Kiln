@@ -52,6 +52,8 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.tool_id import build_kiln_task_tool_id
+from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.tools.sandbox_bridge import NestedToolServer
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 from kiln_ai.utils.usage import MessageUsage
@@ -907,3 +909,65 @@ async def test_a_failed_continued_run_reports_only_its_own_spend(agents, provide
         input_tokens=1000,
         output_tokens=10,
     )
+
+
+class _Responses:
+    def __init__(self) -> None:
+        self.messages: list[dict] = []
+
+    def put(self, msg: dict) -> None:
+        self.messages.append(msg)
+
+
+@pytest.mark.parametrize(
+    "stopped_in",
+    ["its_own_model_call", "its_own_sub_agent_call"],
+)
+async def test_a_code_tool_counts_a_sub_agent_it_stops_mid_run(
+    agents, provider, stopped_in
+):
+    """The path a code tool's timeout takes, without the child process: the
+    bridge's server runs the sub-agent call as a task, then cancels it."""
+    grandchild = agents.add("grandchild")
+    child = agents.add("child", sub_agents=(grandchild,))
+    caller = agents.add("caller", sub_agents=(child,))
+    hang = Hang()
+    paid_first_call = {"cost": 0.01, "input_tokens": 1000, "output_tokens": 10}
+    if stopped_in == "its_own_model_call":
+        provider.script(
+            child,
+            reply(calls=(("k1", "no_such_tool"),), **paid_first_call),
+            hang,
+        )
+    else:
+        provider.script(
+            child, reply(calls=(("k1", "ask_grandchild"),), **paid_first_call)
+        )
+        provider.script(grandchild, hang)
+    tools = agents.run_config(caller).run_config_properties.tools_config
+    assert tools is not None
+    server = NestedToolServer(
+        allowlist=tools.tools,
+        project=agents.project,
+        task=None,
+        context=ToolCallContext(allow_saving=False),
+    )
+
+    call = asyncio.create_task(
+        server.serve(
+            {
+                "type": "tool_call",
+                "call_id": 1,
+                "tool_name": "ask_child",
+                "arguments": {"input": "question"},
+            },
+            _Responses(),
+        )
+    )
+    await hang.reached.wait()
+    call.cancel()
+    await asyncio.wait([call])
+
+    # The child's finished call is counted; the call still in flight is not.
+    assert call.cancelled()
+    assert_usage(server.usage, **paid_first_call)
