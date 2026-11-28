@@ -712,6 +712,7 @@ def test_build_extra_body_openrouter_default_provider_order(config, mock_task):
     # Create a mock OpenRouter provider with minimal attributes
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.openrouter
+    mock_provider.model_id = "deepseek/deepseek-chat"
     mock_provider.default_thinking_level = None
     mock_provider.require_openrouter_reasoning = False
     mock_provider.gemini_reasoning_enabled = False
