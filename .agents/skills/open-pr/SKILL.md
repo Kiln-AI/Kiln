@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open a pull request on the Kiln repo for a human to complete. The title gets a `WIP: ` prefix and a semantic-commit type. The description keeps the human-only header of the PR template as empty placeholders, and the agent writes only the Agentic PR Summary below it, inside a `<details>` panel that is collapsed by default (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples). The agent sends screenshots to the user in chat and does not upload them to GitHub. The agent never signs the CLA. Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
+description: Open a pull request on the Kiln repo for a human to complete. The title gets a `WIP: ` prefix and a semantic-commit type. The description keeps the human-only header of the PR template as empty placeholders, and the agent writes only the Agentic PR Summary below it, inside a `<details>` panel that is collapsed by default (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples). The agent uploads screenshots through a browser that is signed in to GitHub and puts them in the summary. The agent never signs the CLA. Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
 ---
 
 # Open a Pull Request
@@ -318,10 +318,57 @@ panel.
 </details>
 ````
 
-Do not upload screenshots to GitHub yourself. Do not commit PR screenshots to a branch,
-a gist, or a release. An agent cannot upload an image the way a human does with drag and
-drop. Send the screenshots to the user in chat after the PR opens (Step 5). The user adds
-the ones that they want to the PR.
+#### Screenshots
+
+Put screenshots in a collapsible panel at the end, the same as other examples. Upload
+them after the PR opens (Step 5), because you need the PR page.
+
+GitHub has no REST or GraphQL API that uploads an image to a PR description. Upload with
+a browser that is signed in to GitHub as the PR author, for example Claude in Chrome. The
+browser tool must be able to set files on a file input, for example `file_upload`.
+
+1. Open the PR page.
+2. The new comment box makes its file input only when a user clicks "Paste, drop, or
+   click to add files", and then it opens the native file picker. You cannot use the
+   native file picker. So, before you click, run this script in the page. It keeps the
+   file input in the page and does not open the picker:
+
+   ```js
+   const keep = (el) => {
+     el.style.display = "block"
+     if (!el.isConnected) document.body.appendChild(el)
+   }
+   const showPicker = HTMLInputElement.prototype.showPicker
+   HTMLInputElement.prototype.showPicker = function () {
+     if (this.type === "file") return keep(this)
+     return showPicker.call(this)
+   }
+   const dispatch = EventTarget.prototype.dispatchEvent
+   EventTarget.prototype.dispatchEvent = function (event) {
+     if (this instanceof HTMLInputElement && this.type === "file" && event.type === "click") {
+       keep(this)
+       return true
+     }
+     return dispatch.call(this, event)
+   }
+   ```
+
+3. Click "Paste, drop, or click to add files". Find the file input, and give it the image
+   files.
+4. Wait until the comment box has an `<img ... src="https://github.com/user-attachments/assets/...">`
+   tag for each file. Copy the tags.
+5. Delete all the text in the comment box. Do not post the comment.
+6. Put the tags in the description with `gh pr edit --body-file`. Give each image an
+   `alt` text that tells what it shows. Set a `width` on a large image, for example
+   `width="1000"`.
+7. Reload the PR page. Make sure that each image loads.
+
+The images are public when the repo is public. Show only sample data in a screenshot: no
+keys, no personal data, and no internals of the private server repo (Rule 3).
+
+Do not commit screenshots to a branch, a gist, or a release. When you have no browser
+that is signed in to GitHub and can set files on a file input, send the screenshots to
+the user in chat. Tell the user that the screenshots are not in the PR.
 
 ### 4.7 Related issues and checks
 
@@ -349,10 +396,9 @@ the `WIP: ` prefix, and the body.
 After the PR opens, give the user the full link, for example
 [Kiln-AI/Kiln#1737](https://github.com/Kiln-AI/Kiln/pull/1737).
 
-Then send the screenshots to the user in chat, if you took any intended for the PR. Use
-a tool that sends files to the user, when you have one. Give each screenshot a one-line
-caption. Tell the user that the screenshots are not in the PR, and that they can add the
-ones they want.
+Then, if you took screenshots for the PR, upload them and add them to the summary as
+4.6 tells. If you cannot upload them, send them to the user in chat. Use a tool that
+sends files to the user, when you have one. Give each screenshot a one-line caption.
 
 Do not approve the PR. Do not merge the PR.
 
@@ -575,7 +621,7 @@ flowchart LR
 - [ ] The summary gives the state before and the state after.
 - [ ] The implementation part is high-level bullet points.
 - [ ] A warning block exists, if there is something to flag.
-- [ ] The examples are in a collapsible panel at the end. The agent did not upload
-      screenshots to GitHub.
+- [ ] The examples are in a collapsible panel at the end. Screenshots show only sample
+      data, and each one loads on the PR page.
 - [ ] No internals of the private server repo are in the text or in an image.
 - [ ] The text follows Simplified Technical English.
